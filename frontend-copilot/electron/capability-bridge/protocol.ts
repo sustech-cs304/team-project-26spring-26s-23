@@ -1,4 +1,4 @@
-export const DESKTOP_CAPABILITY_NAMES = ['secret', 'workspace', 'database', 'artifact', 'state', 'event'] as const
+export const DESKTOP_CAPABILITY_NAMES = ['secret', 'workspace', 'database', 'artifact', 'state', 'event', 'mcp'] as const
 export type DesktopCapabilityName = (typeof DESKTOP_CAPABILITY_NAMES)[number]
 
 export const DESKTOP_CAPABILITY_OPERATIONS = [
@@ -13,6 +13,7 @@ export const DESKTOP_CAPABILITY_OPERATIONS = [
   'put_value',
   'delete_value',
   'emit_event',
+  'call_tool',
 ] as const
 export type DesktopCapabilityOperation = (typeof DESKTOP_CAPABILITY_OPERATIONS)[number]
 
@@ -43,6 +44,7 @@ export const DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: Record<
   artifact: ['save_text', 'save_bytes', 'describe_artifact'],
   state: ['get_value', 'put_value', 'delete_value'],
   event: ['emit_event'],
+  mcp: ['call_tool'],
 }
 
 export interface DesktopCapabilityBridgeRequest {
@@ -231,6 +233,18 @@ function normalizeDesktopCapabilityBridgePayload(
       }
       return normalized
     }
+    case 'call_tool': {
+      assertNoUnexpectedKeys(payload, ['serverId', 'remoteToolName', 'arguments', 'snapshotRevision'], 'mcp payload')
+      const normalized: Record<string, unknown> = {
+        serverId: requireNonEmptyString(payload.serverId, 'serverId'),
+        remoteToolName: requireNonEmptyString(payload.remoteToolName, 'remoteToolName'),
+        arguments: requireRecord(payload.arguments, 'arguments'),
+      }
+      if (payload.snapshotRevision !== undefined && payload.snapshotRevision !== null) {
+        normalized.snapshotRevision = requireNonNegativeInteger(payload.snapshotRevision, 'snapshotRevision')
+      }
+      return normalized
+    }
   }
 }
 
@@ -257,6 +271,14 @@ function requireNonEmptyString(value: unknown, label: string): string {
   }
 
   return normalized
+}
+
+function requireNonNegativeInteger(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer.`)
+  }
+
+  return value
 }
 
 function requireStringEnum<TValue extends string>(

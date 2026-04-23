@@ -16,15 +16,15 @@ describe('createElectronToolCatalogService', () => {
         language: 'en-US',
         tools: [
           {
-            toolId: 'tool.file-convert',
+            toolId: 'tool.fs.read',
             kind: 'builtin',
             availability: 'available',
-            displayName: 'File Convert',
-            description: 'Convert DOCX/PDF/PPTX files into text.',
-            displayNameZh: '文件转换',
-            displayNameEn: 'File Convert',
-            descriptionZh: '将 DOCX、PDF 和 PPTX 文件转换为纯文本。',
-            descriptionEn: 'Convert DOCX/PDF/PPTX files into text.',
+            displayName: 'Read File',
+            description: 'Read file content from the current workspace.',
+            displayNameZh: '读取文件',
+            displayNameEn: 'Read File',
+            descriptionZh: '读取当前工作区内文件内容。',
+            descriptionEn: 'Read file content from the current workspace.',
             group: {
               id: 'workspace',
               label: 'Workspace Tools',
@@ -93,18 +93,19 @@ describe('createElectronToolCatalogService', () => {
 
     await expect(service.load()).resolves.toEqual({
       ok: true,
+      directoryVersion: 'tools-v1',
       language: 'en-US',
       tools: [
         {
-          toolId: 'tool.file-convert',
+          toolId: 'tool.fs.read',
           kind: 'builtin',
           availability: 'available',
-          displayName: 'File Convert',
-          description: 'Convert DOCX/PDF/PPTX files into text.',
-          displayNameZh: '文件转换',
-          displayNameEn: 'File Convert',
-          descriptionZh: '将 DOCX、PDF 和 PPTX 文件转换为纯文本。',
-          descriptionEn: 'Convert DOCX/PDF/PPTX files into text.',
+          displayName: 'Read File',
+          description: 'Read file content from the current workspace.',
+          displayNameZh: '读取文件',
+          displayNameEn: 'Read File',
+          descriptionZh: '读取当前工作区内文件内容。',
+          descriptionEn: 'Read file content from the current workspace.',
           group: {
             id: 'workspace',
             label: 'Workspace Tools',
@@ -160,6 +161,143 @@ describe('createElectronToolCatalogService', () => {
       status: 200,
       statusText: 'OK',
       json: async () => ({ ok: true, tools: [42] }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const hostedBackendService = {
+      start: vi.fn(async () => undefined),
+      getRuntimeBaseUrl: vi.fn(() => 'http://127.0.0.1:8765'),
+      getLocalToken: vi.fn(() => null),
+    }
+    const service = createElectronToolCatalogService({
+      ensureHostedBackendService: vi.fn(async () => hostedBackendService as never),
+      getLocalToken: vi.fn(async () => null),
+      loadConfigCenterPublicSnapshot: vi.fn(async () => null),
+    })
+
+    await expect(service.load()).resolves.toEqual({
+      ok: false,
+      error: 'Hosted backend returned an invalid global tool catalog payload.',
+    })
+  })
+
+  it('keeps valid mcp tool entries when the hosted backend catalog mixes in an invalid record', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        ok: true,
+        directoryVersion: 'tools-v-mixed',
+        defaultToolset: 'default',
+        language: 'zh-CN',
+        tools: [
+          {
+            toolId: 'mcp--fetch--fetch',
+            kind: 'external',
+            availability: 'available',
+            displayName: '联网抓取',
+            description: '抓取网页内容。',
+            group: {
+              id: 'mcp',
+              label: 'MCP 工具',
+              labelZh: 'MCP 工具',
+              labelEn: 'MCP Tools',
+              order: 100,
+              sourceKind: 'mcp-server',
+            },
+          },
+          {
+            toolId: 42,
+            kind: 'external',
+          },
+        ],
+      }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const hostedBackendService = {
+      start: vi.fn(async () => undefined),
+      getRuntimeBaseUrl: vi.fn(() => 'http://127.0.0.1:8765'),
+      getLocalToken: vi.fn(() => null),
+    }
+    const service = createElectronToolCatalogService({
+      ensureHostedBackendService: vi.fn(async () => hostedBackendService as never),
+      getLocalToken: vi.fn(async () => null),
+      loadConfigCenterPublicSnapshot: vi.fn(async () => null),
+    })
+
+    await expect(service.load()).resolves.toEqual({
+      ok: true,
+      directoryVersion: 'tools-v-mixed',
+      language: 'zh-CN',
+      warnings: ['Hosted backend returned incomplete tool catalog entries. Invalid entries were dropped. Dropped 1 entry.'],
+      tools: [
+        {
+          toolId: 'mcp--fetch--fetch',
+          kind: 'external',
+          availability: 'available',
+          displayName: '联网抓取',
+          description: '抓取网页内容。',
+          group: {
+            id: 'mcp',
+            label: 'MCP 工具',
+            labelZh: 'MCP 工具',
+            labelEn: 'MCP Tools',
+            order: 100,
+            sourceKind: 'mcp-server',
+          },
+        },
+      ],
+    })
+  })
+
+  it.each([
+    {
+      name: 'directoryVersion is missing',
+      payload: {
+        ok: true,
+        defaultToolset: 'default',
+        language: 'en-US',
+        tools: [],
+      },
+    },
+    {
+      name: 'directoryVersion is blank',
+      payload: {
+        ok: true,
+        directoryVersion: '   ',
+        defaultToolset: 'default',
+        language: 'en-US',
+        tools: [],
+      },
+    },
+    {
+      name: 'directoryVersion is not a string',
+      payload: {
+        ok: true,
+        directoryVersion: 42,
+        defaultToolset: 'default',
+        language: 'en-US',
+        tools: [],
+      },
+    },
+    {
+      name: 'tools is not an array',
+      payload: {
+        ok: true,
+        directoryVersion: 'tools-v1',
+        defaultToolset: 'default',
+        language: 'en-US',
+        tools: null,
+      },
+    },
+  ])('returns a structured failure when $name', async ({ payload }) => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => payload,
     }))
     vi.stubGlobal('fetch', fetchMock)
 

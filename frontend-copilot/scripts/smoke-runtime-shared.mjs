@@ -1,3 +1,4 @@
+/* eslint-disable no-constant-condition, no-undef */
 import { randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
@@ -17,8 +18,8 @@ const backendRoot = path.resolve(workspaceRoot, 'backend')
 export const DEFAULT_HOST = '127.0.0.1'
 export const DEFAULT_MESSAGE = '请仅回复“stream smoke ok”。'
 export const DEFAULT_CANCEL_MESSAGE = '请分三句话详细说明这次 thread run cancel smoke，每句话至少十个字。'
-export const DEFAULT_WEATHER_TOOL_MESSAGE = '请先调用天气工具查询 Shenzhen 当前天气，再用一句话说明结果。'
-export const WEATHER_TOOL_ID = 'tool.weather-current'
+export const DEFAULT_WEATHER_TOOL_MESSAGE = '请先调用联网搜索工具查询 Shenzhen 当前天气，再用一句话说明结果。'
+export const WEATHER_TOOL_ID = 'tool.remote-search'
 export const DEFAULT_USER_DATA_DIR = path.join(process.env.APPDATA ?? 'C:/Users/24352/AppData/Roaming', 'CanDue')
 export const DEFAULT_AGENT_ID = 'default'
 

@@ -14,9 +14,22 @@ import {
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
 } from './copilot-history'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
+import {
+  MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+  MANAGED_RUNTIME_LOAD_CHANNEL,
+} from './managed-runtime/ipc'
+import {
+  MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+  MCP_REGISTRY_LOAD_CHANNEL,
+  MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+  MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+  MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+  MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+} from './mcp-registry/ipc'
 import { TOOL_CATALOG_LOAD_CHANNEL } from './tool-catalog/ipc'
 import { DESKTOP_NOTIFICATION_SHOW_CHANNEL } from './desktop-notification'
 import { createRendererIpcHandlers } from './renderer-ipc-handlers.test-support'
+import { createMcpStdioStubServerFixture } from './renderer-ipc.test-support'
 import { createFakeIpcMain } from './renderer-ipc-transport.test-support'
 import { registerRendererIpcHandlers } from './renderer-ipc-registration'
 
@@ -38,6 +51,14 @@ describe('registerRendererIpcHandlers', () => {
       'settings-workspace-secrets:clear-provider-api-key',
       'settings-workspace-secrets:save-sustech-cas',
       'settings-workspace-secrets:clear-sustech-cas',
+      MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+      MANAGED_RUNTIME_LOAD_CHANNEL,
+      MCP_REGISTRY_LOAD_CHANNEL,
+      MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+      MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+      MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+      MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+      MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
       COPILOT_HISTORY_LIST_THREADS_CHANNEL,
       COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
       COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
@@ -63,6 +84,14 @@ describe('registerRendererIpcHandlers', () => {
       'settings-workspace-secrets:clear-provider-api-key',
       'settings-workspace-secrets:save-sustech-cas',
       'settings-workspace-secrets:clear-sustech-cas',
+      MANAGED_RUNTIME_LOAD_CHANNEL,
+      MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+      MCP_REGISTRY_LOAD_CHANNEL,
+      MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+      MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+      MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+      MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+      MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
       COPILOT_HISTORY_LIST_THREADS_CHANNEL,
       COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
       COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
@@ -82,6 +111,13 @@ describe('registerRendererIpcHandlers', () => {
 
     const loadSnapshotHandler = getRegisteredHandler(registeredHandlers, CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL)
     const applyPatchHandler = getRegisteredHandler(registeredHandlers, CONFIG_CENTER_PUBLIC_PATCH_CHANNEL)
+    const loadMcpRegistryHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_LOAD_CHANNEL)
+    const loadManagedRuntimeHandler = getRegisteredHandler(registeredHandlers, MANAGED_RUNTIME_LOAD_CHANNEL)
+    const saveMcpServerHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_SAVE_SERVER_CHANNEL)
+    const deleteMcpServerHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_DELETE_SERVER_CHANNEL)
+    const setMcpServerEnabledHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL)
+    const testMcpConnectionHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_TEST_CONNECTION_CHANNEL)
+    const refreshMcpCatalogHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_REFRESH_CATALOG_CHANNEL)
     const listThreadsHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_LIST_THREADS_CHANNEL)
     const getThreadDetailHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL)
     const getRunReplayHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL)
@@ -110,6 +146,26 @@ describe('registerRendererIpcHandlers', () => {
         },
       },
     }))
+    const mcpServerDraft = createMcpStdioStubServerFixture()
+    await expect(loadManagedRuntimeHandler()).resolves.toEqual(await handlers.loadManagedRuntime())
+    await expect(loadMcpRegistryHandler(undefined, { language: 'zh-CN', includeDisabled: true })).resolves.toEqual(
+      await handlers.loadMcpRegistry({ language: 'zh-CN', includeDisabled: true }),
+    )
+    await expect(saveMcpServerHandler(undefined, mcpServerDraft)).resolves.toEqual(
+      await handlers.saveMcpServer(mcpServerDraft),
+    )
+    await expect(deleteMcpServerHandler(undefined, mcpServerDraft.serverId)).resolves.toEqual(
+      await handlers.deleteMcpServer(mcpServerDraft.serverId),
+    )
+    await expect(setMcpServerEnabledHandler(undefined, { serverId: mcpServerDraft.serverId, enabled: false })).resolves.toEqual(
+      await handlers.setMcpServerEnabled({ serverId: mcpServerDraft.serverId, enabled: false }),
+    )
+    await expect(testMcpConnectionHandler(undefined, { draft: mcpServerDraft })).resolves.toEqual(
+      await handlers.testMcpConnection({ draft: mcpServerDraft }),
+    )
+    await expect(refreshMcpCatalogHandler(undefined, { serverId: mcpServerDraft.serverId })).resolves.toEqual(
+      await handlers.refreshMcpCatalog({ serverId: mcpServerDraft.serverId }),
+    )
     await expect(listThreadsHandler()).resolves.toEqual(await handlers.listCopilotHistoryThreads())
     await expect(getThreadDetailHandler(undefined, 'thread-1')).resolves.toEqual(
       await handlers.getCopilotHistoryThreadDetail('thread-1'),

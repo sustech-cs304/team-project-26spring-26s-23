@@ -42,6 +42,22 @@ import {
   type DesktopNotificationApi,
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from '../bootstrap-window'
+import {
+  MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+  MANAGED_RUNTIME_LOAD_CHANNEL,
+  type ManagedRuntimeApi,
+} from '../managed-runtime/ipc'
+import {
+  MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+  MCP_REGISTRY_LOAD_CHANNEL,
+  MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+  MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+  MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+  MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+  createMcpRegistrySubscriptionApi,
+  type McpRegistryApi,
+  type McpRegistrySubscriptionApi,
+} from '../mcp-registry/ipc'
 import { TOOL_CATALOG_LOAD_CHANNEL, type ToolCatalogApi } from '../tool-catalog/ipc'
 
 export interface PreloadBridgeApis {
@@ -52,6 +68,9 @@ export interface PreloadBridgeApis {
   configCenterPublicPatch: ConfigCenterPublicPatchApi
   settingsWorkspaceState: SettingsWorkspaceStateApi
   settingsWorkspaceSecrets: SettingsWorkspaceSecretsApi
+  managedRuntime: ManagedRuntimeApi
+  mcpRegistry: McpRegistryApi
+  mcpRegistrySubscription: McpRegistrySubscriptionApi
   toolCatalog: ToolCatalogApi
   desktopNotification: DesktopNotificationApi
   bootstrapWindow: BootstrapWindowApi
@@ -134,6 +153,35 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
         return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL)
       },
     },
+    managedRuntime: {
+      load() {
+        return ipcRenderer.invoke(MANAGED_RUNTIME_LOAD_CHANNEL)
+      },
+      installOrRepair(reason) {
+        return ipcRenderer.invoke(MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL, reason)
+      },
+    },
+    mcpRegistry: {
+      loadRegistry(request) {
+        return ipcRenderer.invoke(MCP_REGISTRY_LOAD_CHANNEL, request)
+      },
+      saveServer(draft) {
+        return ipcRenderer.invoke(MCP_REGISTRY_SAVE_SERVER_CHANNEL, draft)
+      },
+      deleteServer(serverId) {
+        return ipcRenderer.invoke(MCP_REGISTRY_DELETE_SERVER_CHANNEL, serverId)
+      },
+      setServerEnabled(request) {
+        return ipcRenderer.invoke(MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL, request)
+      },
+      testConnection(request) {
+        return ipcRenderer.invoke(MCP_REGISTRY_TEST_CONNECTION_CHANNEL, request)
+      },
+      refreshCatalog(request) {
+        return ipcRenderer.invoke(MCP_REGISTRY_REFRESH_CATALOG_CHANNEL, request)
+      },
+    },
+    mcpRegistrySubscription: createMcpRegistrySubscriptionApi(ipcRenderer),
     toolCatalog: {
       load(request) {
         return ipcRenderer.invoke(TOOL_CATALOG_LOAD_CHANNEL, request)

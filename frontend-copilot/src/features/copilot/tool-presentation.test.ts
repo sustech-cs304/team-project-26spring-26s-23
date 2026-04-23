@@ -54,12 +54,37 @@ describe('resolveCopilotToolPresentation', () => {
     expect(presentation.name).toBe('可选工具')
     expect(presentation.description).toBe('内建辅助能力')
   })
+
+  it('builds readable mcp fallback names from server and remote tool names', () => {
+    const tool: CopilotToolPresentationSource = {
+      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+      kind: 'external',
+      displayName: null,
+      description: null,
+      serverId: 'mcp-stdio-stub',
+      remoteToolName: 'search-campus',
+      mcpServerName: 'stdio stub server',
+      group: {
+        id: 'mcp.server.mcp-stdio-stub',
+        label: 'stdio stub server',
+        labelZh: 'stdio stub server',
+        labelEn: 'stdio stub server',
+        order: 100,
+        sourceKind: 'mcp-server',
+      },
+    } as CopilotToolPresentationSource
+
+    const presentation = resolveCopilotToolPresentation(tool)
+
+    expect(presentation.name).toBe('stdio stub server / Search Campus')
+    expect(resolveCopilotToolPlatformGroup(tool).title).toBe('stdio stub server')
+  })
 })
 
 describe('resolveCopilotToolPlatformGroup', () => {
   it('prefers explicit catalog groups that already encode suite-level semantics', () => {
     expect(resolveCopilotToolPlatformGroup({
-      toolId: 'tool.file-convert',
+      toolId: 'tool.remote-search',
       kind: 'builtin',
       displayName: 'File Convert',
       description: 'Convert office files',

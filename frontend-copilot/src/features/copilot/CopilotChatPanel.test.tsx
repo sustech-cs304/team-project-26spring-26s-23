@@ -417,7 +417,7 @@ describe('CopilotChatPanel', () => {
           availabilityDrift: {
             status: 'historical_provider_removed',
             historicalModelId: 'legacy-model',
-            historicalToolIds: ['tool.file-convert'],
+            historicalToolIds: ['tool.remote-search'],
             historicalThinkingSummary: 'unified-4-level-v1 / 中 / medium / preset',
             warnings: [{
               code: 'historical_provider_removed',

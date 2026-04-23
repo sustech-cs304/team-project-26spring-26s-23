@@ -49,7 +49,7 @@ export function createRuntimeAgentsListResponse(
       {
         agentId,
         status: 'active',
-        recommendedTools: ['tool.file-convert'],
+        recommendedTools: ['tool.fs.read'],
         displayName: '通用助手',
         description: '默认通用智能体',
         iconKey: 'sparkles',
@@ -68,7 +68,7 @@ export function createRuntimeThreadCreateResponse(
     boundAgent: createBoundAgent(),
     createdAt: '2026-03-27T10:00:00Z',
     updatedAt: '2026-03-27T10:00:00Z',
-    recommendedTools: ['tool.file-convert'],
+    recommendedTools: ['tool.fs.read'],
     capabilities: {
       tools: {
         selectionMode: 'recommendation-only',
@@ -90,11 +90,11 @@ export function createRuntimeThreadGetResponse(
     capabilitiesVersion: 'cap-v12',
     tools: [
       {
-        toolId: 'tool.file-convert',
+        toolId: 'tool.fs.read',
         kind: 'builtin',
         availability: 'available',
-        displayName: '文件转换',
-        description: 'DOCX/PDF/PPTX 转换工具',
+        displayName: '读取文件',
+        description: '读取项目内文件内容。',
       },
       {
         toolId: 'tool.remote-search',
@@ -104,7 +104,7 @@ export function createRuntimeThreadGetResponse(
         description: '访问外部搜索服务',
       },
     ],
-    recommendedTools: ['tool.file-convert'],
+    recommendedTools: ['tool.fs.read'],
     toolSelectionMode: 'recommendation-only',
     latestRunId: null,
     ...overrides,
@@ -120,11 +120,11 @@ export function createRuntimeCapabilitiesGetResponse(
     capabilitiesVersion: overrides.capabilitiesVersion ?? 'cap-v12',
     tools: overrides.tools ?? [
       {
-        toolId: 'tool.file-convert',
+        toolId: 'tool.fs.read',
         kind: 'builtin',
         availability: 'available',
-        displayName: '文件转换',
-        description: 'DOCX/PDF/PPTX 转换工具',
+        displayName: '读取文件',
+        description: '读取项目内文件内容。',
       },
       {
         toolId: 'tool.remote-search',
@@ -134,7 +134,7 @@ export function createRuntimeCapabilitiesGetResponse(
         description: '访问外部搜索服务',
       },
     ],
-    recommendedTools: overrides.recommendedTools ?? ['tool.file-convert'],
+    recommendedTools: overrides.recommendedTools ?? ['tool.fs.read'],
     toolSelectionMode: overrides.toolSelectionMode ?? 'recommendation-only',
   })
 
@@ -403,7 +403,7 @@ export function createRuntimeRunCompletedEvent(
       assistantText: overrides.payload?.assistantText ?? '这是总结结果。',
       resolvedModelId: overrides.payload?.resolvedModelId ?? 'qwen-plus',
       resolvedModelRoute: overrides.payload?.resolvedModelRoute ?? createRuntimeResolvedModelRoute(),
-      resolvedToolIds: overrides.payload?.resolvedToolIds ?? ['tool.file-convert'],
+      resolvedToolIds: overrides.payload?.resolvedToolIds ?? ['tool.remote-search'],
       requestOptions: overrides.payload?.requestOptions ?? { trace: true },
     },
   }
@@ -690,12 +690,12 @@ export function createRuntimeToolEvent(
     sessionId: overrides.sessionId ?? sessionId,
     sequence: overrides.sequence ?? 2,
     payload: {
-      toolCallId: overrides.payload?.toolCallId ?? 'tool.weather-current:call-1',
-      toolId: overrides.payload?.toolId ?? 'tool.weather-current',
+      toolCallId: overrides.payload?.toolCallId ?? 'tool.remote-search:call-1',
+      toolId: overrides.payload?.toolId ?? 'tool.remote-search',
       phase: overrides.payload?.phase ?? 'started',
-      title: overrides.payload?.title ?? '调用天气工具',
-      summary: overrides.payload?.summary ?? '正在获取 Shenzhen 的天气。',
-      ...(overrides.payload?.inputSummary === undefined ? { inputSummary: '{"location":"Shenzhen"}' } : { inputSummary: overrides.payload.inputSummary }),
+      title: overrides.payload?.title ?? '调用联网搜索工具',
+      summary: overrides.payload?.summary ?? '正在搜索 Shenzhen 天气信息。',
+      ...(overrides.payload?.inputSummary === undefined ? { inputSummary: '{"query":"Shenzhen 天气信息"}' } : { inputSummary: overrides.payload.inputSummary }),
       ...(overrides.payload?.resultSummary === undefined ? {} : { resultSummary: overrides.payload.resultSummary }),
       ...(overrides.payload?.errorSummary === undefined ? {} : { errorSummary: overrides.payload.errorSummary }),
       ...(overrides.payload?.security === undefined ? {} : { security: overrides.payload.security }),

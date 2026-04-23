@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from collections.abc import Awaitable
 from pathlib import Path
-from typing import cast
+from typing import TypeVar, cast
 
 from pydantic_ai.models.test import TestModel
 
@@ -16,16 +18,34 @@ from app.copilot_runtime.contracts import (
     TOOL_APPROVAL_RESOLVE_METHOD,
     RuntimeToolApprovalResolveRequest,
     RuntimeToolPermissionPolicy,
+    build_runtime_scaffold,
 )
+from app.copilot_runtime.mcp_catalog_provider import create_mcp_catalog_provider
+from app.copilot_runtime.mcp_snapshot_provider import create_mcp_snapshot_provider
+from app.copilot_runtime.mcp_snapshot_provider import MCP_CAPABILITY_SNAPSHOT_FILE_NAME
+from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
+from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute, RuntimeModelRouteRef
 from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
+from app.tooling import ToolInvocationContext
 from app.copilot_runtime.session_store import InMemorySessionStore
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
+from app.copilot_runtime.tool_registry import build_default_tool_registry
 from app.desktop_runtime.config import DesktopRuntimeConfig, DesktopRuntimePaths
 
 
 TEST_MODEL_REPLY = "Hello from the composition test model."
+
+_T = TypeVar("_T")
+
+
+async def _await_value(awaitable: Awaitable[_T]) -> _T:
+    return await awaitable
+
+
+def _run_awaitable(awaitable: Awaitable[_T]) -> _T:
+    return asyncio.run(_await_value(awaitable))
 
 
 class _ImmediateEventStream:
@@ -359,6 +379,305 @@ def test_build_default_runtime_dependencies_uses_runtime_root_for_file_tools(
     assert deps.default_root == expected_workspace_root
 
 
+
+def test_build_default_runtime_dependencies_merges_mcp_snapshot_into_global_tool_catalog(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+    bridge_client = _RecordingMcpBridgeClient()
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+    )
+    response = dependencies.scaffold.build_global_tool_catalog_response(
+        language="en-US"
+    ).to_dict()
+
+    tool_ids = [tool["toolId"] for tool in response["tools"]]
+    assert "tool.fs.read" in tool_ids
+    assert "mcp.mcp-stdio-stub.search-campus.00004d8d" in tool_ids
+    mcp_entry = next(
+        tool
+        for tool in response["tools"]
+        if tool["toolId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+    assert mcp_entry["kind"] == "mcp"
+    assert mcp_entry["availability"] == "available"
+    assert mcp_entry["group"] == {
+        "id": "mcp-search",
+        "label": "Search",
+        "labelZh": "Search",
+        "labelEn": "Search",
+        "order": 1000,
+        "sourceKind": "mcp",
+    }
+
+
+
+def test_build_default_runtime_dependencies_hides_mcp_catalog_entries_without_bridge_client(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+
+    dependencies = build_default_runtime_dependencies(runtime_config=runtime_config)
+    response = dependencies.scaffold.build_global_tool_catalog_response(
+        language="en-US"
+    ).to_dict()
+
+    tool_ids = [tool["toolId"] for tool in response["tools"]]
+    assert "tool.fs.read" in tool_ids
+    assert all(not tool_id.startswith("mcp.") for tool_id in tool_ids)
+
+
+
+def test_build_default_runtime_dependencies_ignores_mcp_executor_when_snapshot_is_missing(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    bridge_client = _RecordingMcpBridgeClient()
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+    )
+
+    tool_ids = [tool.tool_id for tool in dependencies.tool_registry.get_default().tools]
+    catalog_tool_ids = [
+        tool["toolId"]
+        for tool in dependencies.scaffold.build_global_tool_catalog_response().to_dict()["tools"]
+    ]
+    assert "tool.fs.read" in tool_ids
+    assert "tool.fs.read" in catalog_tool_ids
+    assert all(not tool_id.startswith("mcp.") for tool_id in tool_ids)
+    assert all(not tool_id.startswith("mcp.") for tool_id in catalog_tool_ids)
+    assert bridge_client.calls == []
+
+
+def test_build_default_runtime_dependencies_hides_mcp_catalog_entries_when_explicit_provider_lacks_execution_bridge(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        mcp_catalog_provider=create_mcp_catalog_provider(
+            create_mcp_snapshot_provider(state_dir=runtime_config.state_dir)
+        ),
+    )
+
+    catalog_tool_ids = [
+        tool["toolId"]
+        for tool in dependencies.scaffold.build_global_tool_catalog_response().to_dict()["tools"]
+    ]
+
+    assert "tool.fs.read" in catalog_tool_ids
+    assert all(not tool_id.startswith("mcp.") for tool_id in catalog_tool_ids)
+
+
+def test_build_runtime_scaffold_hides_non_executable_mcp_catalog_entries_from_manual_scaffold(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+
+    scaffold = build_runtime_scaffold(
+        tool_registry=build_default_tool_registry(
+            workspace_root=runtime_config.runtime_root_dir
+        ),
+        mcp_catalog_provider=create_mcp_catalog_provider(
+            create_mcp_snapshot_provider(state_dir=runtime_config.state_dir)
+        ),
+    )
+
+    catalog_tool_ids = [
+        tool["toolId"]
+        for tool in scaffold.build_global_tool_catalog_response(language="en-US").to_dict()[
+            "tools"
+        ]
+    ]
+
+    assert "tool.fs.read" in catalog_tool_ids
+    assert all(not tool_id.startswith("mcp.") for tool_id in catalog_tool_ids)
+
+
+def test_build_runtime_scaffold_keeps_executable_mcp_catalog_entries_when_tool_registry_can_resolve_them(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+    bridge_client = _RecordingMcpBridgeClient()
+    snapshot_provider = create_mcp_snapshot_provider(state_dir=runtime_config.state_dir)
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+    )
+    scaffold = build_runtime_scaffold(
+        tool_registry=dependencies.tool_registry,
+        mcp_catalog_provider=create_mcp_catalog_provider(snapshot_provider),
+    )
+
+    catalog_tool_ids = [
+        tool["toolId"]
+        for tool in scaffold.build_global_tool_catalog_response(language="en-US").to_dict()[
+            "tools"
+        ]
+    ]
+
+    assert "tool.fs.read" in catalog_tool_ids
+    assert "mcp.mcp-stdio-stub.search-campus.00004d8d" in catalog_tool_ids
+
+
+
+def test_build_default_runtime_dependencies_registers_executable_mcp_tools_with_bridge_client(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+    bridge_client = _RecordingMcpBridgeClient()
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+    )
+    tool = dependencies.tool_registry.resolve_tool(
+        "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+
+    result = _run_awaitable(tool.execute({"keyword": "library"}))
+
+    assert tool.descriptor.kind == "mcp"
+    assert tool.function_name == "mcp_mcp_stdio_stub_search_campus_00004d8d"
+    assert tool.parameters_json_schema == {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "keyword": {"type": "string"},
+        },
+        "required": ["keyword"],
+    }
+    assert result["status"] == "success"
+    assert result["output"] == {
+        "ok": True,
+        "content": [{"type": "text", "text": "search completed"}],
+        "structuredContent": {"count": 1},
+    }
+    assert result["metadata"] == {
+        "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+        "sourceKind": "mcp",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "snapshotRevision": 8,
+    }
+    assert bridge_client.calls == [
+        {
+            "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+            "serverId": "mcp-stdio-stub",
+            "remoteToolName": "search-campus",
+            "arguments": {"keyword": "library"},
+            "snapshotRevision": 8,
+            "runId": None,
+            "toolCallId": "mcp.mcp-stdio-stub.search-campus.00004d8d:direct",
+        }
+    ]
+
+
+
+def test_runtime_scaffold_filters_mcp_global_catalog_entries_with_permission_policy(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    runtime_config.state_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_payload = _load_mcp_snapshot_fixture()
+    (runtime_config.state_dir / MCP_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+    dependencies = build_default_runtime_dependencies(runtime_config=runtime_config)
+
+    filtered_catalog = dependencies.scaffold.get_global_tool_catalog(
+        tool_permission_resolver=RuntimeToolPermissionResolver(
+            default_mode="allow",
+            tool_modes={"mcp.mcp-stdio-stub.search-campus.00004d8d": "deny"},
+        )
+    )
+
+    tool_ids = [tool.toolId for tool in filtered_catalog]
+    assert "tool.fs.read" in tool_ids
+    assert "mcp.mcp-stdio-stub.search-campus.00004d8d" not in tool_ids
+    assert all(not tool_id.startswith("mcp.") for tool_id in tool_ids)
+
+
+class _RecordingMcpBridgeClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def call_mcp_tool(
+        self,
+        *,
+        context: ToolInvocationContext,
+        server_id: str,
+        remote_tool_name: str,
+        arguments: dict[str, object] | None = None,
+        snapshot_revision: int | None = None,
+    ) -> dict[str, object]:
+        self.calls.append(
+            {
+                "toolId": context.tool_id,
+                "serverId": server_id,
+                "remoteToolName": remote_tool_name,
+                "arguments": dict(arguments or {}),
+                "snapshotRevision": snapshot_revision,
+                "runId": context.run_id,
+                "toolCallId": context.invocation_id,
+            }
+        )
+        return {
+            "ok": True,
+            "toolId": context.tool_id,
+            "serverId": server_id,
+            "remoteToolName": remote_tool_name,
+            "content": [{"type": "text", "text": "search completed"}],
+            "structuredContent": {"count": 1},
+            "snapshotRevision": snapshot_revision,
+            "isError": False,
+        }
+
+
 async def _collect_events(events):
     return [event async for event in events]
 
@@ -391,6 +710,19 @@ def _build_run_request(
         ),
         agent_id=DEFAULT_AGENT_NAME,
     )
+
+
+def _load_mcp_snapshot_fixture() -> dict[str, object]:
+    fixture_path = (
+        Path(__file__).resolve().parents[4]
+        / "frontend-copilot"
+        / "electron"
+        / "mcp-registry"
+        / "test-fixtures"
+        / "snapshot.sample.json"
+    )
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
+
 
 
 def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:

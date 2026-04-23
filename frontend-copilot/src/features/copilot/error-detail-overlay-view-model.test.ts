@@ -46,7 +46,7 @@ describe('error detail overlay view model', () => {
         providerProfileId: 'provider-openai',
         modelId: 'openai/gpt-4.1',
       }),
-      resolvedToolIds: ['tool.weather-current'],
+      resolvedToolIds: ['tool.remote-search'],
       requestOptions: {
         trace: true,
       },
@@ -60,14 +60,14 @@ describe('error detail overlay view model', () => {
       stage: 'streaming',
       requestedMethod: 'run/stream',
       details: {
-        toolId: 'tool.weather-current',
+        toolId: 'tool.remote-search',
       },
       resolvedModelId: 'openai/gpt-4.1',
       resolvedModelRoute: createRuntimeModelRoute({
         providerProfileId: 'provider-openai',
         modelId: 'openai/gpt-4.1',
       }),
-      resolvedToolIds: ['tool.weather-current'],
+      resolvedToolIds: ['tool.remote-search'],
       requestOptions: {
         trace: true,
       },
@@ -180,6 +180,96 @@ describe('error detail overlay view model', () => {
     }
   })
 
+  it('maps MCP failure details into stable technical fields with fallback placeholders', () => {
+    const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
+      source: 'streaming',
+      title: '工具调用失败',
+      summaryMessage: '工具执行失败，请重试。',
+      rawMessage: 'remote tool error',
+      code: 'tool_execution_failed',
+      stage: 'streaming',
+      requestedMethod: 'run/stream',
+      details: {
+        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+        toolCallId: 'tool-call-1',
+        serverId: 'mcp-stdio-stub',
+        serverName: 'stdio stub server',
+        remoteToolName: 'search-campus',
+        phase: 'tools/call',
+        diagnosticSummary: 'connector ready but remote tool returned error',
+        stderrSummary: 'stderr tail',
+        snapshotRevision: 12,
+      },
+    }))
+
+    expect(viewModel.groups.find((group) => group.key === 'request-context')?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: '调用阶段', value: 'tools/call' }),
+        expect.objectContaining({ kind: 'key-value', label: '快照版本', value: '12' }),
+        expect.objectContaining({ kind: 'key-value', label: '目录版本', value: '未提供' }),
+      ]),
+    )
+    expect(viewModel.groups.find((group) => group.key === 'tool-model-context')?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: '工具名称', value: 'search-campus' }),
+        expect.objectContaining({ kind: 'key-value', label: 'toolId', value: 'mcp.mcp-stdio-stub.search-campus.00004d8d' }),
+        expect.objectContaining({ kind: 'key-value', label: '服务器名称', value: 'stdio stub server' }),
+        expect.objectContaining({ kind: 'key-value', label: 'serverId', value: 'mcp-stdio-stub' }),
+      ]),
+    )
+    expect(viewModel.groups.find((group) => group.key === 'raw-details')?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: '诊断摘要', value: 'connector ready but remote tool returned error' }),
+        expect.objectContaining({ kind: 'key-value', label: 'stderr 摘要', value: 'stderr tail' }),
+      ]),
+    )
+  })
+
+  it('keeps non-MCP tool failures on the generic detail path even when toolId is present', () => {
+    const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
+      source: 'streaming',
+      title: '工具调用失败',
+      summaryMessage: '工具执行失败，请重试。',
+      rawMessage: 'remote search failed',
+      code: 'tool_execution_failed',
+      stage: 'streaming',
+      requestedMethod: 'run/stream',
+      details: {
+        toolId: 'tool.remote-search',
+        toolCallId: 'tool-call-1',
+        phase: 'tools/call',
+        snapshotRevision: 12,
+        catalogVersion: 9,
+      },
+      resolvedToolIds: ['tool.remote-search'],
+    }))
+
+    expect(viewModel.groups.find((group) => group.key === 'request-context')?.items).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: '调用阶段' }),
+        expect.objectContaining({ kind: 'key-value', label: '快照版本' }),
+        expect.objectContaining({ kind: 'key-value', label: '目录版本' }),
+      ]),
+    )
+    expect(viewModel.groups.find((group) => group.key === 'tool-model-context')?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'list', label: '工具', values: ['tool.remote-search'] }),
+      ]),
+    )
+    expect(viewModel.groups.find((group) => group.key === 'tool-model-context')?.items).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: 'serverId' }),
+        expect.objectContaining({ kind: 'key-value', label: '服务器名称' }),
+      ]),
+    )
+    expect(viewModel.groups.find((group) => group.key === 'raw-details')?.items).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'key-value', label: '诊断摘要' }),
+        expect.objectContaining({ kind: 'key-value', label: 'stderr 摘要' }),
+      ]),
+    )
+  })
+
   it('marks raw details as structured json only when the serialized value is a json object or array', () => {
     const jsonViewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
       source: 'streaming',
@@ -187,7 +277,7 @@ describe('error detail overlay view model', () => {
       summaryMessage: '工具执行失败，请重试。',
       rawMessage: 'Tool failed: boom',
       details: {
-        toolId: 'tool.weather-current',
+        toolId: 'tool.remote-search',
         retryable: false,
         attempts: [1, 2],
       },
@@ -201,17 +291,17 @@ describe('error detail overlay view model', () => {
       label: '原始 details',
       presentation: 'json',
       structuredValue: {
-        toolId: 'tool.weather-current',
+        toolId: 'tool.remote-search',
         retryable: false,
         attempts: [1, 2],
       },
     })
 
-    expect(parseErrorDetailJsonTextForViewer('{"toolId":"tool.weather-current"}')).toEqual({
-      toolId: 'tool.weather-current',
+    expect(parseErrorDetailJsonTextForViewer('{"toolId":"tool.remote-search"}')).toEqual({
+      toolId: 'tool.remote-search',
     })
     expect(parseErrorDetailJsonTextForViewer('[1,true,{"ok":false}]')).toEqual([1, true, { ok: false }])
-    expect(parseErrorDetailJsonTextForViewer('"tool.weather-current"')).toBeNull()
+    expect(parseErrorDetailJsonTextForViewer('"tool.remote-search"')).toBeNull()
     expect(parseErrorDetailJsonTextForViewer('123')).toBeNull()
     expect(parseErrorDetailJsonTextForViewer('invalid json')).toBeNull()
   })

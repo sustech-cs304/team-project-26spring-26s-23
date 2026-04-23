@@ -8,6 +8,8 @@ import { createDesktopCapabilityDatabaseService } from './DesktopCapabilityDatab
 import { createDesktopCapabilityArtifactService } from './DesktopCapabilityArtifactService'
 import { createDesktopCapabilityStateService } from './DesktopCapabilityStateService'
 import { createDesktopCapabilityEventService } from './DesktopCapabilityEventService'
+import { createDesktopCapabilityMcpService } from './DesktopCapabilityMcpService'
+import type { ElectronMcpRegistryService } from '../../mcp-registry/main-process'
 
 export interface DesktopCapabilityDispatcher {
   handle(request: DesktopCapabilityBridgeRequest): Promise<Record<string, unknown>>
@@ -15,6 +17,7 @@ export interface DesktopCapabilityDispatcher {
 
 export interface CreateDesktopCapabilityDispatcherOptions extends CreateDesktopCapabilityBridgeServiceOptions {
   getSettingsWorkspaceService?: () => ElectronSettingsWorkspaceService
+  getMcpRegistryService?: () => ElectronMcpRegistryService
 }
 
 export function createDesktopCapabilityDispatcher(
@@ -26,6 +29,7 @@ export function createDesktopCapabilityDispatcher(
   const artifactService = createDesktopCapabilityArtifactService(options)
   const stateService = createDesktopCapabilityStateService(options)
   const eventService = createDesktopCapabilityEventService(options)
+  const mcpService = createDesktopCapabilityMcpService(options)
 
   return {
     async handle(request) {
@@ -42,6 +46,8 @@ export function createDesktopCapabilityDispatcher(
           return await stateService.handle(request)
         case 'event':
           return await eventService.handle(request)
+        case 'mcp':
+          return await mcpService.handle(request)
         default:
           throw new DesktopCapabilityBridgeError(
             'unsupported_capability',
