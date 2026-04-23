@@ -155,7 +155,12 @@ function extractFailureMessage(payload: unknown, status: number, statusText: str
 }
 
 function isRuntimeGlobalToolCatalogPayload(value: unknown): value is RuntimeGlobalToolCatalogPayload {
-  if (!isRecord(value) || value.ok !== true || !(Object.hasOwn(value, 'tools')) || !Array.isArray(value.tools)) {
+  if (
+    !isRecord(value)
+    || value.ok !== true
+    || !Object.prototype.hasOwnProperty.call(value, 'tools')
+    || !Array.isArray(value.tools)
+  ) {
     return false
   }
 
