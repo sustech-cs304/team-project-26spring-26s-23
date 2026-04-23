@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -412,6 +412,122 @@ describe('UvRuntimeManager', () => {
     expect(snapshot.activeVersion).toBe(oldVersion)
     expect(snapshot.updateRecommended).toBe(true)
     expect(snapshot.lastErrorSummary?.code).toBe('verification_failed')
+  })
+
+  it('marks an active version broken when the pinned version directory is incomplete', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-uv-broken-active-'))
+    tempRoots.push(tempRoot)
+    const paths = createManagedRuntimeFamilyPaths(tempRoot, 'uv')
+    const manifest = getManagedRuntimeFamilyManifest('uv')
+    const components = resolveManagedRuntimeComponents('uv', { platform: 'win32', arch: 'x64' })
+    const versionDir = path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion))
+    const manager = new UvRuntimeManager({
+      paths,
+      pinnedVersion: manifest.pinnedVersion,
+      selectedComponents: components,
+      commandRunner: {
+        run: vi.fn(async (command: string) => {
+          if (command.endsWith('python.exe') || command.endsWith('python3')) return 'Python 3.12.13'
+          if (command.endsWith('uv.exe')) return 'uv 0.11.7'
+          return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
+        }),
+      },
+      clock: () => '2026-04-23T10:30:00.000Z',
+    })
+
+    await manager['writeState']({
+      schemaVersion: 1,
+      family: 'uv',
+      pinnedVersion: manifest.pinnedVersion,
+      status: 'ready',
+      activeVersion: manifest.pinnedVersion,
+      lastInstalledAt: '2026-04-22T09:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: {
+        verifiedAt: '2026-04-22T09:00:00.000Z',
+        summary: 'previously verified',
+        launchers: {
+          python: path.join(versionDir, 'python', 'python.exe'),
+          uv: path.join(versionDir, 'uv', 'uv.exe'),
+          uvx: path.join(versionDir, 'uv', 'uvx.exe'),
+        },
+      },
+      lastErrorSummary: null,
+    })
+    await createRuntimeLauncherFiles(path.join(versionDir, 'python'), { python: 'python.exe' })
+    await writeFile(paths.activePointerFile, JSON.stringify({ activeVersion: manifest.pinnedVersion }, null, 2))
+
+    const snapshot = await manager.loadSnapshot()
+
+    expect(snapshot.status).toBe('broken')
+    expect(snapshot.activeVersion).toBe(manifest.pinnedVersion)
+    expect(snapshot.lastErrorSummary?.code).toBe('verification_failed')
+    expect(snapshot.lastErrorSummary?.message).toContain('uv.exe')
+    expect(snapshot.lastVerification?.summary).toBe('previously verified')
+  })
+
+  it('repairs an incomplete pinned version directory in a single repair run', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-uv-self-heal-'))
+    tempRoots.push(tempRoot)
+    const paths = createManagedRuntimeFamilyPaths(tempRoot, 'uv')
+    const manifest = getManagedRuntimeFamilyManifest('uv')
+    const components = resolveManagedRuntimeComponents('uv', { platform: 'win32', arch: 'x64' })
+    const versionDir = path.join(paths.versionsDir, createVersionDirectoryName(manifest.pinnedVersion))
+    const markerFile = path.join(versionDir, 'uv', 'stale.txt')
+    const manager = new UvRuntimeManager({
+      paths,
+      pinnedVersion: manifest.pinnedVersion,
+      selectedComponents: components,
+      downloadClient: {
+        downloadToFile: vi.fn(async (_url, destinationFile) => {
+          await createRuntimeLauncherFiles(path.dirname(destinationFile), { artifact: path.basename(destinationFile) })
+        }),
+        downloadText: createChecksumResponder(components),
+      },
+      archiveExtractor: {
+        extract: vi.fn(async (_archiveFile: string, destinationDir: string) => {
+          const component = destinationDir.endsWith(`${path.sep}python`)
+            ? components.find((entry) => entry.component === 'python')
+            : components.find((entry) => entry.component === 'uv')
+          await createRuntimeLauncherFiles(destinationDir, component?.distribution.launcherRelativePaths ?? {})
+        }),
+      },
+      commandRunner: {
+        run: vi.fn(async (command: string) => {
+          if (command.endsWith('python.exe') || command.endsWith('python3')) return 'Python 3.12.13'
+          if (command.endsWith('uv.exe')) return 'uv 0.11.7'
+          return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
+        }),
+      },
+      clock: () => '2026-04-23T10:45:00.000Z',
+    })
+
+    await manager['writeState']({
+      schemaVersion: 1,
+      family: 'uv',
+      pinnedVersion: manifest.pinnedVersion,
+      status: 'broken',
+      activeVersion: manifest.pinnedVersion,
+      lastInstalledAt: '2026-04-22T09:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: { code: 'verification_failed', message: 'missing uv.exe', at: '2026-04-23T10:30:00.000Z' },
+    })
+    await createRuntimeLauncherFiles(path.join(versionDir, 'python'), { python: 'python.exe' })
+    await createRuntimeLauncherFiles(path.join(versionDir, 'uv'), { uv: 'uv.exe' })
+    await writeFile(markerFile, 'stale')
+
+    const repaired = await manager.installOrRepair('repair')
+    const activePointer = JSON.parse(await readFile(paths.activePointerFile, 'utf8')) as { activeVersion: string }
+
+    expect(repaired.status).toBe('ready')
+    expect(repaired.activeVersion).toBe(manifest.pinnedVersion)
+    expect(repaired.lastRepairedAt).toBe('2026-04-23T10:45:00.000Z')
+    expect(activePointer.activeVersion).toBe(manifest.pinnedVersion)
+    await expect(access(path.join(versionDir, 'uv', 'uv.exe'))).resolves.toBeUndefined()
+    await expect(access(path.join(versionDir, 'uv', 'uvx.exe'))).resolves.toBeUndefined()
+    await expect(access(path.join(versionDir, 'python', 'python.exe'))).resolves.toBeUndefined()
+    await expect(access(markerFile)).rejects.toThrow()
   })
 
   it('keeps an already installed runtime ready while snapshot verification succeeds offline', async () => {

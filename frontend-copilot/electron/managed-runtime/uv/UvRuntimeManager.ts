@@ -64,6 +64,19 @@ export class UvRuntimeManager {
   async loadSnapshot(): Promise<ManagedRuntimeFamilySnapshot> {
     await mkdir(this.paths.rootDir, { recursive: true })
     const state = await this.readResolvedState()
+    if (state.activeVersion !== null && !(await this.versionDirectoryExists(state.activeVersion))) {
+      const failedState: ManagedRuntimePersistentState = {
+        ...state,
+        status: 'broken',
+        lastErrorSummary: this.createErrorSummary(
+          'verification_failed',
+          new Error(`Managed runtime active version directory is missing: ${this.resolveVersionDirectory(state.activeVersion)}`),
+        ),
+      }
+      await this.writeState(failedState)
+      return this.createSnapshot(failedState)
+    }
+
     if (state.activeVersion === null) {
       return this.createSnapshot({
         ...state,
@@ -101,7 +114,9 @@ export class UvRuntimeManager {
     const before = await this.readState()
     const stagingDir = await prepareCleanStagingDirectory(this.paths, this.pinnedVersion)
     const stagedVersionDir = path.join(stagingDir, 'version')
+    const targetVersionDir = this.resolveVersionDirectory(this.pinnedVersion)
     try {
+      await rm(targetVersionDir, { recursive: true, force: true })
       for (const component of this.selectedComponents) {
         const source = resolveManagedRuntimeDownloadSource(component)
         if (source.installStrategy !== 'portable-archive') {
@@ -276,10 +291,6 @@ export class UvRuntimeManager {
     const activeVersion = activePointer?.activeVersion
 
     if (typeof activeVersion !== 'string' || activeVersion.length === 0) {
-      return state
-    }
-
-    if (!(await this.versionDirectoryExists(activeVersion))) {
       return state
     }
 

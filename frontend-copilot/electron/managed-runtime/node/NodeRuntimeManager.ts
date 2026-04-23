@@ -1,7 +1,13 @@
-import { rm } from 'node:fs/promises'
+import { access, mkdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { ensureManagedRuntimeDirectories } from '../ManagedRuntimePaths'
-import { activateManagedRuntimeVersion, prepareCleanStagingDirectory, readJsonFile, writeJsonFile } from '../RuntimeInstallShared'
+import {
+  activateManagedRuntimeVersion,
+  type ManagedRuntimeActivePointer,
+  prepareCleanStagingDirectory,
+  readJsonFile,
+  writeJsonFile,
+} from '../RuntimeInstallShared'
 import { createManagedRuntimeArchiveExtractor, type ManagedRuntimeArchiveExtractor } from '../archive'
 import {
   createManagedRuntimeDownloadClient,
@@ -72,7 +78,7 @@ export class NodeRuntimeManager {
 
   async loadSnapshot(): Promise<ManagedRuntimeFamilySnapshot> {
     await this.ensureRootDirectories()
-    const persisted = await this.readState()
+    const persisted = await this.readResolvedState()
     const activeVersion = persisted.activeVersion
     const base = this.createBaseSnapshot(persisted)
 
@@ -123,7 +129,9 @@ export class NodeRuntimeManager {
 
     const stagingDir = await prepareCleanStagingDirectory(this.paths, this.pinnedVersion)
     const stagedVersionDir = path.join(stagingDir, 'version')
+    const targetVersionDir = path.join(this.paths.versionsDir, this.pinnedVersion)
     try {
+      await rm(targetVersionDir, { recursive: true, force: true })
       for (const component of this.selectedComponents) {
         const source = resolveManagedRuntimeDownloadSource(component)
         const { artifactFile } = await downloadManagedRuntimeArtifact({
@@ -295,6 +303,35 @@ export class NodeRuntimeManager {
       lastRepairedAt: null,
       lastVerification: null,
       lastErrorSummary: null,
+    }
+  }
+
+  private async readResolvedState(): Promise<ManagedRuntimePersistentState> {
+    const state = await this.readState()
+    const activePointer = await readJsonFile<ManagedRuntimeActivePointer>(this.paths.activePointerFile)
+    const activeVersion = activePointer?.activeVersion
+
+    if (typeof activeVersion !== 'string' || activeVersion.length === 0) {
+      return state
+    }
+
+    if (state.activeVersion === activeVersion && state.pinnedVersion === this.pinnedVersion) {
+      return state
+    }
+
+    return {
+      ...state,
+      pinnedVersion: this.pinnedVersion,
+      activeVersion,
+    }
+  }
+
+  private async versionDirectoryExists(version: string): Promise<boolean> {
+    try {
+      await access(path.join(this.paths.versionsDir, version))
+      return true
+    } catch {
+      return false
     }
   }
 
