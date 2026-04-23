@@ -75,24 +75,42 @@ export function createManagedRuntimeService(options: CreateManagedRuntimeService
     selectedComponents: uvSelectedComponents,
   })
   let installationTask: Promise<ManagedRuntimeSnapshot> | null = null
+  let cachedSnapshot: ManagedRuntimeSnapshot | null = null
+
+  const createSnapshot = (
+    nodeSnapshot: ManagedRuntimeSnapshot['families']['node'],
+    uvSnapshot: ManagedRuntimeSnapshot['families']['uv'],
+  ): ManagedRuntimeSnapshot => ({
+    manifestVersion: getManagedRuntimeManifest().manifestVersion,
+    overallStatus: resolveOverallStatus(nodeSnapshot.status, uvSnapshot.status),
+    target,
+    rootDir: managedRuntimePaths.rootDir,
+    hostedRuntimeRootDir: hostedRuntimePaths.runtimeRootDir,
+    families: {
+      node: nodeSnapshot,
+      uv: uvSnapshot,
+    },
+  })
+
+  const loadSnapshot = async (): Promise<ManagedRuntimeSnapshot> => {
+    await ensureManagedRuntimeDirectories(managedRuntimePaths)
+    const nodeSnapshot = await nodeManager.loadSnapshot()
+    const uvSnapshot = await uvManager.loadSnapshot()
+    const nextSnapshot = createSnapshot(nodeSnapshot, uvSnapshot)
+    const resolvedSnapshot = cachedSnapshot === null
+      ? nextSnapshot
+      : createSnapshot(
+          preferCachedFamilySnapshot(cachedSnapshot.families.node, nextSnapshot.families.node),
+          preferCachedFamilySnapshot(cachedSnapshot.families.uv, nextSnapshot.families.uv),
+        )
+
+    cachedSnapshot = resolvedSnapshot
+    return resolvedSnapshot
+  }
 
   return {
     async loadSnapshot() {
-      await ensureManagedRuntimeDirectories(managedRuntimePaths)
-      const nodeSnapshot = await nodeManager.loadSnapshot()
-      const uvSnapshot = await uvManager.loadSnapshot()
-
-      return {
-        manifestVersion: getManagedRuntimeManifest().manifestVersion,
-        overallStatus: resolveOverallStatus(nodeSnapshot.status, uvSnapshot.status),
-        target,
-        rootDir: managedRuntimePaths.rootDir,
-        hostedRuntimeRootDir: hostedRuntimePaths.runtimeRootDir,
-        families: {
-          node: nodeSnapshot,
-          uv: uvSnapshot,
-        },
-      }
+      return await loadSnapshot()
     },
     async resolveLauncher(command) {
       const snapshot = await this.loadSnapshot()
@@ -104,18 +122,33 @@ export function createManagedRuntimeService(options: CreateManagedRuntimeService
       }
 
       installationTask = (async () => {
+        const before = await loadSnapshot()
+        let nextNodeSnapshot = before.families.node
+        let nextUvSnapshot = before.families.uv
         const nodeActionSupported = isManagedRuntimeActionSupported('node', target)
         const uvActionSupported = isManagedRuntimeActionSupported('uv', target)
         if (!nodeActionSupported && !uvActionSupported) {
           throw new Error(`Managed runtime install/repair is not supported for target ${target.platform}/${target.arch}.`)
         }
         if (nodeActionSupported) {
-          await nodeManager.installOrRepair(reason)
+          const nodeResult = await nodeManager.installOrRepair(reason)
+          if (shouldUseImmediateInstallResult(before.families.node.status, nodeResult.status)) {
+            nextNodeSnapshot = nodeResult
+          }
         }
         if (uvActionSupported) {
-          await uvManager.installOrRepair(reason)
+          const uvResult = await uvManager.installOrRepair(reason)
+          if (shouldUseImmediateInstallResult(before.families.uv.status, uvResult.status)) {
+            nextUvSnapshot = uvResult
+          }
         }
-        return await this.loadSnapshot()
+        const refreshed = await loadSnapshot()
+        const result = createSnapshot(
+          nextNodeSnapshot.status === 'ready' ? nextNodeSnapshot : refreshed.families.node,
+          nextUvSnapshot.status === 'ready' ? nextUvSnapshot : refreshed.families.uv,
+        )
+        cachedSnapshot = result
+        return result
       })().finally(() => {
         installationTask = null
       })
@@ -151,4 +184,21 @@ function resolveOverallStatus(...statuses: ManagedRuntimeOverallStatus[]): Manag
     return 'missing'
   }
   return 'ready'
+}
+
+function shouldUseImmediateInstallResult(previousStatus: ManagedRuntimeOverallStatus, nextStatus: ManagedRuntimeOverallStatus): boolean {
+  return nextStatus === 'ready' && (previousStatus === 'outdated' || previousStatus === 'broken')
+}
+
+function preferCachedFamilySnapshot(
+  cachedFamily: ManagedRuntimeSnapshot['families']['node'] | ManagedRuntimeSnapshot['families']['uv'],
+  nextFamily: ManagedRuntimeSnapshot['families']['node'] | ManagedRuntimeSnapshot['families']['uv'],
+) {
+  if (cachedFamily.status === 'ready'
+    && cachedFamily.activeVersion === cachedFamily.pinnedVersion
+    && nextFamily.activeVersion !== nextFamily.pinnedVersion) {
+    return cachedFamily
+  }
+
+  return nextFamily
 }

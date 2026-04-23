@@ -2,6 +2,17 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createHostedRuntimePaths } from '../runtime/runtime-paths'
 import { createManagedRuntimeService, resolveManagedRuntimeTarget } from './ManagedRuntimeService'
+import type { ManagedRuntimeFamilySnapshot } from './types'
+
+function createFamilySnapshot(
+  family: ManagedRuntimeFamilySnapshot['family'],
+  snapshot: Omit<ManagedRuntimeFamilySnapshot, 'family'>,
+): ManagedRuntimeFamilySnapshot {
+  return {
+    family,
+    ...snapshot,
+  }
+}
 
 describe('createManagedRuntimeService', () => {
   it('builds a missing snapshot rooted in the application private runtime directories', async () => {
@@ -242,5 +253,179 @@ describe('createManagedRuntimeService', () => {
     expect(snapshot.families.node.status).toBe('ready')
     expect(snapshot.families.uv.status).toBe('missing')
     expect(snapshot.overallStatus).toBe('missing')
+  })
+
+  it('returns the repaired uv snapshot immediately and keeps later loads consistent', async () => {
+    const hostedRuntimePaths = createHostedRuntimePaths(path.resolve('D:/workspace/candue-user-data-uv-repair-refresh'))
+    const repairedVersion = 'python 3.12.13 + uv 0.11.7'
+    const outdatedVersion = 'python 3.12.10 + uv 0.11.7'
+    const oldUvSnapshot = createFamilySnapshot('uv', {
+      status: 'outdated',
+      pinnedVersion: repairedVersion,
+      activeVersion: outdatedVersion,
+      installRootDir: 'uv-install-root',
+      stagingDir: 'uv-staging',
+      activeDir: 'uv-active',
+      selectedComponents: [],
+      launcherPaths: {
+        uv: '/managed/uv/old/uv',
+        uvx: '/managed/uv/old/uvx',
+        python: '/managed/uv/old/python',
+      },
+      lastInstalledAt: '2026-04-22T08:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: null,
+    })
+    const repairedUvSnapshot = createFamilySnapshot('uv', {
+      status: 'ready',
+      pinnedVersion: repairedVersion,
+      activeVersion: repairedVersion,
+      installRootDir: 'uv-install-root',
+      stagingDir: 'uv-staging',
+      activeDir: 'uv-active',
+      selectedComponents: [],
+      launcherPaths: {
+        uv: '/managed/uv/new/uv',
+        uvx: '/managed/uv/new/uvx',
+        python: '/managed/uv/new/python',
+      },
+      lastInstalledAt: '2026-04-22T08:00:00.000Z',
+      lastRepairedAt: '2026-04-23T08:00:00.000Z',
+      lastVerification: {
+        verifiedAt: '2026-04-23T08:00:00.000Z',
+        summary: 'uv repaired to target version',
+        launchers: {
+          uv: '/managed/uv/new/uv',
+          uvx: '/managed/uv/new/uvx',
+          python: '/managed/uv/new/python',
+        },
+      },
+      lastErrorSummary: null,
+    })
+    const nodeSnapshot = createFamilySnapshot('node', {
+      status: 'ready',
+      pinnedVersion: '24.15.0',
+      activeVersion: '24.15.0',
+      installRootDir: 'node-install-root',
+      stagingDir: 'node-staging',
+      activeDir: 'node-active',
+      selectedComponents: [],
+      launcherPaths: {
+        npx: '/managed/node/npx',
+      },
+      lastInstalledAt: '2026-04-22T08:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: {
+        verifiedAt: '2026-04-22T08:00:00.000Z',
+        summary: 'node ready',
+        launchers: {
+          npx: '/managed/node/npx',
+        },
+      },
+      lastErrorSummary: null,
+    })
+    const nodeLoadSnapshot = vi.fn(async () => nodeSnapshot)
+    const uvLoadSnapshot = vi.fn(async () => oldUvSnapshot)
+    const uvInstallOrRepair = vi.fn(async () => repairedUvSnapshot)
+
+    const service = createManagedRuntimeService({
+      userDataPath: hostedRuntimePaths.userDataDir,
+      hostedRuntimePaths,
+      processPlatform: 'win32',
+      processArch: 'x64',
+      nodeManagerFactory: () => ({
+        loadSnapshot: nodeLoadSnapshot,
+        installOrRepair: vi.fn(async () => nodeSnapshot),
+      }),
+      uvManagerFactory: () => ({
+        loadSnapshot: uvLoadSnapshot,
+        installOrRepair: uvInstallOrRepair,
+      }),
+    })
+
+    const repaired = await service.installOrRepairAll('repair')
+    const reloaded = await service.loadSnapshot()
+
+    expect(uvInstallOrRepair).toHaveBeenCalledWith('repair')
+    expect(repaired.families.uv).toEqual(repairedUvSnapshot)
+    expect(repaired.families.uv.activeVersion).toBe(repairedVersion)
+    expect(repaired.overallStatus).toBe('ready')
+    expect(reloaded.families.uv).toEqual(repairedUvSnapshot)
+    expect(reloaded.families.uv.activeVersion).toBe(repairedVersion)
+    expect(uvLoadSnapshot).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps the previous uv snapshot when repair fails', async () => {
+    const hostedRuntimePaths = createHostedRuntimePaths(path.resolve('D:/workspace/candue-user-data-uv-repair-failed'))
+    const oldUvSnapshot = createFamilySnapshot('uv', {
+      status: 'outdated',
+      pinnedVersion: 'python 3.12.13 + uv 0.11.7',
+      activeVersion: 'python 3.12.10 + uv 0.11.7',
+      installRootDir: 'uv-install-root',
+      stagingDir: 'uv-staging',
+      activeDir: 'uv-active',
+      selectedComponents: [],
+      launcherPaths: {
+        uvx: '/managed/uv/old/uvx',
+      },
+      lastInstalledAt: '2026-04-22T08:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: null,
+    })
+    const failedUvSnapshot = createFamilySnapshot('uv', {
+      ...oldUvSnapshot,
+      status: 'broken',
+      lastRepairedAt: '2026-04-23T08:00:00.000Z',
+      lastErrorSummary: {
+        code: 'verification_failed',
+        message: 'repair failed',
+        at: '2026-04-23T08:00:00.000Z',
+      },
+    })
+    const nodeSnapshot = createFamilySnapshot('node', {
+      status: 'ready',
+      pinnedVersion: '24.15.0',
+      activeVersion: '24.15.0',
+      installRootDir: 'node-install-root',
+      stagingDir: 'node-staging',
+      activeDir: 'node-active',
+      selectedComponents: [],
+      launcherPaths: {
+        npx: '/managed/node/npx',
+      },
+      lastInstalledAt: '2026-04-22T08:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: {
+        verifiedAt: '2026-04-22T08:00:00.000Z',
+        summary: 'node ready',
+        launchers: {
+          npx: '/managed/node/npx',
+        },
+      },
+      lastErrorSummary: null,
+    })
+
+    const service = createManagedRuntimeService({
+      userDataPath: hostedRuntimePaths.userDataDir,
+      hostedRuntimePaths,
+      processPlatform: 'win32',
+      processArch: 'x64',
+      nodeManagerFactory: () => ({
+        loadSnapshot: vi.fn(async () => nodeSnapshot),
+        installOrRepair: vi.fn(async () => nodeSnapshot),
+      }),
+      uvManagerFactory: () => ({
+        loadSnapshot: vi.fn(async () => oldUvSnapshot),
+        installOrRepair: vi.fn(async () => failedUvSnapshot),
+      }),
+    })
+
+    const repaired = await service.installOrRepairAll('repair')
+
+    expect(repaired.families.uv).toEqual(oldUvSnapshot)
+    expect(repaired.families.uv.activeVersion).toBe('python 3.12.10 + uv 0.11.7')
+    expect(repaired.overallStatus).toBe('outdated')
   })
 })
