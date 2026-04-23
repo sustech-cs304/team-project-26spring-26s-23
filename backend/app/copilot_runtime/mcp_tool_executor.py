@@ -161,7 +161,7 @@ async def execute_mcp_tool(
     snapshot_provider: McpSnapshotProvider,
     arguments: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    resolved_target = resolve_latest_execution_target(
+    resolved_target, resolved_from_current_snapshot = _resolve_latest_execution_target_with_status(
         target=target,
         snapshot_provider=snapshot_provider,
     )
@@ -200,6 +200,7 @@ async def execute_mcp_tool(
         snapshot_revision = _resolve_result_snapshot_revision(
             result=result,
             target=resolved_target,
+            resolved_from_current_snapshot=resolved_from_current_snapshot,
         )
         return ToolResultEnvelope.success(
             output={
@@ -217,6 +218,7 @@ async def execute_mcp_tool(
         snapshot_revision = _resolve_result_snapshot_revision(
             result=result,
             target=resolved_target,
+            resolved_from_current_snapshot=resolved_from_current_snapshot,
         )
         raw_error = result.get("error")
         error_payload: Mapping[str, Any] = (
@@ -246,9 +248,21 @@ def resolve_latest_execution_target(
     target: McpToolExecutionTarget,
     snapshot_provider: McpSnapshotProvider,
 ) -> McpToolExecutionTarget:
+    resolved_target, _ = _resolve_latest_execution_target_with_status(
+        target=target,
+        snapshot_provider=snapshot_provider,
+    )
+    return resolved_target
+
+
+def _resolve_latest_execution_target_with_status(
+    *,
+    target: McpToolExecutionTarget,
+    snapshot_provider: McpSnapshotProvider,
+) -> tuple[McpToolExecutionTarget, bool]:
     snapshot = snapshot_provider.load_snapshot()
     if snapshot is None:
-        return target
+        return target, False
 
     latest_tool = next(
         (tool for tool in snapshot.tools if tool.tool_id == target.tool_id),
@@ -265,9 +279,9 @@ def resolve_latest_execution_target(
             None,
         )
     if latest_tool is None:
-        return target
+        return target, False
 
-    return build_mcp_tool_execution_target(snapshot=snapshot, tool=latest_tool)
+    return build_mcp_tool_execution_target(snapshot=snapshot, tool=latest_tool), True
 
 
 def build_mcp_result_metadata(*, target: McpToolExecutionTarget) -> dict[str, Any]:
@@ -281,8 +295,14 @@ def build_mcp_result_metadata(*, target: McpToolExecutionTarget) -> dict[str, An
 
 
 def _resolve_result_snapshot_revision(
-    *, result: Mapping[str, Any], target: McpToolExecutionTarget
+    *,
+    result: Mapping[str, Any],
+    target: McpToolExecutionTarget,
+    resolved_from_current_snapshot: bool,
 ) -> int:
+    if resolved_from_current_snapshot:
+        return target.snapshot_revision
+
     snapshot_revision = result.get("snapshotRevision")
     return (
         snapshot_revision
