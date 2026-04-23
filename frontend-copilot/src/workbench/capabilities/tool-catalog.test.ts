@@ -22,6 +22,7 @@ describe('capabilities tool catalog bridge', () => {
   it('delegates to the injected preload api when available', async () => {
     const loadResult: ToolCatalogLoadResult = {
       ok: true,
+      directoryVersion: 'tools-v1',
       tools: [
         {
           toolId: 'tool.fs.read',

@@ -39,8 +39,8 @@ describe('assistant-workspace-session-controller', () => {
     })
 
     expect(shell.capabilities.capabilitiesVersion).toBe('cap-v12')
-    expect(shell.capabilities.defaultEnabledTools).toEqual(['tool.file-convert'])
-    expect(shell.capabilities.recommendedToolsForAgent).toEqual(['tool.file-convert'])
+    expect(shell.capabilities.defaultEnabledTools).toEqual(['tool.fs.read'])
+    expect(shell.capabilities.recommendedToolsForAgent).toEqual(['tool.fs.read'])
   })
 
   it('rejects thread creation before callers can append a new shell into the existing list', async () => {

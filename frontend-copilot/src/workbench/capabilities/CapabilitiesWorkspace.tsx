@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   SettingsWorkspaceStateSaveInput,
@@ -14,32 +14,42 @@ import {
 import { appendCopilotDebugLog } from '../../features/copilot/debug-mode-log'
 import { loadConfigCenterPublicSnapshot } from '../../features/copilot/config-center'
 import { loadToolCatalog } from './tool-catalog'
+import type { ToolCatalogLoadResult } from '../../../electron/tool-catalog/ipc'
 import { CapabilitiesSecondaryNav } from './CapabilitiesSecondaryNav'
 import { projectDebugModeEnabledFromConfigCenterPublicSnapshot } from '../../features/copilot/config-center'
+import type { McpServerValidationError } from '../../../electron/mcp-registry/types'
 import {
   capabilitiesNavItems,
-  mockMcpServers,
-  resolveMcpEditorSeed,
   type CapabilitiesSection,
-  type McpServerEditorMode,
-  type McpServerRecord,
   type ToolPermissionDelayAction,
   type ToolPermissionMode,
   type ToolPermissionRecord,
 } from './capabilities-demo'
+import { ManagedRuntimeStatusButton } from './ManagedRuntimeStatusButton'
 import { McpServerEditorDialog } from './McpServerEditorDialog'
 import { McpServersPanel } from './McpServersPanel'
 import { ToolPermissionsPanel } from './ToolPermissionsPanel'
+import type { McpServerEditorMode } from './mcp-registry-view-model'
+import { useManagedRuntime } from './use-managed-runtime'
+import { useMcpRegistry } from './use-mcp-registry'
+import {
+  resolveCopilotToolPlatformGroup,
+  resolveCopilotToolPresentation,
+} from '../../features/copilot/tool-presentation'
 
 interface McpServerEditorState {
   mode: McpServerEditorMode
   value: string
+  validationErrors: McpServerValidationError[]
+  errorMessage: string | null
+  submitting: boolean
 }
 
 interface ToolCatalogLoadState {
   status: 'idle' | 'ready' | 'fallback' | 'error'
   error: string | null
   source: 'runtime' | 'fallback' | null
+  directoryVersion: string | null
 }
 
 const FALLBACK_DELAY_ACTION: ToolPermissionDelayAction = 'approve'
@@ -47,26 +57,57 @@ const FALLBACK_DELAY_SECONDS = 15
 const TOOL_PERMISSION_UPDATED_AT = '2026-04-17T00:00:00.000Z'
 const FALLBACK_TOOL_CATALOG_ERROR = 'Hosted backend runtime tool catalog is temporarily unavailable. Using built-in fallback catalog.'
 const EMPTY_TOOL_CATALOG_ERROR = 'Hosted backend returned an empty tool catalog. Using built-in fallback catalog.'
-const INCOMPLETE_TOOL_CATALOG_ERROR = 'Hosted backend returned an incomplete tool catalog. Using built-in fallback catalog.'
+const INCOMPLETE_TOOL_CATALOG_WARNING = 'Hosted backend returned an incomplete tool catalog. Invalid entries were dropped while keeping valid tools visible.'
 
 
 export function CapabilitiesWorkspace() {
   const [activeSection, setActiveSection] = useState<CapabilitiesSection>('tool-permissions')
   const [toolPermissions, setToolPermissions] = useState<ToolPermissionRecord[]>([])
-  const [mcpServers, setMcpServers] = useState<McpServerRecord[]>(() => (
-    mockMcpServers.map((server) => ({ ...server }))
-  ))
   const [editorState, setEditorState] = useState<McpServerEditorState | null>(null)
   const [settingsState, setSettingsState] = useState<SettingsWorkspaceStateSaveInput | null>(null)
   const [toolCatalogLoadState, setToolCatalogLoadState] = useState<ToolCatalogLoadState>({
     status: 'idle',
     error: null,
     source: null,
+    directoryVersion: null,
   })
+  const mcpRegistry = useMcpRegistry()
+  const managedRuntime = useManagedRuntime(activeSection === 'mcp-servers')
+  const appliedSnapshotRevisionRef = useRef<number | null>(null)
+  const appliedDirectoryVersionRef = useRef<string | null>(null)
+  const [managedRuntimePanelOpen, setManagedRuntimePanelOpen] = useState(false)
 
+  const applyToolCatalogResult = (
+    toolCatalogResult: ToolCatalogLoadResult,
+    debugModeEnabled: boolean,
+  ) => {
+    appendCopilotDebugLog(debugModeEnabled, 'capabilities-workspace', 'tool-catalog-load-result', toolCatalogResult.ok
+      ? {
+          ok: true,
+          toolCount: toolCatalogResult.tools.length,
+          toolIds: toolCatalogResult.tools.map((tool) => tool.toolId),
+        }
+      : {
+          ok: false,
+          error: toolCatalogResult.error,
+        })
+
+    const resolvedCatalog = resolveRenderableToolCatalog(toolCatalogResult)
+    setToolCatalogLoadState({
+      status: resolvedCatalog.status,
+      error: resolvedCatalog.error,
+      source: resolvedCatalog.source,
+      directoryVersion: toolCatalogResult.ok ? toolCatalogResult.directoryVersion : null,
+    })
+
+    appliedDirectoryVersionRef.current = toolCatalogResult.ok ? toolCatalogResult.directoryVersion : null
+
+    return resolvedCatalog.tools
+  }
+ 
   useEffect(() => {
     let cancelled = false
-
+ 
     void (async () => {
       const snapshotResult = await loadConfigCenterPublicSnapshot()
       const debugModeEnabled = snapshotResult.ok
@@ -76,46 +117,69 @@ export function CapabilitiesWorkspace() {
         loadSettingsWorkspaceState(),
         loadToolCatalog(preferredLanguage),
       ])
-
+ 
       if (cancelled) {
         return
       }
 
-      appendCopilotDebugLog(debugModeEnabled, 'capabilities-workspace', 'tool-catalog-load-result', toolCatalogResult.ok
-        ? {
-            ok: true,
-            toolCount: toolCatalogResult.tools.length,
-            toolIds: toolCatalogResult.tools.map((tool) => tool.toolId),
-          }
-        : {
-            ok: false,
-            error: toolCatalogResult.error,
-          })
-
-      const resolvedCatalog = resolveRenderableToolCatalog(toolCatalogResult)
-      setToolCatalogLoadState({
-        status: resolvedCatalog.status,
-        error: resolvedCatalog.error,
-        source: resolvedCatalog.source,
-      })
-
+      const tools = applyToolCatalogResult(toolCatalogResult, debugModeEnabled)
+ 
       if (!settingsResult.ok) {
         setSettingsState(null)
         setToolPermissions([])
         return
       }
-
+ 
       const nextSettingsState = settingsResult.state as unknown as SettingsWorkspaceStateSaveInput
       const policy = nextSettingsState.mcp.toolPermissionPolicy
-
+ 
       setSettingsState(nextSettingsState)
-      setToolPermissions(buildToolPermissionRecords(resolvedCatalog.tools, policy))
+      setToolPermissions(buildToolPermissionRecords(tools, policy))
+    })()
+ 
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (mcpRegistry.snapshotRevision <= 0 || settingsState === null) {
+      return
+    }
+
+    if (appliedSnapshotRevisionRef.current === null) {
+      appliedSnapshotRevisionRef.current = mcpRegistry.snapshotRevision
+      return
+    }
+
+    const shouldReloadForSnapshot = appliedSnapshotRevisionRef.current !== mcpRegistry.snapshotRevision
+
+    if (!shouldReloadForSnapshot) {
+      return
+    }
+
+    appliedSnapshotRevisionRef.current = mcpRegistry.snapshotRevision
+
+    let cancelled = false
+    void (async () => {
+      const snapshotResult = await loadConfigCenterPublicSnapshot()
+      const debugModeEnabled = snapshotResult.ok
+        && projectDebugModeEnabledFromConfigCenterPublicSnapshot(snapshotResult.snapshot)
+      const preferredLanguage = snapshotResult.ok ? snapshotResult.snapshot.domains.general.language : null
+      const toolCatalogResult = await loadToolCatalog(preferredLanguage)
+
+      if (cancelled) {
+        return
+      }
+
+      const tools = applyToolCatalogResult(toolCatalogResult, debugModeEnabled)
+      setToolPermissions(buildToolPermissionRecords(tools, settingsState.mcp.toolPermissionPolicy))
     })()
 
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [mcpRegistry.snapshotRevision, settingsState])
 
   const activeNavItem = useMemo(
     () => capabilitiesNavItems.find((item) => item.id === activeSection) ?? capabilitiesNavItems[0],
@@ -179,23 +243,41 @@ export function CapabilitiesWorkspace() {
   const openMcpEditor = (mode: McpServerEditorMode) => {
     setEditorState({
       mode,
-      value: resolveMcpEditorSeed(mode),
+      value: mcpRegistry.getEditorSeed(mode),
+      validationErrors: [],
+      errorMessage: null,
+      submitting: false,
     })
   }
 
-  const handleToggleMcpServer = (serverId: string) => {
-    setMcpServers((previous) => previous.map((server) => (
-      server.id === serverId
-        ? {
-            ...server,
-            enabled: !server.enabled,
-          }
-        : server
-    )))
-  }
+  const handleConfirmMcpEditor = () => {
+    if (editorState === null) {
+      return
+    }
 
-  const handleDeleteMcpServer = (serverId: string) => {
-    setMcpServers((previous) => previous.filter((server) => server.id !== serverId))
+    const activeEditorState = editorState
+    setEditorState((previous) => previous === null ? previous : {
+      ...previous,
+      submitting: true,
+      errorMessage: null,
+      validationErrors: [],
+    })
+
+    void (async () => {
+      const result = await mcpRegistry.saveEditorDraft(activeEditorState.mode, activeEditorState.value)
+
+      if (result.ok) {
+        setEditorState(null)
+        return
+      }
+
+      setEditorState((previous) => previous === null ? previous : {
+        ...previous,
+        submitting: false,
+        errorMessage: result.errorMessage,
+        validationErrors: result.validationErrors,
+      })
+    })()
   }
 
   return (
@@ -216,19 +298,21 @@ export function CapabilitiesWorkspace() {
 
             {activeSection === 'mcp-servers' ? (
               <div className="toolbar-actions capabilities-main__actions">
-                <button
-                  type="button"
-                  className="secondary-button secondary-button--subtle"
-                  onClick={() => openMcpEditor('edit')}
-                >
-                  编辑
-                </button>
+                <ManagedRuntimeStatusButton
+                  viewModel={managedRuntime.viewModel}
+                  loading={managedRuntime.loading}
+                  busy={managedRuntime.busy}
+                  open={managedRuntimePanelOpen}
+                  error={managedRuntime.error}
+                  onToggle={() => setManagedRuntimePanelOpen((previous) => !previous)}
+                  onInstallOrRepair={managedRuntime.installOrRepair}
+                />
                 <button
                   type="button"
                   className="primary-button"
                   onClick={() => openMcpEditor('add')}
                 >
-                  添加
+                  新增 MCP 服务器
                 </button>
               </div>
             ) : null}
@@ -249,9 +333,11 @@ export function CapabilitiesWorkspace() {
               />
             ) : (
               <McpServersPanel
-                servers={mcpServers}
-                onToggleEnabled={handleToggleMcpServer}
-                onDelete={handleDeleteMcpServer}
+                servers={mcpRegistry.servers}
+                statusMessage={mcpRegistry.statusMessage}
+                onToggleEnabled={mcpRegistry.toggleServerEnabled}
+                onDelete={mcpRegistry.deleteServer}
+                onTestConnection={mcpRegistry.testServerConnection}
               />
             )}
           </section>
@@ -262,14 +348,19 @@ export function CapabilitiesWorkspace() {
         <McpServerEditorDialog
           mode={editorState.mode}
           value={editorState.value}
+          validationErrors={editorState.validationErrors}
+          errorMessage={editorState.errorMessage}
+          submitting={editorState.submitting}
           onValueChange={(value) => {
             setEditorState((previous) => (previous === null ? previous : {
               ...previous,
               value,
+              errorMessage: null,
+              validationErrors: [],
             }))
           }}
           onClose={() => setEditorState(null)}
-          onConfirm={() => setEditorState(null)}
+          onConfirm={handleConfirmMcpEditor}
         />
       ) : null}
     </>
@@ -283,12 +374,16 @@ function buildToolPermissionRecords(
   return toolCatalog.map((tool, index) => {
     const persisted = policy.toolPermissions[tool.toolId]
     const resolvedMode = persisted?.mode ?? policy.defaultMode
+    const presentation = resolveCopilotToolPresentation(tool)
+    const platformGroup = resolveCopilotToolPlatformGroup(tool)
 
     return {
       id: tool.toolId,
-      groupId: resolveToolGroupId(tool),
-      name: tool.displayNameZh ?? tool.displayName ?? tool.displayNameEn ?? tool.toolId,
-      description: tool.descriptionZh ?? tool.description ?? tool.descriptionEn ?? '该工具尚未提供详细说明。',
+      groupId: platformGroup.key,
+      groupLabel: platformGroup.title,
+      groupOrder: platformGroup.order,
+      name: presentation.name,
+      description: presentation.description,
       toolId: tool.toolId,
       mode: resolvedMode,
       delayAction: persisted?.mode === 'delay' && (persisted.timeoutAction === 'approve' || persisted.timeoutAction === 'deny')
@@ -299,30 +394,6 @@ function buildToolPermissionRecords(
         : FALLBACK_DELAY_SECONDS + index,
     }
   })
-}
-
-function resolveToolGroupId(tool: RuntimeToolDirectoryEntry): ToolPermissionRecord['groupId'] {
-  const group = tool.group
-  if (group !== undefined && group !== null && group.id.trim() !== '') {
-    return group.id
-  }
-
-  return resolveFallbackToolGroup(tool)
-}
-
-function resolveFallbackToolGroup(tool: RuntimeToolDirectoryEntry): ToolPermissionRecord['groupId'] {
-  if (tool.kind === 'builtin') {
-    return 'builtin-core'
-  }
-
-  const namespace = tool.toolId.split(/[.-]/, 1)[0]?.toLowerCase()
-  if (namespace === 'blackboard') {
-    return 'blackboard'
-  }
-  if (namespace === 'tis') {
-    return 'tis'
-  }
-  return 'mcp'
 }
 
 function buildPolicyStateFromTools(
@@ -411,7 +482,7 @@ function collectPersistedOrphanPolicies(
 }
 
 function resolveRenderableToolCatalog(
-  result: { ok: true, tools: RuntimeToolDirectoryEntry[] } | { ok: false, error: string },
+  result: { ok: true, tools: RuntimeToolDirectoryEntry[], warnings?: string[] } | { ok: false, error: string },
 ): {
   status: ToolCatalogLoadState['status']
   error: string | null
@@ -439,16 +510,16 @@ function resolveRenderableToolCatalog(
 
   if (completeTools.length !== result.tools.length) {
     return {
-      status: 'fallback',
-      error: INCOMPLETE_TOOL_CATALOG_ERROR,
-      source: 'fallback',
-      tools: createStaticFallbackToolCatalog(),
+      status: 'ready',
+      error: INCOMPLETE_TOOL_CATALOG_WARNING,
+      source: 'runtime',
+      tools: completeTools,
     }
   }
 
   return {
     status: 'ready',
-    error: null,
+    error: result.warnings?.[0] ?? null,
     source: 'runtime',
     tools: completeTools,
   }
@@ -465,7 +536,6 @@ function resolveToolLabel(tool: RuntimeToolDirectoryEntry): string {
   return tool.displayNameZh ?? tool.displayName ?? tool.displayNameEn ?? tool.toolId
 }
 
-// Keep fallback catalog grouping aligned with the runtime tool catalog contract.
 const FALLBACK_TOOL_GROUPS: Record<string, RuntimeToolPresentationGroup> = {
   'builtin-core': {
     id: 'builtin-core',
@@ -547,8 +617,12 @@ function createStaticFallbackToolCatalog(): RuntimeToolDirectoryEntry[] {
 }
 
 function resolveToolPermissionStatusMessage(state: ToolCatalogLoadState): string | null {
+  if (state.error !== null) {
+    return state.error
+  }
+
   if (state.status === 'fallback' || state.status === 'error') {
-    return state.error ?? '工具目录暂时不可用，当前显示内建降级目录。'
+    return '工具目录暂时不可用，当前显示内建降级目录。'
   }
 
   return null
