@@ -195,6 +195,7 @@ function preferCachedFamilySnapshot(
   nextFamily: ManagedRuntimeSnapshot['families']['node'] | ManagedRuntimeSnapshot['families']['uv'],
 ) {
   if (cachedFamily.status === 'ready'
+    && !nextFamily.updateRecommended
     && cachedFamily.activeVersion === cachedFamily.pinnedVersion
     && nextFamily.activeVersion !== nextFamily.pinnedVersion) {
     return cachedFamily

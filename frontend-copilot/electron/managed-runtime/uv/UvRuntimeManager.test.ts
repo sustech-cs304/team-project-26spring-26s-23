@@ -232,8 +232,9 @@ describe('UvRuntimeManager', () => {
     await createRuntimeLauncherFiles(path.join(oldVersionDir, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
     const outdated = await manager.loadSnapshot()
 
-    expect(outdated.status).toBe('outdated')
+    expect(outdated.status).toBe('ready')
     expect(outdated.activeVersion).toBe(oldVersion)
+    expect(outdated.updateRecommended).toBe(true)
 
     const repaired = await manager.installOrRepair('repair')
     const reloaded = await manager.loadSnapshot()
@@ -246,6 +247,7 @@ describe('UvRuntimeManager', () => {
     expect(activePointer.activeVersion).toBe(manifest.pinnedVersion)
     expect(reloaded.status).toBe('ready')
     expect(reloaded.activeVersion).toBe(manifest.pinnedVersion)
+    expect(reloaded.updateRecommended).toBe(false)
     expect(reloaded.launcherPaths).toEqual({
       python: path.join(pinnedVersionDir, 'python', 'install', 'python.exe'),
       uv: path.join(pinnedVersionDir, 'uv', 'uv.exe'),
@@ -316,8 +318,100 @@ describe('UvRuntimeManager', () => {
     expect(failed.status).toBe('broken')
     expect(failed.activeVersion).toBe(oldVersion)
     expect(failed.lastErrorSummary?.code).toBe('verification_failed')
-    expect(reloaded.status).toBe('outdated')
+    expect(reloaded.status).toBe('broken')
     expect(reloaded.activeVersion).toBe(oldVersion)
+    expect(reloaded.updateRecommended).toBe(true)
+  })
+
+  it('treats a verified non-pinned active version as runnable while still recommending an update', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-uv-verified-old-version-'))
+    tempRoots.push(tempRoot)
+    const paths = createManagedRuntimeFamilyPaths(tempRoot, 'uv')
+    const manifest = getManagedRuntimeFamilyManifest('uv')
+    const oldVersion = 'python 3.12.10 + uv 0.11.7'
+    const components = resolveManagedRuntimeComponents('uv', { platform: 'win32', arch: 'x64' })
+    const oldVersionDir = path.join(paths.versionsDir, createVersionDirectoryName(oldVersion))
+    const manager = new UvRuntimeManager({
+      paths,
+      pinnedVersion: manifest.pinnedVersion,
+      selectedComponents: components,
+      commandRunner: {
+        run: vi.fn(async (command: string) => {
+          if (command.endsWith('python.exe') || command.endsWith('python3')) return 'Python 3.12.13'
+          if (command.endsWith('uv.exe')) return 'uv 0.11.7'
+          return 'uvx 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)'
+        }),
+      },
+      clock: () => '2026-04-23T09:00:00.000Z',
+    })
+
+    await manager['writeState']({
+      schemaVersion: 1,
+      family: 'uv',
+      pinnedVersion: oldVersion,
+      status: 'ready',
+      activeVersion: oldVersion,
+      lastInstalledAt: '2026-04-22T08:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: null,
+    })
+    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'python'), { python: 'install/python.exe' })
+    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
+
+    const snapshot = await manager.loadSnapshot()
+
+    expect(snapshot.status).toBe('ready')
+    expect(snapshot.activeVersion).toBe(oldVersion)
+    expect(snapshot.updateRecommended).toBe(true)
+    expect(snapshot.lastVerification?.summary).toContain('Python 3.12.13')
+    expect(snapshot.launcherPaths).toEqual({
+      python: path.join(oldVersionDir, 'python', 'install', 'python.exe'),
+      uv: path.join(oldVersionDir, 'uv', 'uv.exe'),
+      uvx: path.join(oldVersionDir, 'uv', 'uvx.exe'),
+    })
+  })
+
+  it('keeps a non-pinned active version broken when verification fails', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-uv-broken-old-version-'))
+    tempRoots.push(tempRoot)
+    const paths = createManagedRuntimeFamilyPaths(tempRoot, 'uv')
+    const manifest = getManagedRuntimeFamilyManifest('uv')
+    const oldVersion = 'python 3.12.10 + uv 0.11.7'
+    const components = resolveManagedRuntimeComponents('uv', { platform: 'win32', arch: 'x64' })
+    const oldVersionDir = path.join(paths.versionsDir, createVersionDirectoryName(oldVersion))
+    const manager = new UvRuntimeManager({
+      paths,
+      pinnedVersion: manifest.pinnedVersion,
+      selectedComponents: components,
+      commandRunner: {
+        run: vi.fn(async () => {
+          throw new Error('uvx verification failed')
+        }),
+      },
+      clock: () => '2026-04-23T09:15:00.000Z',
+    })
+
+    await manager['writeState']({
+      schemaVersion: 1,
+      family: 'uv',
+      pinnedVersion: oldVersion,
+      status: 'ready',
+      activeVersion: oldVersion,
+      lastInstalledAt: '2026-04-22T08:00:00.000Z',
+      lastRepairedAt: null,
+      lastVerification: null,
+      lastErrorSummary: null,
+    })
+    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'python'), { python: 'install/python.exe' })
+    await createRuntimeLauncherFiles(path.join(oldVersionDir, 'uv'), { uv: 'uv.exe', uvx: 'uvx.exe' })
+
+    const snapshot = await manager.loadSnapshot()
+
+    expect(snapshot.status).toBe('broken')
+    expect(snapshot.activeVersion).toBe(oldVersion)
+    expect(snapshot.updateRecommended).toBe(true)
+    expect(snapshot.lastErrorSummary?.code).toBe('verification_failed')
   })
 
   it('keeps an already installed runtime ready while snapshot verification succeeds offline', async () => {

@@ -128,6 +128,7 @@ export interface ManagedRuntimeFamilySnapshot {
   status: ManagedRuntimeStatus
   pinnedVersion: string
   activeVersion: string | null
+  updateRecommended: boolean
   installRootDir: string
   stagingDir: string
   activeDir: string

@@ -70,12 +70,6 @@ export class UvRuntimeManager {
         status: state.status === 'broken' ? 'broken' : 'missing',
       })
     }
-    if (state.activeVersion !== this.pinnedVersion) {
-      return this.createSnapshot({
-        ...state,
-        status: 'outdated',
-      })
-    }
 
     try {
       const verification = await this.verifyVersion(state.activeVersion)
@@ -208,6 +202,7 @@ export class UvRuntimeManager {
       status: state.status,
       pinnedVersion: this.pinnedVersion,
       activeVersion: state.activeVersion,
+      updateRecommended: state.activeVersion !== null && state.activeVersion !== this.pinnedVersion,
       installRootDir: this.paths.versionsDir,
       stagingDir: this.paths.stagingDir,
       activeDir: this.paths.activeDir,
