@@ -463,6 +463,108 @@ def test_execute_mcp_tool_uses_bridge_reported_snapshot_revision_for_first_call_
     }
 
 
+def test_execute_mcp_tool_success_falls_back_to_resolved_target_snapshot_revision_when_bridge_returns_null() -> None:
+    snapshot = _load_snapshot_fixture()
+    tool = next(
+        entry
+        for entry in snapshot.tools
+        if entry.tool_id == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+    target = build_mcp_tool_execution_target(snapshot=snapshot, tool=tool)
+    bridge = _RecordingBridgeClient(
+        {
+            "ok": True,
+            "toolId": target.tool_id,
+            "serverId": target.server_id,
+            "remoteToolName": target.remote_tool_name,
+            "content": [{"type": "text", "text": "search completed"}],
+            "structuredContent": {"count": 1},
+            "snapshotRevision": None,
+            "isError": False,
+        }
+    )
+
+    result = asyncio.run(
+        execute_mcp_tool(
+            target=target,
+            bridge_client=cast(DesktopCapabilityBridgeClient, bridge),
+            snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(snapshot)),
+            arguments={"keyword": "library"},
+        )
+    )
+
+    assert result["metadata"]["snapshotRevision"] == 8
+
+
+def test_execute_mcp_tool_failure_falls_back_to_resolved_target_snapshot_revision_when_bridge_returns_null() -> None:
+    snapshot = _load_snapshot_fixture()
+    tool = next(
+        entry
+        for entry in snapshot.tools
+        if entry.tool_id == "mcp.mcp-http-sse-stub.fetch-calendar.00005a3e"
+    )
+    target = build_mcp_tool_execution_target(snapshot=snapshot, tool=tool)
+    bridge = _RecordingBridgeClient(
+        {
+            "ok": False,
+            "toolId": target.tool_id,
+            "serverId": target.server_id,
+            "remoteToolName": target.remote_tool_name,
+            "snapshotRevision": None,
+            "error": {
+                "code": "server_not_ready",
+                "message": "The MCP server is not ready to execute tools.",
+                "retryable": True,
+                "details": {"snapshotRevision": None},
+            },
+        }
+    )
+
+    result = asyncio.run(
+        execute_mcp_tool(
+            target=target,
+            bridge_client=cast(DesktopCapabilityBridgeClient, bridge),
+            snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(snapshot)),
+            arguments={"course": "CS304"},
+        )
+    )
+
+    assert result["metadata"]["snapshotRevision"] == 8
+
+
+def test_execute_mcp_tool_success_uses_non_null_bridge_snapshot_revision_override() -> None:
+    snapshot = _load_snapshot_fixture()
+    tool = next(
+        entry
+        for entry in snapshot.tools
+        if entry.tool_id == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    )
+    target = build_mcp_tool_execution_target(snapshot=snapshot, tool=tool)
+    bridge = _RecordingBridgeClient(
+        {
+            "ok": True,
+            "toolId": target.tool_id,
+            "serverId": target.server_id,
+            "remoteToolName": target.remote_tool_name,
+            "content": [],
+            "structuredContent": None,
+            "snapshotRevision": 12,
+            "isError": False,
+        }
+    )
+
+    result = asyncio.run(
+        execute_mcp_tool(
+            target=target,
+            bridge_client=cast(DesktopCapabilityBridgeClient, bridge),
+            snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider(snapshot)),
+            arguments={"keyword": "library"},
+        )
+    )
+
+    assert result["metadata"]["snapshotRevision"] == 12
+
+
 def test_mcp_tool_helpers_normalize_function_names_and_object_schema() -> None:
     assert (
         build_mcp_tool_function_name("mcp.mcp-stdio-stub.search-campus.00004d8d")

@@ -34,6 +34,23 @@ MCP_SNAPSHOT_FORBIDDEN_FIELD_KEYS = frozenset(
         "tokens",
     }
 )
+_MCP_SNAPSHOT_HOST_SENSITIVE_ROOT_KEYS = frozenset(
+    {
+        "env",
+        "headers",
+        "args",
+        "command",
+        "token",
+        "tokens",
+        "localtoken",
+        "apikey",
+        "authorization",
+        "password",
+        "passwords",
+        "secret",
+        "secrets",
+    }
+)
 
 
 class McpErrorSummary(RuntimeContractModel):
@@ -244,10 +261,17 @@ def collect_mcp_snapshot_forbidden_paths(payload: Any, *, _path: str = "") -> li
     if not isinstance(payload, Mapping):
         return []
 
+    if _normalize_snapshot_path(_path).endswith("inputschema"):
+        return []
+
     violations: list[str] = []
     for key, value in payload.items():
         next_path = f"{_path}.{key}" if _path else str(key)
-        if _normalize_forbidden_key(key) in MCP_SNAPSHOT_FORBIDDEN_FIELD_KEYS:
+        normalized_key = _normalize_forbidden_key(key)
+        if (
+            normalized_key in MCP_SNAPSHOT_FORBIDDEN_FIELD_KEYS
+            and _is_host_sensitive_snapshot_path(next_path)
+        ):
             violations.append(next_path)
             continue
         violations.extend(collect_mcp_snapshot_forbidden_paths(value, _path=next_path))
@@ -256,6 +280,17 @@ def collect_mcp_snapshot_forbidden_paths(payload: Any, *, _path: str = "") -> li
 
 def _normalize_forbidden_key(value: Any) -> str:
     return "".join(character for character in str(value).lower() if character.isalnum())
+
+
+def _normalize_snapshot_path(path: str) -> str:
+    return "".join(character for character in path.lower() if character.isalnum())
+
+
+def _is_host_sensitive_snapshot_path(path: str) -> bool:
+    if path == "":
+        return False
+    segments = [_normalize_forbidden_key(segment) for segment in path.replace("[", ".[").split(".")]
+    return any(segment in _MCP_SNAPSHOT_HOST_SENSITIVE_ROOT_KEYS for segment in segments)
 
 
 def _read_json_file(path: Path) -> Any | None:

@@ -197,6 +197,10 @@ async def execute_mcp_tool(
         ).to_dict()
 
     if result.get("ok") is True:
+        snapshot_revision = _resolve_result_snapshot_revision(
+            result=result,
+            target=resolved_target,
+        )
         return ToolResultEnvelope.success(
             output={
                 "ok": True,
@@ -205,11 +209,15 @@ async def execute_mcp_tool(
             },
             metadata={
                 **build_mcp_result_metadata(target=resolved_target),
-                "snapshotRevision": result.get("snapshotRevision"),
+                "snapshotRevision": snapshot_revision,
             },
         ).to_dict()
 
     if result.get("ok") is False:
+        snapshot_revision = _resolve_result_snapshot_revision(
+            result=result,
+            target=resolved_target,
+        )
         raw_error = result.get("error")
         error_payload: Mapping[str, Any] = (
             raw_error if isinstance(raw_error, Mapping) else {}
@@ -218,7 +226,7 @@ async def execute_mcp_tool(
             error=map_mcp_tool_call_error(error_payload),
             metadata={
                 **build_mcp_result_metadata(target=resolved_target),
-                "snapshotRevision": result.get("snapshotRevision"),
+                "snapshotRevision": snapshot_revision,
             },
         ).to_dict()
 
@@ -260,6 +268,17 @@ def build_mcp_result_metadata(*, target: McpToolExecutionTarget) -> dict[str, An
         "remoteToolName": target.remote_tool_name,
         "snapshotRevision": target.snapshot_revision,
     }
+
+
+def _resolve_result_snapshot_revision(
+    *, result: Mapping[str, Any], target: McpToolExecutionTarget
+) -> int:
+    snapshot_revision = result.get("snapshotRevision")
+    return (
+        snapshot_revision
+        if isinstance(snapshot_revision, int) and not isinstance(snapshot_revision, bool)
+        else target.snapshot_revision
+    )
 
 
 def map_mcp_bridge_error(error: HostCapabilityOperationError) -> NormalizedToolError:

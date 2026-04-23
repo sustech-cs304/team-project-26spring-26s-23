@@ -49,6 +49,34 @@ def test_validate_mcp_capability_snapshot_accepts_shared_fixture_and_keeps_redac
     assert collect_mcp_snapshot_forbidden_paths(payload) == []
 
 
+def test_collect_mcp_snapshot_forbidden_paths_ignores_public_input_schema_keys() -> None:
+    payload = _load_fixture("snapshot.sample.json")
+    payload["tools"][0]["inputSchema"] = {
+        "type": "object",
+        "properties": {
+            "token": {"type": "string"},
+            "headers": {"type": "object"},
+            "args": {"type": "array"},
+            "command": {"type": "string"},
+        },
+    }
+
+    assert collect_mcp_snapshot_forbidden_paths(payload) == []
+    assert validate_mcp_capability_snapshot(payload).tools[0].input_schema["properties"] == {
+        "token": {"type": "string"},
+        "headers": {"type": "object"},
+        "args": {"type": "array"},
+        "command": {"type": "string"},
+    }
+
+
+def test_collect_mcp_snapshot_forbidden_paths_rejects_host_sensitive_fields_outside_input_schema() -> None:
+    payload = _load_fixture("snapshot.sample.json")
+    payload["servers"][0]["headers"] = {"authorization": "Bearer desktop-secret"}
+
+    assert collect_mcp_snapshot_forbidden_paths(payload) == ["servers[0].headers"]
+
+
 def test_validate_mcp_capability_snapshot_rejects_version_mismatch() -> None:
     payload = _load_fixture("snapshot.sample.json")
     payload["version"] = MCP_SNAPSHOT_VERSION + 1
