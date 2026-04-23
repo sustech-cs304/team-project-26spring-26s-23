@@ -24,6 +24,7 @@ DesktopCapabilityName = Literal[
     "artifact",
     "state",
     "event",
+    "mcp",
 ]
 
 DESKTOP_CAPABILITY_NAMES: tuple[DesktopCapabilityName, ...] = (
@@ -33,6 +34,7 @@ DESKTOP_CAPABILITY_NAMES: tuple[DesktopCapabilityName, ...] = (
     "artifact",
     "state",
     "event",
+    "mcp",
 )
 
 DesktopCapabilityOperation = Literal[
@@ -47,6 +49,7 @@ DesktopCapabilityOperation = Literal[
     "put_value",
     "delete_value",
     "emit_event",
+    "call_tool",
 ]
 
 DESKTOP_CAPABILITY_OPERATIONS: tuple[DesktopCapabilityOperation, ...] = (
@@ -61,6 +64,7 @@ DESKTOP_CAPABILITY_OPERATIONS: tuple[DesktopCapabilityOperation, ...] = (
     "put_value",
     "delete_value",
     "emit_event",
+    "call_tool",
 )
 
 DesktopCapabilityStateScope = Literal["tool", "run"]
@@ -79,6 +83,7 @@ DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: dict[
     "artifact": ("save_text", "save_bytes", "describe_artifact"),
     "state": ("get_value", "put_value", "delete_value"),
     "event": ("emit_event",),
+    "mcp": ("call_tool",),
 }
 
 DesktopCapabilityBridgeErrorCode = Literal[
@@ -298,6 +303,17 @@ DESKTOP_CAPABILITY_BRIDGE_REQUEST_PAYLOAD_SCHEMAS: dict[
             "data": {"type": "object"},
         },
     },
+    ("mcp", "call_tool"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["serverId", "remoteToolName", "arguments"],
+        "properties": {
+            "serverId": {"type": "string", "minLength": 1},
+            "remoteToolName": {"type": "string", "minLength": 1},
+            "arguments": {"type": "object"},
+            "snapshotRevision": {"type": "integer", "minimum": 0},
+        },
+    },
 }
 
 DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS: dict[
@@ -370,6 +386,43 @@ DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS: dict[
         "type": "object",
         "additionalProperties": False,
         "properties": {},
+    },
+    ("mcp", "call_tool"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["ok", "toolId", "serverId", "remoteToolName"],
+        "properties": {
+            "ok": {"type": "boolean"},
+            "toolId": {"type": "string", "minLength": 1},
+            "serverId": {"type": "string", "minLength": 1},
+            "remoteToolName": {"type": "string", "minLength": 1},
+            "content": {"type": "array"},
+            "structuredContent": {},
+            "snapshotRevision": {"type": ["integer", "null"], "minimum": 0},
+            "isError": {"const": False},
+            "error": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["code", "message", "retryable"],
+                "properties": {
+                    "code": {"type": "string", "minLength": 1},
+                    "message": {"type": "string", "minLength": 1},
+                    "retryable": {"type": "boolean"},
+                    "observedAt": {"type": "string", "minLength": 1},
+                    "details": {"type": "object"},
+                },
+            },
+        },
+        "anyOf": [
+            {
+                "required": ["ok", "toolId", "serverId", "remoteToolName", "content"],
+                "properties": {"ok": {"const": True}},
+            },
+            {
+                "required": ["ok", "toolId", "serverId", "remoteToolName", "error"],
+                "properties": {"ok": {"const": False}},
+            },
+        ],
     },
 }
 
@@ -910,6 +963,317 @@ class _EmitEventPayload(_BridgePayloadModel):
             field_name="data",
             field_context="payload",
         )
+
+
+class _McpToolCallPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "serverId",
+        "remoteToolName",
+        "arguments",
+        "snapshotRevision",
+    }
+
+    server_id: str = Field(
+        validation_alias="serverId",
+        serialization_alias="serverId",
+        min_length=1,
+    )
+    remote_tool_name: str = Field(
+        validation_alias="remoteToolName",
+        serialization_alias="remoteToolName",
+        min_length=1,
+    )
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    snapshot_revision: int | None = Field(
+        default=None,
+        validation_alias="snapshotRevision",
+        serialization_alias="snapshotRevision",
+        ge=0,
+    )
+
+    @field_validator("server_id", mode="before")
+    @classmethod
+    def _validate_server_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="serverId",
+            field_context="payload",
+        )
+
+    @field_validator("remote_tool_name", mode="before")
+    @classmethod
+    def _validate_remote_tool_name(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="remoteToolName",
+            field_context="payload",
+        )
+
+    @field_validator("arguments", mode="before")
+    @classmethod
+    def _validate_arguments(cls, value: Any) -> dict[str, Any]:
+        return _require_mapping_field_value(
+            value,
+            field_name="arguments",
+            field_context="payload",
+        )
+
+    @field_validator("snapshot_revision", mode="before")
+    @classmethod
+    def _validate_snapshot_revision(cls, value: Any) -> int | None:
+        if value is None:
+            return None
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(
+                "payload field 'snapshotRevision' must be a non-negative integer when provided."
+            )
+        return value
+
+
+class _McpToolCallError(_DesktopCapabilityBridgeModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "code",
+        "message",
+        "retryable",
+        "observedAt",
+        "details",
+    }
+    _bridge_field_name: ClassVar[str] = "mcp tool error"
+
+    code: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    retryable: bool
+    observed_at: str | None = Field(
+        default=None,
+        validation_alias="observedAt",
+        serialization_alias="observedAt",
+        min_length=1,
+    )
+    details: dict[str, Any] | None = None
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def _validate_code(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="code",
+            field_context="mcp tool error",
+        )
+
+    @field_validator("message", mode="before")
+    @classmethod
+    def _validate_message(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="message",
+            field_context="mcp tool error",
+        )
+
+    @field_validator("retryable", mode="before")
+    @classmethod
+    def _validate_retryable(cls, value: Any) -> bool:
+        return _require_boolean_field_value(
+            value,
+            field_name="retryable",
+            field_context="mcp tool error",
+        )
+
+    @field_validator("observed_at", mode="before")
+    @classmethod
+    def _validate_observed_at(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="observedAt",
+            field_context="mcp tool error",
+        )
+
+    @field_validator("details", mode="before")
+    @classmethod
+    def _validate_details(cls, value: Any) -> dict[str, Any] | None:
+        return _normalize_optional_mapping_field_value(
+            value,
+            field_name="details",
+            field_context="mcp tool error",
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "code": self.code,
+            "message": self.message,
+            "retryable": self.retryable,
+        }
+        if self.observed_at is not None:
+            payload["observedAt"] = self.observed_at
+        if self.details is not None:
+            payload["details"] = _normalize_mapping(self.details)
+        return payload
+
+
+class _McpToolCallResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "ok",
+        "toolId",
+        "serverId",
+        "remoteToolName",
+        "content",
+        "structuredContent",
+        "snapshotRevision",
+        "isError",
+        "error",
+    }
+
+    ok: bool
+    tool_id: str = Field(
+        validation_alias="toolId",
+        serialization_alias="toolId",
+        min_length=1,
+    )
+    server_id: str = Field(
+        validation_alias="serverId",
+        serialization_alias="serverId",
+        min_length=1,
+    )
+    remote_tool_name: str = Field(
+        validation_alias="remoteToolName",
+        serialization_alias="remoteToolName",
+        min_length=1,
+    )
+    content: list[Any] = Field(default_factory=list)
+    structured_content: Any = Field(
+        default=None,
+        validation_alias="structuredContent",
+        serialization_alias="structuredContent",
+    )
+    snapshot_revision: int | None = Field(
+        default=None,
+        validation_alias="snapshotRevision",
+        serialization_alias="snapshotRevision",
+        ge=0,
+    )
+    is_error: bool | None = Field(
+        default=None,
+        validation_alias="isError",
+        serialization_alias="isError",
+    )
+    error: _McpToolCallError | None = None
+
+    @field_validator("ok", mode="before")
+    @classmethod
+    def _validate_ok(cls, value: Any) -> bool:
+        return _require_boolean_field_value(
+            value,
+            field_name="ok",
+            field_context="result",
+        )
+
+    @field_validator("tool_id", mode="before")
+    @classmethod
+    def _validate_tool_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="toolId",
+            field_context="result",
+        )
+
+    @field_validator("server_id", mode="before")
+    @classmethod
+    def _validate_server_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="serverId",
+            field_context="result",
+        )
+
+    @field_validator("remote_tool_name", mode="before")
+    @classmethod
+    def _validate_remote_tool_name(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="remoteToolName",
+            field_context="result",
+        )
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _validate_content(cls, value: Any) -> list[Any]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("result field 'content' must be an array when provided.")
+        return list(value)
+
+    @field_validator("snapshot_revision", mode="before")
+    @classmethod
+    def _validate_snapshot_revision(cls, value: Any) -> int | None:
+        if value is None:
+            return None
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(
+                "result field 'snapshotRevision' must be a non-negative integer when provided."
+            )
+        return value
+
+    @field_validator("is_error", mode="before")
+    @classmethod
+    def _validate_is_error(cls, value: Any) -> bool | None:
+        if value is None:
+            return None
+        return _require_boolean_field_value(
+            value,
+            field_name="isError",
+            field_context="result",
+        )
+
+    @model_validator(mode="after")
+    def _validate_mcp_tool_call_result(self) -> Self:
+        if self.ok:
+            if self.error is not None:
+                raise ValueError(
+                    "Successful MCP tool call results cannot include an error payload."
+                )
+            if self.is_error is None:
+                object.__setattr__(self, "is_error", False)
+            elif self.is_error:
+                raise ValueError(
+                    "Successful MCP tool call results cannot mark isError=true."
+                )
+            return self
+
+        if self.error is None:
+            raise ValueError(
+                "Failed MCP tool call results must include an error payload."
+            )
+        if len(self.content) > 0:
+            raise ValueError("Failed MCP tool call results cannot include content.")
+        if self.structured_content is not None:
+            raise ValueError(
+                "Failed MCP tool call results cannot include structuredContent."
+            )
+        if self.is_error is not None:
+            raise ValueError(
+                "Failed MCP tool call results cannot include an isError flag."
+            )
+        return self
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "ok": self.ok,
+            "toolId": self.tool_id,
+            "serverId": self.server_id,
+            "remoteToolName": self.remote_tool_name,
+        }
+        if self.snapshot_revision is not None:
+            payload["snapshotRevision"] = self.snapshot_revision
+        if self.ok:
+            payload["content"] = list(self.content)
+            if self.structured_content is not None:
+                payload["structuredContent"] = self.structured_content
+            payload["isError"] = False
+            return payload
+
+        if self.error is not None:
+            payload["error"] = self.error.to_dict()
+        return payload
 
 
 class _GetSecretResult(_BridgeResultModel):
@@ -1485,6 +1849,7 @@ _PAYLOAD_MODELS: dict[
     ("state", "put_value"): _StatePutValuePayload,
     ("state", "delete_value"): _StateAddressPayload,
     ("event", "emit_event"): _EmitEventPayload,
+    ("mcp", "call_tool"): _McpToolCallPayload,
 }
 
 _RESULT_MODELS: dict[
@@ -1503,6 +1868,7 @@ _RESULT_MODELS: dict[
     ("state", "put_value"): _EmptyResult,
     ("state", "delete_value"): _EmptyResult,
     ("event", "emit_event"): _EmptyResult,
+    ("mcp", "call_tool"): _McpToolCallResult,
 }
 
 
