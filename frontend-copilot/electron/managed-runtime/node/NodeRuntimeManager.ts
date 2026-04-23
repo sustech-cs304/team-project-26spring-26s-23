@@ -1,4 +1,4 @@
-import { access, mkdir, rm } from 'node:fs/promises'
+import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { ensureManagedRuntimeDirectories } from '../ManagedRuntimePaths'
 import {
@@ -323,15 +323,6 @@ export class NodeRuntimeManager {
       ...state,
       pinnedVersion: this.pinnedVersion,
       activeVersion,
-    }
-  }
-
-  private async versionDirectoryExists(version: string): Promise<boolean> {
-    try {
-      await access(path.join(this.paths.versionsDir, version))
-      return true
-    } catch {
-      return false
     }
   }
 
