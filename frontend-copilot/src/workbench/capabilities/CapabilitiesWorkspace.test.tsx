@@ -136,6 +136,15 @@ beforeEach(() => {
       subscribe: mockedSubscribeMcpRegistry,
     },
   })
+
+  Object.defineProperty(window, 'managedRuntime', {
+    configurable: true,
+    writable: true,
+    value: {
+      load: mockedLoadManagedRuntime,
+      installOrRepair: mockedInstallOrRepairManagedRuntime,
+    },
+  })
 })
 
 function getNavButton(container: ParentNode, sectionId: 'tool-permissions' | 'mcp-servers'): HTMLButtonElement {
@@ -584,15 +593,6 @@ describe('CapabilitiesWorkspace', () => {
 
     rendered.unmount()
     expect(activeMcpRegistryListener).toBeNull()
-  })
-
-  Object.defineProperty(window, 'managedRuntime', {
-    configurable: true,
-    writable: true,
-    value: {
-      load: mockedLoadManagedRuntime,
-      installOrRepair: mockedInstallOrRepairManagedRuntime,
-    },
   })
 
   it('reloads the tool catalog after a snapshot event and automatically shows new MCP tools in permissions without manual refresh', async () => {

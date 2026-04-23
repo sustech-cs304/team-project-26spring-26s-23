@@ -181,6 +181,62 @@ describe('createElectronToolCatalogService', () => {
     })
   })
 
+  it.each([
+    {
+      name: 'directoryVersion is missing',
+      payload: {
+        ok: true,
+        defaultToolset: 'default',
+        language: 'en-US',
+        tools: [],
+      },
+    },
+    {
+      name: 'directoryVersion is blank',
+      payload: {
+        ok: true,
+        directoryVersion: '   ',
+        defaultToolset: 'default',
+        language: 'en-US',
+        tools: [],
+      },
+    },
+    {
+      name: 'directoryVersion is not a string',
+      payload: {
+        ok: true,
+        directoryVersion: 42,
+        defaultToolset: 'default',
+        language: 'en-US',
+        tools: [],
+      },
+    },
+  ])('returns a structured failure when $name', async ({ payload }) => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => payload,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const hostedBackendService = {
+      start: vi.fn(async () => undefined),
+      getRuntimeBaseUrl: vi.fn(() => 'http://127.0.0.1:8765'),
+      getLocalToken: vi.fn(() => null),
+    }
+    const service = createElectronToolCatalogService({
+      ensureHostedBackendService: vi.fn(async () => hostedBackendService as never),
+      getLocalToken: vi.fn(async () => null),
+      loadConfigCenterPublicSnapshot: vi.fn(async () => null),
+    })
+
+    await expect(service.load()).resolves.toEqual({
+      ok: false,
+      error: 'Hosted backend returned an invalid global tool catalog payload.',
+    })
+  })
+
   it('falls back to an empty-state failure when the hosted backend runtime URL is unavailable', async () => {
     const hostedBackendService = {
       start: vi.fn(async () => undefined),

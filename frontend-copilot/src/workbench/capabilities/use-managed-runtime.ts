@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import type { ManagedRuntimeLoadResponse } from '../../../electron/managed-runtime/ipc'
+import {
+  createManagedRuntimeApiFailure,
+  type ManagedRuntimeApi,
+  type ManagedRuntimeLoadResponse,
+} from '../../../electron/managed-runtime/ipc'
 import type { ManagedRuntimeSnapshot } from '../../../electron/managed-runtime/types'
 import {
   createManagedRuntimeStatusViewModel,
   type ManagedRuntimeStatusViewModel,
 } from './managed-runtime-view-model'
+
+const MANAGED_RUNTIME_API_UNAVAILABLE_ERROR = 'window.managedRuntime is unavailable in the renderer process.'
 
 interface UseManagedRuntimeResult {
   snapshot: ManagedRuntimeSnapshot | null
@@ -33,19 +39,39 @@ export function useManagedRuntime(enabled: boolean): UseManagedRuntimeResult {
     setError(response.error)
   }, [])
 
+  const getManagedRuntimeApi = useCallback((): ManagedRuntimeApi | undefined => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    return window.managedRuntime
+  }, [])
+
   const refresh = useCallback(async () => {
     setLoading(true)
-    const response = await window.managedRuntime.load()
-    applyResponse(response)
-    setLoading(false)
-  }, [applyResponse])
+    try {
+      const api = getManagedRuntimeApi()
+      const response = api
+        ? await api.load()
+        : createManagedRuntimeApiFailure(MANAGED_RUNTIME_API_UNAVAILABLE_ERROR, 'api_unavailable')
+      applyResponse(response)
+    } finally {
+      setLoading(false)
+    }
+  }, [applyResponse, getManagedRuntimeApi])
 
   const installOrRepair = useCallback(async () => {
     setBusy(true)
-    const response = await window.managedRuntime.installOrRepair(snapshot?.overallStatus === 'ready' ? 'repair' : 'install')
-    applyResponse(response)
-    setBusy(false)
-  }, [applyResponse, snapshot?.overallStatus])
+    try {
+      const api = getManagedRuntimeApi()
+      const response = api
+        ? await api.installOrRepair(snapshot?.overallStatus === 'ready' ? 'repair' : 'install')
+        : createManagedRuntimeApiFailure(MANAGED_RUNTIME_API_UNAVAILABLE_ERROR, 'api_unavailable')
+      applyResponse(response)
+    } finally {
+      setBusy(false)
+    }
+  }, [applyResponse, getManagedRuntimeApi, snapshot?.overallStatus])
 
   useEffect(() => {
     if (!enabled) {

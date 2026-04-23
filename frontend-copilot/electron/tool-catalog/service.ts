@@ -140,7 +140,12 @@ function isRuntimeGlobalToolCatalogPayload(value: unknown): value is RuntimeGlob
     return false
   }
 
-  return value.tools.every(isRuntimeToolDirectoryEntry)
+  return typeof value.directoryVersion === 'string'
+    && value.directoryVersion.trim() !== ''
+    && typeof value.defaultToolset === 'string'
+    && value.defaultToolset.trim() !== ''
+    && isNullableString(value.language)
+    && value.tools.every(isRuntimeToolDirectoryEntry)
 }
 
 function isRuntimeToolDirectoryEntry(value: unknown): value is RuntimeToolDirectoryEntry {
