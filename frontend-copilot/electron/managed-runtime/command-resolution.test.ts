@@ -39,6 +39,28 @@ describe('resolveManagedRuntimeLauncher', () => {
     })
   })
 
+  it('allows uvx when Python/uv is verified runnable but update is still recommended', () => {
+    const snapshot = createSnapshot({
+      uv: {
+        status: 'outdated',
+        activeVersion: '0.10.0',
+        updateRecommended: true,
+        launcherPaths: { uvx: 'D:/managed/uv/compat/uvx.exe' },
+      },
+    })
+
+    const result = resolveManagedRuntimeLauncher(snapshot, 'uvx')
+
+    expect(result).toMatchObject({
+      ok: true,
+      command: 'uvx',
+      normalizedCommand: 'uvx',
+      family: 'uv',
+      executablePath: 'D:/managed/uv/compat/uvx.exe',
+      windowsCommandChain: null,
+    })
+  })
+
   it('returns a managed runtime unavailable error when the required runtime is missing or broken', () => {
     const missingSnapshot = createSnapshot({
       node: { status: 'missing', launcherPaths: {} },
@@ -68,6 +90,26 @@ describe('resolveManagedRuntimeLauncher', () => {
       family: 'uv',
       status: 'broken',
       detail: 'uvx verification failed',
+    })
+  })
+
+  it('keeps blocking managed launchers when the launcher path cannot be resolved', () => {
+    const outdatedUvSnapshot = createSnapshot({
+      uv: {
+        status: 'outdated',
+        activeVersion: '0.10.0',
+        updateRecommended: true,
+        launcherPaths: {},
+      },
+    })
+
+    expect(resolveManagedRuntimeLauncher(outdatedUvSnapshot, 'uvx')).toMatchObject({
+      ok: false,
+      reason: 'managed_runtime_unavailable',
+      command: 'uvx',
+      normalizedCommand: 'uvx',
+      family: 'uv',
+      status: 'outdated',
     })
   })
 

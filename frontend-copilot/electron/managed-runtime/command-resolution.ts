@@ -41,7 +41,7 @@ export function resolveManagedRuntimeLauncher(
 
   const familySnapshot = snapshot.families[family]
   const launcherPath = familySnapshot.launcherPaths[managedLauncher]
-  if (familySnapshot.status !== 'ready' || typeof launcherPath !== 'string' || launcherPath.trim() === '') {
+  if (!isRunnableManagedLauncherFamily(family, familySnapshot) || typeof launcherPath !== 'string' || launcherPath.trim() === '') {
     return createUnavailableResolution(command, managedLauncher, family, familySnapshot)
   }
 
@@ -53,6 +53,17 @@ export function resolveManagedRuntimeLauncher(
     executablePath: launcherPath,
     windowsCommandChain: resolveWindowsCommandChain(launcherPath),
   }
+}
+
+function isRunnableManagedLauncherFamily(
+  family: ManagedRuntimeFamily,
+  familySnapshot: ManagedRuntimeFamilySnapshot,
+): boolean {
+  if (familySnapshot.status === 'ready') {
+    return true
+  }
+
+  return family === 'uv' && familySnapshot.status === 'outdated'
 }
 
 function createUnavailableResolution(
