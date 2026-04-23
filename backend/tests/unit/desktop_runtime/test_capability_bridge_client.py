@@ -554,6 +554,96 @@ def test_desktop_capability_bridge_client_maps_mcp_timeout_to_structured_timeout
     }
 
 
+def test_desktop_capability_bridge_client_omits_request_timeout_when_not_overridden() -> (
+    None
+):
+    captured_post_calls: list[dict[str, object]] = []
+
+    class _RecordingAsyncClient:
+        async def post(self, url: str, **kwargs: object) -> httpx.Response:
+            captured_post_calls.append({"url": url, **kwargs})
+            payload = kwargs["json"]
+            assert isinstance(payload, dict)
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": payload["requestId"],
+                    "ok": True,
+                    "result": {"value": "resolved-secret"},
+                },
+                request=httpx.Request("POST", url),
+            )
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+    )
+    client._async_client = _RecordingAsyncClient()  # type: ignore[assignment]
+
+    secret_value = asyncio.run(
+        client.get_secret(context=_build_invocation_context(), name="bb.password")
+    )
+
+    assert secret_value == "resolved-secret"
+    assert len(captured_post_calls) == 1
+    post_call = captured_post_calls[0]
+    assert post_call["url"] == "http://127.0.0.1:45678/host/private/capability-bridge"
+    assert "timeout" not in post_call
+
+
+def test_desktop_capability_bridge_client_preserves_explicit_mcp_timeout_override() -> (
+    None
+):
+    captured_post_calls: list[dict[str, object]] = []
+
+    class _RecordingAsyncClient:
+        async def post(self, url: str, **kwargs: object) -> httpx.Response:
+            captured_post_calls.append({"url": url, **kwargs})
+            payload = kwargs["json"]
+            assert isinstance(payload, dict)
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": payload["requestId"],
+                    "ok": True,
+                    "result": {
+                        "ok": True,
+                        "toolId": payload["toolId"],
+                        "serverId": payload["payload"]["serverId"],
+                        "remoteToolName": payload["payload"]["remoteToolName"],
+                        "content": [],
+                        "structuredContent": {},
+                        "snapshotRevision": payload["payload"].get("snapshotRevision"),
+                        "isError": False,
+                    },
+                },
+                request=httpx.Request("POST", url),
+            )
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+    )
+    client._async_client = _RecordingAsyncClient()  # type: ignore[assignment]
+
+    result = asyncio.run(
+        client.call_mcp_tool(
+            context=_build_invocation_context(
+                tool_id="mcp.mcp-stdio-stub.search-campus.00004d8d"
+            ),
+            server_id="mcp-stdio-stub",
+            remote_tool_name="search-campus",
+            arguments={"keyword": "library"},
+            snapshot_revision=8,
+        )
+    )
+
+    assert result["ok"] is True
+    assert len(captured_post_calls) == 1
+    post_call = captured_post_calls[0]
+    assert post_call["timeout"] == max(client._timeout, 20.0)
+
+
 def test_desktop_capability_bridge_client_reports_missing_bootstrap_as_unavailable() -> (
     None
 ):

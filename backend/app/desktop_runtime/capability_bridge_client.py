@@ -379,12 +379,16 @@ class DesktopCapabilityBridgeClient:
         bridge_url = self._require_bridge_url(
             capability=capability, operation=operation
         )
+        request_kwargs: dict[str, Any] = {
+            "json": request.to_dict(),
+            "headers": self._build_headers(),
+        }
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
         try:
             response = await self._get_async_client().post(
                 bridge_url,
-                json=request.to_dict(),
-                headers=self._build_headers(),
-                timeout=timeout,
+                **request_kwargs,
             )
         except httpx.TimeoutException as exc:
             if capability != "mcp" or operation != "call_tool":
