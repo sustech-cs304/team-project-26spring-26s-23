@@ -37,6 +37,9 @@ from app.copilot_runtime.tool_approval_coordinator import (
 )
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
+from app.copilot_runtime.mcp_snapshot_provider import McpCapabilitySnapshot
+from app.copilot_runtime.mcp_tool_executor import build_mcp_executable_tools
+from app.copilot_runtime.mcp_snapshot_provider import McpSnapshotProvider
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
 from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
 from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
@@ -353,6 +356,132 @@ def test_open_event_stream_executes_weather_tool_and_records_started_completed_e
     )
     assert completed_payload["resultSummary"] is not None
     assert completed_payload["summary"] != completed_payload["resultSummary"]
+
+
+
+def test_open_event_stream_executes_mcp_tool_and_records_started_completed_events() -> None:
+    fixture_path = (
+        Path(__file__).resolve().parents[4]
+        / "frontend-copilot"
+        / "electron"
+        / "mcp-registry"
+        / "test-fixtures"
+        / "snapshot.sample.json"
+    )
+    snapshot = McpCapabilitySnapshot.model_validate(
+        json.loads(fixture_path.read_text(encoding="utf-8"))
+    )
+
+    class _RecordingMcpBridgeClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        async def call_mcp_tool(
+            self,
+            *,
+            context,
+            server_id: str,
+            remote_tool_name: str,
+            arguments: dict[str, object] | None = None,
+            snapshot_revision: int | None = None,
+        ) -> dict[str, object]:
+            self.calls.append(
+                {
+                    "toolId": context.tool_id,
+                    "serverId": server_id,
+                    "remoteToolName": remote_tool_name,
+                    "arguments": dict(arguments or {}),
+                    "snapshotRevision": snapshot_revision,
+                    "runId": context.run_id,
+                }
+            )
+            return {
+                "ok": True,
+                "toolId": context.tool_id,
+                "serverId": server_id,
+                "remoteToolName": remote_tool_name,
+                "content": [{"type": "text", "text": "search completed"}],
+                "structuredContent": {"count": 1},
+                "snapshotRevision": snapshot_revision,
+                "isError": False,
+            }
+
+    bridge_client = _RecordingMcpBridgeClient()
+    class _SnapshotProvider:
+        def load_snapshot(self) -> McpCapabilitySnapshot:
+            return snapshot
+
+    registry = build_default_tool_registry(
+        dynamic_tool_loader=lambda _language: build_mcp_executable_tools(
+            snapshot=snapshot,
+            bridge_client=cast(Any, bridge_client),
+            snapshot_provider=cast(McpSnapshotProvider, _SnapshotProvider()),
+        )
+    )
+    tool_id = "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    resolved_tool = registry.resolve_tool(tool_id)
+    if resolved_tool.function_name is None:
+        raise AssertionError("Expected MCP executable tool to expose a function_name.")
+
+    executor = PydanticAIAgentExecutor(
+        model=TestModel(
+            call_tools=[resolved_tool.function_name],
+            custom_output_text="MCP reply",
+            seed=0,
+        ),
+        tool_registry=registry,
+    )
+
+    result = asyncio.run(
+        _collect_event_stream(
+            executor.open_event_stream(
+                run_id="run-mcp-success",
+                agent_name="default",
+                user_prompt="Search the campus knowledge base.",
+                message_history=[],
+                model_route=_build_resolved_route(),
+                enabled_tools=(tool_id,),
+                tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+                request_options={},
+            )
+        )
+    )
+
+    tool_events = [
+        event.payload
+        for event in result["events"]
+        if event.type in {"tool_started", "tool_completed", "tool_failed"}
+    ]
+
+    assert result["error"] is None
+    assert result["output"] == "MCP reply"
+    assert [payload["phase"] for payload in tool_events] == ["started", "completed"]
+    assert all(payload["toolId"] == tool_id for payload in tool_events)
+    completed_payload = tool_events[1]
+    parsed_summary = json.loads(completed_payload["summary"])
+    assert parsed_summary["status"] == "success"
+    assert parsed_summary["output"] == {
+        "ok": True,
+        "content": [{"type": "text", "text": "search completed"}],
+        "structuredContent": {"count": 1},
+    }
+    assert parsed_summary["metadata"] == {
+        "toolId": tool_id,
+        "sourceKind": "mcp",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "snapshotRevision": 8,
+    }
+    assert bridge_client.calls == [
+        {
+            "toolId": tool_id,
+            "serverId": "mcp-stdio-stub",
+            "remoteToolName": "search-campus",
+            "arguments": {"keyword": "a"},
+            "snapshotRevision": 8,
+            "runId": "run-mcp-success",
+        }
+    ]
 
 
 
