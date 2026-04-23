@@ -126,6 +126,10 @@ export function resolveCopilotToolPresentation(tool: CopilotToolPresentationSour
   }
 }
 
+export function resolveCopilotToolDisplayNameFromToolId(toolId: string): string | null {
+  return buildReadableMcpToolNameFromToolId(toolId) ?? buildIdBasedToolName(toolId)
+}
+
 export function resolveCopilotToolPlatformGroup(tool: CopilotToolPresentationSource): CopilotToolPlatformGroup {
   const explicitGroup = tool.group
   if (explicitGroup !== undefined && explicitGroup !== null) {
@@ -207,6 +211,11 @@ function mapSourceKind(sourceKind: string): CopilotToolPlatformGroup['sourceKind
 }
 
 function buildFallbackToolName(tool: CopilotToolPresentationSource): string {
+  const readableMcpName = buildReadableMcpToolName(tool)
+  if (readableMcpName !== null) {
+    return readableMcpName
+  }
+
   const displayName = normalizeText(tool.displayName)
   if (displayName !== null && containsCjk(displayName)) {
     return truncateText(displayName, 18)
@@ -248,6 +257,26 @@ function createDynamicPlatformGroup(input: {
     order: MCP_GROUP_ORDER,
     sourceKind: 'mcp-server',
   }, [input.key, input.title, 'mcp'])
+}
+
+function buildReadableMcpToolName(tool: CopilotToolPresentationSource): string | null {
+  const serverIdentity = resolveExplicitServerIdentity(tool) ?? resolveMcpServerIdentityFromToolId(tool.toolId)
+  const remoteToolLabel = resolveMcpRemoteToolLabel(tool)
+  if (serverIdentity === null || remoteToolLabel === null) {
+    return null
+  }
+
+  return `${serverIdentity.title} / ${remoteToolLabel}`
+}
+
+function buildReadableMcpToolNameFromToolId(toolId: string): string | null {
+  const serverIdentity = resolveMcpServerIdentityFromToolId(toolId)
+  const remoteToolLabel = resolveMcpRemoteToolLabelFromToolId(toolId)
+  if (serverIdentity === null || remoteToolLabel === null) {
+    return null
+  }
+
+  return `${serverIdentity.title} / ${remoteToolLabel}`
 }
 
 function attachPlatformSearchKeywords(
@@ -329,6 +358,59 @@ function resolveMcpServerIdentityFromToolId(toolId: string): {
     key: serverKey,
     title: formatPlatformLabel(serverId),
   }
+}
+
+function resolveMcpRemoteToolLabel(tool: CopilotToolPresentationSource): string | null {
+  const toolRecord = readRecord(tool)
+  const explicitRemoteToolName = firstNonEmptyString([
+    readStringRecordField(toolRecord, 'remoteToolName'),
+    readStringRecordField(toolRecord, 'toolName'),
+    readStringRecordField(toolRecord, 'name'),
+  ])
+
+  return formatMcpRemoteToolLabel(explicitRemoteToolName)
+    ?? resolveMcpRemoteToolLabelFromToolId(tool.toolId)
+}
+
+function resolveMcpRemoteToolLabelFromToolId(toolId: string): string | null {
+  const normalizedToolId = normalizeText(toolId)
+  if (normalizedToolId === null) {
+    return null
+  }
+
+  const segments = normalizedToolId.split(/[.:/]+/).filter((segment) => segment.trim() !== '')
+  if (segments.length < 3 || segments[0]?.toLowerCase() !== 'mcp') {
+    return null
+  }
+
+  const remoteSegments = stripOpaqueMcpSuffix(segments.slice(2))
+  if (remoteSegments.length === 0) {
+    return null
+  }
+
+  return formatMcpRemoteToolLabel(remoteSegments.join(' '))
+}
+
+function stripOpaqueMcpSuffix(segments: string[]): string[] {
+  if (segments.length === 0) {
+    return segments
+  }
+
+  const lastSegment = segments[segments.length - 1]?.trim() ?? ''
+  if (/^[0-9a-f]{6,}$/iu.test(lastSegment)) {
+    return segments.slice(0, -1)
+  }
+
+  return segments
+}
+
+function formatMcpRemoteToolLabel(value: string | null | undefined): string | null {
+  const normalizedValue = normalizeText(value)
+  if (normalizedValue === null) {
+    return null
+  }
+
+  return formatPlatformLabel(normalizedValue)
 }
 
 function readNestedIdentity(value: unknown): {

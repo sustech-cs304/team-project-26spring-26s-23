@@ -38,7 +38,7 @@ describe('ToolPicker', () => {
       { title: 'SUSTech TIS', count: '1', expanded: 'true' },
     ])
 
-    const fileOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
+    const fileOption = rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement
     const catalogOption = rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement
     const gradesOption = rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement
 
@@ -49,7 +49,7 @@ describe('ToolPicker', () => {
     expect(gradesOption.textContent).toContain('成绩获取')
     expect(gradesOption.textContent).toContain('获取个人成绩记录')
 
-    expect(panel.textContent).not.toContain('tool.file-convert')
+    expect(panel.textContent).not.toContain('tool.fs.read')
     expect(panel.textContent).not.toContain('blackboard.course_catalog.search')
     expect(panel.textContent).not.toContain('tis.personal_grades.fetch')
     expect(panel.textContent).not.toContain('Search Blackboard course catalog with a long English description')
@@ -119,13 +119,13 @@ describe('ToolPicker', () => {
     expect(readGroupSummaries(panel)).toEqual([{ title: 'SUSTech Blackboard', count: '1', expanded: 'true' }])
     expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).not.toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-blackboard.calendar.refresh')).toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-tis.personal_grades.fetch')).toBeNull()
 
-    await setFormControlValue(searchInput, 'tool.file-convert')
+    await setFormControlValue(searchInput, 'tool.fs.read')
 
     expect(readGroupSummaries(panel)).toEqual([{ title: 'Candue 内建', count: '1', expanded: 'true' }])
-    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).not.toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-tis.personal_grades.fetch')).toBeNull()
 
@@ -144,7 +144,7 @@ describe('ToolPicker', () => {
     await clickElement(trigger)
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
 
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
@@ -152,14 +152,14 @@ describe('ToolPicker', () => {
 
     expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).not.toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-blackboard.calendar.refresh')).toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).toBeNull()
 
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-tool-picker-select-all'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
-      'tool.file-convert|blackboard.course_catalog.search|blackboard.calendar.refresh|tis.personal_grades.fetch',
+      'tool.fs.read|blackboard.course_catalog.search|blackboard.calendar.refresh|tis.personal_grades.fetch',
     )
-    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
@@ -169,18 +169,18 @@ describe('ToolPicker', () => {
     expect(trigger.textContent).toContain('未启用工具')
     expect(trigger.getAttribute('aria-label')).toBe('工具：未启用工具')
     expect(trigger.title).toBe('工具：未启用工具')
-    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
+    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
     expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
 
     await clickElement(rendered.getByTestId('chat-tool-picker-select-recommended'))
-    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.file-convert|blackboard.course_catalog.search')
-    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.fs.read|blackboard.course_catalog.search')
+    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
 
     await clickElement(rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
-      'tool.file-convert|blackboard.course_catalog.search|tis.personal_grades.fetch',
+      'tool.fs.read|blackboard.course_catalog.search|tis.personal_grades.fetch',
     )
     expect((rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect(trigger.textContent).toContain('启用 3 项工具')
@@ -193,7 +193,7 @@ describe('ToolPicker', () => {
   it('keeps denied tools focusable, blocks fresh selection, and still allows deselection', async () => {
     const rendered = renderWithRoot(
       <ToolPickerHarness
-        initialSelectedToolIds={['tool.file-convert', 'blackboard.calendar.refresh']}
+        initialSelectedToolIds={['tool.fs.read', 'blackboard.calendar.refresh']}
         toolPermissionPolicy={{
           version: 1,
           defaultMode: 'ask',
@@ -218,19 +218,57 @@ describe('ToolPicker', () => {
     expect(normalOption.disabled).toBe(false)
 
     await clickElement(deniedOption)
-    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.file-convert')
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.fs.read')
 
     await clickElement(normalOption)
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
-      'tool.file-convert|blackboard.course_catalog.search',
+      'tool.fs.read|blackboard.course_catalog.search',
     )
 
     expect(blockedOption.getAttribute('aria-disabled')).toBe('true')
 
     await clickElement(blockedOption)
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
-      'tool.file-convert|blackboard.course_catalog.search',
+      'tool.fs.read|blackboard.course_catalog.search',
     )
+
+    rendered.unmount()
+  })
+
+  it('renders mcp readable names and group titles consistently with permissions view semantics', async () => {
+    const rendered = renderWithRoot(
+      <ToolPickerHarness
+        tools={[
+          {
+            toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+            kind: 'mcp',
+            availability: 'available',
+            displayName: null,
+            description: null,
+            serverId: 'mcp-stdio-stub',
+            remoteToolName: 'search-campus',
+            mcpServerName: 'stdio stub server',
+            group: {
+              id: 'mcp.server.mcp-stdio-stub',
+              label: 'stdio stub server',
+              labelZh: 'stdio stub server',
+              labelEn: 'stdio stub server',
+              order: 100,
+              sourceKind: 'mcp-server',
+            },
+          } as RuntimeToolDirectoryEntry,
+        ]}
+        initialSelectedToolIds={[]}
+        recommendedToolIds={[]}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    expect(readGroupSummaries(rendered.getByTestId('chat-tool-picker-panel'))).toEqual([
+      { title: 'stdio stub server', count: '1', expanded: 'true' },
+    ])
+    expect(rendered.getByTestId('chat-tool-option-mcp.mcp-stdio-stub.search-campus.00004d8d').textContent).toContain('stdio stub server / Search Campus')
 
     rendered.unmount()
   })
@@ -244,8 +282,8 @@ interface ToolPickerHarnessProps {
 }
 
 function ToolPickerHarness({
-  initialSelectedToolIds = ['tool.file-convert'],
-  recommendedToolIds = ['tool.file-convert', 'blackboard.course_catalog.search'],
+  initialSelectedToolIds = ['tool.fs.read'],
+  recommendedToolIds = ['tool.fs.read', 'blackboard.course_catalog.search'],
   toolPermissionPolicy = null,
   tools = createTools(),
 }: ToolPickerHarnessProps) {
@@ -268,7 +306,7 @@ function ToolPickerHarness({
 function createTools(): RuntimeToolDirectoryEntry[] {
   return [
     {
-      toolId: 'tool.file-convert',
+      toolId: 'tool.fs.read',
       kind: 'builtin',
       availability: 'available',
       displayName: '读取文件',

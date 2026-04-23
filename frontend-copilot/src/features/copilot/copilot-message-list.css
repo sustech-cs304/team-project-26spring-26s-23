@@ -364,6 +364,12 @@
   min-width: 0;
 }
 
+.copilot-chat__tool-header-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
 .copilot-chat__tool-toggle,
 .copilot-chat__tool-nested-toggle {
   display: flex;
@@ -393,6 +399,11 @@
   align-items: center;
   gap: 0.55rem;
   min-width: 0;
+}
+
+.copilot-chat__tool-detail-trigger {
+  flex: 0 0 auto;
+  margin-top: 0.08rem;
 }
 
 .copilot-chat__tool-toggle-icon {

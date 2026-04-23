@@ -52,13 +52,13 @@ describe('CopilotMessageList segment rendering', () => {
         requestOptions: {},
       },
       {
-        id: 'tool:run-streaming:tool.weather-current:call-1',
+        id: 'tool:run-streaming:tool.remote-search:call-1',
         kind: 'tool',
         runId: 'run-streaming',
         sequence: 2,
         status: 'completed',
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         toolPhase: 'completed',
         title: '天气工具已返回结果',
         content: 'Shenzhen：晴 / 24°C / 湿度 60%',
@@ -128,7 +128,7 @@ describe('CopilotMessageList segment rendering', () => {
       threadId: 'session-1',
       resolvedModelId: 'qwen-plus',
       resolvedModelRoute: createRuntimeModelRoute(),
-      resolvedToolIds: ['tool.weather-current'],
+      resolvedToolIds: ['tool.remote-search'],
       requestOptions: { trace: true },
       segments: [
         {
@@ -147,14 +147,14 @@ describe('CopilotMessageList segment rendering', () => {
           requestOptions: {},
         },
         {
-          id: 'tool:run-1:tool.weather-current:call-1',
+          id: 'tool:run-1:tool.remote-search:call-1',
           kind: 'tool',
           runId: 'run-1',
           startedSequence: 2,
           lastSequence: 3,
           status: 'completed',
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           toolPhase: 'completed',
           title: '天气工具已返回结果',
           summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
@@ -174,7 +174,7 @@ describe('CopilotMessageList segment rendering', () => {
           status: 'completed',
           resolvedModelId: 'qwen-plus',
           resolvedModelRoute: createRuntimeModelRoute(),
-          resolvedToolIds: ['tool.weather-current'],
+          resolvedToolIds: ['tool.remote-search'],
           requestOptions: { trace: true },
         },
         {
@@ -190,7 +190,7 @@ describe('CopilotMessageList segment rendering', () => {
           failure: null,
           resolvedModelId: 'qwen-plus',
           resolvedModelRoute: createRuntimeModelRoute(),
-          resolvedToolIds: ['tool.weather-current'],
+          resolvedToolIds: ['tool.remote-search'],
           requestOptions: { trace: true },
         },
       ],
@@ -213,7 +213,7 @@ describe('CopilotMessageList segment rendering', () => {
         code: 'tool_execution_failed',
         message: 'Tool failed: boom',
         details: {
-          toolId: 'tool.weather-current',
+          toolId: 'tool.remote-search',
         },
       },
       segments: [
@@ -233,14 +233,14 @@ describe('CopilotMessageList segment rendering', () => {
           requestOptions: {},
         },
         {
-          id: 'tool:run-failed:tool.weather-current:call-1',
+          id: 'tool:run-failed:tool.remote-search:call-1',
           kind: 'tool',
           runId: 'run-failed',
           startedSequence: 2,
           lastSequence: 3,
           status: 'failed',
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           toolPhase: 'failed',
           title: '工具调用失败',
           summary: '工具执行失败。',
@@ -260,7 +260,7 @@ describe('CopilotMessageList segment rendering', () => {
             message: 'Tool failed: boom',
             stage: 'tool_execution',
             details: {
-              toolId: 'tool.weather-current',
+              toolId: 'tool.remote-search',
             },
           },
         },
@@ -278,7 +278,7 @@ describe('CopilotMessageList segment rendering', () => {
             code: 'tool_execution_failed',
             message: 'Tool failed: boom',
             details: {
-              toolId: 'tool.weather-current',
+              toolId: 'tool.remote-search',
             },
           },
           resolvedModelId: null,
@@ -297,6 +297,122 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('发送失败')
     expect(html).toContain('工具执行失败，请重试。')
     expect(html.indexOf('已生成的第一段')).toBeLessThan(html.indexOf('发送失败'))
+  })
+
+  it('keeps the safe fallback title when the failed tool card only carries a blank toolId', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'failed',
+      runId: 'run-failed-blank-tool-id',
+      threadId: 'session-1',
+      failure: {
+        code: 'tool_execution_failed',
+        message: 'Tool failed: boom',
+        details: {
+          toolId: '   ',
+        },
+      },
+      segments: [
+        {
+          id: 'tool:run-failed-blank-tool-id:tool-1',
+          kind: 'tool',
+          runId: 'run-failed-blank-tool-id',
+          startedSequence: 1,
+          lastSequence: 1,
+          status: 'failed',
+          toolCallId: 'tool-call-1',
+          toolId: '   ',
+          toolPhase: 'failed',
+          title: '工具调用失败',
+          summary: '工具执行失败。',
+          inputSummary: '{"location":"Shenzhen"}',
+          resultSummary: null,
+          errorSummary: 'boom',
+        },
+      ],
+    })
+
+    expect(html).toContain('工具调用失败')
+    expect(html).not.toContain('调用失败调用失败')
+    expect(html).not.toContain('工具被调用')
+  })
+
+  it('renders a detail button for failed tool cards without leaking raw MCP diagnostics into the card body', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'failed',
+      runId: 'run-mcp-tool-failed',
+      threadId: 'session-1',
+      failure: {
+        code: 'tool_execution_failed',
+        message: 'MCP tool failed: transport disconnected',
+        details: {
+          toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+          toolCallId: 'tool-call-1',
+          serverId: 'mcp-stdio-stub',
+          serverName: 'stdio stub server',
+          remoteToolName: 'search-campus',
+          phase: 'tools/call',
+          diagnosticSummary: 'connector ready but remote tool returned error',
+          stderrSummary: 'stderr tail',
+          snapshotRevision: 12,
+          catalogVersion: 12,
+        },
+      },
+      segments: [
+        {
+          id: 'tool:run-mcp-tool-failed:tool-1',
+          kind: 'tool',
+          runId: 'run-mcp-tool-failed',
+          startedSequence: 1,
+          lastSequence: 2,
+          status: 'failed',
+          toolCallId: 'tool-call-1',
+          toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+          toolPhase: 'failed',
+          title: '工具调用失败',
+          summary: 'search-campus 调用失败。',
+          inputSummary: '{"keyword":"calendar"}',
+          resultSummary: null,
+          errorSummary: 'transport disconnected',
+        },
+        {
+          id: 'terminal:run-mcp-tool-failed:failed',
+          kind: 'terminal',
+          runId: 'run-mcp-tool-failed',
+          startedSequence: 3,
+          lastSequence: 3,
+          status: 'failed',
+          terminalPhase: 'failed',
+          assistantMessageId: null,
+          cancelReason: null,
+          failure: {
+            code: 'tool_execution_failed',
+            message: 'MCP tool failed: transport disconnected',
+            details: {
+              toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+              toolCallId: 'tool-call-1',
+              serverId: 'mcp-stdio-stub',
+              serverName: 'stdio stub server',
+              remoteToolName: 'search-campus',
+              phase: 'tools/call',
+              diagnosticSummary: 'connector ready but remote tool returned error',
+              stderrSummary: 'stderr tail',
+              snapshotRevision: 12,
+              catalogVersion: 12,
+            },
+          },
+          resolvedModelId: null,
+          resolvedModelRoute: null,
+          resolvedToolIds: [],
+          requestOptions: {},
+        },
+      ],
+    })
+
+    expect(html).toContain('chat-message-tool-error-detail-button-1')
+    expect(html).not.toContain('connector ready but remote tool returned error')
+    expect(html).not.toContain('stderr tail')
   })
 
   it('renders explicit CAS credential guidance for authentication failures', () => {
@@ -483,14 +599,14 @@ describe('CopilotMessageList segment rendering', () => {
           requestOptions: {},
         },
         {
-          id: 'tool:run-cancelled:tool.weather-current:call-1',
+          id: 'tool:run-cancelled:tool.remote-search:call-1',
           kind: 'tool',
           runId: 'run-cancelled',
           startedSequence: 2,
           lastSequence: 2,
           status: 'cancelled',
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           toolPhase: 'cancelled',
           title: '调用天气工具',
           summary: '正在获取 Shenzhen 的天气。',
@@ -772,14 +888,14 @@ describe('CopilotMessageList segment rendering', () => {
       failure: null,
       cancelReason: null,
       segments: [{
-        id: 'tool:run-1:tool.weather-current:call-1',
+        id: 'tool:run-1:tool.remote-search:call-1',
         kind: 'tool',
         runId: 'run-1',
         startedSequence: 2,
         lastSequence: 2,
         status: 'streaming',
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         toolPhase: 'waiting_approval',
         title: '等待批准',
         summary: '需要批准后继续。',
