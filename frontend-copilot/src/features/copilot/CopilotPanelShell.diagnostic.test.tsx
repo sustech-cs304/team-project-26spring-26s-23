@@ -826,7 +826,7 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
       runId: 'run-1',
       sequence: 2,
       title: '工具调用失败',
-      content: 'weather-current 调用失败。',
+      content: 'search-campus 调用失败。',
       status: 'failed',
       toolCallId: 'tool.remote-search:call-1',
       toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',

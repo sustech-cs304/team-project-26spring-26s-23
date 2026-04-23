@@ -241,7 +241,7 @@ describe('ToolPicker', () => {
         tools={[
           {
             toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-            kind: 'external',
+            kind: 'mcp',
             availability: 'available',
             displayName: null,
             description: null,

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -76,6 +76,7 @@ describe('verifyManagedRuntimeLaunchers', () => {
     const npmPath = path.join(tempRoot, 'bin', 'npm')
     await mkdir(path.dirname(npmPath), { recursive: true })
     await writeFile(npmPath, '#!/usr/bin/env node\n')
+    await chmod(npmPath, 0o755)
 
     await expect(verifyManagedRuntimeLaunchers([
       {
