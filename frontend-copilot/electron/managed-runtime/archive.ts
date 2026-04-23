@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { mkdir, readdir, rename, rm } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import path from 'node:path'
+import extractZip from 'extract-zip'
 import type { ManagedRuntimeArchiveFormat } from './types'
 
 const execFileAsync = promisify(execFile)
@@ -39,7 +40,7 @@ export async function extractManagedRuntimeArchive(
         `Expand-Archive -LiteralPath '${escapePowerShell(archiveFile)}' -DestinationPath '${escapePowerShell(destinationDir)}' -Force`,
       ])
     } else {
-      await execFileAsync('tar', ['-xf', archiveFile, '-C', destinationDir])
+      await extractZip(archiveFile, { dir: destinationDir })
     }
   } else if (archiveFormat === 'tar.gz') {
     await execFileAsync('tar', ['-xzf', archiveFile, '-C', destinationDir])
