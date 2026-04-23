@@ -21,10 +21,11 @@ interface RuntimeGlobalToolCatalogPayload {
   directoryVersion: string
   defaultToolset: string
   language?: string | null
-  tools: RuntimeToolDirectoryEntry[]
+  tools: unknown[]
 }
 
 const RUNTIME_TOOL_CATALOG_EMPTY_ERROR = 'Hosted backend returned an empty global tool catalog.'
+const INCOMPLETE_RUNTIME_TOOL_CATALOG_WARNING = 'Hosted backend returned incomplete tool catalog entries. Invalid entries were dropped.'
 
 export function createElectronToolCatalogService(
   options: CreateElectronToolCatalogServiceOptions,
@@ -81,7 +82,7 @@ export function createElectronToolCatalogService(
           }
         }
 
-        const tools = mapToolCatalogEntries(payload.tools)
+        const { tools, warnings } = mapToolCatalogEntries(payload.tools)
         if (tools.length === 0) {
           return {
             ok: false,
@@ -94,6 +95,7 @@ export function createElectronToolCatalogService(
           directoryVersion: payload.directoryVersion,
           language: normalizeCatalogLanguage(payload.language ?? language),
           tools,
+          ...(warnings.length > 0 ? { warnings } : {}),
         }
       } catch (error) {
         return {
@@ -106,9 +108,26 @@ export function createElectronToolCatalogService(
 }
 
 export function mapToolCatalogEntries(
-  tools: RuntimeToolDirectoryEntry[],
-): RuntimeToolDirectoryEntry[] {
-  return tools.map((tool) => ({ ...tool }))
+  tools: unknown[],
+): { tools: RuntimeToolDirectoryEntry[], warnings: string[] } {
+  const mappedTools: RuntimeToolDirectoryEntry[] = []
+  let droppedEntryCount = 0
+
+  for (const tool of tools) {
+    if (!isRuntimeToolDirectoryEntry(tool)) {
+      droppedEntryCount += 1
+      continue
+    }
+
+    mappedTools.push({ ...tool })
+  }
+
+  return {
+    tools: mappedTools,
+    warnings: droppedEntryCount > 0
+      ? [`${INCOMPLETE_RUNTIME_TOOL_CATALOG_WARNING} Dropped ${droppedEntryCount} entr${droppedEntryCount === 1 ? 'y' : 'ies'}.`]
+      : [],
+  }
 }
 
 function normalizeRuntimeBaseUrl(value: string): string {
@@ -145,7 +164,6 @@ function isRuntimeGlobalToolCatalogPayload(value: unknown): value is RuntimeGlob
     && typeof value.defaultToolset === 'string'
     && value.defaultToolset.trim() !== ''
     && isNullableString(value.language)
-    && value.tools.every(isRuntimeToolDirectoryEntry)
 }
 
 function isRuntimeToolDirectoryEntry(value: unknown): value is RuntimeToolDirectoryEntry {

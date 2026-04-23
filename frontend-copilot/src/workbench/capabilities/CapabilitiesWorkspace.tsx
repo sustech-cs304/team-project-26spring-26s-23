@@ -57,7 +57,7 @@ const FALLBACK_DELAY_SECONDS = 15
 const TOOL_PERMISSION_UPDATED_AT = '2026-04-17T00:00:00.000Z'
 const FALLBACK_TOOL_CATALOG_ERROR = 'Hosted backend runtime tool catalog is temporarily unavailable. Using built-in fallback catalog.'
 const EMPTY_TOOL_CATALOG_ERROR = 'Hosted backend returned an empty tool catalog. Using built-in fallback catalog.'
-const INCOMPLETE_TOOL_CATALOG_ERROR = 'Hosted backend returned an incomplete tool catalog. Using built-in fallback catalog.'
+const INCOMPLETE_TOOL_CATALOG_WARNING = 'Hosted backend returned an incomplete tool catalog. Invalid entries were dropped while keeping valid tools visible.'
 
 
 export function CapabilitiesWorkspace() {
@@ -482,7 +482,7 @@ function collectPersistedOrphanPolicies(
 }
 
 function resolveRenderableToolCatalog(
-  result: { ok: true, tools: RuntimeToolDirectoryEntry[] } | { ok: false, error: string },
+  result: { ok: true, tools: RuntimeToolDirectoryEntry[], warnings?: string[] } | { ok: false, error: string },
 ): {
   status: ToolCatalogLoadState['status']
   error: string | null
@@ -510,16 +510,16 @@ function resolveRenderableToolCatalog(
 
   if (completeTools.length !== result.tools.length) {
     return {
-      status: 'fallback',
-      error: INCOMPLETE_TOOL_CATALOG_ERROR,
-      source: 'fallback',
-      tools: createStaticFallbackToolCatalog(),
+      status: 'ready',
+      error: INCOMPLETE_TOOL_CATALOG_WARNING,
+      source: 'runtime',
+      tools: completeTools,
     }
   }
 
   return {
     status: 'ready',
-    error: null,
+    error: result.warnings?.[0] ?? null,
     source: 'runtime',
     tools: completeTools,
   }
@@ -617,8 +617,12 @@ function createStaticFallbackToolCatalog(): RuntimeToolDirectoryEntry[] {
 }
 
 function resolveToolPermissionStatusMessage(state: ToolCatalogLoadState): string | null {
+  if (state.error !== null) {
+    return state.error
+  }
+
   if (state.status === 'fallback' || state.status === 'error') {
-    return state.error ?? '工具目录暂时不可用，当前显示内建降级目录。'
+    return '工具目录暂时不可用，当前显示内建降级目录。'
   }
 
   return null

@@ -11,6 +11,7 @@ export interface ToolCatalogLoadSuccess {
   directoryVersion: string
   language?: string | null
   tools: RuntimeToolDirectoryEntry[]
+  warnings?: string[]
 }
 
 export interface ToolCatalogApiFailure {

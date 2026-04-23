@@ -181,6 +181,77 @@ describe('createElectronToolCatalogService', () => {
     })
   })
 
+  it('keeps valid mcp tool entries when the hosted backend catalog mixes in an invalid record', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        ok: true,
+        directoryVersion: 'tools-v-mixed',
+        defaultToolset: 'default',
+        language: 'zh-CN',
+        tools: [
+          {
+            toolId: 'mcp--fetch--fetch',
+            kind: 'external',
+            availability: 'available',
+            displayName: '联网抓取',
+            description: '抓取网页内容。',
+            group: {
+              id: 'mcp',
+              label: 'MCP 工具',
+              labelZh: 'MCP 工具',
+              labelEn: 'MCP Tools',
+              order: 100,
+              sourceKind: 'mcp-server',
+            },
+          },
+          {
+            toolId: 42,
+            kind: 'external',
+          },
+        ],
+      }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const hostedBackendService = {
+      start: vi.fn(async () => undefined),
+      getRuntimeBaseUrl: vi.fn(() => 'http://127.0.0.1:8765'),
+      getLocalToken: vi.fn(() => null),
+    }
+    const service = createElectronToolCatalogService({
+      ensureHostedBackendService: vi.fn(async () => hostedBackendService as never),
+      getLocalToken: vi.fn(async () => null),
+      loadConfigCenterPublicSnapshot: vi.fn(async () => null),
+    })
+
+    await expect(service.load()).resolves.toEqual({
+      ok: true,
+      directoryVersion: 'tools-v-mixed',
+      language: 'zh-CN',
+      warnings: ['Hosted backend returned incomplete tool catalog entries. Invalid entries were dropped. Dropped 1 entry.'],
+      tools: [
+        {
+          toolId: 'mcp--fetch--fetch',
+          kind: 'external',
+          availability: 'available',
+          displayName: '联网抓取',
+          description: '抓取网页内容。',
+          group: {
+            id: 'mcp',
+            label: 'MCP 工具',
+            labelZh: 'MCP 工具',
+            labelEn: 'MCP Tools',
+            order: 100,
+            sourceKind: 'mcp-server',
+          },
+        },
+      ],
+    })
+  })
+
   it.each([
     {
       name: 'directoryVersion is missing',

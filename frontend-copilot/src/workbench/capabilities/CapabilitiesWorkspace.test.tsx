@@ -926,11 +926,78 @@ describe('CapabilitiesWorkspace', () => {
     const rendered = renderWithRoot(<CapabilitiesWorkspace />)
     await waitForNextFrame()
 
-    expect(rendered.container.querySelectorAll('.tool-permission-row').length).toBe(5)
-    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(2)
-    expect(rendered.container.textContent).toContain('Hosted backend returned an incomplete tool catalog. Using built-in fallback catalog.')
-    expect(rendered.container.textContent).toContain('浏览器自动化')
-    expect(rendered.container.textContent).toContain('MCP 工具')
+    expect(rendered.container.querySelectorAll('.tool-permission-row').length).toBe(1)
+    expect(rendered.container.querySelectorAll('.tool-permission-group').length).toBe(1)
+    expect(rendered.container.textContent).toContain('Hosted backend returned an incomplete tool catalog. Invalid entries were dropped while keeping valid tools visible.')
+    expect(rendered.container.textContent).toContain('读取文件')
+    expect(rendered.container.textContent).not.toContain('浏览器自动化')
+
+    rendered.unmount()
+  })
+
+  it('keeps valid mcp tools visible when the runtime catalog includes one broken entry', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue({
+      ok: true,
+      directoryVersion: 'tools-v-mixed-mcp',
+      warnings: ['Hosted backend returned incomplete tool catalog entries. Invalid entries were dropped. Dropped 1 entry.'],
+      tools: [
+        {
+          toolId: 'tool.fs.read',
+          kind: 'builtin',
+          availability: 'available',
+          displayName: '读取文件',
+          description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
+          group: {
+            id: 'builtin-core',
+            label: '内置基础工具',
+            labelZh: '内置基础工具',
+            labelEn: 'Built-in Core Tools',
+            order: 0,
+            sourceKind: 'builtin',
+          },
+        },
+        {
+          toolId: 'mcp.server.filesystem.read_text_file',
+          kind: 'external',
+          availability: 'available',
+          displayName: '读取文本文件',
+          description: '从 filesystem MCP 读取文本文件。',
+          group: {
+            id: 'mcp.server.filesystem',
+            label: 'Filesystem MCP',
+            labelZh: 'Filesystem MCP',
+            labelEn: 'Filesystem MCP',
+            order: 100,
+            sourceKind: 'mcp-server',
+          },
+        },
+        {
+          toolId: '',
+          kind: 'external',
+          availability: 'available',
+          displayName: null,
+          description: '无效工具项。',
+        },
+      ] as RuntimeToolDirectoryEntry[],
+    })
+    mockedSaveSettingsWorkspaceState.mockResolvedValue({
+      ok: true,
+      state: createLoadResult().state,
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+
+    const groupLabels = Array.from(rendered.container.querySelectorAll('.tool-permission-group__label'))
+      .map((element) => element.textContent?.trim())
+
+    expect(rendered.container.textContent).toContain('Hosted backend returned an incomplete tool catalog. Invalid entries were dropped while keeping valid tools visible.')
+    expect(rendered.container.textContent).toContain('读取文本文件')
+    expect(rendered.container.textContent).toContain('Filesystem MCP')
+    expect(rendered.container.querySelectorAll('.tool-permission-row').length).toBe(2)
+    expect(groupLabels).toEqual(['内置基础工具', 'Filesystem MCP'])
+    expect(rendered.container.textContent).not.toContain('浏览器自动化')
 
     rendered.unmount()
   })
