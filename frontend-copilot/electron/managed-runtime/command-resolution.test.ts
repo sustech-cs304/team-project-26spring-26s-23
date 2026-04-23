@@ -72,7 +72,9 @@ describe('resolveManagedRuntimeLauncher', () => {
   })
 
   it('keeps absolute paths and unmanaged commands untouched', () => {
-    const snapshot = createSnapshot()
+    const snapshot = createSnapshot({
+      node: { status: 'missing', launcherPaths: {} },
+    })
 
     expect(resolveManagedRuntimeLauncher(snapshot, 'C:/custom/tools/npx.exe')).toEqual({
       ok: false,
@@ -83,6 +85,15 @@ describe('resolveManagedRuntimeLauncher', () => {
       ok: false,
       reason: 'unmanaged_command',
       command: 'node',
+    })
+    expect(resolveManagedRuntimeLauncher(snapshot, 'npx')).toMatchObject({
+      ok: false,
+      reason: 'managed_runtime_unavailable',
+      command: 'npx',
+      normalizedCommand: 'npx',
+      family: 'node',
+      status: 'missing',
+      message: expect.stringContaining('install is required'),
     })
   })
 

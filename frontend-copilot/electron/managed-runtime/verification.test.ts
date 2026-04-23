@@ -54,6 +54,9 @@ describe('verifyManagedRuntimeLaunchers', () => {
     tempRoots.push(tempRoot)
     const uvxPath = path.join(tempRoot, 'uvx.exe')
     await writeFile(uvxPath, 'binary')
+    if (process.platform !== 'win32') {
+      await chmod(uvxPath, 0o755)
+    }
 
     const verification = await verifyManagedRuntimeLaunchers([
       {
