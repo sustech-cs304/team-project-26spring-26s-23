@@ -195,6 +195,103 @@ describe('run segment reducer', () => {
     })
   })
 
+  it('keeps skill index diagnostics as diagnostics and renders skill tools as normal tool segments', () => {
+    const initialState = createStartingCopilotRunState({
+      threadId: 'session-1',
+      activeModelRoute: createRuntimeModelRoute(),
+      requestOptions: { trace: true },
+    })
+
+    const stateAfterEvents = [
+      {
+        type: 'run_started' as const,
+        runId: 'run-skill',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-skill:assistant',
+        },
+      },
+      {
+        type: 'run_diagnostic' as const,
+        runId: 'run-skill',
+        sessionId: 'session-1',
+        sequence: 2,
+        payload: {
+          code: 'skill_index_loaded',
+          message: 'Skill index loaded for this run.',
+          stage: 'load_skill_index',
+          details: {
+            source: 'snapshot-file',
+            snapshotRevision: 8,
+            registryRevision: 12,
+            skillCount: 1,
+          },
+        },
+      },
+      createRuntimeToolEvent({
+        runId: 'run-skill',
+        sessionId: 'session-1',
+        sequence: 3,
+        payload: {
+          toolCallId: 'skill.activate:call-1',
+          toolId: 'skill.activate',
+          phase: 'completed',
+          title: '技能激活已返回结果',
+          summary: '{"displayName":"清晰文档写作","entryContentLength":120,"ok":true,"resourceCount":1,"skillId":"writing-clear-docs","snapshotRevision":8}',
+          inputSummary: '{"skill_id":"writing-clear-docs"}',
+          resultSummary: '{"displayName":"清晰文档写作","entryContentLength":120,"ok":true,"resourceCount":1,"skillId":"writing-clear-docs","snapshotRevision":8}',
+        },
+      }),
+      createRuntimeToolEvent({
+        runId: 'run-skill',
+        sessionId: 'session-1',
+        sequence: 4,
+        payload: {
+          toolCallId: 'skill.read_resource:call-1',
+          toolId: 'skill.read_resource',
+          phase: 'failed',
+          title: '技能资源读取调用失败',
+          summary: '内部 Skill 控制工具调用失败。',
+          inputSummary: '{"path":"resources/checklist.md","skill_id":"writing-clear-docs"}',
+          errorSummary: '{"errorCode":"resource_not_found","message":"Skill resource was not found in the enabled skill snapshot resource index.","ok":false,"path":"resources/checklist.md","skillId":"writing-clear-docs","snapshotRevision":8}',
+        },
+      }),
+    ].reduce(applyRuntimeRunEventToCopilotRunState, initialState)
+
+    expect(stateAfterEvents.diagnostic).toMatchObject({
+      code: 'skill_index_loaded',
+      message: 'Skill index loaded for this run.',
+    })
+    expect(stateAfterEvents.segments.map((segment) => segment.kind)).toEqual([
+      'diagnostic',
+      'tool',
+      'tool',
+    ])
+    expect(stateAfterEvents.segments[0]).toMatchObject({
+      kind: 'diagnostic',
+      status: 'completed',
+      diagnostic: {
+        code: 'skill_index_loaded',
+      },
+    })
+    expect(stateAfterEvents.segments[1]).toMatchObject({
+      kind: 'tool',
+      toolId: 'skill.activate',
+      status: 'completed',
+      inputSummary: '{"skill_id":"writing-clear-docs"}',
+      resultSummary: '{"displayName":"清晰文档写作","entryContentLength":120,"ok":true,"resourceCount":1,"skillId":"writing-clear-docs","snapshotRevision":8}',
+    })
+    expect(stateAfterEvents.segments[2]).toMatchObject({
+      kind: 'tool',
+      toolId: 'skill.read_resource',
+      status: 'failed',
+      inputSummary: '{"path":"resources/checklist.md","skill_id":"writing-clear-docs"}',
+      errorSummary: '{"errorCode":"resource_not_found","message":"Skill resource was not found in the enabled skill snapshot resource index.","ok":false,"path":"resources/checklist.md","skillId":"writing-clear-docs","snapshotRevision":8}',
+    })
+    expect(stateAfterEvents.segments.every((segment) => segment.kind !== 'diagnostic' || segment.diagnostic.code === 'skill_index_loaded')).toBe(true)
+  })
+
   it('keeps failed tool steps visible when a later non-tool fatal failure ends the run', () => {
     const initialState = createStartingCopilotRunState({
       threadId: 'session-1',

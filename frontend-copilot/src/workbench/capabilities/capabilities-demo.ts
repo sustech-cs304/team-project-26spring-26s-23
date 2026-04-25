@@ -1,6 +1,6 @@
-import { Server, Shield, type LucideIcon } from 'lucide-react'
+import { LibraryBig, Server, Shield, type LucideIcon } from 'lucide-react'
 
-export type CapabilitiesSection = 'tool-permissions' | 'mcp-servers'
+export type CapabilitiesSection = 'tool-permissions' | 'mcp-servers' | 'skills'
 export type ToolPermissionMode = 'allow' | 'deny' | 'ask' | 'delay'
 export type ToolPermissionDelayAction = 'approve' | 'deny'
 export type ToolPermissionGroupId = string
@@ -56,6 +56,12 @@ export const capabilitiesNavItems: readonly CapabilitiesNavItem[] = [
     label: 'MCP 服务器',
     description: '查看本地占位服务器配置，并通过 JSON 编辑器模拟编辑。',
     icon: Server,
+  },
+  {
+    id: 'skills',
+    label: 'Skills',
+    description: '管理全局 Skills 包，控制启用状态与校验快照。',
+    icon: LibraryBig,
   },
 ]
 
