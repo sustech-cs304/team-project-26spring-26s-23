@@ -87,6 +87,24 @@ import {
 } from '../mcp-registry/ipc'
 import type { McpServerDraft } from '../mcp-registry/types'
 import {
+  SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+  SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_LOAD_CHANNEL,
+  SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
+  SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+  type SkillDeleteResult,
+  type SkillImportRequest,
+  type SkillImportResult,
+  type SkillRefreshRequest,
+  type SkillRefreshResult,
+  type SkillRegistryLoadRequest,
+  type SkillSelectAndImportResult,
+  type SkillRegistryLoadResult,
+  type SkillSetEnabledRequest,
+  type SkillSetEnabledResult,
+} from '../skill-registry/ipc'
+import {
   TOOL_CATALOG_LOAD_CHANNEL,
   type ToolCatalogLoadRequest,
   type ToolCatalogLoadResult,
@@ -114,6 +132,12 @@ const RENDERER_IPC_CHANNELS = [
   MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
   MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
   MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+  SKILL_REGISTRY_LOAD_CHANNEL,
+  SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+  SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+  SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
@@ -263,6 +287,48 @@ export function registerRendererIpcHandlers(
     MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
     async (_event, request?: McpRefreshCatalogRequest): Promise<McpRefreshCatalogResult> => {
       return await handlers.refreshMcpCatalog(request)
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_LOAD_CHANNEL,
+    async (_event, request?: SkillRegistryLoadRequest): Promise<SkillRegistryLoadResult> => {
+      return await handlers.loadSkillRegistry(request)
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+    async (_event, request: SkillImportRequest): Promise<SkillImportResult> => {
+      return await handlers.importSkill(request)
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+    async (): Promise<SkillSelectAndImportResult> => {
+      return await handlers.selectAndImportSkill()
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+    async (_event, skillId: string): Promise<SkillDeleteResult> => {
+      return await handlers.deleteSkill(skillId)
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+    async (_event, request: SkillSetEnabledRequest): Promise<SkillSetEnabledResult> => {
+      return await handlers.setSkillEnabled(request)
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
+    async (_event, request?: SkillRefreshRequest): Promise<SkillRefreshResult> => {
+      return await handlers.refreshSkills(request)
     },
   )
 

@@ -48,6 +48,24 @@ export function createMainProcessServices(
     async loadMcpRegistry(request) {
       return await accessors.getMcpRegistryService().loadRegistry(request)
     },
+    async loadSkillRegistry(request) {
+      return await accessors.getSkillRegistryService().loadRegistry(request)
+    },
+    async importSkill(request) {
+      return await accessors.getSkillRegistryService().importSkill(request)
+    },
+    async selectAndImportSkill() {
+      return await accessors.getSkillRegistryService().selectAndImportSkill()
+    },
+    async deleteSkill(skillId) {
+      return await accessors.getSkillRegistryService().deleteSkill(skillId)
+    },
+    async setSkillEnabled(request) {
+      return await accessors.getSkillRegistryService().setSkillEnabled(request)
+    },
+    async refreshSkills(request) {
+      return await accessors.getSkillRegistryService().refreshSkills(request)
+    },
     async loadManagedRuntime() {
       return await accessors.getManagedRuntimeService().load()
     },

@@ -47,6 +47,18 @@ import type {
   McpTestConnectionResult,
 } from '../mcp-registry/ipc'
 import type { McpServerDraft } from '../mcp-registry/types'
+import type {
+  SkillDeleteResult,
+  SkillImportRequest,
+  SkillImportResult,
+  SkillRefreshRequest,
+  SkillSelectAndImportResult,
+  SkillRefreshResult,
+  SkillRegistryLoadRequest,
+  SkillRegistryLoadResult,
+  SkillSetEnabledRequest,
+  SkillSetEnabledResult,
+} from '../skill-registry/ipc'
 import type { ToolCatalogLoadRequest, ToolCatalogLoadResult } from '../tool-catalog/ipc'
 
 export interface RendererIpcHandlers {
@@ -69,6 +81,12 @@ export interface RendererIpcHandlers {
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   loadMcpRegistry: (request?: McpRegistryLoadRequest) => Promise<McpRegistryLoadResult>
+  loadSkillRegistry: (request?: SkillRegistryLoadRequest) => Promise<SkillRegistryLoadResult>
+  importSkill: (request: SkillImportRequest) => Promise<SkillImportResult>
+  selectAndImportSkill: () => Promise<SkillSelectAndImportResult>
+  deleteSkill: (skillId: string) => Promise<SkillDeleteResult>
+  setSkillEnabled: (request: SkillSetEnabledRequest) => Promise<SkillSetEnabledResult>
+  refreshSkills: (request?: SkillRefreshRequest) => Promise<SkillRefreshResult>
   loadManagedRuntime: () => Promise<ManagedRuntimeLoadResponse>
   installOrRepairManagedRuntime: (reason?: ManagedRuntimeActionReason) => Promise<ManagedRuntimeLoadResponse>
   saveMcpServer: (draft: McpServerDraft) => Promise<McpSaveServerResult>

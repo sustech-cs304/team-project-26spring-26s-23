@@ -17,6 +17,12 @@ export {
   createMcpToolCallRequestFixture,
   createMcpToolCallSuccessFixture,
 } from './mcp-registry/test-support'
+export {
+  createSkillCapabilitySnapshotFixture,
+  createSkillRecordFixture,
+  createSkillResourceSummaryFixture,
+  createSkillValidationSummaryFixture,
+} from './skill-registry/test-support'
 
 export interface ConfigCenterPublicSnapshotFixtureOptions {
   theme?: 'light' | 'dark'

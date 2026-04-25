@@ -19,6 +19,8 @@ describe('preload renderer bridge', () => {
       'managedRuntime',
       'mcpRegistry',
       'mcpRegistrySubscription',
+      'skillRegistry',
+      'skillRegistrySubscription',
       'toolCatalog',
       'desktopNotification',
       'bootstrapWindow',

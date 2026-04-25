@@ -24,6 +24,14 @@ import type {
   McpSetServerEnabledResult,
   McpTestConnectionResult,
 } from './mcp-registry/ipc'
+import type {
+  SkillDeleteResult,
+  SkillImportResult,
+  SkillRefreshResult,
+  SkillRegistryLoadResult,
+  SkillSelectAndImportResult,
+  SkillSetEnabledResult,
+} from './skill-registry/ipc'
 import type { RendererIpcHandlers } from './renderer-ipc-registration'
 import type { ToolCatalogLoadResult } from './tool-catalog/ipc'
 import {
@@ -37,6 +45,7 @@ import {
   createMcpSetServerEnabledSuccessFixture,
   createMcpTestConnectionSuccessFixture,
   createSettingsWorkspaceStateFixture,
+  createSkillRecordFixture,
 } from './renderer-ipc-domain-fixtures.test-support'
 import type {
   SettingsWorkspaceProfileSecretMutationResult,
@@ -126,6 +135,51 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
     setMcpServerEnabled: vi.fn(async (): Promise<McpSetServerEnabledResult> => createMcpSetServerEnabledSuccessFixture(false)),
     testMcpConnection: vi.fn(async (): Promise<McpTestConnectionResult> => createMcpTestConnectionSuccessFixture('stdio')),
     refreshMcpCatalog: vi.fn(async (): Promise<McpRefreshCatalogResult> => createMcpRefreshCatalogSuccessFixture()),
+    loadSkillRegistry: vi.fn(async (): Promise<SkillRegistryLoadResult> => ({
+      ok: true,
+      registryRevision: 3,
+      snapshotRevision: 5,
+      skills: [createSkillRecordFixture()],
+    })),
+    importSkill: vi.fn(async (): Promise<SkillImportResult> => ({
+      ok: true,
+      registryRevision: 4,
+      snapshotRevision: 6,
+      skill: createSkillRecordFixture(),
+      validationErrors: [],
+    })),
+    selectAndImportSkill: vi.fn(async (): Promise<SkillSelectAndImportResult> => ({
+      ok: true,
+      registryRevision: 4,
+      snapshotRevision: 6,
+      skill: createSkillRecordFixture(),
+      validationErrors: [],
+    })),
+    deleteSkill: vi.fn(async (): Promise<SkillDeleteResult> => ({
+      ok: true,
+      registryRevision: 5,
+      snapshotRevision: 7,
+      skillId: createSkillRecordFixture().skillId,
+      deleted: true,
+    })),
+    setSkillEnabled: vi.fn(async (): Promise<SkillSetEnabledResult> => ({
+      ok: true,
+      registryRevision: 6,
+      snapshotRevision: 8,
+      skill: createSkillRecordFixture({ enabled: false }),
+    })),
+    refreshSkills: vi.fn(async (): Promise<SkillRefreshResult> => ({
+      ok: true,
+      registryRevision: 7,
+      snapshotRevision: 9,
+      refreshedSkillIds: [createSkillRecordFixture().skillId],
+      results: [{
+        skillId: createSkillRecordFixture().skillId,
+        status: 'valid',
+        errors: [],
+        warnings: [],
+      }],
+    })),
     listCopilotHistoryThreads: vi.fn(async (): Promise<CopilotHistoryListThreadsResult> => ({
       ok: true,
       version: 'chat-history-v1',
