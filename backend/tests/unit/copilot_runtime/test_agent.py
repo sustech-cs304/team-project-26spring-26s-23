@@ -168,6 +168,11 @@ def test_open_event_stream_projects_reasoning_parts_into_reasoning_segments(
         await event_stream_handler(SimpleNamespace(), runtime_events())
         return SimpleNamespace(output="最终答复。")
 
+    monkeypatch.setattr(
+        executor,
+        "_build_runtime_agent",
+        lambda *, enabled_tools, resolved_model, skill_system_prompt=None: executor._agent,
+    )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     result = asyncio.run(
@@ -217,6 +222,11 @@ def test_run_raises_agent_execution_error_when_agent_returns_empty_text(
         _ = (user_prompt, kwargs)
         return SimpleNamespace(output="   ")
 
+    monkeypatch.setattr(
+        executor,
+        "_build_runtime_agent",
+        lambda *, enabled_tools, resolved_model, skill_system_prompt=None: executor._agent,
+    )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     with pytest.raises(AgentExecutionError, match="empty text response"):
@@ -242,6 +252,11 @@ def test_run_raises_agent_execution_error_when_agent_returns_non_text_output(
         _ = (user_prompt, kwargs)
         return SimpleNamespace(output={"unexpected": True})
 
+    monkeypatch.setattr(
+        executor,
+        "_build_runtime_agent",
+        lambda *, enabled_tools, resolved_model, skill_system_prompt=None: executor._agent,
+    )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     with pytest.raises(AgentExecutionError, match="non-text output"):
@@ -271,6 +286,11 @@ def test_run_returns_stable_text_from_controlled_agent_stub(
         captured["model"] = kwargs["model"]
         return SimpleNamespace(output="Controlled reply")
 
+    monkeypatch.setattr(
+        executor,
+        "_build_runtime_agent",
+        lambda *, enabled_tools, resolved_model, skill_system_prompt=None: executor._agent,
+    )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
     result = asyncio.run(
@@ -756,7 +776,7 @@ def test_open_event_stream_observes_raw_tool_call_before_tool_execution(
     monkeypatch.setattr(
         executor,
         "_build_runtime_agent",
-        lambda *, enabled_tools, resolved_model: executor._agent,
+        lambda *, enabled_tools, resolved_model, skill_system_prompt=None: executor._agent,
     )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
@@ -854,7 +874,7 @@ def test_open_event_stream_emits_failed_tool_event_when_completed_raw_tool_call_
     monkeypatch.setattr(
         executor,
         "_build_runtime_agent",
-        lambda *, enabled_tools, resolved_model: executor._agent,
+        lambda *, enabled_tools, resolved_model, skill_system_prompt=None: executor._agent,
     )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
@@ -1792,7 +1812,7 @@ def test_open_event_stream_propagates_cancelled_error_from_agent_run(
     monkeypatch.setattr(
         executor,
         "_build_runtime_agent",
-        lambda *, enabled_tools, resolved_model: executor._agent,
+        lambda *, enabled_tools, resolved_model, skill_system_prompt=None: executor._agent,
     )
     monkeypatch.setattr(executor._agent, "run", fake_run)
 
