@@ -8,9 +8,6 @@ import type { SkillRegistrySkillViewModel } from './skill-registry-view-model'
 
 interface SkillsPanelProps {
   skills: readonly SkillRegistrySkillViewModel[]
-  statusMessage?: string | null
-  globalMessage?: string | null
-  globalMessageTone?: 'info' | 'warning' | 'error' | 'success'
   importValidationErrors: readonly SkillValidationIssue[]
   onToggleEnabled: (skillId: string) => Promise<void>
   onDelete: (skillId: string) => Promise<void>
@@ -19,18 +16,12 @@ interface SkillsPanelProps {
 
 export function SkillsPanel({
   skills,
-  statusMessage,
-  globalMessage,
-  globalMessageTone = 'info',
   importValidationErrors,
   onToggleEnabled,
   onDelete,
   onRefresh,
 }: SkillsPanelProps) {
   const [expandedSkillId, setExpandedSkillId] = useState<string | null>(null)
-  void statusMessage
-  void globalMessage
-  void globalMessageTone
 
   return (
     <section className="capabilities-surface capabilities-surface--skills">

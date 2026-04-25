@@ -37,7 +37,11 @@ from .debug_logging import (
     preview_text,
     summarize_runtime_tool_event,
 )
-from .skill_snapshot_provider import SkillRuntimeIndex
+from .skill_snapshot_provider import (
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_ID,
+    SkillRuntimeIndex,
+)
 from .debug_log_store import DebugLogCategory, DebugLogLevel, RuntimeDebugLogWriter
 from .execution_event_graph import (
     TOOL_COMPLETED_EVENT_TYPE,
@@ -220,7 +224,7 @@ def _serialize_tool_result_for_display(result: Any) -> str:
 
 
 def _sanitize_tool_result_for_display(tool_id: str, result: dict[str, Any]) -> str:
-    if tool_id not in {"skill.activate", "skill.read_resource"}:
+    if tool_id not in {SKILL_ACTIVATE_TOOL_ID, SKILL_READ_RESOURCE_TOOL_ID}:
         return _serialize_tool_result_for_display(result)
 
     sanitized: dict[str, Any] = {

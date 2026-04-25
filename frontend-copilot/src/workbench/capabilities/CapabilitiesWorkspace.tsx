@@ -371,9 +371,6 @@ export function CapabilitiesWorkspace() {
             ) : (
               <SkillsPanel
                 skills={skillRegistry.skills}
-                statusMessage={skillRegistry.statusMessage}
-                globalMessage={skillRegistry.globalMessage}
-                globalMessageTone={skillRegistry.globalMessageTone}
                 importValidationErrors={skillRegistry.importValidationErrors}
                 onToggleEnabled={skillRegistry.toggleSkillEnabled}
                 onDelete={skillRegistry.deleteSkill}

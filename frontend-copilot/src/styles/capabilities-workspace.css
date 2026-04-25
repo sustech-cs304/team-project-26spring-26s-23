@@ -1089,14 +1089,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
-  color: var(--text-muted);
+  color: var(--accent-strong);
   font-size: 0.73rem;
   font-weight: 750;
   white-space: nowrap;
-}
-
-.skill-activity {
-  color: var(--accent-strong);
 }
 
 .skill-activity__icon {

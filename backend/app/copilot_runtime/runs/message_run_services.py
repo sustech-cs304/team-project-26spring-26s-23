@@ -83,7 +83,6 @@ class _PreparedStreamExecution:
     run_metadata: RuntimeRunEvent
     skill_runtime_index: SkillRuntimeIndex | None = None
     skill_system_prompt: str | None = None
-    pre_execution_events: tuple[RuntimeRunEvent, ...] = ()
     preflight_failure: _FailureEventDetails | None = None
 
 
@@ -153,8 +152,6 @@ class RuntimeMessageRunOrchestrator:
             return
 
         yield prepared.run_metadata
-        for pre_execution_event in prepared.pre_execution_events:
-            yield pre_execution_event
         if prepared.preflight_failure is not None:
             async for projected in self._yield_failed_execution(
                 context=context,
