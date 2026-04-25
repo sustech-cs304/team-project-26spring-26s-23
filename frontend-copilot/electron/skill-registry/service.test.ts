@@ -408,6 +408,38 @@ describe('createSkillRegistryService', () => {
     expect(secondLoad.snapshotRevision).toBe(firstLoad.snapshotRevision)
   })
 
+  it('bumps snapshot revision when an enabled builtin skill becomes invalid', async () => {
+    const tempBuiltinRoot = await mkdtemp(path.join(tmpdir(), 'candue-builtin-invalid-'))
+    activeTempRoots.push(tempBuiltinRoot)
+    const builtinSourceDirectory = path.join(tempBuiltinRoot, 'builtin-placeholder-skill')
+    await createSkillPackage(builtinSourceDirectory, {
+      skillId: 'builtin-placeholder-skill',
+      description: 'builtin skill',
+      resources: { 'resources/notes.md': 'note\n' },
+    })
+
+    const fixture = await createRegistryServiceFixture('builtin-invalid-transition', {
+      builtinSkillSources: [{
+        skillId: 'builtin-placeholder-skill',
+        sourceDirectory: builtinSourceDirectory,
+        enabledByDefault: true,
+      }],
+    })
+
+    const firstLoad = await fixture.service.loadRegistry({ includeDisabled: true })
+    await rm(path.join(builtinSourceDirectory, 'SKILL.md'), { force: true })
+    const secondLoad = await fixture.service.loadRegistry({ includeDisabled: true })
+
+    expect(firstLoad).toMatchObject({ ok: true, snapshotRevision: 1 })
+    expect(secondLoad).toMatchObject({ ok: true, snapshotRevision: 2 })
+    if (!secondLoad.ok) {
+      throw new Error('Expected second builtin load to succeed')
+    }
+    expect(secondLoad.skills.find((entry) => entry.skillId === 'builtin-placeholder-skill')).toMatchObject({
+      validation: { status: 'invalid' },
+    })
+  })
+
   it('refreshes validation state and excludes invalid enabled skills from snapshots', async () => {
     const fixture = await createRegistryServiceFixture('refresh-invalid')
     const sourceDirectory = await createSkillPackage(path.join(fixture.tempRoot, 'source-skill'))

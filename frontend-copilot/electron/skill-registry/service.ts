@@ -406,10 +406,19 @@ export function createSkillRegistryService(
         .filter((skill) => skill.source === 'builtin')
         .map((skill) => [skill.skillId, skill] as const),
     )
+    const nextBuiltinSkillIds = new Set(builtinSkillSources.map((skill) => skill.skillId))
 
     const mergedSkills = [...importedSkills]
     let changed = snapshot.skills.length !== importedSkills.length + builtinSkillSources.length
     let nextSnapshotRevision = snapshot.snapshotRevision
+
+    for (const existingBuiltin of existingBuiltinById.values()) {
+      if (!nextBuiltinSkillIds.has(existingBuiltin.skillId)
+        && existingBuiltin.enabled
+        && existingBuiltin.validation.status === 'valid') {
+        nextSnapshotRevision = bumpRuntimeSnapshotRevision(nextSnapshotRevision)
+      }
+    }
 
     for (const builtinSource of builtinSkillSources) {
       const existing = existingBuiltinById.get(builtinSource.skillId)
@@ -417,7 +426,7 @@ export function createSkillRegistryService(
       mergedSkills.push(builtinSkill)
       if (!sameSkillRecord(existing, builtinSkill)) {
         changed = true
-        if (builtinSkill.enabled && builtinSkill.validation.status === 'valid') {
+        if (builtinSkill.enabled && (existing?.validation.status === 'valid' || builtinSkill.validation.status === 'valid')) {
           nextSnapshotRevision = bumpRuntimeSnapshotRevision(nextSnapshotRevision)
         }
       }
