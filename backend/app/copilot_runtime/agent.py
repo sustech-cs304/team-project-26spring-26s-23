@@ -797,19 +797,11 @@ class PydanticAIAgentExecutor:
             tool_permission_resolver=tool_permission_resolver,
             skill_runtime_index=skill_runtime_index,
         )
-        if len(enabled_tool_ids) == 0 and skill_system_prompt is None:
-            agent = self._agent
-        elif skill_system_prompt is None:
-            agent = self._build_runtime_agent(
-                enabled_tools=enabled_tool_ids,
-                resolved_model=resolved_model,
-            )
-        else:
-            agent = self._build_runtime_agent(
-                enabled_tools=enabled_tool_ids,
-                resolved_model=resolved_model,
-                skill_system_prompt=skill_system_prompt,
-            )
+        agent = self._build_runtime_agent(
+            enabled_tools=enabled_tool_ids,
+            resolved_model=resolved_model,
+            skill_system_prompt=skill_system_prompt,
+        )
         stream = _PydanticAIEventStream(
             run_id=run_id,
             agent=agent,

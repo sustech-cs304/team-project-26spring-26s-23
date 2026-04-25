@@ -13,12 +13,14 @@ from pydantic_ai.messages import (
     ModelRequest,
     PartDeltaEvent,
     PartStartEvent,
+    RetryPromptPart,
     ThinkingPart,
     ThinkingPartDelta,
     TextPart,
     ToolCallPart,
     ToolCallPartDelta,
 )
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 
 import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
@@ -557,7 +559,7 @@ def test_open_event_stream_exposes_skill_control_tools_and_records_sanitized_eve
     assert completed_events[1]["resultSummary"] is not None
 
 
-def test_open_event_stream_keeps_running_when_weather_tool_is_not_enabled() -> None:
+def test_open_event_stream_does_not_advertise_weather_tool_when_it_is_not_enabled() -> None:
     executor = PydanticAIAgentExecutor(
         model=TestModel(
             call_tools=["weather_current"],
@@ -586,12 +588,117 @@ def test_open_event_stream_keeps_running_when_weather_tool_is_not_enabled() -> N
         if event.type in {"tool_started", "tool_completed", "tool_failed"}
     ]
 
-    assert result["error"] is None
-    assert result["output"] == "unused"
-    assert [payload["phase"] for payload in tool_events] == ["started", "failed"]
-    assert tool_events[-1]["errorSummary"] == (
-        "Tool 'tool.weather-current' is not enabled for this run."
+    assert isinstance(result["error"], KeyError)
+    assert result["error"].args == ("weather_current",)
+    assert result["output"] is None
+    assert tool_events == []
+
+
+
+def test_open_event_stream_builds_scoped_agent_when_no_tools_are_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = PydanticAIAgentExecutor(model="test-model")
+    scoped_agent = object()
+    build_calls: list[tuple[str, ...] | None] = []
+
+    def fake_build_runtime_agent(
+        *,
+        enabled_tools: tuple[str, ...] | None,
+        resolved_model: Any,
+        skill_system_prompt: str | None = None,
+    ) -> object:
+        _ = resolved_model
+        _ = skill_system_prompt
+        build_calls.append(enabled_tools)
+        return scoped_agent
+
+    monkeypatch.setattr(executor, "_build_runtime_agent", fake_build_runtime_agent)
+
+    stream = executor.open_event_stream(
+        run_id="run-no-tools",
+        agent_name="default",
+        user_prompt="What tools do you have?",
+        message_history=[],
+        model_route=_build_resolved_route(),
+        enabled_tools=(),
+        request_options={},
     )
+
+    assert build_calls == [()]
+    assert stream._agent is scoped_agent
+    assert stream._agent is not executor._agent
+
+
+
+def test_open_event_stream_recovers_from_unknown_tool_name_via_model_retry() -> None:
+    requests: list[list[ModelRequest]] = []
+
+    async def stream_function(messages: list[Any], _agent_info: Any) -> AsyncIterator[Any]:
+        requests.append([message for message in messages if isinstance(message, ModelRequest)])
+        latest_request = next(
+            (message for message in reversed(messages) if isinstance(message, ModelRequest)),
+            None,
+        )
+        assert latest_request is not None
+        if any(isinstance(part, RetryPromptPart) for part in latest_request.parts):
+            yield "工具名无效，我改为直接回答。"
+            return
+        yield {
+            0: DeltaToolCall(
+                name="weather_currennt",
+                json_args='{"location":"Shenzhen"}',
+                tool_call_id="bad-call-1",
+            )
+        }
+
+    executor = PydanticAIAgentExecutor(
+        model=FunctionModel(
+            stream_function=stream_function,
+            model_name="function:unknown-tool",
+        )
+    )
+
+    result = asyncio.run(
+        _collect_event_stream(
+            executor.open_event_stream(
+                run_id="run-unknown-tool-name",
+                agent_name="default",
+                user_prompt="请查询天气。",
+                message_history=[],
+                model_route=_build_resolved_route(model_id="function:unknown-tool"),
+                enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                request_options={},
+            )
+        )
+    )
+
+    assert result["error"] is None
+    assert result["output"] == "工具名无效，我改为直接回答。"
+    assert len(requests) == 2
+    assert any(
+        isinstance(part, RetryPromptPart)
+        and "Unknown tool name: 'weather_currennt'" in str(part.content)
+        for part in requests[1][-1].parts
+    )
+    assert [event.type for event in result["events"]] == [
+        "diagnostic",
+        "assistant_segment_started",
+        "assistant_segment_delta",
+        "assistant_segment_completed",
+        "diagnostic",
+        "tool_failed",
+    ]
+    assert result["events"][-2].payload["code"] == "raw_tool_call_unexecuted"
+    assert result["events"][-1].payload == {
+        "toolCallId": "bad-call-1",
+        "toolId": "weather_currennt",
+        "phase": "failed",
+        "title": "工具调用失败",
+        "summary": "模型产生了工具调用，但运行时未真正执行该调用。",
+        "inputSummary": '{"location": "Shenzhen"}',
+        "errorSummary": "Provider tool call arguments became complete, but no actual tool execution followed.",
+    }
 
 
 

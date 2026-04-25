@@ -170,6 +170,56 @@ describe('thread run primary path', () => {
     })
   })
 
+  it('preserves an explicit empty enabledTools array in run/start payloads', async () => {
+    const fetchFn = createFetchFn(createRuntimeRunStartResponse(), {
+      headers: {
+        'content-type': 'application/json',
+      },
+    })
+
+    await startRuntimeRun({
+      runtimeUrl,
+      threadId: sessionId,
+      agent: agentId,
+      message: createUserMessage(),
+      modelRoute: createRuntimeModelRoute(),
+      enabledTools: [],
+      requestOptions: {},
+      fetchFn,
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        method: 'run/start',
+        body: {
+          threadId: 'session-1',
+          agent: 'general',
+          message: {
+            role: 'user',
+            content: '请总结这份文档',
+          },
+          policy: {
+            modelRoute: {
+              routeRef: {
+                routeKind: 'provider-model',
+                profileId: 'provider-openai',
+                modelId: 'qwen-plus',
+              },
+              catalogRevision: '2026-04-06-provider-catalog-v1',
+            },
+            enabledTools: [],
+            requestOptions: {},
+          },
+        },
+      }),
+      signal: undefined,
+    })
+  })
+
   it('streams ordered runtime events from run/stream', async () => {
     const events: RuntimeRunEvent[] = [
       {
