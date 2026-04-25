@@ -8,6 +8,8 @@ import {
 } from './config-center/public-snapshot'
 import { MCP_REGISTRY_SUBSCRIPTION_CHANNEL } from './mcp-registry/ipc'
 import type { McpRegistrySubscriptionEvent } from './mcp-registry/types'
+import { SKILL_REGISTRY_SUBSCRIPTION_CHANNEL } from './skill-registry/ipc'
+import type { SkillRegistrySubscriptionEvent } from './skill-registry/types'
 import type {
   CopilotHostedRuntimeFailureSummary,
   CopilotRuntimeLoadResult,
@@ -88,6 +90,7 @@ const mainProcessServices = createMainProcessServices({
   },
   publishConfigCenterPublicSnapshotUpdate,
   publishMcpRegistryEvent,
+  publishSkillRegistryEvent,
   createCopilotHistoryService() {
     return createElectronCopilotHistoryService({
       ensureHostedBackendService,
@@ -459,6 +462,16 @@ function publishMcpRegistryEvent(event: McpRegistrySubscriptionEvent): void {
     }
 
     browserWindow.webContents.send(MCP_REGISTRY_SUBSCRIPTION_CHANNEL, event)
+  }
+}
+
+function publishSkillRegistryEvent(event: SkillRegistrySubscriptionEvent): void {
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    if (browserWindow.isDestroyed()) {
+      continue
+    }
+
+    browserWindow.webContents.send(SKILL_REGISTRY_SUBSCRIPTION_CHANNEL, event)
   }
 }
 

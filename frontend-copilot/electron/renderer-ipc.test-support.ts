@@ -17,5 +17,9 @@ export {
   createMcpToolCallRequestFixture,
   createMcpToolCallSuccessFixture,
   createSettingsWorkspaceStateFixture,
+  createSkillCapabilitySnapshotFixture,
+  createSkillRecordFixture,
+  createSkillResourceSummaryFixture,
+  createSkillValidationSummaryFixture,
 } from './renderer-ipc-domain-fixtures.test-support'
 export { createFakeIpcMain, createFakeIpcRenderer } from './renderer-ipc-transport.test-support'

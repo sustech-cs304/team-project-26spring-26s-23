@@ -37,6 +37,11 @@ from .debug_logging import (
     preview_text,
     summarize_runtime_tool_event,
 )
+from .skill_snapshot_provider import (
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_ID,
+    SkillRuntimeIndex,
+)
 from .debug_log_store import DebugLogCategory, DebugLogLevel, RuntimeDebugLogWriter
 from .execution_event_graph import (
     TOOL_COMPLETED_EVENT_TYPE,
@@ -218,6 +223,25 @@ def _serialize_tool_result_for_display(result: Any) -> str:
         )
 
 
+def _sanitize_tool_result_for_display(tool_id: str, result: dict[str, Any]) -> str:
+    if tool_id not in {SKILL_ACTIVATE_TOOL_ID, SKILL_READ_RESOURCE_TOOL_ID}:
+        return _serialize_tool_result_for_display(result)
+
+    sanitized: dict[str, Any] = {
+        "ok": result.get("ok"),
+    }
+    for key in ("skillId", "displayName", "path", "snapshotRevision", "errorCode"):
+        if key in result:
+            sanitized[key] = result[key]
+    if isinstance(result.get("resources"), list):
+        sanitized["resourceCount"] = len(cast(list[Any], result.get("resources")))
+    if isinstance(result.get("entryContent"), str):
+        sanitized["entryContentLength"] = len(cast(str, result.get("entryContent")))
+    if isinstance(result.get("content"), str):
+        sanitized["contentLength"] = len(cast(str, result.get("content")))
+    return _serialize_tool_result_for_display(sanitized)
+
+
 ToolLifecycleSink = Callable[[RuntimeToolLifecycleEvent], None]
 
 
@@ -246,6 +270,7 @@ class _PydanticAIAgentRunDeps:
     approval_coordinator: RuntimeToolApprovalCoordinator
     run_id: str | None = None
     debug_enabled: bool = False
+    skill_runtime_index: SkillRuntimeIndex | None = None
 
 
 @dataclass(slots=True)
@@ -742,6 +767,8 @@ class PydanticAIAgentExecutor:
         model_settings: Mapping[str, Any] | None = None,
         model_override: Any | None = None,
         tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
+        skill_runtime_index: SkillRuntimeIndex | None = None,
+        skill_system_prompt: str | None = None,
     ) -> _PydanticAIEventStream:
         resolved_model = self._resolved_explicit_model(model_override)
         if resolved_model is None:
@@ -768,15 +795,21 @@ class PydanticAIAgentExecutor:
             run_id=run_id,
             debug_enabled=debug_enabled,
             tool_permission_resolver=tool_permission_resolver,
+            skill_runtime_index=skill_runtime_index,
         )
-        agent = (
-            self._agent
-            if len(enabled_tool_ids) == 0
-            else self._build_runtime_agent(
+        if len(enabled_tool_ids) == 0 and skill_system_prompt is None:
+            agent = self._agent
+        elif skill_system_prompt is None:
+            agent = self._build_runtime_agent(
                 enabled_tools=enabled_tool_ids,
                 resolved_model=resolved_model,
             )
-        )
+        else:
+            agent = self._build_runtime_agent(
+                enabled_tools=enabled_tool_ids,
+                resolved_model=resolved_model,
+                skill_system_prompt=skill_system_prompt,
+            )
         stream = _PydanticAIEventStream(
             run_id=run_id,
             agent=agent,
@@ -797,11 +830,12 @@ class PydanticAIAgentExecutor:
         *,
         enabled_tools: Sequence[str] | None,
         resolved_model: Any,
+        skill_system_prompt: str | None = None,
     ) -> Agent[Any, Any]:
         _ = resolved_model
         agent = Agent(
             output_type=str,
-            system_prompt=DEFAULT_AGENT_SYSTEM_PROMPT,
+            system_prompt=self._compose_system_prompt(skill_system_prompt),
             deps_type=_PydanticAIAgentRunDeps,
             name=self.agent_name,
             tools=self._build_contract_agent_tools(enabled_tools=enabled_tools),
@@ -818,6 +852,7 @@ class PydanticAIAgentExecutor:
         run_id: str | None = None,
         debug_enabled: bool = False,
         tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
+        skill_runtime_index: SkillRuntimeIndex | None = None,
     ) -> _PydanticAIAgentRunDeps:
         return _PydanticAIAgentRunDeps(
             tool_registry=self._tool_registry,
@@ -830,6 +865,7 @@ class PydanticAIAgentExecutor:
             approval_coordinator=self._approval_coordinator,
             run_id=run_id,
             debug_enabled=debug_enabled,
+            skill_runtime_index=skill_runtime_index,
         )
 
     def _normalize_enabled_tools(self, enabled_tools: Sequence[str]) -> tuple[str, ...]:
@@ -901,6 +937,11 @@ class PydanticAIAgentExecutor:
         )
         tool.max_retries = 0
         return tool
+
+    def _compose_system_prompt(self, skill_system_prompt: str | None) -> str:
+        if skill_system_prompt is None or skill_system_prompt.strip() == "":
+            return DEFAULT_AGENT_SYSTEM_PROMPT
+        return f"{DEFAULT_AGENT_SYSTEM_PROMPT}\n\n{skill_system_prompt.strip()}"
 
     def _build_stream_model(self, model_route: ResolvedRuntimeModelRoute) -> Any:
         try:
@@ -1233,6 +1274,7 @@ class PydanticAIAgentExecutor:
                 "displayName": display_name,
                 "enabledToolIds": list(enabled_tool_ids),
                 "fileSystemState": self._build_bound_tool_file_system_state(ctx),
+                "skillRuntime": self._build_bound_tool_skill_runtime_state(ctx, tool_id),
             },
         )
 
@@ -1248,6 +1290,18 @@ class PydanticAIAgentExecutor:
         if isinstance(default_root, str) and default_root.strip() != "":
             file_system_state["defaultRoot"] = default_root
         return file_system_state
+
+    def _build_bound_tool_skill_runtime_state(
+        self,
+        ctx: RunContext[_PydanticAIAgentRunDeps],
+        tool_id: str,
+    ) -> dict[str, Any]:
+        if tool_id not in {SKILL_ACTIVATE_TOOL_ID, SKILL_READ_RESOURCE_TOOL_ID}:
+            return {}
+        skill_runtime_index = getattr(ctx.deps, "skill_runtime_index", None)
+        if skill_runtime_index is None or not skill_runtime_index.has_available_skills:
+            return {}
+        return {"index": skill_runtime_index}
 
     def _maybe_resolve_contract_tool_result(
         self,
@@ -1371,7 +1425,7 @@ class PydanticAIAgentExecutor:
             result=result,
         )
         result_summary = summarize_tool_result(result)
-        result_payload = _serialize_tool_result_for_display(result)
+        result_payload = _sanitize_tool_result_for_display(tool_id, result)
         completed_title = self._build_completed_title(
             tool_id=tool_id,
             display_name=display_name,

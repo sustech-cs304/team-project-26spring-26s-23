@@ -161,9 +161,11 @@ async def execute_mcp_tool(
     snapshot_provider: McpSnapshotProvider,
     arguments: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    resolved_target, resolved_from_current_snapshot = _resolve_latest_execution_target_with_status(
-        target=target,
-        snapshot_provider=snapshot_provider,
+    resolved_target, resolved_from_current_snapshot = (
+        _resolve_latest_execution_target_with_status(
+            target=target,
+            snapshot_provider=snapshot_provider,
+        )
     )
     runtime_context = get_current_runtime_tool_execution_context()
     invocation_context = ToolInvocationContext(
@@ -306,7 +308,8 @@ def _resolve_result_snapshot_revision(
     snapshot_revision = result.get("snapshotRevision")
     return (
         snapshot_revision
-        if isinstance(snapshot_revision, int) and not isinstance(snapshot_revision, bool)
+        if isinstance(snapshot_revision, int)
+        and not isinstance(snapshot_revision, bool)
         else target.snapshot_revision
     )
 

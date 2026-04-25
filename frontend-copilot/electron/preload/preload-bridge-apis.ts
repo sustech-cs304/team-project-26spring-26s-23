@@ -58,6 +58,17 @@ import {
   type McpRegistryApi,
   type McpRegistrySubscriptionApi,
 } from '../mcp-registry/ipc'
+import {
+  SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+  SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_LOAD_CHANNEL,
+  SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
+  SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+  createSkillRegistrySubscriptionApi,
+  type SkillRegistryApi,
+  type SkillRegistrySubscriptionApi,
+} from '../skill-registry/ipc'
 import { TOOL_CATALOG_LOAD_CHANNEL, type ToolCatalogApi } from '../tool-catalog/ipc'
 
 export interface PreloadBridgeApis {
@@ -71,6 +82,8 @@ export interface PreloadBridgeApis {
   managedRuntime: ManagedRuntimeApi
   mcpRegistry: McpRegistryApi
   mcpRegistrySubscription: McpRegistrySubscriptionApi
+  skillRegistry: SkillRegistryApi
+  skillRegistrySubscription: SkillRegistrySubscriptionApi
   toolCatalog: ToolCatalogApi
   desktopNotification: DesktopNotificationApi
   bootstrapWindow: BootstrapWindowApi
@@ -182,6 +195,27 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
       },
     },
     mcpRegistrySubscription: createMcpRegistrySubscriptionApi(ipcRenderer),
+    skillRegistry: {
+      loadRegistry(request) {
+        return ipcRenderer.invoke(SKILL_REGISTRY_LOAD_CHANNEL, request)
+      },
+      importSkill(request) {
+        return ipcRenderer.invoke(SKILL_REGISTRY_IMPORT_SKILL_CHANNEL, request)
+      },
+      selectAndImportSkill() {
+        return ipcRenderer.invoke(SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL)
+      },
+      deleteSkill(skillId) {
+        return ipcRenderer.invoke(SKILL_REGISTRY_DELETE_SKILL_CHANNEL, skillId)
+      },
+      setSkillEnabled(request) {
+        return ipcRenderer.invoke(SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL, request)
+      },
+      refreshSkills(request) {
+        return ipcRenderer.invoke(SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL, request)
+      },
+    },
+    skillRegistrySubscription: createSkillRegistrySubscriptionApi(ipcRenderer),
     toolCatalog: {
       load(request) {
         return ipcRenderer.invoke(TOOL_CATALOG_LOAD_CHANNEL, request)

@@ -59,6 +59,19 @@ import type {
   McpTestConnectionResult,
 } from '../mcp-registry/ipc'
 import type { McpRegistrySubscriptionEvent, McpServerDraft } from '../mcp-registry/types'
+import type {
+  SkillDeleteResult,
+  SkillImportRequest,
+  SkillImportResult,
+  SkillRefreshRequest,
+  SkillSelectAndImportResult,
+  SkillRefreshResult,
+  SkillRegistryLoadRequest,
+  SkillRegistryLoadResult,
+  SkillSetEnabledRequest,
+  SkillSetEnabledResult,
+} from '../skill-registry/ipc'
+import type { SkillRegistrySubscriptionEvent } from '../skill-registry/types'
 import type { ToolCatalogLoadResult } from '../tool-catalog/ipc'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
@@ -82,6 +95,9 @@ export interface CreateMainProcessServicesOptions {
   ) => void | Promise<void>
   publishMcpRegistryEvent: (
     event: McpRegistrySubscriptionEvent,
+  ) => void | Promise<void>
+  publishSkillRegistryEvent: (
+    event: SkillRegistrySubscriptionEvent,
   ) => void | Promise<void>
   createCopilotHistoryService: () => ElectronCopilotHistoryService
 }
@@ -107,6 +123,12 @@ export interface MainProcessServices {
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   loadMcpRegistry: (request?: McpRegistryLoadRequest) => Promise<McpRegistryLoadResult>
+  loadSkillRegistry: (request?: SkillRegistryLoadRequest) => Promise<SkillRegistryLoadResult>
+  importSkill: (request: SkillImportRequest) => Promise<SkillImportResult>
+  selectAndImportSkill: () => Promise<SkillSelectAndImportResult>
+  deleteSkill: (skillId: string) => Promise<SkillDeleteResult>
+  setSkillEnabled: (request: SkillSetEnabledRequest) => Promise<SkillSetEnabledResult>
+  refreshSkills: (request?: SkillRefreshRequest) => Promise<SkillRefreshResult>
   loadManagedRuntime: () => Promise<ManagedRuntimeLoadResponse>
   installOrRepairManagedRuntime: (reason?: ManagedRuntimeActionReason) => Promise<ManagedRuntimeLoadResponse>
   saveMcpServer: (draft: McpServerDraft) => Promise<McpSaveServerResult>

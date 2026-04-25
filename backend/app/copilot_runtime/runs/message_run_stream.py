@@ -15,6 +15,7 @@ from ..agent import AgentExecutionError
 from ..debug_logging import log_runtime_chain_debug, summarize_runtime_model_route
 from ..execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventFactory
 from ..model_routes import ResolvedRuntimeModelRoute
+from ..skill_snapshot_provider import SkillRuntimeIndex
 from ..tool_permissions import RuntimeToolPermissionResolver
 
 
@@ -53,6 +54,8 @@ class RuntimeStreamingAgentExecutor(Protocol):
         request_options: Mapping[str, Any] | None = None,
         model_settings: Mapping[str, Any] | None = None,
         tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
+        skill_runtime_index: SkillRuntimeIndex | None = None,
+        skill_system_prompt: str | None = None,
     ) -> RuntimeAgentExecutionEventStream:
         raise NotImplementedError
 
@@ -70,6 +73,8 @@ def open_execution_stream(
     request_options: Mapping[str, Any] | None,
     model_settings: Mapping[str, Any] | None,
     tool_permission_resolver: RuntimeToolPermissionResolver | None,
+    skill_runtime_index: SkillRuntimeIndex | None = None,
+    skill_system_prompt: str | None = None,
 ) -> RuntimeAgentExecutionEventStream:
     open_event_stream = getattr(agent_executor, "open_event_stream", None)
     if not callable(open_event_stream):
@@ -97,6 +102,8 @@ def open_execution_stream(
         "request_options": request_options,
         "model_settings": model_settings,
         "tool_permission_resolver": tool_permission_resolver,
+        "skill_runtime_index": skill_runtime_index,
+        "skill_system_prompt": skill_system_prompt,
     }
     supports_tool_permission_resolver: bool | None = None
     try:

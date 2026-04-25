@@ -15,6 +15,8 @@ const PRELOAD_BRIDGE_KEYS = [
   'managedRuntime',
   'mcpRegistry',
   'mcpRegistrySubscription',
+  'skillRegistry',
+  'skillRegistrySubscription',
   'toolCatalog',
   'desktopNotification',
   'bootstrapWindow',

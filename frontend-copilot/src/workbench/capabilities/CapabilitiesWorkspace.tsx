@@ -1,3 +1,4 @@
+import { FolderPlus, LoaderCircle, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
@@ -28,10 +29,12 @@ import {
 import { ManagedRuntimeStatusButton } from './ManagedRuntimeStatusButton'
 import { McpServerEditorDialog } from './McpServerEditorDialog'
 import { McpServersPanel } from './McpServersPanel'
+import { SkillsPanel } from './SkillsPanel'
 import { ToolPermissionsPanel } from './ToolPermissionsPanel'
 import type { McpServerEditorMode } from './mcp-registry-view-model'
 import { useManagedRuntime } from './use-managed-runtime'
 import { useMcpRegistry } from './use-mcp-registry'
+import { useSkillRegistry } from './use-skill-registry'
 import {
   resolveCopilotToolPlatformGroup,
   resolveCopilotToolPresentation,
@@ -73,6 +76,7 @@ export function CapabilitiesWorkspace() {
   })
   const mcpRegistry = useMcpRegistry()
   const managedRuntime = useManagedRuntime(activeSection === 'mcp-servers')
+  const skillRegistry = useSkillRegistry()
   const appliedSnapshotRevisionRef = useRef<number | null>(null)
   const appliedDirectoryVersionRef = useRef<string | null>(null)
   const [managedRuntimePanelOpen, setManagedRuntimePanelOpen] = useState(false)
@@ -315,6 +319,31 @@ export function CapabilitiesWorkspace() {
                   新增 MCP 服务器
                 </button>
               </div>
+            ) : activeSection === 'skills' ? (
+              <div className="toolbar-actions capabilities-main__actions">
+                <button
+                  type="button"
+                  className="secondary-button secondary-button--subtle skills-header__button"
+                  disabled={skillRegistry.globalBusyOperation !== null}
+                  onClick={() => void skillRegistry.refreshSkills()}
+                >
+                  {skillRegistry.globalBusyOperation === 'refreshing'
+                    ? <LoaderCircle size={15} className="skill-activity__icon" aria-hidden="true" />
+                    : <RefreshCw size={15} aria-hidden="true" />}
+                  {skillRegistry.globalBusyOperation === 'refreshing' ? '刷新中…' : '刷新'}
+                </button>
+                <button
+                  type="button"
+                  className="primary-button skills-header__button"
+                  disabled={skillRegistry.globalBusyOperation !== null}
+                  onClick={() => void skillRegistry.selectAndImportSkill()}
+                >
+                  {skillRegistry.globalBusyOperation === 'importing'
+                    ? <LoaderCircle size={15} className="skill-activity__icon" aria-hidden="true" />
+                    : <FolderPlus size={15} aria-hidden="true" />}
+                  {skillRegistry.globalBusyOperation === 'importing' ? '导入中…' : '导入 Skill'}
+                </button>
+              </div>
             ) : null}
           </header>
 
@@ -331,13 +360,21 @@ export function CapabilitiesWorkspace() {
                 onDelayActionChange={handleDelayActionChange}
                 onDelaySecondsChange={handleDelaySecondsChange}
               />
-            ) : (
+            ) : activeSection === 'mcp-servers' ? (
               <McpServersPanel
                 servers={mcpRegistry.servers}
                 statusMessage={mcpRegistry.statusMessage}
                 onToggleEnabled={mcpRegistry.toggleServerEnabled}
                 onDelete={mcpRegistry.deleteServer}
                 onTestConnection={mcpRegistry.testServerConnection}
+              />
+            ) : (
+              <SkillsPanel
+                skills={skillRegistry.skills}
+                importValidationErrors={skillRegistry.importValidationErrors}
+                onToggleEnabled={skillRegistry.toggleSkillEnabled}
+                onDelete={skillRegistry.deleteSkill}
+                onRefresh={skillRegistry.refreshSkill}
               />
             )}
           </section>

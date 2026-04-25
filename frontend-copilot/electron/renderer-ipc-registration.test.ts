@@ -26,10 +26,18 @@ import {
   MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
   MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
 } from './mcp-registry/ipc'
+import {
+  SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+  SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_LOAD_CHANNEL,
+  SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
+  SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+} from './skill-registry/ipc'
 import { TOOL_CATALOG_LOAD_CHANNEL } from './tool-catalog/ipc'
 import { DESKTOP_NOTIFICATION_SHOW_CHANNEL } from './desktop-notification'
 import { createRendererIpcHandlers } from './renderer-ipc-handlers.test-support'
-import { createMcpStdioStubServerFixture } from './renderer-ipc.test-support'
+import { createMcpStdioStubServerFixture, createSkillRecordFixture } from './renderer-ipc.test-support'
 import { createFakeIpcMain } from './renderer-ipc-transport.test-support'
 import { registerRendererIpcHandlers } from './renderer-ipc-registration'
 
@@ -59,6 +67,12 @@ describe('registerRendererIpcHandlers', () => {
       MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
       MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
       MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+      SKILL_REGISTRY_LOAD_CHANNEL,
+      SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+      SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+      SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+      SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+      SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
       COPILOT_HISTORY_LIST_THREADS_CHANNEL,
       COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
       COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
@@ -92,6 +106,12 @@ describe('registerRendererIpcHandlers', () => {
       MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
       MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
       MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+      SKILL_REGISTRY_LOAD_CHANNEL,
+      SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+      SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+      SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+      SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+      SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
       COPILOT_HISTORY_LIST_THREADS_CHANNEL,
       COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
       COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
@@ -118,6 +138,12 @@ describe('registerRendererIpcHandlers', () => {
     const setMcpServerEnabledHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL)
     const testMcpConnectionHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_TEST_CONNECTION_CHANNEL)
     const refreshMcpCatalogHandler = getRegisteredHandler(registeredHandlers, MCP_REGISTRY_REFRESH_CATALOG_CHANNEL)
+    const loadSkillRegistryHandler = getRegisteredHandler(registeredHandlers, SKILL_REGISTRY_LOAD_CHANNEL)
+    const importSkillHandler = getRegisteredHandler(registeredHandlers, SKILL_REGISTRY_IMPORT_SKILL_CHANNEL)
+    const selectAndImportSkillHandler = getRegisteredHandler(registeredHandlers, SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL)
+    const deleteSkillHandler = getRegisteredHandler(registeredHandlers, SKILL_REGISTRY_DELETE_SKILL_CHANNEL)
+    const setSkillEnabledHandler = getRegisteredHandler(registeredHandlers, SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL)
+    const refreshSkillsHandler = getRegisteredHandler(registeredHandlers, SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL)
     const listThreadsHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_LIST_THREADS_CHANNEL)
     const getThreadDetailHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL)
     const getRunReplayHandler = getRegisteredHandler(registeredHandlers, COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL)
@@ -165,6 +191,23 @@ describe('registerRendererIpcHandlers', () => {
     )
     await expect(refreshMcpCatalogHandler(undefined, { serverId: mcpServerDraft.serverId })).resolves.toEqual(
       await handlers.refreshMcpCatalog({ serverId: mcpServerDraft.serverId }),
+    )
+    const skillRecord = createSkillRecordFixture()
+    await expect(loadSkillRegistryHandler(undefined, { includeDisabled: true })).resolves.toEqual(
+      await handlers.loadSkillRegistry({ includeDisabled: true }),
+    )
+    await expect(importSkillHandler(undefined, { sourceDirectory: 'D:/skills/writing-clear-docs' })).resolves.toEqual(
+      await handlers.importSkill({ sourceDirectory: 'D:/skills/writing-clear-docs' }),
+    )
+    await expect(selectAndImportSkillHandler()).resolves.toEqual(await handlers.selectAndImportSkill())
+    await expect(deleteSkillHandler(undefined, skillRecord.skillId)).resolves.toEqual(
+      await handlers.deleteSkill(skillRecord.skillId),
+    )
+    await expect(setSkillEnabledHandler(undefined, { skillId: skillRecord.skillId, enabled: false })).resolves.toEqual(
+      await handlers.setSkillEnabled({ skillId: skillRecord.skillId, enabled: false }),
+    )
+    await expect(refreshSkillsHandler(undefined, { skillId: skillRecord.skillId })).resolves.toEqual(
+      await handlers.refreshSkills({ skillId: skillRecord.skillId }),
     )
     await expect(listThreadsHandler()).resolves.toEqual(await handlers.listCopilotHistoryThreads())
     await expect(getThreadDetailHandler(undefined, 'thread-1')).resolves.toEqual(

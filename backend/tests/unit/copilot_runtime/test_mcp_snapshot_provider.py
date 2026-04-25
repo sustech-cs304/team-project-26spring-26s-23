@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -28,11 +29,13 @@ _FIXTURE_ROOT = (
 )
 
 
-def _load_fixture(name: str) -> dict[str, object]:
+def _load_fixture(name: str) -> dict[str, Any]:
     return json.loads((_FIXTURE_ROOT / name).read_text(encoding="utf-8"))
 
 
-def test_validate_mcp_capability_snapshot_accepts_shared_fixture_and_keeps_redaction_guard() -> None:
+def test_validate_mcp_capability_snapshot_accepts_shared_fixture_and_keeps_redaction_guard() -> (
+    None
+):
     payload = _load_fixture("snapshot.sample.json")
 
     snapshot = validate_mcp_capability_snapshot(payload)
@@ -49,7 +52,9 @@ def test_validate_mcp_capability_snapshot_accepts_shared_fixture_and_keeps_redac
     assert collect_mcp_snapshot_forbidden_paths(payload) == []
 
 
-def test_collect_mcp_snapshot_forbidden_paths_ignores_public_input_schema_keys() -> None:
+def test_collect_mcp_snapshot_forbidden_paths_ignores_public_input_schema_keys() -> (
+    None
+):
     payload = _load_fixture("snapshot.sample.json")
     payload["tools"][0]["inputSchema"] = {
         "type": "object",
@@ -62,7 +67,9 @@ def test_collect_mcp_snapshot_forbidden_paths_ignores_public_input_schema_keys()
     }
 
     assert collect_mcp_snapshot_forbidden_paths(payload) == []
-    assert validate_mcp_capability_snapshot(payload).tools[0].input_schema["properties"] == {
+    assert validate_mcp_capability_snapshot(payload).tools[0].input_schema[
+        "properties"
+    ] == {
         "token": {"type": "string"},
         "headers": {"type": "object"},
         "args": {"type": "array"},
@@ -70,7 +77,9 @@ def test_collect_mcp_snapshot_forbidden_paths_ignores_public_input_schema_keys()
     }
 
 
-def test_collect_mcp_snapshot_forbidden_paths_rejects_host_sensitive_fields_outside_input_schema() -> None:
+def test_collect_mcp_snapshot_forbidden_paths_rejects_host_sensitive_fields_outside_input_schema() -> (
+    None
+):
     payload = _load_fixture("snapshot.sample.json")
     payload["servers"][0]["headers"] = {"authorization": "Bearer desktop-secret"}
 
@@ -108,15 +117,15 @@ def test_validate_mcp_tool_call_result_keeps_directory_drift_error_shape() -> No
     assert result.snapshot_revision == 8
 
 
-
-def test_create_mcp_snapshot_provider_returns_missing_when_state_dir_is_unavailable() -> None:
+def test_create_mcp_snapshot_provider_returns_missing_when_state_dir_is_unavailable() -> (
+    None
+):
     provider = create_mcp_snapshot_provider(state_dir=None)
 
     result = provider.load_snapshot_result()
 
     assert result.source == "missing"
     assert result.snapshot is None
-
 
 
 def test_create_mcp_snapshot_provider_prefers_snapshot_file_then_bridge_then_cache(
@@ -166,7 +175,6 @@ def test_create_mcp_snapshot_provider_prefers_snapshot_file_then_bridge_then_cac
     assert from_cache.source == "cache"
     assert from_cache.snapshot is not None
     assert from_cache.snapshot.snapshot_revision == 8
-
 
 
 def test_create_mcp_snapshot_provider_rejects_leaked_bridge_snapshot_payload(

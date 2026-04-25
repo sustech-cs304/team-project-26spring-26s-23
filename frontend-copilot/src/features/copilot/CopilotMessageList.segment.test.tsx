@@ -203,6 +203,73 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html.indexOf('天气工具被调用')).toBeLessThan(html.indexOf('第二段'))
   })
 
+  it('renders skill tool calls as normal tool cards without skill activity chrome or leaked body text', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'completed',
+      runId: 'run-skill',
+      threadId: 'session-1',
+      segments: [
+        {
+          id: 'diagnostic:run-skill:2',
+          kind: 'diagnostic',
+          runId: 'run-skill',
+          startedSequence: 2,
+          lastSequence: 2,
+          status: 'completed',
+          diagnostic: {
+            code: 'skill_index_loaded',
+            message: 'Skill index loaded for this run.',
+            stage: 'load_skill_index',
+            details: {
+              snapshotRevision: 8,
+            },
+          },
+        },
+        {
+          id: 'tool:run-skill:skill.activate:call-1',
+          kind: 'tool',
+          runId: 'run-skill',
+          startedSequence: 3,
+          lastSequence: 3,
+          status: 'completed',
+          toolCallId: 'skill.activate:call-1',
+          toolId: 'skill.activate',
+          toolPhase: 'completed',
+          title: '技能激活已返回结果',
+          summary: '{"ok":true,"skillId":"writing-clear-docs","displayName":"清晰文档写作","entryContentLength":120,"resourceCount":1}',
+          inputSummary: '{"skill_id":"writing-clear-docs"}',
+          resultSummary: '{"ok":true,"skillId":"writing-clear-docs","displayName":"清晰文档写作","entryContentLength":120,"resourceCount":1}',
+          errorSummary: null,
+        },
+        {
+          id: 'tool:run-skill:skill.read_resource:call-2',
+          kind: 'tool',
+          runId: 'run-skill',
+          startedSequence: 4,
+          lastSequence: 4,
+          status: 'failed',
+          toolCallId: 'skill.read_resource:call-2',
+          toolId: 'skill.read_resource',
+          toolPhase: 'failed',
+          title: '技能资源读取调用失败',
+          summary: '内部 Skill 控制工具调用失败。',
+          inputSummary: '{"path":"resources/checklist.md","skill_id":"writing-clear-docs"}',
+          resultSummary: null,
+          errorSummary: '{"errorCode":"resource_not_found","path":"resources/checklist.md","skillId":"writing-clear-docs","content":"Prefer structure","message":"Skill resource was not found in the enabled skill snapshot resource index."}',
+        },
+      ],
+    })
+
+    expect(html).toContain('技能激活被调用')
+    expect(html).toContain('技能资源读取调用失败')
+    expect(html).not.toContain('Skill 活动')
+    expect(html).not.toContain('技能索引已加载')
+    expect(html).not.toContain('Prefer structure')
+    expect(html).not.toContain('SKILL.md')
+    expect(html).not.toContain('skill activity')
+  })
+
   it('keeps rendered segments visible when a run fails and shows a simplified terminal message', () => {
     const html = renderConversation({
       ...createIdleCopilotRunState(),

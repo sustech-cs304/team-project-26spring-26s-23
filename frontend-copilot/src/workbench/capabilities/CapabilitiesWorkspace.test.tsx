@@ -13,11 +13,20 @@ import type {
 } from '../../../electron/mcp-registry/ipc'
 import type { ManagedRuntimeLoadResponse } from '../../../electron/managed-runtime/ipc'
 import type {
+  SkillDeleteResult,
+  SkillImportResult,
+  SkillRefreshResult,
+  SkillSelectAndImportResult,
+  SkillRegistryLoadResult,
+  SkillSetEnabledResult,
+} from '../../../electron/skill-registry/ipc'
+import type {
   McpRegistrySubscriptionEvent,
   McpServerDraft,
   McpServerRecord,
   McpServerStateSummary,
 } from '../../../electron/mcp-registry/types'
+import type { SkillRecord, SkillRegistrySubscriptionEvent } from '../../../electron/skill-registry/types'
 import type { ToolCatalogLoadResult } from '../../../electron/tool-catalog/ipc'
 import type { RuntimeToolDirectoryEntry } from '../../features/copilot/chat-contract'
 
@@ -30,6 +39,7 @@ import {
   createMcpSetServerEnabledSuccessFixture,
   createMcpStdioStubServerFixture,
   createMcpTestConnectionSuccessFixture,
+  createSkillRecordFixture,
 } from '../../../electron/renderer-ipc.test-support'
 import {
   clickElement,
@@ -74,6 +84,13 @@ const mockedRefreshMcpCatalog = vi.fn<
   (request?: { serverId?: string | null }) => Promise<McpRefreshCatalogResult>
 >()
 const mockedSubscribeMcpRegistry = vi.fn<(listener: (event: McpRegistrySubscriptionEvent) => void) => () => void>()
+const mockedLoadSkillRegistry = vi.fn<(request?: { includeDisabled?: boolean }) => Promise<SkillRegistryLoadResult>>()
+const mockedImportSkill = vi.fn<(request: { sourceDirectory: string, enabled?: boolean }) => Promise<SkillImportResult>>()
+const mockedSelectAndImportSkill = vi.fn<() => Promise<SkillSelectAndImportResult>>()
+const mockedDeleteSkill = vi.fn<(skillId: string) => Promise<SkillDeleteResult>>()
+const mockedSetSkillEnabled = vi.fn<(request: { skillId: string, enabled: boolean }) => Promise<SkillSetEnabledResult>>()
+const mockedRefreshSkills = vi.fn<(request?: { skillId?: string | null }) => Promise<SkillRefreshResult>>()
+const mockedSubscribeSkillRegistry = vi.fn<(listener: (event: SkillRegistrySubscriptionEvent) => void) => () => void>()
 const connectedStdioServer = createMcpStdioStubServerFixture()
 const connectedStdioState = createSavedMcpServerState(connectedStdioServer, {
   connectionState: 'connected',
@@ -83,10 +100,12 @@ const connectedStdioState = createSavedMcpServerState(connectedStdioServer, {
 })
 
 let activeMcpRegistryListener: ((event: McpRegistrySubscriptionEvent) => void) | null = null
+let activeSkillRegistryListener: ((event: SkillRegistrySubscriptionEvent) => void) | null = null
 
 beforeEach(() => {
   vi.clearAllMocks()
   activeMcpRegistryListener = null
+  activeSkillRegistryListener = null
 
   mockedLoadMcpRegistry.mockResolvedValue(createMcpRegistryLoadResultFixture())
   mockedLoadManagedRuntime.mockResolvedValue(createManagedRuntimeLoadResultFixture())
@@ -115,6 +134,20 @@ beforeEach(() => {
       }
     }
   })
+  mockedLoadSkillRegistry.mockResolvedValue(createSkillRegistryLoadResultFixture())
+  mockedImportSkill.mockResolvedValue(createSkillImportResultFixture())
+  mockedSelectAndImportSkill.mockResolvedValue(createSkillImportResultFixture())
+  mockedDeleteSkill.mockResolvedValue(createSkillDeleteResultFixture())
+  mockedSetSkillEnabled.mockResolvedValue(createSkillSetEnabledResultFixture(false))
+  mockedRefreshSkills.mockResolvedValue(createSkillRefreshResultFixture())
+  mockedSubscribeSkillRegistry.mockImplementation((listener) => {
+    activeSkillRegistryListener = listener
+    return () => {
+      if (activeSkillRegistryListener === listener) {
+        activeSkillRegistryListener = null
+      }
+    }
+  })
 
   Object.defineProperty(window, 'mcpRegistry', {
     configurable: true,
@@ -137,6 +170,27 @@ beforeEach(() => {
     },
   })
 
+  Object.defineProperty(window, 'skillRegistry', {
+    configurable: true,
+    writable: true,
+    value: {
+      loadRegistry: mockedLoadSkillRegistry,
+      importSkill: mockedImportSkill,
+      selectAndImportSkill: mockedSelectAndImportSkill,
+      deleteSkill: mockedDeleteSkill,
+      setSkillEnabled: mockedSetSkillEnabled,
+      refreshSkills: mockedRefreshSkills,
+    },
+  })
+
+  Object.defineProperty(window, 'skillRegistrySubscription', {
+    configurable: true,
+    writable: true,
+    value: {
+      subscribe: mockedSubscribeSkillRegistry,
+    },
+  })
+
   Object.defineProperty(window, 'managedRuntime', {
     configurable: true,
     writable: true,
@@ -147,8 +201,11 @@ beforeEach(() => {
   })
 })
 
-function getNavButton(container: ParentNode, sectionId: 'tool-permissions' | 'mcp-servers'): HTMLButtonElement {
-  const button = container.querySelector(`#capabilities-tab-${sectionId}`)
+function getNavButton(container: ParentNode, sectionId: 'tool-permissions' | 'mcp-servers' | 'skills'): HTMLButtonElement {
+  const expectedId = `capabilities-tab-${sectionId}`
+  const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((element) => {
+    return element.id === expectedId
+  })
 
   if (!(button instanceof HTMLButtonElement)) {
     throw new Error(`Missing capabilities nav button for section=${sectionId}`)
@@ -196,6 +253,25 @@ function getServerRow(container: ParentNode, serverName: string): HTMLElement {
 
   if (row === null) {
     throw new Error(`Missing MCP server row for server=${serverName}`)
+  }
+
+  return row
+}
+
+function querySkillRow(container: ParentNode, skillName: string): HTMLElement | null {
+  const heading = Array.from(container.querySelectorAll<HTMLElement>('.skill-row__title')).find((element) => {
+    return element.textContent?.trim() === skillName
+  })
+
+  const row = heading?.closest('.skill-row')
+  return row instanceof HTMLElement ? row : null
+}
+
+function getSkillRow(container: ParentNode, skillName: string): HTMLElement {
+  const row = querySkillRow(container, skillName)
+
+  if (row === null) {
+    throw new Error(`Missing Skill row for skill=${skillName}`)
   }
 
   return row
@@ -280,6 +356,70 @@ function createLoadResult() {
         },
       },
     }),
+  }
+}
+
+function createSkillRegistryLoadResultFixture(
+  overrides: Partial<Extract<SkillRegistryLoadResult, { ok: true }>> = {},
+): SkillRegistryLoadResult {
+  return {
+    ok: true,
+    registryRevision: 3,
+    snapshotRevision: 5,
+    skills: [createSkillRecordFixture()],
+    ...overrides,
+  }
+}
+
+function createSkillImportResultFixture(
+  overrides: Partial<Extract<SkillImportResult, { ok: true }>> = {},
+): SkillImportResult {
+  const skill = createSkillRecordFixture()
+  return {
+    ok: true,
+    registryRevision: 4,
+    snapshotRevision: 6,
+    skill,
+    validationErrors: [],
+    ...overrides,
+  }
+}
+
+function createSkillDeleteResultFixture(
+  skillId = createSkillRecordFixture().skillId,
+): SkillDeleteResult {
+  return {
+    ok: true,
+    registryRevision: 5,
+    snapshotRevision: 7,
+    skillId,
+    deleted: true,
+  }
+}
+
+function createSkillSetEnabledResultFixture(enabled: boolean): SkillSetEnabledResult {
+  return {
+    ok: true,
+    registryRevision: 6,
+    snapshotRevision: 8,
+    skill: createSkillRecordFixture({ enabled }),
+  }
+}
+
+function createSkillRefreshResultFixture(
+  skill: SkillRecord = createSkillRecordFixture(),
+): SkillRefreshResult {
+  return {
+    ok: true,
+    registryRevision: 7,
+    snapshotRevision: 9,
+    refreshedSkillIds: [skill.skillId],
+    results: [{
+      skillId: skill.skillId,
+      status: skill.validation.status,
+      errors: skill.validation.errors,
+      warnings: skill.validation.warnings,
+    }],
   }
 }
 
@@ -1547,6 +1687,248 @@ describe('CapabilitiesWorkspace', () => {
 
     expect((dialog.querySelector('input[aria-label="服务器名称"]') as HTMLInputElement).value).toBe('chrome-devtools')
     expect((dialog.querySelector('input[aria-label="启动命令"]') as HTMLInputElement).value).toBe('npx')
+
+    rendered.unmount()
+  })
+
+  it('renders the polished Skills section without path input or internal revision details', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+    const validSkill = createSkillRecordFixture()
+    const builtinSkill = createSkillRecordFixture({
+      skillId: 'builtin-placeholder-skill',
+      displayName: '内置占位 Skill',
+      description: '应用自带的占位 Skill。',
+      source: 'builtin',
+      managedDirectoryName: 'builtin-placeholder-skill',
+      tags: ['builtin'],
+    })
+    const invalidSkill = createSkillRecordFixture({
+      skillId: 'code-review-helper',
+      displayName: '代码审查助手',
+      description: '帮助模型执行结构化代码审查。',
+      enabled: false,
+      validation: {
+        status: 'invalid',
+        errors: [{
+          fieldPath: 'SKILL.md',
+          message: 'Skill entry file is not readable.',
+          code: 'entry_missing',
+        }],
+        warnings: [],
+      },
+      entrySummary: null,
+      resourceSummaries: [],
+      tags: ['review'],
+    })
+    mockedLoadSkillRegistry.mockResolvedValue(createSkillRegistryLoadResultFixture({
+      registryRevision: 12,
+      snapshotRevision: 8,
+      skills: [validSkill, builtinSkill, invalidSkill],
+    }))
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+    await clickElement(getNavButton(rendered.container, 'skills'))
+    await waitForNextFrame()
+
+    expect(rendered.container.textContent).toContain('Skills')
+    expect(rendered.container.textContent).not.toContain('本地 Skills')
+    expect(rendered.container.textContent).toContain('导入 Skill')
+    expect(rendered.container.textContent).toContain('刷新')
+    expect(rendered.container.querySelector('.capabilities-main__actions')).toBeTruthy()
+    expect(rendered.container.querySelector('input[aria-label="Skill 目录路径"]')).toBeNull()
+    expect(rendered.container.textContent).not.toContain('Registry rev')
+    expect(rendered.container.textContent).not.toContain('Snapshot rev')
+    expect(rendered.container.textContent).not.toContain('Skills 管理')
+    expect(rendered.container.querySelector('.skills-header')).toBeNull()
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).not.toContain('校验通过')
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).not.toContain('已开启')
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).toContain('documentation')
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).not.toContain('未声明版本')
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).not.toContain('个显式资源')
+    expect(getSkillRow(rendered.container, '代码审查助手').textContent).toContain('Skill entry file is not readable.')
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).not.toContain('帮助模型整理需求、设计与 API 文档。')
+    expect((getSkillRow(rendered.container, '内置占位 Skill').querySelector('button[aria-label="删除 内置占位 Skill"]') as HTMLButtonElement).disabled).toBe(true)
+
+    await clickElement(getSkillRow(rendered.container, '清晰文档写作').querySelector('button[aria-label="查看 清晰文档写作 详情"]') as HTMLButtonElement)
+
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).toContain('适用场景')
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).toContain('帮助模型编写结构清晰、面向开发者的技术文档。')
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).toContain('技能预览')
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).toContain('资源')
+    expect(getSkillRow(rendered.container, '清晰文档写作').textContent).toContain('resources/checklist.md')
+
+    rendered.unmount()
+
+    mockedLoadSkillRegistry.mockResolvedValue(createSkillRegistryLoadResultFixture({ skills: [] }))
+    const emptyRendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+    await clickElement(getNavButton(emptyRendered.container, 'skills'))
+    await waitForNextFrame()
+
+    expect(emptyRendered.container.textContent).toContain('还没有 Skills')
+    expect(emptyRendered.container.textContent).toContain('可从本地文件夹导入 Skill')
+    expect(emptyRendered.container.textContent).not.toContain('输入本地 Skill 包目录路径')
+
+    emptyRendered.unmount()
+  })
+
+  it('imports through folder selection, toggles, refreshes, deletes, and applies subscriptions for Skills', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+    const disabledSkill = createSkillRecordFixture({ enabled: false })
+    const enabledSkill = createSkillRecordFixture({ enabled: true })
+    mockedLoadSkillRegistry.mockResolvedValue(createSkillRegistryLoadResultFixture({ skills: [disabledSkill] }))
+    mockedSelectAndImportSkill.mockResolvedValue(createSkillImportResultFixture({
+      registryRevision: 13,
+      snapshotRevision: 9,
+      skill: enabledSkill,
+    }))
+    mockedSetSkillEnabled.mockResolvedValue(createSkillSetEnabledResultFixture(true))
+    mockedRefreshSkills.mockResolvedValue(createSkillRefreshResultFixture(enabledSkill))
+    mockedDeleteSkill.mockResolvedValue(createSkillDeleteResultFixture(enabledSkill.skillId))
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+    await clickElement(getNavButton(rendered.container, 'skills'))
+    await waitForNextFrame()
+
+    expect(rendered.container.querySelector('input[aria-label="Skill 目录路径"]')).toBeNull()
+    await clickElement(getExactButton(rendered.container, '导入 Skill'))
+    await waitForNextFrame()
+
+    expect(mockedSelectAndImportSkill).toHaveBeenCalledOnce()
+    expect(mockedImportSkill).not.toHaveBeenCalled()
+    expect(rendered.container.textContent).not.toContain('已导入 清晰文档写作，当前已开启。')
+    expect(rendered.container.textContent).not.toContain('成功：已导入')
+    expect(rendered.container.textContent).not.toContain('未声明版本')
+
+    const toggle = getSkillRow(rendered.container, '清晰文档写作').querySelector('button[aria-label="关闭 清晰文档写作"]')
+      ?? getSkillRow(rendered.container, '清晰文档写作').querySelector('button[aria-label="开启 清晰文档写作"]')
+    if (!(toggle instanceof HTMLButtonElement)) {
+      throw new Error('Missing Skill toggle')
+    }
+
+    await clickElement(toggle)
+    await waitForNextFrame()
+
+    expect(mockedSetSkillEnabled).toHaveBeenCalledWith({
+      skillId: enabledSkill.skillId,
+      enabled: expect.any(Boolean),
+    })
+
+    await clickElement(rendered.container.querySelector(`button[aria-label="刷新 ${enabledSkill.displayName}"]`) as HTMLButtonElement)
+    await waitForNextFrame()
+    expect(mockedRefreshSkills).toHaveBeenCalledWith({ skillId: enabledSkill.skillId })
+
+    await clickElement(getExactButton(rendered.container, '刷新'))
+    await waitForNextFrame()
+    expect(mockedRefreshSkills).toHaveBeenCalledWith(undefined)
+    expect(rendered.container.querySelector('.skills-global-message')).toBeNull()
+
+    if (activeSkillRegistryListener === null) {
+      throw new Error('Expected Skill registry subscription listener to be registered.')
+    }
+
+    await act(async () => {
+      activeSkillRegistryListener?.({
+        kind: 'snapshot',
+        registryRevision: 20,
+        snapshotRevision: 14,
+        skills: [enabledSkill],
+      })
+      await Promise.resolve()
+    })
+    await waitForNextFrame()
+
+    expect(rendered.container.textContent).not.toContain('Registry rev 20')
+    expect(rendered.container.textContent).not.toContain('Snapshot rev 14')
+
+    await clickElement(rendered.container.querySelector(`button[aria-label="删除 ${enabledSkill.displayName}"]`) as HTMLButtonElement)
+    await waitForNextFrame()
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(mockedDeleteSkill).toHaveBeenCalledWith(enabledSkill.skillId)
+
+    rendered.unmount()
+    expect(activeSkillRegistryListener).toBeNull()
+    confirmSpy.mockRestore()
+  })
+
+  it('renders markdown entry details and shows all resources in a scrollable panel', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+    mockedLoadSkillRegistry.mockResolvedValue(createSkillRegistryLoadResultFixture({
+      skills: [createSkillRecordFixture({
+        entrySummary: 'UI Aesthetics ## Intent Use this skill to make web UI output feel more professional, stable, and product-grade. Default goals: - Prefer restraint - Keep hierarchy clear - Fix composition before decoration Before adding polish, confirm structure first.',
+        resourceSummaries: [
+          { path: 'references/a.md' },
+          { path: 'references/b.md' },
+          { path: 'references/c.md' },
+          { path: 'references/d.md' },
+          { path: 'references/e.md' },
+          { path: 'references/f.md' },
+        ],
+      })],
+    }))
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+    await clickElement(getNavButton(rendered.container, 'skills'))
+    await waitForNextFrame()
+
+    await clickElement(getSkillRow(rendered.container, '清晰文档写作').querySelector('button[aria-label="查看 清晰文档写作 详情"]') as HTMLButtonElement)
+
+    const row = getSkillRow(rendered.container, '清晰文档写作')
+    expect(row.textContent).toContain('UI Aesthetics')
+    expect(row.textContent).toContain('Use this skill to make web UI output feel more professional')
+    expect(row.textContent).toContain('Prefer restraint')
+    expect(row.textContent).toContain('Keep hierarchy clear')
+    expect(row.textContent).toContain('Before adding polish, confirm structure first.')
+    expect(row.textContent).toContain('帮助模型编写结构清晰、面向开发者的技术文档。')
+    expect(row.querySelectorAll('.skill-row__markdown li').length).toBeGreaterThanOrEqual(3)
+    expect(row.querySelector('.skill-row__detail-scroll')).toBeTruthy()
+    expect(row.textContent).toContain('references/a.md')
+    expect(row.textContent).toContain('references/e.md')
+    expect(row.textContent).toContain('references/f.md')
+    expect(row.querySelector('.skill-row__markdown ul li')).toBeTruthy()
+    expect(row.querySelector('.skill-resource-list__overflow')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('shows user-friendly Skill import validation failures from folder selection', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+    mockedLoadSkillRegistry.mockResolvedValue(createSkillRegistryLoadResultFixture({ skills: [] }))
+    mockedSelectAndImportSkill.mockResolvedValue({
+      ok: false,
+      error: 'Skill package failed validation.',
+      code: 'validation_failed',
+      validationErrors: [{
+        fieldPath: 'SKILL.md.frontmatter.description',
+        message: 'Skill frontmatter description must be a non-empty string within 1000 characters.',
+        code: 'invalid_description',
+      }],
+    })
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+    await clickElement(getNavButton(rendered.container, 'skills'))
+    await waitForNextFrame()
+
+    expect(rendered.container.querySelector('input[aria-label="Skill 目录路径"]')).toBeNull()
+    await clickElement(getExactButton(rendered.container, '导入 Skill'))
+    await waitForNextFrame()
+
+    expect(mockedSelectAndImportSkill).toHaveBeenCalledOnce()
+    expect(mockedImportSkill).not.toHaveBeenCalled()
+    expect(rendered.container.textContent).toContain('导入遇到问题')
+    expect(rendered.container.textContent).toContain('Skill frontmatter description must be a non-empty string within 1000 characters.')
+    expect(rendered.container.textContent).toContain('位置：SKILL.md.frontmatter.description')
+    expect(rendered.container.textContent).not.toContain('invalid_description')
 
     rendered.unmount()
   })

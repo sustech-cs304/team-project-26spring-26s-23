@@ -19,6 +19,10 @@ import {
   type ElectronMcpRegistryService,
 } from '../mcp-registry/main-process'
 import {
+  createElectronSkillRegistryService,
+  type ElectronSkillRegistryService,
+} from '../skill-registry/main-process'
+import {
   createElectronManagedRuntimeService,
   type ElectronManagedRuntimeService,
 } from '../managed-runtime/main-process'
@@ -33,6 +37,7 @@ export interface MainProcessServiceAccessors {
   getSettingsWorkspaceService: () => ElectronSettingsWorkspaceService
   getDesktopCapabilityBridgeService: () => ElectronDesktopCapabilityBridgeService
   getMcpRegistryService: () => ElectronMcpRegistryService
+  getSkillRegistryService: () => ElectronSkillRegistryService
   getManagedRuntimeService: () => ElectronManagedRuntimeService
   getToolCatalogService: () => ElectronToolCatalogService
 }
@@ -45,6 +50,7 @@ export function createMainProcessServiceAccessors(
   let desktopCapabilityBridgeService: ElectronDesktopCapabilityBridgeService | null = null
   let toolCatalogService: ElectronToolCatalogService | null = null
   let mcpRegistryService: ElectronMcpRegistryService | null = null
+  let skillRegistryService: ElectronSkillRegistryService | null = null
   let managedRuntimeService: ElectronManagedRuntimeService | null = null
 
   const forwardServiceLog = (
@@ -119,6 +125,19 @@ export function createMainProcessServiceAccessors(
       })
 
       return mcpRegistryService
+    },
+    getSkillRegistryService(): ElectronSkillRegistryService {
+      skillRegistryService ??= createElectronSkillRegistryService({
+        prepareRuntimePaths: options.prepareRuntimePaths,
+        appendLog(level, message, context) {
+          return forwardServiceLog(level, message, context)
+        },
+        publishRegistryEvent(event) {
+          return options.publishSkillRegistryEvent(event)
+        },
+      })
+
+      return skillRegistryService
     },
     getManagedRuntimeService(): ElectronManagedRuntimeService {
       managedRuntimeService ??= createElectronManagedRuntimeService({
