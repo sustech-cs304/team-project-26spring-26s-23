@@ -16,6 +16,7 @@ from .message_runs import RuntimeMessageRunOrchestrator
 from .mcp_catalog_provider import McpCatalogProvider, create_mcp_catalog_provider
 from .mcp_snapshot_provider import create_mcp_snapshot_provider
 from .mcp_tool_executor import McpExecutableToolLoader
+from .skill_snapshot_provider import create_skill_snapshot_provider
 from .model_routes import (
     HostModelRouteUnavailableError,
     RuntimeModelRoute,
@@ -78,6 +79,13 @@ def build_default_runtime_dependencies(
     snapshot_provider = create_mcp_snapshot_provider(
         state_dir=runtime_config.state_dir if runtime_config is not None else None,
     )
+    skill_snapshot_provider = create_skill_snapshot_provider(
+        state_dir=runtime_config.state_dir if runtime_config is not None else None,
+        config_dir=runtime_config.config_dir if runtime_config is not None else None,
+        runtime_root_dir=runtime_config.runtime_root_dir
+        if runtime_config is not None
+        else None,
+    )
     dynamic_tool_loader = (
         None
         if host_capability_bridge_client is None
@@ -133,6 +141,7 @@ def build_default_runtime_dependencies(
         scaffold=scaffold,
         model_route_resolver=resolved_model_route_resolver,
         provider_adapter_registry=resolved_agent_executor.provider_adapter_registry,
+        skill_snapshot_provider=skill_snapshot_provider,
     )
     runtime_bridge = RuntimeBridge(
         session_store=resolved_session_store,

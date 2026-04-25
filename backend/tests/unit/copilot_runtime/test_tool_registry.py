@@ -28,6 +28,8 @@ from app.copilot_runtime.tool_registry import (
     FILE_TOOL_READ_DISPLAY_NAME,
     FILE_TOOL_WRITE_DESCRIPTION,
     FILE_TOOL_WRITE_DISPLAY_NAME,
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_ID,
     WEATHER_CURRENT_TOOL_DESCRIPTION,
     WEATHER_CURRENT_TOOL_DISPLAY_NAME,
     WEATHER_CURRENT_TOOL_ID,
@@ -97,9 +99,11 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         FILE_TOOL_SWITCH_ROOT_ID,
         FILE_CONVERT_TOOL_ID,
         WEATHER_CURRENT_TOOL_ID,
+        SKILL_ACTIVATE_TOOL_ID,
+        SKILL_READ_RESOURCE_TOOL_ID,
         *CONTRACT_TOOL_IDS,
     )
-    catalog = registry.build_tool_catalog()
+    catalog = registry.build_tool_catalog(language="zh-CN")
     catalog_by_id = {entry["toolId"]: entry for entry in catalog}
 
     assert registry.build_view() == {
@@ -252,6 +256,47 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
     assert tuple(
         tool["toolId"] for tool in diagnostics["toolset_summaries"][0]["tools"]
     ) == expected_tool_ids
+
+    assert catalog_by_id[SKILL_ACTIVATE_TOOL_ID] == {
+        "toolId": SKILL_ACTIVATE_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Skill 激活",
+        "description": "读取已启用 Skill 的 SKILL.md 入口说明和资源摘要。",
+        "prompt": "先查看 Available Skills 清单；当某个 Skill 适合任务时，用此工具传入清单中的 skill id 或显示名称。",
+        "displayNameZh": "Skill 激活",
+        "displayNameEn": "Skill Activate",
+        "descriptionZh": "读取已启用 Skill 的 SKILL.md 入口说明和资源摘要。",
+        "descriptionEn": "Read the SKILL.md entry instructions and resource summaries for an enabled Skill.",
+        "group": {
+            "id": "runtime-skill",
+            "label": "Skill 工具",
+            "labelZh": "Skill 工具",
+            "labelEn": "Skill Tools",
+            "order": 5,
+            "sourceKind": "runtime-skill",
+        },
+    }
+    assert catalog_by_id[SKILL_READ_RESOURCE_TOOL_ID] == {
+        "toolId": SKILL_READ_RESOURCE_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Skill 资源读取",
+        "description": "读取已启用 Skill 资源索引中的 UTF-8 文本资源，不要求先激活。",
+        "prompt": "需要 Skill 资源摘要中列出的相对路径时，用此工具传入 skill id 或显示名称以及该资源路径。",
+        "displayNameZh": "Skill 资源读取",
+        "displayNameEn": "Skill Read Resource",
+        "descriptionZh": "读取已启用 Skill 资源索引中的 UTF-8 文本资源，不要求先激活。",
+        "descriptionEn": "Read a UTF-8 text resource listed by an enabled Skill without requiring prior activation.",
+        "group": {
+            "id": "runtime-skill",
+            "label": "Skill 工具",
+            "labelZh": "Skill 工具",
+            "labelEn": "Skill Tools",
+            "order": 5,
+            "sourceKind": "runtime-skill",
+        },
+    }
 
 
 def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metadata_stable() -> None:

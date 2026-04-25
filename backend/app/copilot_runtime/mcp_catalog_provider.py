@@ -123,7 +123,11 @@ def _format_identifier_label(value: str) -> str:
     normalized = value.strip()
     tokens = [
         segment
-        for segment in normalized.replace("__", ".").replace("-", ".").replace("_", ".").replace(" ", ".").split(".")
+        for segment in normalized.replace("__", ".")
+        .replace("-", ".")
+        .replace("_", ".")
+        .replace(" ", ".")
+        .split(".")
         if segment
     ]
     if not tokens:
@@ -133,7 +137,11 @@ def _format_identifier_label(value: str) -> str:
 
 def _format_identifier_token(token: str) -> str:
     upper = token.upper()
-    if token.isupper() or token.isdigit() or upper in {"MCP", "API", "HTTP", "SSE", "FS", "SQL", "TIS"}:
+    if (
+        token.isupper()
+        or token.isdigit()
+        or upper in {"MCP", "API", "HTTP", "SSE", "FS", "SQL", "TIS"}
+    ):
         return upper
     return token[:1].upper() + token[1:]
 

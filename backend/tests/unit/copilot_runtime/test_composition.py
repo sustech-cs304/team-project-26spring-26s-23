@@ -4,12 +4,16 @@ import asyncio
 import json
 from collections.abc import Awaitable
 from pathlib import Path
+from typing import cast
 from typing import TypeVar, cast
 
 from pydantic_ai.models.test import TestModel
 
 from app.copilot_runtime.agent import DEFAULT_AGENT_NAME, PydanticAIAgentExecutor
-from app.copilot_runtime.composition import RuntimeDependencies, build_default_runtime_dependencies
+from app.copilot_runtime.composition import (
+    RuntimeDependencies,
+    build_default_runtime_dependencies,
+)
 from app.copilot_runtime.contracts import (
     THINKING_CAPABILITY_GET_METHOD,
     RuntimeMessageExecutionPolicy,
@@ -23,15 +27,28 @@ from app.copilot_runtime.contracts import (
 from app.copilot_runtime.mcp_catalog_provider import create_mcp_catalog_provider
 from app.copilot_runtime.mcp_snapshot_provider import create_mcp_snapshot_provider
 from app.copilot_runtime.mcp_snapshot_provider import MCP_CAPABILITY_SNAPSHOT_FILE_NAME
+from app.copilot_runtime.skill_snapshot_provider import (
+    SKILL_CAPABILITY_SNAPSHOT_FILE_NAME,
+)
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
-from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute, RuntimeModelRouteRef
-from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
+from app.copilot_runtime.model_routes import (
+    ResolvedRuntimeModelRoute,
+    RuntimeModelRoute,
+    RuntimeModelRouteRef,
+)
+from app.copilot_runtime.provider_adapter_registry import (
+    build_default_provider_adapter_registry,
+)
 from app.tooling import ToolInvocationContext
 from app.copilot_runtime.session_store import InMemorySessionStore
-from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
-from app.copilot_runtime.tool_registry import build_default_tool_registry
+from app.copilot_runtime.tool_registry import (
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_ID,
+    WEATHER_CURRENT_TOOL_ID,
+    build_default_tool_registry,
+)
 from app.desktop_runtime.config import DesktopRuntimeConfig, DesktopRuntimePaths
 
 
@@ -49,7 +66,13 @@ def _run_awaitable(awaitable: Awaitable[_T]) -> _T:
 
 
 class _ImmediateEventStream:
-    def __init__(self, *, output: str, resolved_model_id: str, events: list[RuntimeExecutionEvent]) -> None:
+    def __init__(
+        self,
+        *,
+        output: str,
+        resolved_model_id: str,
+        events: list[RuntimeExecutionEvent],
+    ) -> None:
         self.resolved_model_id = resolved_model_id
         self._output = output
         self._events = list(events)
@@ -74,6 +97,7 @@ class _StreamingExecutor:
         self.model_environment_keys: tuple[str, ...] = ()
         self.provider_adapter_registry = build_default_provider_adapter_registry()
         self._output = output
+        self.last_open_kwargs: dict[str, object] = {}
 
     def open_event_stream(
         self,
@@ -87,16 +111,20 @@ class _StreamingExecutor:
         debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
         model_settings: dict[str, object] | None = None,
+        skill_runtime_index: object | None = None,
+        skill_system_prompt: str | None = None,
     ) -> _ImmediateEventStream:
-        _ = (
-            agent_name,
-            user_prompt,
-            message_history,
-            enabled_tools,
-            debug_enabled,
-            request_options,
-            model_settings,
-        )
+        self.last_open_kwargs = {
+            "agent_name": agent_name,
+            "user_prompt": user_prompt,
+            "message_history": message_history,
+            "enabled_tools": enabled_tools,
+            "debug_enabled": debug_enabled,
+            "request_options": request_options,
+            "model_settings": model_settings,
+            "skill_runtime_index": skill_runtime_index,
+            "skill_system_prompt": skill_system_prompt,
+        }
         return _ImmediateEventStream(
             output=self._output,
             resolved_model_id=model_route.model_id,
@@ -113,7 +141,9 @@ class _StreamingExecutor:
 
 
 class _ResolvedRouteResolver:
-    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
+    async def resolve(
+        self, model_route: RuntimeModelRoute
+    ) -> ResolvedRuntimeModelRoute:
         return ResolvedRuntimeModelRoute(
             provider_profile_id=model_route.provider_profile_id,
             provider="openai",
@@ -126,7 +156,9 @@ class _ResolvedRouteResolver:
 
 
 def test_build_default_runtime_dependencies_returns_complete_default_graph() -> None:
-    dependencies = build_default_runtime_dependencies(agent_executor=_build_test_agent_executor())
+    dependencies = build_default_runtime_dependencies(
+        agent_executor=_build_test_agent_executor()
+    )
 
     assert isinstance(dependencies, RuntimeDependencies)
     assert dependencies.session_store.storage_type == "in-memory"
@@ -138,7 +170,10 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
     executor_factory = default_agent.executor_factory
     assert executor_factory is not None
     assert executor_factory() is dependencies.agent_executor
-    assert dependencies.runtime_bridge._approval_coordinator is dependencies.agent_executor._approval_coordinator
+    assert (
+        dependencies.runtime_bridge._approval_coordinator
+        is dependencies.agent_executor._approval_coordinator
+    )
 
     assert dependencies.scaffold.default_agent == default_agent.name
     assert dependencies.scaffold.tool_registry is dependencies.tool_registry
@@ -154,7 +189,9 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
         THINKING_CAPABILITY_GET_METHOD,
         TOOL_APPROVAL_RESOLVE_METHOD,
     )
-    global_tool_catalog = dependencies.scaffold.build_global_tool_catalog_response().to_dict()
+    global_tool_catalog = (
+        dependencies.scaffold.build_global_tool_catalog_response().to_dict()
+    )
     assert global_tool_catalog["ok"] is True
     assert global_tool_catalog["directoryVersion"] == "tools-v1"
     assert global_tool_catalog["defaultToolset"] == "default"
@@ -216,8 +253,12 @@ def test_build_default_runtime_dependencies_returns_complete_default_graph() -> 
         "order": 0,
         "sourceKind": "builtin",
     }
-    assert dependencies.scaffold.diagnostics_summary()["available_agents"] == [DEFAULT_AGENT_NAME]
-    assert dependencies.scaffold.diagnostics_summary()["available_toolsets"] == ["default"]
+    assert dependencies.scaffold.diagnostics_summary()["available_agents"] == [
+        DEFAULT_AGENT_NAME
+    ]
+    assert dependencies.scaffold.diagnostics_summary()["available_toolsets"] == [
+        "default"
+    ]
 
 
 def test_build_default_runtime_dependencies_streams_run_through_orchestrator() -> None:
@@ -229,13 +270,15 @@ def test_build_default_runtime_dependencies_streams_run_through_orchestrator() -
         agent_executor=streaming_executor,
         model_route_resolver=_ResolvedRouteResolver(),
     )
-    dependencies.session_store.create_thread(bound_agent_id=DEFAULT_AGENT_NAME, thread_id="thread-1")
-    run = dependencies.runtime_bridge.start_run(request=_build_run_request(thread_id="thread-1"))
+    dependencies.session_store.create_thread(
+        bound_agent_id=DEFAULT_AGENT_NAME, thread_id="thread-1"
+    )
+    run = dependencies.runtime_bridge.start_run(
+        request=_build_run_request(thread_id="thread-1")
+    )
 
     events = asyncio.run(
-        _collect_events(
-            dependencies.runtime_bridge.stream_run(run_id=run.run_id)
-        )
+        _collect_events(dependencies.runtime_bridge.stream_run(run_id=run.run_id))
     )
 
     assert events[0].type == "run_started"
@@ -251,7 +294,9 @@ def test_build_default_runtime_dependencies_streams_run_through_orchestrator() -
     ]
 
 
-def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor() -> None:
+def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor() -> (
+    None
+):
     session_store = InMemorySessionStore()
     agent_executor = _build_test_agent_executor()
 
@@ -266,10 +311,15 @@ def test_build_default_runtime_dependencies_reuses_explicit_store_and_executor()
     executor_factory = dependencies.agent_registry.get_default().executor_factory
     assert executor_factory is not None
     assert executor_factory() is agent_executor
-    assert dependencies.runtime_bridge._approval_coordinator is agent_executor._approval_coordinator
+    assert (
+        dependencies.runtime_bridge._approval_coordinator
+        is agent_executor._approval_coordinator
+    )
 
 
-def test_build_default_runtime_dependencies_resolves_waiting_tool_approval_against_shared_context() -> None:
+def test_build_default_runtime_dependencies_resolves_waiting_tool_approval_against_shared_context() -> (
+    None
+):
     dependencies = build_default_runtime_dependencies(
         agent_executor=PydanticAIAgentExecutor(
             model=TestModel(
@@ -280,12 +330,16 @@ def test_build_default_runtime_dependencies_resolves_waiting_tool_approval_again
         ),
         model_route_resolver=_ResolvedRouteResolver(),
     )
-    dependencies.session_store.create_thread(bound_agent_id=DEFAULT_AGENT_NAME, thread_id="thread-1")
+    dependencies.session_store.create_thread(
+        bound_agent_id=DEFAULT_AGENT_NAME, thread_id="thread-1"
+    )
     run = dependencies.runtime_bridge.start_run(
         request=_build_run_request(
             thread_id="thread-1",
             enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
-            tool_permission_policy=RuntimeToolPermissionPolicy(schemaVersion=1, defaultMode="ask"),
+            tool_permission_policy=RuntimeToolPermissionPolicy(
+                schemaVersion=1, defaultMode="ask"
+            ),
         )
     )
     resolution_payloads: list[dict[str, object]] = []
@@ -294,7 +348,10 @@ def test_build_default_runtime_dependencies_resolves_waiting_tool_approval_again
         events = []
         async for event in dependencies.runtime_bridge.stream_run(run_id=run.run_id):
             events.append(event)
-            if event.type != "tool_event" or event.payload.get("phase") != "waiting_approval":
+            if (
+                event.type != "tool_event"
+                or event.payload.get("phase") != "waiting_approval"
+            ):
                 continue
             resolution_payloads.append(
                 dependencies.runtime_bridge.resolve_tool_approval(
@@ -321,9 +378,12 @@ def test_build_default_runtime_dependencies_resolves_waiting_tool_approval_again
     assert events[-1].payload["assistantText"] == TEST_MODEL_REPLY
 
 
-
-def test_build_default_runtime_dependencies_capabilities_use_bridge_policy_as_single_visibility_source() -> None:
-    dependencies = build_default_runtime_dependencies(agent_executor=_build_test_agent_executor())
+def test_build_default_runtime_dependencies_capabilities_use_bridge_policy_as_single_visibility_source() -> (
+    None
+):
+    dependencies = build_default_runtime_dependencies(
+        agent_executor=_build_test_agent_executor()
+    )
     thread = dependencies.session_store.create_thread(
         bound_agent_id=DEFAULT_AGENT_NAME,
         thread_id="thread-capabilities-policy",
@@ -379,7 +439,6 @@ def test_build_default_runtime_dependencies_uses_runtime_root_for_file_tools(
     assert deps.default_root == expected_workspace_root
 
 
-
 def test_build_default_runtime_dependencies_merges_mcp_snapshot_into_global_tool_catalog(
     tmp_path: Path,
 ) -> None:
@@ -394,7 +453,9 @@ def test_build_default_runtime_dependencies_merges_mcp_snapshot_into_global_tool
 
     dependencies = build_default_runtime_dependencies(
         runtime_config=runtime_config,
-        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+        host_capability_bridge_client=cast(
+            DesktopCapabilityBridgeClient, bridge_client
+        ),
     )
     response = dependencies.scaffold.build_global_tool_catalog_response(
         language="en-US"
@@ -420,7 +481,6 @@ def test_build_default_runtime_dependencies_merges_mcp_snapshot_into_global_tool
     }
 
 
-
 def test_build_default_runtime_dependencies_hides_mcp_catalog_entries_without_bridge_client(
     tmp_path: Path,
 ) -> None:
@@ -442,7 +502,6 @@ def test_build_default_runtime_dependencies_hides_mcp_catalog_entries_without_br
     assert all(not tool_id.startswith("mcp.") for tool_id in tool_ids)
 
 
-
 def test_build_default_runtime_dependencies_ignores_mcp_executor_when_snapshot_is_missing(
     tmp_path: Path,
 ) -> None:
@@ -451,13 +510,17 @@ def test_build_default_runtime_dependencies_ignores_mcp_executor_when_snapshot_i
 
     dependencies = build_default_runtime_dependencies(
         runtime_config=runtime_config,
-        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+        host_capability_bridge_client=cast(
+            DesktopCapabilityBridgeClient, bridge_client
+        ),
     )
 
     tool_ids = [tool.tool_id for tool in dependencies.tool_registry.get_default().tools]
     catalog_tool_ids = [
         tool["toolId"]
-        for tool in dependencies.scaffold.build_global_tool_catalog_response().to_dict()["tools"]
+        for tool in dependencies.scaffold.build_global_tool_catalog_response().to_dict()[
+            "tools"
+        ]
     ]
     assert "tool.fs.read" in tool_ids
     assert "tool.fs.read" in catalog_tool_ids
@@ -486,7 +549,9 @@ def test_build_default_runtime_dependencies_hides_mcp_catalog_entries_when_expli
 
     catalog_tool_ids = [
         tool["toolId"]
-        for tool in dependencies.scaffold.build_global_tool_catalog_response().to_dict()["tools"]
+        for tool in dependencies.scaffold.build_global_tool_catalog_response().to_dict()[
+            "tools"
+        ]
     ]
 
     assert "tool.fs.read" in catalog_tool_ids
@@ -515,9 +580,9 @@ def test_build_runtime_scaffold_hides_non_executable_mcp_catalog_entries_from_ma
 
     catalog_tool_ids = [
         tool["toolId"]
-        for tool in scaffold.build_global_tool_catalog_response(language="en-US").to_dict()[
-            "tools"
-        ]
+        for tool in scaffold.build_global_tool_catalog_response(
+            language="en-US"
+        ).to_dict()["tools"]
     ]
 
     assert "tool.fs.read" in catalog_tool_ids
@@ -539,7 +604,9 @@ def test_build_runtime_scaffold_keeps_executable_mcp_catalog_entries_when_tool_r
 
     dependencies = build_default_runtime_dependencies(
         runtime_config=runtime_config,
-        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+        host_capability_bridge_client=cast(
+            DesktopCapabilityBridgeClient, bridge_client
+        ),
     )
     scaffold = build_runtime_scaffold(
         tool_registry=dependencies.tool_registry,
@@ -548,14 +615,13 @@ def test_build_runtime_scaffold_keeps_executable_mcp_catalog_entries_when_tool_r
 
     catalog_tool_ids = [
         tool["toolId"]
-        for tool in scaffold.build_global_tool_catalog_response(language="en-US").to_dict()[
-            "tools"
-        ]
+        for tool in scaffold.build_global_tool_catalog_response(
+            language="en-US"
+        ).to_dict()["tools"]
     ]
 
     assert "tool.fs.read" in catalog_tool_ids
     assert "mcp.mcp-stdio-stub.search-campus.00004d8d" in catalog_tool_ids
-
 
 
 def test_build_default_runtime_dependencies_registers_executable_mcp_tools_with_bridge_client(
@@ -572,7 +638,9 @@ def test_build_default_runtime_dependencies_registers_executable_mcp_tools_with_
 
     dependencies = build_default_runtime_dependencies(
         runtime_config=runtime_config,
-        host_capability_bridge_client=cast(DesktopCapabilityBridgeClient, bridge_client),
+        host_capability_bridge_client=cast(
+            DesktopCapabilityBridgeClient, bridge_client
+        ),
     )
     tool = dependencies.tool_registry.resolve_tool(
         "mcp.mcp-stdio-stub.search-campus.00004d8d"
@@ -615,6 +683,158 @@ def test_build_default_runtime_dependencies_registers_executable_mcp_tools_with_
         }
     ]
 
+
+def test_default_runtime_dependencies_wires_skill_snapshot_provider_for_runs(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    _write_skill_runtime_fixture(runtime_config)
+    executor = _StreamingExecutor(output="Skill-aware reply")
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        agent_executor=cast(PydanticAIAgentExecutor, executor),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    thread = dependencies.session_store.create_thread(
+        bound_agent_id="default",
+        thread_id="thread-skill",
+    )
+
+    events = _run_awaitable(
+        _collect_events(
+            dependencies.message_run_orchestrator.stream_events(
+                request=_build_run_request(thread_id=thread.thread_id),
+                run_id="run-skill-index",
+            )
+        )
+    )
+
+    assert executor.last_open_kwargs["skill_runtime_index"] is not None
+    skill_system_prompt = cast(str, executor.last_open_kwargs["skill_system_prompt"])
+    assert skill_system_prompt is not None
+    assert "Available Skills" in skill_system_prompt
+    assert "writing-clear-docs" in skill_system_prompt
+    assert "Resources indexed: 1" in skill_system_prompt
+    assert "Use this skill to write concise docs." not in skill_system_prompt
+    assert "Prefer structure over verbosity." not in skill_system_prompt
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "text_delta",
+        "run_completed",
+    ]
+
+
+def test_default_runtime_dependencies_emits_skill_index_unavailable_without_snapshot(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    executor = _StreamingExecutor(output="Reply without skills")
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        agent_executor=cast(PydanticAIAgentExecutor, executor),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    thread = dependencies.session_store.create_thread(
+        bound_agent_id="default",
+        thread_id="thread-skill-missing",
+    )
+
+    events = _run_awaitable(
+        _collect_events(
+            dependencies.message_run_orchestrator.stream_events(
+                request=_build_run_request(thread_id=thread.thread_id),
+                run_id="run-skill-index-missing",
+            )
+        )
+    )
+
+    assert executor.last_open_kwargs["skill_runtime_index"] is not None
+    skill_system_prompt = cast(str, executor.last_open_kwargs["skill_system_prompt"])
+    assert skill_system_prompt is not None
+    assert "No enabled Skills" in skill_system_prompt
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "text_delta",
+        "run_completed",
+    ]
+
+
+def test_default_runtime_dependencies_streams_sanitized_skill_activity_events(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+    _write_skill_runtime_fixture(runtime_config)
+
+    class _SkillAwareStreamingModel(TestModel):
+        def gen_tool_args(self, tool_def) -> object:
+            if tool_def.name == "skill_activate":
+                return {"skill_id": "writing-clear-docs"}
+            if tool_def.name == "skill_read_resource":
+                return {
+                    "skill_id": "writing-clear-docs",
+                    "path": "resources/checklist.md",
+                }
+            return super().gen_tool_args(tool_def)
+
+    executor = PydanticAIAgentExecutor(
+        model=_SkillAwareStreamingModel(
+            call_tools=["skill_activate", "skill_read_resource"],
+            custom_output_text="Skill-aware reply",
+            seed=0,
+        )
+    )
+
+    dependencies = build_default_runtime_dependencies(
+        runtime_config=runtime_config,
+        agent_executor=executor,
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    thread = dependencies.session_store.create_thread(
+        bound_agent_id="default",
+        thread_id="thread-skill-events",
+    )
+
+    events = _run_awaitable(
+        _collect_events(
+            dependencies.message_run_orchestrator.stream_events(
+                request=_build_run_request(thread_id=thread.thread_id),
+                run_id="run-skill-events",
+            )
+        )
+    )
+
+    tool_events = [event for event in events if event.type == "tool_event"]
+    completed_events = [
+        event.payload for event in tool_events if event.payload["phase"] == "completed"
+    ]
+
+    assert not any(
+        event.type == "run_diagnostic"
+        and event.payload.get("code")
+        in {"skill_index_loaded", "skill_index_unavailable"}
+        for event in events
+    )
+    assert [payload["toolId"] for payload in completed_events] == [
+        SKILL_ACTIVATE_TOOL_ID,
+        SKILL_READ_RESOURCE_TOOL_ID,
+    ]
+    assert all(
+        "Prefer structure" not in payload["summary"] for payload in completed_events
+    )
+    assert all(
+        "Checklist item A" not in payload["summary"] for payload in completed_events
+    )
+    assert '"displayName": "Clear Docs"' in completed_events[0]["summary"]
+    assert '"entryContentLength"' in completed_events[0]["summary"]
+    assert '"displayName": "Clear Docs"' in completed_events[1]["summary"]
+    assert '"contentLength"' in completed_events[1]["summary"]
+    assert all(event.type != "skill_activity" for event in events)
 
 
 def test_runtime_scaffold_filters_mcp_global_catalog_entries_with_permission_policy(
@@ -705,10 +925,73 @@ def _build_run_request(
                 ),
             ),
             enabledTools=enabled_tools,
-            toolPermissionPolicy=tool_permission_policy,
+            toolPermissionPolicy=tool_permission_policy
+            or RuntimeToolPermissionPolicy(schemaVersion=1, defaultMode="allow"),
             requestOptions={},
         ),
         agent_id=DEFAULT_AGENT_NAME,
+    )
+
+
+def _write_skill_runtime_fixture(runtime_config: DesktopRuntimeConfig) -> None:
+    state_dir = runtime_config.state_dir
+    config_dir = runtime_config.config_dir
+    runtime_root_dir = runtime_config.runtime_root_dir
+    skill_root = runtime_root_dir / "skills" / "writing-clear-docs"
+    resources_dir = skill_root / "resources"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "skill-registry").mkdir(parents=True, exist_ok=True)
+    resources_dir.mkdir(parents=True, exist_ok=True)
+    (skill_root / "SKILL.md").write_text("# Clear Docs\n", encoding="utf-8")
+    (resources_dir / "checklist.md").write_text(
+        "- Keep it concise.\n", encoding="utf-8"
+    )
+    snapshot_payload = {
+        "version": 1,
+        "registryRevision": 12,
+        "snapshotRevision": 8,
+        "generatedAt": "2026-04-24T00:00:00.000Z",
+        "skills": [
+            {
+                "skillId": "writing-clear-docs",
+                "displayName": "Clear Docs",
+                "description": "Write clear developer documentation.",
+                "tags": ["documentation"],
+                "entrySummary": "Use when drafting concise technical documents.",
+                "resourceSummaries": [{"path": "resources/checklist.md"}],
+            }
+        ],
+    }
+    registry_payload = {
+        "version": 1,
+        "kind": "skill-registry",
+        "registryRevision": 12,
+        "snapshotRevision": 8,
+        "skills": [
+            {
+                "skillId": "writing-clear-docs",
+                "displayName": "Clear Docs",
+                "description": "Write clear developer documentation.",
+                "enabled": True,
+                "trusted": True,
+                "managedDirectoryName": "writing-clear-docs",
+                "entryPath": "SKILL.md",
+                "tags": ["documentation"],
+                "validation": {"status": "valid", "errors": [], "warnings": []},
+                "entrySummary": "Use when drafting concise technical documents.",
+                "resourceSummaries": snapshot_payload["skills"][0]["resourceSummaries"],
+                "importedAt": "2026-04-24T00:00:00.000Z",
+                "updatedAt": "2026-04-24T00:00:00.000Z",
+            }
+        ],
+    }
+    (state_dir / SKILL_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(snapshot_payload),
+        encoding="utf-8",
+    )
+    (config_dir / "skill-registry" / "registry.json").write_text(
+        json.dumps(registry_payload),
+        encoding="utf-8",
     )
 
 
@@ -722,7 +1005,6 @@ def _load_mcp_snapshot_fixture() -> dict[str, object]:
         / "snapshot.sample.json"
     )
     return json.loads(fixture_path.read_text(encoding="utf-8"))
-
 
 
 def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:

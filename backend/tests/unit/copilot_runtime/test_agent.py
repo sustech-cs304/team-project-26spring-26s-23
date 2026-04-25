@@ -30,6 +30,7 @@ from app.copilot_runtime.agent import (
     PydanticAIAgentExecutor,
     RuntimeToolLifecycleEvent,
 )
+from app.copilot_runtime.skill_snapshot_provider import create_skill_snapshot_provider
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.tool_approval_coordinator import (
     RuntimeToolApprovalCoordinator,
@@ -40,7 +41,12 @@ from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.mcp_snapshot_provider import McpCapabilitySnapshot
 from app.copilot_runtime.mcp_tool_executor import build_mcp_executable_tools
 from app.copilot_runtime.mcp_snapshot_provider import McpSnapshotProvider
-from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
+from app.copilot_runtime.tool_registry import (
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_ID,
+    WEATHER_CURRENT_TOOL_ID,
+    build_default_tool_registry,
+)
 from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
 from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
 
@@ -483,6 +489,72 @@ def test_open_event_stream_executes_mcp_tool_and_records_started_completed_event
         }
     ]
 
+
+
+def test_open_event_stream_exposes_skill_control_tools_and_records_sanitized_events(
+    tmp_path: Path,
+) -> None:
+    state_dir, config_dir, runtime_root_dir = _write_skill_runtime_fixture(tmp_path)
+    skill_runtime_index = create_skill_snapshot_provider(
+        state_dir=state_dir,
+        config_dir=config_dir,
+        runtime_root_dir=runtime_root_dir,
+    ).load_runtime_index()
+
+    class _SkillToolCallingTestModel(TestModel):
+        def gen_tool_args(self, tool_def) -> Any:
+            if tool_def.name == "skill_activate":
+                return {"skill_id": "writing-clear-docs"}
+            if tool_def.name == "skill_read_resource":
+                return {
+                    "skill_id": "writing-clear-docs",
+                    "path": "resources/checklist.md",
+                }
+            return super().gen_tool_args(tool_def)
+
+    executor = PydanticAIAgentExecutor(
+        model=_SkillToolCallingTestModel(
+            call_tools=["skill_activate", "skill_read_resource"],
+            custom_output_text="Skill reply",
+            seed=0,
+        )
+    )
+
+    result = asyncio.run(
+        _collect_event_stream(
+            executor.open_event_stream(
+                run_id="run-skill-tools",
+                agent_name="default",
+                user_prompt="Write docs.",
+                message_history=[],
+                model_route=_build_resolved_route(),
+                tool_permission_resolver=RuntimeToolPermissionResolver(
+                    default_mode="allow"
+                ),
+                request_options={},
+                enabled_tools=(SKILL_ACTIVATE_TOOL_ID, SKILL_READ_RESOURCE_TOOL_ID),
+                skill_runtime_index=skill_runtime_index,
+                skill_system_prompt="## Available Skills\n- writing-clear-docs: docs",
+            )
+        )
+    )
+
+    tool_events = [event.payload for event in result["events"] if event.type in {"tool_started", "tool_completed", "tool_failed"}]
+    completed_events = [payload for payload in tool_events if payload["phase"] == "completed"]
+
+    assert result["error"] is None
+    assert result["output"] == "Skill reply"
+    assert [payload["toolId"] for payload in completed_events] == [
+        SKILL_ACTIVATE_TOOL_ID,
+        SKILL_READ_RESOURCE_TOOL_ID,
+    ]
+    assert all("entryContent\":" not in payload["summary"] for payload in completed_events)
+    assert all("Prefer structure" not in payload["summary"] for payload in completed_events)
+    assert '"resourceCount"' in completed_events[0]["summary"]
+    assert '"contentLength"' in completed_events[1]["summary"]
+    assert '"path": "resources/checklist.md"' in completed_events[1]["summary"]
+    assert completed_events[0]["resultSummary"] is not None
+    assert completed_events[1]["resultSummary"] is not None
 
 
 def test_open_event_stream_keeps_running_when_weather_tool_is_not_enabled() -> None:
@@ -1720,6 +1792,76 @@ class _FakeRawStreamResult:
             self._on_output()
             self._output_emitted = True
         return self._output
+
+
+def _write_skill_runtime_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
+    state_dir = tmp_path / "state"
+    config_dir = tmp_path / "config"
+    runtime_root_dir = tmp_path / "desktop-runtime"
+    skill_root = runtime_root_dir / "skills" / "writing-clear-docs"
+    resources_dir = skill_root / "resources"
+    state_dir.mkdir(parents=True)
+    (config_dir / "skill-registry").mkdir(parents=True)
+    resources_dir.mkdir(parents=True)
+    (skill_root / "SKILL.md").write_text(
+        "# Clear Docs\nUse this skill to write concise docs.\n",
+        encoding="utf-8",
+    )
+    (resources_dir / "checklist.md").write_text(
+        "- Prefer structure over verbosity.\n",
+        encoding="utf-8",
+    )
+    resource_summaries = [{"path": "resources/checklist.md"}]
+    (state_dir / "skill-capability-snapshot.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "registryRevision": 12,
+                "snapshotRevision": 8,
+                "generatedAt": "2026-04-24T00:00:00.000Z",
+                "skills": [
+                    {
+                        "skillId": "writing-clear-docs",
+                        "displayName": "Clear Docs",
+                        "description": "Write clear developer documentation.",
+                        "tags": ["documentation"],
+                        "entrySummary": "Use when drafting concise technical documents.",
+                        "resourceSummaries": resource_summaries,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (config_dir / "skill-registry" / "registry.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "kind": "skill-registry",
+                "registryRevision": 12,
+                "snapshotRevision": 8,
+                "skills": [
+                    {
+                        "skillId": "writing-clear-docs",
+                        "displayName": "Clear Docs",
+                        "description": "Write clear developer documentation.",
+                        "enabled": True,
+                        "trusted": True,
+                        "managedDirectoryName": "writing-clear-docs",
+                        "entryPath": "SKILL.md",
+                        "tags": ["documentation"],
+                        "validation": {"status": "valid", "errors": [], "warnings": []},
+                        "entrySummary": "Use when drafting concise technical documents.",
+                        "resourceSummaries": resource_summaries,
+                        "importedAt": "2026-04-24T00:00:00.000Z",
+                        "updatedAt": "2026-04-24T00:00:00.000Z",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return state_dir, config_dir, runtime_root_dir
 
 
 async def _collect_event_stream(stream) -> CollectedEventStreamResult:

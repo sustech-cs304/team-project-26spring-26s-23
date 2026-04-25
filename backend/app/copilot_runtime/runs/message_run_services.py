@@ -60,6 +60,13 @@ from ..run_events import RuntimeRunEvent
 from ..runtime_session_store import RuntimeSessionStore
 from ..session_store import BoundAgentMismatchError
 from ..thinking_adapter import adapt_thinking_selection
+from ..skill_snapshot_provider import (
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_ID,
+    SkillRuntimeIndex,
+    SkillSnapshotProvider,
+    build_skill_index_system_prompt,
+)
 from ..tool_permissions import RuntimeToolPermissionResolver
 
 
@@ -74,6 +81,9 @@ class _PreparedStreamExecution:
     reasoning_suppression_basis_summary: dict[str, Any] | None
     agent_executor: Any
     run_metadata: RuntimeRunEvent
+    skill_runtime_index: SkillRuntimeIndex | None = None
+    skill_system_prompt: str | None = None
+    pre_execution_events: tuple[RuntimeRunEvent, ...] = ()
     preflight_failure: _FailureEventDetails | None = None
 
 
@@ -102,6 +112,7 @@ class RuntimeMessageRunOrchestrator:
         scaffold: RuntimeScaffold,
         model_route_resolver: RuntimeModelRouteResolver,
         provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
+        skill_snapshot_provider: SkillSnapshotProvider | None = None,
     ) -> None:
         self._session_store = session_store
         self._agent_registry = agent_registry
@@ -110,6 +121,7 @@ class RuntimeMessageRunOrchestrator:
         self._provider_adapter_registry = (
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
+        self._skill_snapshot_provider = skill_snapshot_provider
 
     async def stream_events(
         self,
@@ -141,6 +153,8 @@ class RuntimeMessageRunOrchestrator:
             return
 
         yield prepared.run_metadata
+        for pre_execution_event in prepared.pre_execution_events:
+            yield pre_execution_event
         if prepared.preflight_failure is not None:
             async for projected in self._yield_failed_execution(
                 context=context,
@@ -223,6 +237,18 @@ class RuntimeMessageRunOrchestrator:
             request=request,
             resolved_model_route=resolved_model_route,
         )
+        (
+            skill_runtime_index,
+            skill_system_prompt,
+            skill_tool_ids,
+        ) = self._load_skill_runtime_context(
+            context=context,
+            request=request,
+        )
+        resolved_tool_ids = self._merge_runtime_skill_tools(
+            resolved_tool_ids,
+            skill_tool_ids,
+        )
         agent_executor = self._build_streaming_executor(agent_descriptor)
         log_runtime_chain_debug(
             "orchestrator.execution_prepared",
@@ -234,6 +260,16 @@ class RuntimeMessageRunOrchestrator:
             modelRoute=summarize_runtime_model_route(resolved_model_route),
             historyMessageCount=len(message_history),
             executorType=type(agent_executor).__name__,
+            skillSnapshotRevision=(
+                None
+                if skill_runtime_index is None
+                else skill_runtime_index.snapshot_revision
+            ),
+            skillCount=(
+                0
+                if skill_runtime_index is None
+                else len(skill_runtime_index.skills_by_id)
+            ),
         )
         return _PreparedStreamExecution(
             thread=thread,
@@ -245,7 +281,74 @@ class RuntimeMessageRunOrchestrator:
             reasoning_suppression_basis_summary=reasoning_suppression_basis_summary,
             agent_executor=agent_executor,
             run_metadata=run_metadata,
+            skill_runtime_index=skill_runtime_index,
+            skill_system_prompt=skill_system_prompt,
             preflight_failure=preflight_failure,
+        )
+
+    def _load_skill_runtime_context(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+    ) -> tuple[SkillRuntimeIndex | None, str | None, tuple[str, ...]]:
+        if self._skill_snapshot_provider is None:
+            index = SkillRuntimeIndex.empty(source="missing")
+            skill_system_prompt = build_skill_index_system_prompt(index)
+            self._log_skill_index_state(
+                context=context,
+                request=request,
+                index=index,
+                available=False,
+            )
+            return None, skill_system_prompt, ()
+        index = self._skill_snapshot_provider.load_runtime_index()
+        skill_system_prompt = build_skill_index_system_prompt(index)
+        self._log_skill_index_state(
+            context=context,
+            request=request,
+            index=index,
+            available=index.has_available_skills,
+        )
+        if not index.has_available_skills:
+            return index, skill_system_prompt, ()
+        return (
+            index,
+            skill_system_prompt,
+            (
+                SKILL_ACTIVATE_TOOL_ID,
+                SKILL_READ_RESOURCE_TOOL_ID,
+            ),
+        )
+
+    def _merge_runtime_skill_tools(
+        self,
+        resolved_tool_ids: tuple[str, ...],
+        skill_tool_ids: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        merged = list(resolved_tool_ids)
+        for tool_id in skill_tool_ids:
+            if tool_id not in merged:
+                merged.append(tool_id)
+        return tuple(merged)
+
+    def _log_skill_index_state(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+        index: SkillRuntimeIndex,
+        available: bool,
+    ) -> None:
+        log_runtime_chain_debug(
+            "skill.index_loaded" if available else "skill.index_unavailable",
+            enabled=context.debug_enabled,
+            runId=context.run_id,
+            threadId=request.thread_id,
+            source=index.source,
+            snapshotRevision=index.snapshot_revision,
+            registryRevision=index.registry_revision,
+            skillCount=len(index.skills_by_id),
         )
 
     def _resolve_thinking_state(
@@ -454,6 +557,8 @@ class RuntimeMessageRunOrchestrator:
                 request_options=request.policy.requestOptions,
                 model_settings=prepared.thinking_adaptation.model_settings,
                 tool_permission_resolver=prepared.tool_permission_resolver,
+                skill_runtime_index=prepared.skill_runtime_index,
+                skill_system_prompt=prepared.skill_system_prompt,
             ) as stream:
                 log_runtime_chain_debug(
                     "orchestrator.stream_opened",

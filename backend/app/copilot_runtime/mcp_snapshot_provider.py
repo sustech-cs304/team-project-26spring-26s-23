@@ -289,8 +289,13 @@ def _normalize_snapshot_path(path: str) -> str:
 def _is_host_sensitive_snapshot_path(path: str) -> bool:
     if path == "":
         return False
-    segments = [_normalize_forbidden_key(segment) for segment in path.replace("[", ".[").split(".")]
-    return any(segment in _MCP_SNAPSHOT_HOST_SENSITIVE_ROOT_KEYS for segment in segments)
+    segments = [
+        _normalize_forbidden_key(segment)
+        for segment in path.replace("[", ".[").split(".")
+    ]
+    return any(
+        segment in _MCP_SNAPSHOT_HOST_SENSITIVE_ROOT_KEYS for segment in segments
+    )
 
 
 def _read_json_file(path: Path) -> Any | None:

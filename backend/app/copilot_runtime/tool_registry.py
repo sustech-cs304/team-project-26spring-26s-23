@@ -31,6 +31,14 @@ from app.tooling.runtime_adapter.copilot_runtime import (
     ToolHostCapabilitiesFactory,
     build_default_contract_runtime_bindings,
 )
+from app.copilot_runtime.skill_snapshot_provider import (
+    SKILL_ACTIVATE_FUNCTION_NAME,
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_FUNCTION_NAME,
+    SKILL_READ_RESOURCE_TOOL_ID,
+    execute_skill_activate_tool,
+    execute_skill_read_resource_tool,
+)
 
 DEFAULT_TOOLSET_NAME = "default"
 DEFAULT_TOOLSET_LABEL = "Default"
@@ -88,6 +96,20 @@ WEATHER_CURRENT_TOOL_DESCRIPTION = (
 WEATHER_CURRENT_TOOL_PROMPT = (
     "Use this tool to retrieve a simple current weather summary for a location."
 )
+SKILL_ACTIVATE_TOOL_DISPLAY_NAME = "Skill Activate"
+SKILL_ACTIVATE_TOOL_DESCRIPTION = (
+    "Read the SKILL.md entry instructions and resource summaries for an enabled Skill."
+)
+SKILL_ACTIVATE_TOOL_PROMPT = (
+    "Use this tool after checking the Available Skills list when a Skill matches the task. "
+    "Pass the skill id or display name from the list."
+)
+SKILL_READ_RESOURCE_TOOL_DISPLAY_NAME = "Skill Read Resource"
+SKILL_READ_RESOURCE_TOOL_DESCRIPTION = "Read a UTF-8 text resource listed by an enabled Skill without requiring prior activation."
+SKILL_READ_RESOURCE_TOOL_PROMPT = (
+    "Use this tool when you need a relative resource path listed in a Skill's resource summaries. "
+    "Pass the skill id or display name plus the listed resource path."
+)
 
 
 class FileConvertToolResult(TypedDict, total=False):
@@ -144,6 +166,16 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "返回指定地点的占位当前天气结果。",
             "prompt": "使用此工具获取某个地点的简要当前天气摘要。",
         },
+        SKILL_ACTIVATE_TOOL_ID: {
+            "displayName": "Skill 激活",
+            "description": "读取已启用 Skill 的 SKILL.md 入口说明和资源摘要。",
+            "prompt": "先查看 Available Skills 清单；当某个 Skill 适合任务时，用此工具传入清单中的 skill id 或显示名称。",
+        },
+        SKILL_READ_RESOURCE_TOOL_ID: {
+            "displayName": "Skill 资源读取",
+            "description": "读取已启用 Skill 资源索引中的 UTF-8 文本资源，不要求先激活。",
+            "prompt": "需要 Skill 资源摘要中列出的相对路径时，用此工具传入 skill id 或显示名称以及该资源路径。",
+        },
     },
     "en-US": {
         FILE_CONVERT_TOOL_ID: {
@@ -190,6 +222,16 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
             "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
             "prompt": WEATHER_CURRENT_TOOL_PROMPT,
+        },
+        SKILL_ACTIVATE_TOOL_ID: {
+            "displayName": SKILL_ACTIVATE_TOOL_DISPLAY_NAME,
+            "description": SKILL_ACTIVATE_TOOL_DESCRIPTION,
+            "prompt": SKILL_ACTIVATE_TOOL_PROMPT,
+        },
+        SKILL_READ_RESOURCE_TOOL_ID: {
+            "displayName": SKILL_READ_RESOURCE_TOOL_DISPLAY_NAME,
+            "description": SKILL_READ_RESOURCE_TOOL_DESCRIPTION,
+            "prompt": SKILL_READ_RESOURCE_TOOL_PROMPT,
         },
     },
 }
@@ -574,6 +616,13 @@ _TIS_TOOL_GROUP = ToolPresentationGroup(
     order=20,
     source_kind="sustech-tis",
 )
+_SKILL_TOOL_GROUP = ToolPresentationGroup(
+    group_id="runtime-skill",
+    label_zh="Skill 工具",
+    label_en="Skill Tools",
+    order=5,
+    source_kind="runtime-skill",
+)
 _TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_CONVERT_TOOL_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_READ_ID: _BUILTIN_TOOL_GROUP,
@@ -584,6 +633,8 @@ _TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_TOOL_NOTEBOOK_EDIT_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_SWITCH_ROOT_ID: _BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: _BUILTIN_TOOL_GROUP,
+    SKILL_ACTIVATE_TOOL_ID: _SKILL_TOOL_GROUP,
+    SKILL_READ_RESOURCE_TOOL_ID: _SKILL_TOOL_GROUP,
     "blackboard.sql.query": _BLACKBOARD_TOOL_GROUP,
     "blackboard.course_catalog.search": _BLACKBOARD_TOOL_GROUP,
     "blackboard.calendar.refresh": _BLACKBOARD_TOOL_GROUP,
@@ -650,6 +701,18 @@ _TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "description_zh": "返回指定地点的占位当前天气结果。",
         "description_en": WEATHER_CURRENT_TOOL_DESCRIPTION,
     },
+    SKILL_ACTIVATE_TOOL_ID: {
+        "display_name_zh": "Skill 激活",
+        "display_name_en": SKILL_ACTIVATE_TOOL_DISPLAY_NAME,
+        "description_zh": "读取已启用 Skill 的 SKILL.md 入口说明和资源摘要。",
+        "description_en": SKILL_ACTIVATE_TOOL_DESCRIPTION,
+    },
+    SKILL_READ_RESOURCE_TOOL_ID: {
+        "display_name_zh": "Skill 资源读取",
+        "display_name_en": SKILL_READ_RESOURCE_TOOL_DISPLAY_NAME,
+        "description_zh": "读取已启用 Skill 资源索引中的 UTF-8 文本资源，不要求先激活。",
+        "description_en": SKILL_READ_RESOURCE_TOOL_DESCRIPTION,
+    },
     "blackboard.sql.query": {
         "display_name_zh": "Blackboard 数据查询",
         "display_name_en": "Blackboard SQL Query",
@@ -709,6 +772,37 @@ _TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
 _TOOL_PRESENTATION_BY_ID: dict[str, ToolPresentation] = {
     tool_id: ToolPresentation(group=_TOOL_PRESENTATION_GROUPS_BY_ID[tool_id], **copy)
     for tool_id, copy in _TOOL_PRESENTATION_COPY_BY_ID.items()
+}
+
+
+_SKILL_ACTIVATE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "skill_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Skill id or display name from the Available Skills list.",
+        }
+    },
+    "required": ["skill_id"],
+}
+_SKILL_READ_RESOURCE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "skill_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Skill id or display name from the Available Skills list.",
+        },
+        "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Safe relative resource path listed in the Skill resource summaries.",
+        },
+    },
+    "required": ["skill_id", "path"],
 }
 
 
@@ -899,6 +993,36 @@ def build_default_tool_registry(
                     ),
                     execute=_execute_default_weather_tool,
                 ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=SKILL_ACTIVATE_TOOL_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=SKILL_ACTIVATE_TOOL_DISPLAY_NAME,
+                        description=SKILL_ACTIVATE_TOOL_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=SKILL_ACTIVATE_TOOL_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[SKILL_ACTIVATE_TOOL_ID],
+                    ),
+                    execute=execute_skill_activate_tool,
+                    function_name=SKILL_ACTIVATE_FUNCTION_NAME,
+                    parameters_json_schema=_SKILL_ACTIVATE_PARAMETERS_JSON_SCHEMA,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=SKILL_READ_RESOURCE_TOOL_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=SKILL_READ_RESOURCE_TOOL_DISPLAY_NAME,
+                        description=SKILL_READ_RESOURCE_TOOL_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=SKILL_READ_RESOURCE_TOOL_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[
+                            SKILL_READ_RESOURCE_TOOL_ID
+                        ],
+                    ),
+                    execute=execute_skill_read_resource_tool,
+                    function_name=SKILL_READ_RESOURCE_FUNCTION_NAME,
+                    parameters_json_schema=_SKILL_READ_RESOURCE_PARAMETERS_JSON_SCHEMA,
+                ),
                 *_build_contract_runtime_executable_tools(
                     host_capabilities_factory=host_capabilities_factory,
                 ),
@@ -1006,6 +1130,12 @@ __all__ = [
     "FILE_TOOL_READ_DISPLAY_NAME",
     "FILE_TOOL_WRITE_DESCRIPTION",
     "FILE_TOOL_WRITE_DISPLAY_NAME",
+    "SKILL_ACTIVATE_TOOL_DESCRIPTION",
+    "SKILL_ACTIVATE_TOOL_DISPLAY_NAME",
+    "SKILL_ACTIVATE_TOOL_ID",
+    "SKILL_READ_RESOURCE_TOOL_DESCRIPTION",
+    "SKILL_READ_RESOURCE_TOOL_DISPLAY_NAME",
+    "SKILL_READ_RESOURCE_TOOL_ID",
     "ToolDescriptor",
     "ToolPresentation",
     "ToolPresentationGroup",
