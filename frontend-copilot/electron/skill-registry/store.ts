@@ -206,6 +206,7 @@ function normalizeSkillRecord(value: unknown): SkillRecord | null {
     || typeof value.displayName !== 'string'
     || typeof value.description !== 'string'
     || (value.source !== 'builtin' && value.source !== 'imported')
+    || !(typeof value.sourceDirectory === 'string' || value.sourceDirectory === null || value.sourceDirectory === undefined)
     || typeof value.enabled !== 'boolean'
     || value.trusted !== true
     || typeof value.managedDirectoryName !== 'string'
@@ -239,6 +240,7 @@ function normalizeSkillRecord(value: unknown): SkillRecord | null {
     description: value.description,
     ...(typeof value.version === 'string' || value.version === null ? { version: value.version } : {}),
     source: value.source,
+    ...(typeof value.sourceDirectory === 'string' || value.sourceDirectory === null ? { sourceDirectory: value.sourceDirectory } : {}),
     enabled: value.enabled,
     trusted: true,
     managedDirectoryName: value.managedDirectoryName,

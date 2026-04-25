@@ -55,6 +55,7 @@ export interface SkillRecord {
   description: string
   version?: string | null
   source: 'builtin' | 'imported'
+  sourceDirectory?: string | null
   enabled: boolean
   trusted: true
   managedDirectoryName: string

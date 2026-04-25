@@ -40,6 +40,7 @@ export function createSkillRecordFixture(
     description: '帮助模型编写结构清晰、面向开发者的技术文档。',
     version: '1.0.0',
     source: 'imported',
+    sourceDirectory: null,
     enabled: true,
     trusted: true,
     managedDirectoryName: SKILL_REGISTRY_TEST_FIXTURE_SKILL_IDS.docs,

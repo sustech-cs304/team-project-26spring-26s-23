@@ -173,6 +173,8 @@ class _SkillRegistryRecord(RuntimeContractModel):
     skill_id: str = Field(alias="skillId")
     enabled: bool
     trusted: Literal[True]
+    source: Literal["builtin", "imported"] = "imported"
+    source_directory: str | None = Field(default=None, alias="sourceDirectory")
     managed_directory_name: str = Field(alias="managedDirectoryName")
     entry_path: str = Field(alias="entryPath")
     validation: _SkillValidationSummary
@@ -505,11 +507,16 @@ class SkillSnapshotProvider:
                 or record.validation.status != "valid"
             ):
                 continue
-            root_dir = (managed_root / record.managed_directory_name).resolve(
-                strict=False
-            )
-            if not _is_within_directory(managed_root, root_dir):
-                continue
+            if record.source == "builtin":
+                if record.source_directory is None:
+                    continue
+                root_dir = Path(record.source_directory).resolve(strict=False)
+            else:
+                root_dir = (managed_root / record.managed_directory_name).resolve(
+                    strict=False
+                )
+                if not _is_within_directory(managed_root, root_dir):
+                    continue
             resource_paths = frozenset(
                 resource.path for resource in record.resource_summaries
             )

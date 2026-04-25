@@ -347,6 +347,7 @@ describe('createSkillRegistryService', () => {
       skills: [expect.objectContaining({
         skillId: 'builtin-placeholder-skill',
         source: 'builtin',
+        sourceDirectory: path.resolve('builtin-skills/builtin-placeholder-skill'),
         enabled: true,
         managedDirectoryName: 'builtin-placeholder-skill',
       })],
@@ -378,6 +379,33 @@ describe('createSkillRegistryService', () => {
         status: 'valid',
       })],
     })
+  })
+
+  it('keeps builtin skill timestamps stable when the source package has not changed', async () => {
+    const fixture = await createRegistryServiceFixture('builtin-stable-timestamps', {
+      builtinSkillSources: [{
+        skillId: 'builtin-placeholder-skill',
+        sourceDirectory: path.resolve('builtin-skills/builtin-placeholder-skill'),
+        enabledByDefault: true,
+      }],
+    })
+
+    const firstLoad = await fixture.service.loadRegistry({ includeDisabled: true })
+    const secondLoad = await fixture.service.loadRegistry({ includeDisabled: true })
+
+    expect(firstLoad).toMatchObject({ ok: true })
+    expect(secondLoad).toMatchObject({ ok: true })
+    if (!firstLoad.ok || !secondLoad.ok) {
+      throw new Error('Expected builtin skill loads to succeed')
+    }
+
+    const firstBuiltin = firstLoad.skills.find((entry) => entry.skillId === 'builtin-placeholder-skill')
+    const secondBuiltin = secondLoad.skills.find((entry) => entry.skillId === 'builtin-placeholder-skill')
+    expect(firstBuiltin).toBeDefined()
+    expect(secondBuiltin).toBeDefined()
+    expect(secondBuiltin?.updatedAt).toBe(firstBuiltin?.updatedAt)
+    expect(secondLoad.registryRevision).toBe(firstLoad.registryRevision)
+    expect(secondLoad.snapshotRevision).toBe(firstLoad.snapshotRevision)
   })
 
   it('refreshes validation state and excludes invalid enabled skills from snapshots', async () => {

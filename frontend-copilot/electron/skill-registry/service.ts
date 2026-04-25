@@ -443,14 +443,14 @@ export function createSkillRegistryService(
       expectedSkillId: builtinSource.skillId,
     })
     const importedAt = existing?.importedAt ?? now()
-    const updatedAt = now()
 
     if (!validated.ok) {
-      return {
+      const nextRecord: SkillRecord = {
         skillId: builtinSource.skillId,
         displayName: builtinSource.skillId,
         description: '内置 Skill 样板校验失败。',
         source: 'builtin',
+        sourceDirectory: builtinSource.sourceDirectory,
         enabled: existing?.enabled ?? builtinSource.enabledByDefault,
         trusted: true,
         managedDirectoryName: builtinSource.skillId,
@@ -461,18 +461,25 @@ export function createSkillRegistryService(
         entrySummary: null,
         resourceSummaries: [],
         importedAt,
-        updatedAt,
+        updatedAt: existing?.updatedAt ?? importedAt,
       }
+      return existing !== undefined && !sameSkillRecordContent(existing, nextRecord)
+        ? { ...nextRecord, updatedAt: now() }
+        : nextRecord
     }
 
-    return buildSkillRecord({
+    const nextRecord = buildSkillRecord({
       validated: validated.package,
       managedDirectoryName: builtinSource.skillId,
       source: 'builtin',
+      sourceDirectory: builtinSource.sourceDirectory,
       enabled: existing?.enabled ?? builtinSource.enabledByDefault,
       importedAt,
-      updatedAt,
+      updatedAt: existing?.updatedAt ?? importedAt,
     })
+    return existing !== undefined && !sameSkillRecordContent(existing, nextRecord)
+      ? { ...nextRecord, updatedAt: now() }
+      : nextRecord
   }
 }
 
@@ -749,6 +756,7 @@ function buildSkillRecord(input: {
   validated: ValidatedSkillPackage
   managedDirectoryName: string
   source: SkillRecord['source']
+  sourceDirectory?: string | null
   enabled: boolean
   importedAt: string
   updatedAt: string
@@ -760,6 +768,7 @@ function buildSkillRecord(input: {
     description: metadata.description,
     ...(metadata.version === undefined ? {} : { version: metadata.version }),
     source: input.source,
+    ...(input.sourceDirectory === undefined ? {} : { sourceDirectory: input.sourceDirectory }),
     enabled: input.enabled,
     trusted: true,
     managedDirectoryName: input.managedDirectoryName,
@@ -790,7 +799,7 @@ function buildRefreshedSkillRecord(
     validation: validated.validation,
     entrySummary: validated.entrySummary,
     resourceSummaries: validated.resourceSummaries.map((resource) => ({ ...resource })),
-    updatedAt,
+    updatedAt: sameSkillPayload(existing, validated) ? existing.updatedAt : updatedAt,
   }
 }
 
@@ -870,6 +879,30 @@ function resolveBuiltinSkillSourceDirectory(
   }
 
   return match.sourceDirectory
+}
+
+function sameSkillPayload(existing: SkillRecord, validated: ValidatedSkillPackage): boolean {
+  return JSON.stringify({
+    displayName: existing.displayName,
+    description: existing.description,
+    version: existing.version ?? null,
+    entryPath: existing.entryPath,
+    tags: existing.tags,
+    capabilities: existing.capabilities,
+    validation: existing.validation,
+    entrySummary: existing.entrySummary,
+    resourceSummaries: existing.resourceSummaries,
+  }) === JSON.stringify({
+    displayName: validated.metadata.displayName,
+    description: validated.metadata.description,
+    version: validated.metadata.version ?? null,
+    entryPath: validated.metadata.entry,
+    tags: [...(validated.metadata.tags ?? [])],
+    capabilities: validated.metadata.capabilities ?? createDefaultCapabilities(),
+    validation: validated.validation,
+    entrySummary: validated.entrySummary,
+    resourceSummaries: validated.resourceSummaries.map((resource) => ({ ...resource })),
+  })
 }
 
 function upsertSkill(skills: readonly SkillRecord[], skill: SkillRecord): SkillRecord[] {
@@ -984,6 +1017,18 @@ function sameSkillRecord(left: SkillRecord | undefined, right: SkillRecord): boo
   }
 
   return JSON.stringify(cloneSkillRecord(left)) === JSON.stringify(cloneSkillRecord(right))
+}
+
+function sameSkillRecordContent(left: SkillRecord, right: SkillRecord): boolean {
+  return JSON.stringify({
+    ...cloneSkillRecord(left),
+    importedAt: null,
+    updatedAt: null,
+  }) === JSON.stringify({
+    ...cloneSkillRecord(right),
+    importedAt: null,
+    updatedAt: null,
+  })
 }
 
 function formatUnknownError(error: unknown): string {

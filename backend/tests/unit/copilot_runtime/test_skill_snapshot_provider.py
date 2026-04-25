@@ -252,6 +252,91 @@ def test_skill_read_resource_enforces_file_safety_without_resource_metadata(
     assert not_text["errorCode"] == "resource_not_text"
 
 
+def test_skill_snapshot_provider_resolves_builtin_skill_locators_from_source_directory(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / "state"
+    config_dir = tmp_path / "config"
+    runtime_root_dir = tmp_path / "desktop-runtime"
+    builtin_root = tmp_path / "builtin-skills" / "builtin-placeholder-skill"
+    state_dir.mkdir(parents=True)
+    (config_dir / "skill-registry").mkdir(parents=True)
+    (builtin_root / "resources").mkdir(parents=True)
+    (builtin_root / "SKILL.md").write_text(
+        "# Builtin Placeholder\nUse this builtin skill.\n",
+        encoding="utf-8",
+    )
+    (builtin_root / "resources" / "notes.md").write_text(
+        "builtin resource body\n",
+        encoding="utf-8",
+    )
+    (state_dir / SKILL_CAPABILITY_SNAPSHOT_FILE_NAME).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "registryRevision": 4,
+                "snapshotRevision": 6,
+                "generatedAt": "2026-04-24T00:00:00.000Z",
+                "skills": [
+                    {
+                        "skillId": "builtin-placeholder-skill",
+                        "displayName": "Builtin Placeholder",
+                        "description": "Builtin placeholder skill.",
+                        "tags": ["builtin"],
+                        "entrySummary": "Use this builtin skill.",
+                        "resourceSummaries": [{"path": "resources/notes.md"}],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (config_dir / "skill-registry" / "registry.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "kind": "skill-registry",
+                "registryRevision": 4,
+                "snapshotRevision": 6,
+                "skills": [
+                    {
+                        "skillId": "builtin-placeholder-skill",
+                        "displayName": "Builtin Placeholder",
+                        "description": "Builtin placeholder skill.",
+                        "source": "builtin",
+                        "sourceDirectory": str(builtin_root),
+                        "enabled": True,
+                        "trusted": True,
+                        "managedDirectoryName": "builtin-placeholder-skill",
+                        "entryPath": "SKILL.md",
+                        "tags": ["builtin"],
+                        "validation": {"status": "valid", "errors": [], "warnings": []},
+                        "entrySummary": "Use this builtin skill.",
+                        "resourceSummaries": [{"path": "resources/notes.md"}],
+                        "importedAt": "2026-04-24T00:00:00.000Z",
+                        "updatedAt": "2026-04-24T00:00:00.000Z",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    provider = create_skill_snapshot_provider(
+        state_dir=state_dir,
+        config_dir=config_dir,
+        runtime_root_dir=runtime_root_dir,
+    )
+
+    index = provider.load_runtime_index()
+
+    assert index.locators_by_id["builtin-placeholder-skill"].root_dir == builtin_root.resolve()
+    assert (
+        read_skill_resource(index, "builtin-placeholder-skill", "resources/notes.md")["content"]
+        == "builtin resource body\n"
+    )
+
+
 def _load_skill_runtime_index(tmp_path: Path):
     state_dir, config_dir, runtime_root_dir = _write_skill_runtime_fixture(tmp_path)
     provider = create_skill_snapshot_provider(

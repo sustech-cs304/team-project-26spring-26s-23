@@ -1274,7 +1274,7 @@ class PydanticAIAgentExecutor:
                 "displayName": display_name,
                 "enabledToolIds": list(enabled_tool_ids),
                 "fileSystemState": self._build_bound_tool_file_system_state(ctx),
-                "skillRuntime": self._build_bound_tool_skill_runtime_state(ctx),
+                "skillRuntime": self._build_bound_tool_skill_runtime_state(ctx, tool_id),
             },
         )
 
@@ -1294,9 +1294,12 @@ class PydanticAIAgentExecutor:
     def _build_bound_tool_skill_runtime_state(
         self,
         ctx: RunContext[_PydanticAIAgentRunDeps],
+        tool_id: str,
     ) -> dict[str, Any]:
+        if tool_id not in {SKILL_ACTIVATE_TOOL_ID, SKILL_READ_RESOURCE_TOOL_ID}:
+            return {}
         skill_runtime_index = getattr(ctx.deps, "skill_runtime_index", None)
-        if skill_runtime_index is None:
+        if not skill_runtime_index.has_available_skills:
             return {}
         return {"index": skill_runtime_index}
 
