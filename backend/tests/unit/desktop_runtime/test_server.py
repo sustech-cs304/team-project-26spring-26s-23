@@ -276,6 +276,8 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(
         "tool.fs.switch_root",
         FILE_CONVERT_TOOL_ID,
         "tool.weather-current",
+        "skill.activate",
+        "skill.read_resource",
     ]
     expected_tool_ids = [*expected_builtin_tool_ids, *expected_contract_tool_ids]
     assert toolset_summary["toolCount"] == len(expected_tool_ids)
