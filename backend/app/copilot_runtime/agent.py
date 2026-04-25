@@ -1299,7 +1299,7 @@ class PydanticAIAgentExecutor:
         if tool_id not in {SKILL_ACTIVATE_TOOL_ID, SKILL_READ_RESOURCE_TOOL_ID}:
             return {}
         skill_runtime_index = getattr(ctx.deps, "skill_runtime_index", None)
-        if not skill_runtime_index.has_available_skills:
+        if skill_runtime_index is None or not skill_runtime_index.has_available_skills:
             return {}
         return {"index": skill_runtime_index}
 

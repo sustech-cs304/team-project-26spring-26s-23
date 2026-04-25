@@ -259,11 +259,11 @@ export function createSkillRegistryService(
       const nextSnapshotRevision = existing.enabled
         ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
         : currentRevisions.snapshotRevision
+      await rm(resolveManagedSkillDirectory(options.paths, existing), { recursive: true, force: true })
       const stored = await options.store.saveSkills(
         snapshot.skills.filter((skill) => skill.skillId !== skillId),
         { snapshotRevision: currentRevisions.snapshotRevision },
       )
-      await rm(resolveManagedSkillDirectory(options.paths, existing), { recursive: true, force: true })
       const persistedSnapshot = await persistSnapshotArtifacts(stored, nextSnapshotRevision)
       await publishSnapshotEvent(persistedSnapshot, options.publishEvent, nextSnapshotRevision)
       await options.publishEvent?.({
