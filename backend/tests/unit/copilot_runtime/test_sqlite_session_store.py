@@ -340,7 +340,16 @@ def test_sqlite_session_store_supports_delete_backup_and_restore(
         store.create_run(
             thread_id="thread-1",
             run_id="run-1",
-            request=_build_stored_run_input(user_text="restore this thread"),
+            request=_build_stored_run_input(
+                user_text="restore this thread",
+                structured_payload={
+                    "type": "inline_form_submission",
+                    "formId": "course-form",
+                    "values": {
+                        "courseCode": "CS304",
+                    },
+                },
+            ),
         )
         store.mark_run_streaming("run-1")
         store.mark_run_completed("run-1", assistant_text="restored reply")
@@ -392,6 +401,18 @@ def test_sqlite_session_store_supports_delete_backup_and_restore(
         assert restored_run is not None
         assert restored_run.status == "completed"
         assert restored_run.assistant_text == "restored reply"
+        assert restored_run.request.message_structured_payload == {
+            "type": "inline_form_submission",
+            "formId": "course-form",
+            "values": {
+                "courseCode": "CS304",
+            },
+        }
+        assert store.list_messages("thread-1")[0].content == (
+            "restore this thread\n\n"
+            "[structured_payload]\n"
+            '{"formId": "course-form", "type": "inline_form_submission", "values": {"courseCode": "CS304"}}'
+        )
     finally:
         store.dispose()
 
@@ -472,10 +493,12 @@ def _build_stored_run_input(
     *,
     user_text: str,
     tool_permission_policy: dict[str, object] | None = None,
+    structured_payload: dict[str, object] | None = None,
 ) -> RuntimeStoredRunInput:
     return RuntimeStoredRunInput(
         message_role="user",
         message_content=user_text,
+        message_structured_payload=structured_payload,
         policy=RuntimeStoredRunPolicy(
             model_route=RuntimeStoredModelRoute(
                 provider_profile_id="provider-1",

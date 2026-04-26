@@ -9,7 +9,7 @@ from pydantic_ai.models.test import TestModel
 
 from app.copilot_runtime.agent import AwaitingUserInputError, AgentExecutionError, PydanticAIAgentExecutor, RuntimeToolLifecycleEvent
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventType
-from app.copilot_runtime.execution_support import ThreadNotFoundError, build_runtime_user_prompt
+from app.copilot_runtime.execution_support import ThreadNotFoundError, build_message_history, build_runtime_user_prompt
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
 from app.copilot_runtime.run_events import encode_runtime_run_event
 from app.copilot_runtime.model_routes import (
@@ -2528,6 +2528,25 @@ def _build_request(
         ),
         agent_id="default",
     )
+
+
+def test_build_message_history_keeps_projected_structured_payload_context() -> None:
+    history = build_message_history(
+        (
+            RuntimeTextMessage(
+                role="user",
+                content=(
+                    "已提交表单：请求课程表单\n\n"
+                    "[structured_payload]\n"
+                    '{"formId": "course-form", "type": "inline_form_submission"}'
+                ),
+            ),
+            RuntimeTextMessage(role="assistant", content="已收到课程编码。"),
+        )
+    )
+
+    assert '"type": "inline_form_submission"' in str(history[0])
+
 
 
 def test_build_runtime_user_prompt_appends_structured_payload_block() -> None:

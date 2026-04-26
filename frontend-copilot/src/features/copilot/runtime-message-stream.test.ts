@@ -272,6 +272,31 @@ describe('parseRuntimeRunEventStream', () => {
     }
   })
 
+  it('rejects inline form requests with an empty fields array', async () => {
+    const stream = createSseEventStream([
+      {
+        type: 'tool_event',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          phase: 'completed',
+          title: '请求表单',
+          summary: '请填写表单。',
+          formRequest: {
+            formId: 'empty-form',
+            title: '空表单',
+            fields: [],
+          },
+        },
+      },
+    ])
+
+    await expect(collectEvents(stream)).rejects.toThrow('runtime event payload.formRequest.fields must contain at least one field')
+  })
+
   it('rejects unsupported tool_event phases', async () => {
     const stream = createSseEventStream([
       {

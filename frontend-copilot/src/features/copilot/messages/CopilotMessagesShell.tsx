@@ -310,27 +310,21 @@ function InlineFormMessageCard({
   index: number
   onSubmitInlineForm: CopilotMessagesShellProps['onSubmitInlineForm']
 }) {
-  const [draftValues, setDraftValues] = useState<CopilotInlineFormDraftValues>(() => {
-    const initialValues: CopilotInlineFormDraftValues = {}
-    for (const [key, value] of Object.entries(turn.formValues)) {
-      initialValues[key] = typeof value === 'boolean' ? value : String(value)
-    }
-    return initialValues
-  })
+  const latestTurnRef = useRef(turn)
+  latestTurnRef.current = turn
+  const formResetKey = buildInlineFormResetKey(turn)
+  const [draftValues, setDraftValues] = useState<CopilotInlineFormDraftValues>(() => buildInlineFormDraftValues(turn.formValues))
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    const initialValues: CopilotInlineFormDraftValues = {}
-    for (const [key, value] of Object.entries(turn.formValues)) {
-      initialValues[key] = typeof value === 'boolean' ? value : String(value)
-    }
-    setDraftValues(initialValues)
+    const currentTurn = latestTurnRef.current
+    setDraftValues(buildInlineFormDraftValues(currentTurn.formValues))
     setErrors({})
     setSubmitError(null)
     setSubmitting(false)
-  }, [turn.formState, turn.formValues, turn.id])
+  }, [formResetKey])
 
   const readOnly = turn.formState !== 'pending'
   const helperDescription = turn.description !== null && turn.description !== turn.content
@@ -524,6 +518,20 @@ function InlineFormMessageCard({
       </div>
     </div>
   )
+}
+
+function buildInlineFormDraftValues(
+  formValues: Record<string, string | number | boolean>,
+): CopilotInlineFormDraftValues {
+  const initialValues: CopilotInlineFormDraftValues = {}
+  for (const [key, value] of Object.entries(formValues)) {
+    initialValues[key] = typeof value === 'boolean' ? value : String(value)
+  }
+  return initialValues
+}
+
+function buildInlineFormResetKey(turn: CopilotInlineFormMessageItem): string {
+  return [turn.id, turn.toolCallId, turn.formId, turn.formState].join('\u0000')
 }
 
 function InlineFormSelectControl({

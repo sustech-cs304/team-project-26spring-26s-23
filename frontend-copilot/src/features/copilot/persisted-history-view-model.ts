@@ -630,12 +630,14 @@ function mapUserMessageItem(
     return []
   }
 
+  const structuredPayload = cloneOptionalRecordProperty(timelineItem, 'structuredPayload')
+
   return [{
     id: buildHistoryItemId('user', timelineItem, index),
     kind: 'user',
     title: '',
     content,
-    structuredPayload: cloneRecord(asRecord(timelineItem.structuredPayload)),
+    ...(structuredPayload === undefined ? {} : { structuredPayload }),
     status: 'completed',
   }]
 }
@@ -882,11 +884,15 @@ function shouldPreferTimelineConversation(input: {
     return false
   }
 
-  if (input.timelineConversation.some((item) => item.kind === 'inline-form')) {
-    return !input.replayConversation.some((item) => item.kind === 'inline-form')
+  const timelineHasInlineForm = input.timelineConversation.some((item) => item.kind === 'inline-form')
+  const replayHasInlineForm = input.replayConversation.some((item) => item.kind === 'inline-form')
+  if (timelineHasInlineForm && !replayHasInlineForm) {
+    return true
   }
 
-  return input.timelineConversation.some((item) => item.kind === 'reasoning')
+  const timelineHasReasoning = input.timelineConversation.some((item) => item.kind === 'reasoning')
+  const replayHasReasoning = input.replayConversation.some((item) => item.kind === 'reasoning')
+  return timelineHasReasoning && !replayHasReasoning
 }
 
 function reconcileInlineFormSubmissionState(
@@ -1143,6 +1149,20 @@ function cloneRecord(value: unknown): Record<string, unknown> {
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? { ...value } : null
+}
+
+function cloneOptionalRecordProperty(
+  value: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | null | undefined {
+  if (!Object.prototype.hasOwnProperty.call(value, key)) {
+    return undefined
+  }
+  const nestedValue = value[key]
+  if (nestedValue === null) {
+    return null
+  }
+  return isRecord(nestedValue) ? { ...nestedValue } : undefined
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

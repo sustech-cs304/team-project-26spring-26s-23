@@ -688,6 +688,159 @@ describe('CopilotChatPanel', () => {
     expect(conversation.conversation.some((item) => item.kind === 'user' && item.structuredPayload !== undefined)).toBe(true)
   })
 
+  it('keeps replay history when replay already contains timeline reasoning capability', () => {
+    const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      selectedRunId: 'run-reasoning-history',
+      timelineItems: [
+        {
+          kind: 'user_message',
+          runId: 'run-reasoning-history',
+          threadId: 'thread-1',
+          sequenceStart: 0,
+          sequenceEnd: 0,
+          createdAt: '2026-04-13T15:00:00Z',
+          text: '需要分析历史来源',
+        },
+        {
+          kind: 'reasoning_block',
+          runId: 'run-reasoning-history',
+          threadId: 'thread-1',
+          sequenceStart: 1,
+          sequenceEnd: 1,
+          createdAt: '2026-04-13T15:00:01Z',
+          endedAt: '2026-04-13T15:00:02Z',
+          text: '时间线推理内容。',
+        },
+      ],
+      runSummaries: [{
+        runId: 'run-reasoning-history',
+        threadId: 'thread-1',
+        status: 'completed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:00:03Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:00:03Z',
+        resolvedModelId: 'openai/gpt-4.1',
+        requestedMessageText: '需要分析历史来源',
+        assistantText: '回放回复。',
+      }],
+      replayStatus: 'ready',
+      replay: createRunReplayResult({
+        run: {
+          runId: 'run-reasoning-history',
+          requestedMessageText: '需要分析历史来源',
+          assistantText: '回放回复。',
+        },
+        orderedEvents: [
+          {
+            eventType: 'reasoning_delta',
+            sequence: 1,
+            createdAt: '2026-04-13T15:00:01Z',
+            payload: {
+              delta: '回放推理内容。',
+            },
+            toolCallId: null,
+            toolId: null,
+            phase: null,
+            isRedacted: false,
+            redactionVersion: 0,
+          },
+          {
+            eventType: 'text_delta',
+            sequence: 2,
+            createdAt: '2026-04-13T15:00:02Z',
+            payload: {
+              assistantMessageId: 'run-reasoning-history:assistant',
+              delta: '回放回复。',
+            },
+            toolCallId: null,
+            toolId: null,
+            phase: null,
+            isRedacted: false,
+            redactionVersion: 0,
+          },
+          {
+            eventType: 'run_completed',
+            sequence: 3,
+            createdAt: '2026-04-13T15:00:03Z',
+            payload: {
+              assistantMessageId: 'run-reasoning-history:assistant',
+              assistantText: '回放回复。',
+              resolvedModelId: 'openai/gpt-4.1',
+              resolvedToolIds: [],
+              requestOptions: {},
+            },
+            toolCallId: null,
+            toolId: null,
+            phase: null,
+            isRedacted: false,
+            redactionVersion: 0,
+          },
+        ],
+      }),
+    }))
+
+    expect(conversation.selectedRunConversationSource).toBe('replay')
+    expect(conversation.conversation.some((item) => item.kind === 'reasoning' && item.content === '回放推理内容。')).toBe(true)
+    expect(conversation.conversation.some((item) => item.kind === 'reasoning' && item.content === '时间线推理内容。')).toBe(false)
+  })
+
+  it('preserves missing null and object structuredPayload states in timeline user messages', () => {
+    const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      selectedRunId: null,
+      timelineItems: [
+        {
+          kind: 'user_message',
+          runId: 'run-structured-history',
+          threadId: 'thread-1',
+          sequenceStart: 0,
+          sequenceEnd: 0,
+          createdAt: '2026-04-13T15:00:00Z',
+          text: '普通历史消息',
+        },
+        {
+          kind: 'user_message',
+          runId: 'run-structured-history',
+          threadId: 'thread-1',
+          sequenceStart: 1,
+          sequenceEnd: 1,
+          createdAt: '2026-04-13T15:00:01Z',
+          text: '显式空结构化载荷消息',
+          structuredPayload: null,
+        },
+        {
+          kind: 'user_message',
+          runId: 'run-structured-history',
+          threadId: 'thread-1',
+          sequenceStart: 2,
+          sequenceEnd: 2,
+          createdAt: '2026-04-13T15:00:02Z',
+          text: '表单提交消息',
+          structuredPayload: {
+            type: 'inline_form_submission',
+            formId: 'course-form',
+          },
+        },
+      ],
+      replayStatus: 'idle',
+      replay: null,
+    }))
+    const userItems = conversation.conversation.filter((item) => item.kind === 'user')
+
+    expect(Object.prototype.hasOwnProperty.call(userItems[0], 'structuredPayload')).toBe(false)
+    expect(userItems[1]).toMatchObject({ structuredPayload: null })
+    expect(userItems[2]).toMatchObject({
+      structuredPayload: {
+        type: 'inline_form_submission',
+        formId: 'course-form',
+      },
+    })
+  })
+
   it('rebuilds an unsubmitted pending inline form from persisted timeline history', () => {
     const history = createPersistedHistoryState({
       hasLoadedDetail: true,

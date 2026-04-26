@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -216,7 +217,10 @@ class RuntimeRunRecord:
         self._mark_terminal(status="cancelled", metadata=metadata)
 
     def projected_messages(self) -> tuple[RuntimeTextMessage, ...]:
-        projected_user_text = _normalize_projected_text(self.request.message_content)
+        projected_user_text = _build_projected_user_text(
+            self.request.message_content,
+            self.request.message_structured_payload,
+        )
         if self.status == "completed":
             projected_assistant_text = _normalize_projected_text(self.assistant_text)
             if projected_user_text is None or projected_assistant_text is None:
@@ -547,6 +551,25 @@ def _normalize_projected_text(value: str | None) -> str | None:
     if normalized_value == "":
         return None
     return normalized_value
+
+
+def _build_projected_user_text(
+    value: str | None,
+    structured_payload: Mapping[str, Any] | None,
+) -> str | None:
+    projected_text = _normalize_projected_text(value)
+    if projected_text is None:
+        return None
+    if not structured_payload:
+        return projected_text
+
+    serialized_payload = json.dumps(
+        dict(structured_payload),
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return f"{projected_text}\n\n[structured_payload]\n{serialized_payload}"
 
 
 def _is_awaiting_user_input_run(run: RuntimeRunRecord) -> bool:

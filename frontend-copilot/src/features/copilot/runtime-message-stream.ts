@@ -355,6 +355,9 @@ function requireRuntimeInlineFormRequest(value: unknown, label: string): Runtime
   if (!Array.isArray(record.fields)) {
     throw new Error(`${label}.fields must be an array`)
   }
+  if (record.fields.length === 0) {
+    throw new Error(`${label}.fields must contain at least one field`)
+  }
 
   return {
     formId: requireNonEmptyString(record.formId, `${label}.formId`),
