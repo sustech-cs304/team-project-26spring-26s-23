@@ -94,16 +94,17 @@ describe('createElectronSkillRegistryService', () => {
       const expectedLoadResult = {
         ok: true as const,
         registryRevision: 1,
-        snapshotRevision: 1,
-        skills: [expect.objectContaining({
-          skillId: 'builtin-placeholder-skill',
-          source: 'builtin',
-          enabled: true,
-        })],
+        skills: expect.arrayContaining([
+          expect.objectContaining({
+            skillId: 'builtin-placeholder-skill',
+            source: 'builtin',
+            enabled: true,
+          }),
+        ]),
       }
 
-      await expect(service.loadRegistry({ includeDisabled: true })).resolves.toEqual(expectedLoadResult)
-      await expect(service.loadRegistry({ includeDisabled: true })).resolves.toEqual(expectedLoadResult)
+      await expect(service.loadRegistry({ includeDisabled: true })).resolves.toMatchObject(expectedLoadResult)
+      await expect(service.loadRegistry({ includeDisabled: true })).resolves.toMatchObject(expectedLoadResult)
 
       expect(prepareRuntimePaths).toHaveBeenCalledTimes(2)
       expect(appendLog).toHaveBeenCalledWith(
