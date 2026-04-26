@@ -297,6 +297,101 @@ describe('parseRuntimeRunEventStream', () => {
     await expect(collectEvents(stream)).rejects.toThrow('runtime event payload.formRequest.fields must contain at least one field')
   })
 
+  it('rejects select inline form fields without options', async () => {
+    const stream = createSseEventStream([
+      {
+        type: 'tool_event',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          phase: 'completed',
+          title: '请求表单',
+          summary: '请选择一个选项。',
+          formRequest: {
+            formId: 'missing-select-options',
+            title: '缺少选项',
+            fields: [{
+              name: 'semester',
+              label: '学期',
+              type: 'select',
+            }],
+          },
+        },
+      },
+    ])
+
+    await expect(collectEvents(stream)).rejects.toThrow(
+      'runtime event payload.formRequest.fields[0].options must contain at least one option for select fields',
+    )
+  })
+
+  it('rejects select inline form fields with an empty options array', async () => {
+    const stream = createSseEventStream([
+      {
+        type: 'tool_event',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          phase: 'completed',
+          title: '请求表单',
+          summary: '请选择一个选项。',
+          formRequest: {
+            formId: 'empty-select-options',
+            title: '空选项',
+            fields: [{
+              name: 'semester',
+              label: '学期',
+              type: 'select',
+              options: [],
+            }],
+          },
+        },
+      },
+    ])
+
+    await expect(collectEvents(stream)).rejects.toThrow(
+      'runtime event payload.formRequest.fields[0].options must contain at least one option for select fields',
+    )
+  })
+
+  it('rejects checkbox inline form fields that carry options', async () => {
+    const stream = createSseEventStream([
+      {
+        type: 'tool_event',
+        runId: 'run-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          phase: 'completed',
+          title: '请求表单',
+          summary: '请确认。',
+          formRequest: {
+            formId: 'checkbox-with-options',
+            title: '布尔确认',
+            fields: [{
+              name: 'confirm',
+              label: '我已确认',
+              type: 'checkbox',
+              options: [{ value: 'yes', label: '是' }],
+            }],
+          },
+        },
+      },
+    ])
+
+    await expect(collectEvents(stream)).rejects.toThrow(
+      'runtime event payload.formRequest.fields[0].options is not supported for checkbox fields',
+    )
+  })
+
   it('rejects unsupported tool_event phases', async () => {
     const stream = createSseEventStream([
       {

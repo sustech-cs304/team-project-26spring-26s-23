@@ -106,7 +106,7 @@ REQUEST_USER_FORM_TOOL_PROMPT = (
     "Use this tool proactively when the next step depends on user-provided structured information and a form would be clearer than another natural-language question. "
     "A single-field form is acceptable if it helps the user answer more clearly; multiple related fields should usually be grouped into one form. "
     "The submitted form will arrive as the user's next message so the conversation can continue. "
-    "Write a short user-facing title and description that explain why the information is needed, use natural-language labels and concrete placeholders, mark only truly required fields as required, prefer select or checkbox for controlled choices, and use text or textarea for open explanations. "
+    "Write a short user-facing title and description that explain why the information is needed, use natural-language labels and concrete placeholders, mark only truly required fields as required, use select for choices from a fixed list, use checkbox only for a single boolean confirmation without options, and use text or textarea for open explanations. "
     "Do not request file uploads, secrets, passwords, or tokens, and do not expose protocol details such as form ids, field counts, JSON, or field type internals to the user."
 )
 SKILL_ACTIVATE_TOOL_DISPLAY_NAME = "Skill Activate"
@@ -182,7 +182,7 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
         REQUEST_USER_FORM_TOOL_ID: {
             "displayName": "请求用户表单",
             "description": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
-            "prompt": "当下一步依赖用户补充结构化信息，且表单比自然语言追问更清晰时，主动使用此工具。单字段表单也可以；多个相关字段更应合并为一个表单。表单提交后会作为用户下一条消息继续对话。标题和描述应面向用户并解释为何需要这些信息；字段标签使用自然语言，placeholder 给出具体示例，只把真正阻塞继续执行的字段标为必填；固定选项优先用 select 或 checkbox，开放说明用 text 或 textarea。不要请求文件上传，也不要请求 secret、password、token 等敏感凭据；不要向用户暴露 form id、字段数量、JSON 或协议细节。",
+            "prompt": "当下一步依赖用户补充结构化信息，且表单比自然语言追问更清晰时，主动使用此工具。单字段表单也可以；多个相关字段更应合并为一个表单。表单提交后会作为用户下一条消息继续对话。标题和描述应面向用户并解释为何需要这些信息；字段标签使用自然语言，placeholder 给出具体示例，只把真正阻塞继续执行的字段标为必填；固定列表选项使用 select，checkbox 只用于单个布尔确认且不得携带 options，开放说明用 text 或 textarea。不要请求文件上传，也不要请求 secret、password、token 等敏感凭据；不要向用户暴露 form id、字段数量、JSON 或协议细节。",
         },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": "Skill 激活",
@@ -666,6 +666,8 @@ def _normalize_form_field(value: Any) -> dict[str, Any]:
         if not isinstance(options, list) or len(options) == 0:
             raise ValueError("select fields require a non-empty options array")
         normalized["options"] = [_normalize_form_field_option(option) for option in options]
+    elif "options" in value:
+        raise ValueError("checkbox fields do not support options")
     return normalized
 
 
@@ -954,7 +956,7 @@ _REQUEST_USER_FORM_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
                     "type": {
                         "type": "string",
                         "enum": ["text", "textarea", "number", "select", "checkbox"],
-                        "description": "Choose the simplest supported field type. Prefer select or checkbox for fixed choices, and text or textarea for open-ended input. Do not imply unsupported file-upload inputs.",
+                        "description": "Choose the simplest supported field type. Use select for fixed lists of choices, use checkbox only for a single boolean confirmation, and use text or textarea for open-ended input. Do not imply unsupported file-upload inputs.",
                     },
                     "description": {
                         "type": "string",
@@ -970,7 +972,7 @@ _REQUEST_USER_FORM_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
                     },
                     "options": {
                         "type": "array",
-                        "description": "Allowed choices for select or checkbox fields. Use clear user-facing labels and avoid secret, credential, or file-upload related requests.",
+                        "description": "Allowed choices for select fields only. Provide a non-empty array when type is select. Do not use options with checkbox fields because checkbox represents a single boolean confirmation.",
                         "items": {
                             "type": "object",
                             "additionalProperties": False,
@@ -989,6 +991,37 @@ _REQUEST_USER_FORM_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
                     },
                 },
                 "required": ["name", "label", "type"],
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {"const": "select"},
+                            },
+                            "required": ["type"],
+                        },
+                        "then": {
+                            "required": ["options"],
+                            "properties": {
+                                "options": {
+                                    "minItems": 1,
+                                }
+                            },
+                        },
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {"const": "checkbox"},
+                            },
+                            "required": ["type"],
+                        },
+                        "then": {
+                            "not": {
+                                "required": ["options"],
+                            }
+                        },
+                    },
+                ],
             },
         },
     },

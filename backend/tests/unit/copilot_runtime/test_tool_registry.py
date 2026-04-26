@@ -244,7 +244,7 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "availability": "available",
         "displayName": "请求用户表单",
         "description": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
-        "prompt": "当下一步依赖用户补充结构化信息，且表单比自然语言追问更清晰时，主动使用此工具。单字段表单也可以；多个相关字段更应合并为一个表单。表单提交后会作为用户下一条消息继续对话。标题和描述应面向用户并解释为何需要这些信息；字段标签使用自然语言，placeholder 给出具体示例，只把真正阻塞继续执行的字段标为必填；固定选项优先用 select 或 checkbox，开放说明用 text 或 textarea。不要请求文件上传，也不要请求 secret、password、token 等敏感凭据；不要向用户暴露 form id、字段数量、JSON 或协议细节。",
+        "prompt": "当下一步依赖用户补充结构化信息，且表单比自然语言追问更清晰时，主动使用此工具。单字段表单也可以；多个相关字段更应合并为一个表单。表单提交后会作为用户下一条消息继续对话。标题和描述应面向用户并解释为何需要这些信息；字段标签使用自然语言，placeholder 给出具体示例，只把真正阻塞继续执行的字段标为必填；固定列表选项使用 select，checkbox 只用于单个布尔确认且不得携带 options，开放说明用 text 或 textarea。不要请求文件上传，也不要请求 secret、password、token 等敏感凭据；不要向用户暴露 form id、字段数量、JSON 或协议细节。",
         "displayNameZh": "请求用户表单",
         "displayNameEn": REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
         "descriptionZh": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
@@ -428,10 +428,12 @@ def test_request_user_form_tool_metadata_encourages_user_friendly_structured_col
     assert "single-field" in REQUEST_USER_FORM_TOOL_PROMPT
     assert "file uploads" in REQUEST_USER_FORM_TOOL_PROMPT
     assert "passwords, or tokens" in REQUEST_USER_FORM_TOOL_PROMPT
+    assert "single boolean confirmation without options" in REQUEST_USER_FORM_TOOL_PROMPT
     assert "even for a single field" in REQUEST_USER_FORM_TOOL_DESCRIPTION
     assert "一个字段也可以" in zh_catalog[REQUEST_USER_FORM_TOOL_ID]["description"]
     assert "不要请求文件上传" in zh_catalog[REQUEST_USER_FORM_TOOL_ID]["prompt"]
     assert "不要请求 secret、password、token" in zh_catalog[REQUEST_USER_FORM_TOOL_ID]["prompt"]
+    assert "checkbox 只用于单个布尔确认且不得携带 options" in zh_catalog[REQUEST_USER_FORM_TOOL_ID]["prompt"]
     assert "structured user input" in en_catalog[REQUEST_USER_FORM_TOOL_ID]["description"]
     assert "The submitted form will arrive as the user's next message" in en_catalog[
         REQUEST_USER_FORM_TOOL_ID
@@ -441,10 +443,55 @@ def test_request_user_form_tool_metadata_encourages_user_friendly_structured_col
     assert "A single-field form is valid" in schema["properties"]["fields"]["description"]
     field_properties = schema["properties"]["fields"]["items"]["properties"]
     assert "Natural-language field label" in field_properties["label"]["description"]
-    assert "Do not imply unsupported file-upload inputs" in field_properties["type"]["description"]
+    assert "single boolean confirmation" in field_properties["type"]["description"]
+    assert "Do not use options with checkbox fields" in field_properties["options"]["description"]
     assert "concrete example input" in field_properties["placeholder"]["description"]
     assert "necessary to continue safely or correctly" in field_properties["required"]["description"]
     assert "protocol mechanics" in field_properties["description"]["description"]
+    field_schema = schema["properties"]["fields"]["items"]
+    assert field_schema["allOf"][0]["then"]["required"] == ["options"]
+    assert field_schema["allOf"][0]["then"]["properties"]["options"]["minItems"] == 1
+    assert field_schema["allOf"][1]["then"]["not"]["required"] == ["options"]
+
+
+def test_request_user_form_tool_rejects_checkbox_options_and_accepts_boolean_checkbox() -> None:
+    registry = build_default_tool_registry()
+
+    resolved_tool = registry.resolve_tool(REQUEST_USER_FORM_TOOL_ID)
+
+    with pytest.raises(ValueError, match="checkbox fields do not support options"):
+        _run_awaitable(
+            resolved_tool.execute({
+                "form_id": "confirm-form",
+                "title": "确认继续",
+                "fields": [{
+                    "name": "confirm",
+                    "label": "我已确认",
+                    "type": "checkbox",
+                    "options": [{"value": "yes", "label": "是"}],
+                }],
+            })
+        )
+
+    result = _run_awaitable(
+        resolved_tool.execute({
+            "form_id": "confirm-form",
+            "title": "确认继续",
+            "fields": [{
+                "name": "confirm",
+                "label": "我已确认",
+                "type": "checkbox",
+                "required": True,
+            }],
+        })
+    )
+
+    assert result["formRequest"]["fields"] == [{
+        "name": "confirm",
+        "label": "我已确认",
+        "type": "checkbox",
+        "required": True,
+    }]
 
 
 def test_default_tool_registry_exposes_file_read_runtime_binding_metadata_and_executes(tmp_path: Path) -> None:

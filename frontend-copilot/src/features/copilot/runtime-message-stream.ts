@@ -377,6 +377,17 @@ function requireRuntimeInlineFormField(value: unknown, label: string): RuntimeIn
 
   const description = requireOptionalString(record.description, `${label}.description`)
   const placeholder = requireOptionalString(record.placeholder, `${label}.placeholder`)
+  const options = record.options === undefined
+    ? undefined
+    : requireRuntimeInlineFormFieldOptions(record.options, `${label}.options`)
+
+  if (type === 'select' && (options === undefined || options.length === 0)) {
+    throw new Error(`${label}.options must contain at least one option for select fields`)
+  }
+
+  if (type === 'checkbox' && options !== undefined) {
+    throw new Error(`${label}.options is not supported for checkbox fields`)
+  }
 
   return {
     name: requireNonEmptyString(record.name, `${label}.name`),
@@ -385,7 +396,7 @@ function requireRuntimeInlineFormField(value: unknown, label: string): RuntimeIn
     ...(description === undefined ? {} : { description }),
     ...(placeholder === undefined ? {} : { placeholder }),
     ...(record.required === undefined ? {} : { required: requireBoolean(record.required, `${label}.required`) }),
-    ...(record.options === undefined ? {} : { options: requireRuntimeInlineFormFieldOptions(record.options, `${label}.options`) }),
+    ...(options === undefined ? {} : { options }),
   }
 }
 
