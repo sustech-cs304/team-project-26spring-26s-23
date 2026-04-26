@@ -166,6 +166,55 @@ def test_failed_and_cancelled_runs_do_not_project_messages() -> None:
     assert store.list_messages("thread-1") == ()
 
 
+def test_awaiting_user_input_failed_run_projects_user_and_assistant_prompt() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    run = store.create_run(
+        thread_id="thread-1",
+        run_id="run-awaiting-input",
+        request=_build_stored_run_input(user_text="  hello  "),
+    )
+    store.record_run_event(
+        "run-awaiting-input",
+        event_type="tool_event",
+        payload={
+            "toolCallId": "tool.request-user-form:call-1",
+            "toolId": "tool.request-user-form",
+            "phase": "completed",
+            "summary": "请填写课程编码。",
+            "formRequest": {
+                "formId": "course-form",
+                "title": "请求课程表单",
+                "fields": [{
+                    "name": "courseCode",
+                    "label": "课程编码",
+                    "type": "text",
+                    "required": True,
+                }],
+            },
+        },
+        sequence=1,
+    )
+    store.mark_run_failed(
+        "run-awaiting-input",
+        metadata={
+            "terminal_event": "run_failed",
+            "terminal_payload": {
+                "code": "awaiting_user_input",
+                "message": "Run interrupted until the user submits the requested form.",
+                "details": {},
+            },
+        },
+    )
+
+    assert run.status == "failed"
+    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
+        ("user", "hello"),
+        ("assistant", "请填写课程编码。"),
+    ]
+
+
 def test_multiple_completed_runs_project_thread_history_in_run_order() -> None:
     store = InMemorySessionStore()
     thread = store.create_thread(

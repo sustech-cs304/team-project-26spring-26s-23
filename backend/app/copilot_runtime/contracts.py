@@ -284,6 +284,7 @@ class RuntimeThinkingCapabilityResponse(RuntimeContractModel, RuntimeContract):
 class RuntimeMessagePayload(RuntimeContractModel, RuntimeContract):
     role: str
     content: str
+    structuredPayload: dict[str, Any] | None = None
 
 
 RuntimeToolPermissionMode = Literal["allow", "ask", "delay", "deny"]

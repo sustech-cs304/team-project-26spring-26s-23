@@ -36,6 +36,9 @@ from ..models.chat import (
 from ..redaction import redact_payload
 
 
+_REQUEST_STRUCTURED_PAYLOAD_METADATA_KEY = "requestStructuredPayload"
+
+
 @dataclass(frozen=True, slots=True)
 class PersistenceRepositories:
     session: Session
@@ -179,6 +182,11 @@ class RunRepository:
             request=RuntimeStoredRunInput(
                 message_role=_coerce_runtime_message_role(model.request_message_role),
                 message_content=model.request_message_text,
+                message_structured_payload=_copy_mapping(
+                    (model.metadata_json or {}).get(
+                        _REQUEST_STRUCTURED_PAYLOAD_METADATA_KEY
+                    )
+                ),
                 policy=RuntimeStoredRunPolicy(
                     model_route=_deserialize_model_route(
                         model.selected_model_route_json
@@ -395,6 +403,13 @@ def _build_run_column_values(run: RuntimeRunRecord) -> dict[str, Any]:
     terminal_payload_dict = (
         terminal_payload if isinstance(terminal_payload, Mapping) else {}
     )
+    metadata_json = dict(run.metadata)
+    if run.request.message_structured_payload is None:
+        metadata_json.pop(_REQUEST_STRUCTURED_PAYLOAD_METADATA_KEY, None)
+    else:
+        metadata_json[_REQUEST_STRUCTURED_PAYLOAD_METADATA_KEY] = dict(
+            run.request.message_structured_payload
+        )
     resolved_model_route = run.metadata.get("resolvedModelRoute")
     resolved_model_route_json = _copy_mapping(resolved_model_route)
     selected_model_route_json = _serialize_model_route(run.request.policy.model_route)
@@ -435,7 +450,7 @@ def _build_run_column_values(run: RuntimeRunRecord) -> dict[str, Any]:
         "resolved_tool_ids_json": resolved_tool_ids_json,
         "request_options_json": request_options_json,
         "debug_mode_enabled": run.request.policy.debug_mode_enabled,
-        "metadata_json": dict(run.metadata),
+        "metadata_json": metadata_json,
         "cancel_requested": run.cancel_requested,
         "assistant_text": run.assistant_text,
         "failure_code": _extract_failure_code(run.status, terminal_payload_dict),

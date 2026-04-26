@@ -670,7 +670,16 @@ class RuntimeProtocolParser:
             field_name="message.content",
             requested_method=requested_method,
         )
-        return RuntimeMessagePayload(role=normalized_role, content=content)
+        structured_payload = self._optional_object(
+            value.get("structuredPayload"),
+            field_name="message.structuredPayload",
+            requested_method=requested_method,
+        )
+        return RuntimeMessagePayload(
+            role=normalized_role,
+            content=content,
+            structuredPayload=structured_payload,
+        )
 
     def _extract_message_execution_policy(
         self,

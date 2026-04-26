@@ -229,6 +229,39 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
     assert request.policy.requestOptions == {"temperature": 0.2}
 
 
+def test_extract_run_start_request_accepts_optional_structured_message_payload() -> None:
+    parser = _build_parser()
+
+    request = parser.extract_run_start_request(
+        {
+            "method": "run/start",
+            "body": {
+                "threadId": "thread-123",
+                "message": {
+                    "role": "user",
+                    "content": "已提交表单：请求课程表单\n课程编码: CS304",
+                    "structuredPayload": {
+                        "type": "inline_form_submission",
+                        "formId": "course-form",
+                        "values": {
+                            "courseCode": "CS304",
+                        },
+                    },
+                },
+                "policy": _build_policy_payload(),
+            },
+        }
+    )
+
+    assert request.message.structuredPayload == {
+        "type": "inline_form_submission",
+        "formId": "course-form",
+        "values": {
+            "courseCode": "CS304",
+        },
+    }
+
+
 
 def test_extract_run_start_request_accepts_series_based_budget_selection() -> None:
     parser = _build_parser()

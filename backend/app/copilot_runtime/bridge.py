@@ -631,6 +631,11 @@ class RuntimeBridge:
         return RuntimeStoredRunInput(
             message_role=cast(RuntimeMessageRole, request.message.role),
             message_content=request.message.content,
+            message_structured_payload=(
+                None
+                if request.message.structuredPayload is None
+                else dict(request.message.structuredPayload)
+            ),
             policy=RuntimeStoredRunPolicy(
                 model_route=RuntimeStoredModelRoute(
                     provider_profile_id=request.policy.modelRoute.provider_profile_id,
@@ -689,6 +694,11 @@ class RuntimeBridge:
                 message=RuntimeMessagePayload(
                     role=stored_request.message_role,
                     content=stored_request.message_content,
+                    structuredPayload=(
+                        None
+                        if stored_request.message_structured_payload is None
+                        else dict(stored_request.message_structured_payload)
+                    ),
                 ),
                 policy=RuntimeMessageExecutionPolicy(
                     modelRoute=RuntimeModelRoute(

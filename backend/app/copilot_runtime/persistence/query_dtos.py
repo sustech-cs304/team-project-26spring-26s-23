@@ -75,8 +75,10 @@ class PersistedTimelineMessageItemDTO(PersistedHistoryReadModel):
     sequenceStart: int
     sequenceEnd: int
     createdAt: str
+    endedAt: str | None = None
     text: str
     role: str | None = None
+    structuredPayload: JsonObject | None = None
 
 
 class PersistedToolCallPhaseDTO(PersistedHistoryReadModel):
@@ -88,6 +90,7 @@ class PersistedToolCallPhaseDTO(PersistedHistoryReadModel):
     inputSummary: str | None = None
     resultSummary: str | None = None
     errorSummary: str | None = None
+    formRequest: JsonObject | None = None
 
 
 class PersistedToolCallBlockDTO(PersistedHistoryReadModel):
@@ -104,6 +107,7 @@ class PersistedToolCallBlockDTO(PersistedHistoryReadModel):
     inputSummary: str | None = None
     resultSummary: str | None = None
     errorSummary: str | None = None
+    formRequest: JsonObject | None = None
     phases: tuple[PersistedToolCallPhaseDTO, ...] = ()
 
 
@@ -196,6 +200,7 @@ class PersistedRunEventDTO(PersistedHistoryReadModel):
 class PersistedRequestMessageSnapshotDTO(PersistedHistoryReadModel):
     role: str
     content: str
+    structuredPayload: JsonObject | None = None
 
 
 class PersistedRunHistoricalSnapshotDTO(PersistedHistoryReadModel):
