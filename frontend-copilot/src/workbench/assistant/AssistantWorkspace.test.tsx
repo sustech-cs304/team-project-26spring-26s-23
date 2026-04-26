@@ -1193,6 +1193,157 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
+  it('does not evict awaiting-input controllers with pending inline forms when persisted history cannot rebuild the form', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const fixtures = createLruPersistedHistoryFixtures()
+    const protectedFixture = fixtures[0]
+    const evictableFixture = fixtures[1]
+    if (protectedFixture === undefined || evictableFixture === undefined) {
+      throw new Error('Expected protected and evictable LRU fixtures.')
+    }
+
+    protectedFixture.detail.runSummaries = [{
+      ...protectedFixture.detail.runSummaries[0],
+      status: 'failed',
+    }]
+    protectedFixture.summary.lastRunStatus = 'failed'
+    ;(protectedFixture.detail as { timelineItems: Array<Record<string, unknown>> }).timelineItems = [{
+      kind: 'user_message',
+      runId: protectedFixture.replay.run.runId,
+      sequenceStart: 0,
+      text: protectedFixture.summary.lastUserMessagePreview,
+    }]
+
+    const { rendered } = await renderAssistantWorkspaceWithHydratedLruFixtures(fixtures, {
+      afterFirstThreadReady: async () => {
+        await updateAssistantWorkspaceRuntimeControllers((current) => ({
+          ...current,
+          [protectedFixture.summary.threadId]: {
+            ...current[protectedFixture.summary.threadId],
+            runState: {
+              ...current[protectedFixture.summary.threadId]?.runState,
+              phase: 'awaiting_input',
+              runId: protectedFixture.replay.run.runId,
+              threadId: protectedFixture.summary.threadId,
+              segments: [{
+                kind: 'inline-form',
+                formState: 'pending',
+              }],
+            },
+            pendingHistorySyncRunId: protectedFixture.replay.run.runId,
+            lastAccessedAt: Date.now(),
+          },
+        }))
+      },
+    })
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const controllerRecord = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId ?? {}
+      return Object.keys(controllerRecord).length === COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY
+        && controllerRecord[protectedFixture.summary.threadId] !== undefined
+        && controllerRecord[evictableFixture.summary.threadId] === undefined
+    }, 24)
+
+    rendered.unmount()
+  })
+
+  it('evicts awaiting-input controllers with pending inline forms once persisted history can rebuild the form', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const fixtures = createLruPersistedHistoryFixtures()
+    const protectedFixture = fixtures[0]
+    const evictableFixture = fixtures[1]
+    if (protectedFixture === undefined || evictableFixture === undefined) {
+      throw new Error('Expected protected and evictable LRU fixtures.')
+    }
+
+    protectedFixture.detail.runSummaries = [{
+      ...protectedFixture.detail.runSummaries[0],
+      status: 'failed',
+    }]
+    protectedFixture.summary.lastRunStatus = 'failed'
+    ;(protectedFixture.detail as { timelineItems: Array<Record<string, unknown>> }).timelineItems = [
+      {
+        kind: 'user_message',
+        runId: protectedFixture.replay.run.runId,
+        sequenceStart: 0,
+        text: protectedFixture.summary.lastUserMessagePreview,
+      },
+      {
+        kind: 'tool_call_block',
+        runId: protectedFixture.replay.run.runId,
+        toolCallId: 'tool.request-user-form:call-1',
+        toolId: 'tool.request-user-form',
+        sequenceStart: 1,
+        title: '请求课程表单',
+        summary: '请填写课程编码。',
+        resultSummary: '表单请求已发送，等待用户提交。',
+        formRequest: {
+          formId: 'course-form',
+          title: '请求课程表单',
+          submitLabel: '提交',
+          fields: [{
+            name: 'courseCode',
+            label: '课程编码',
+            type: 'text',
+            required: true,
+          }],
+        },
+        phases: [{
+          phase: 'completed',
+          sequence: 1,
+          title: '请求课程表单',
+          summary: '请填写课程编码。',
+          resultSummary: '表单请求已发送，等待用户提交。',
+          formRequest: {
+            formId: 'course-form',
+            title: '请求课程表单',
+            submitLabel: '提交',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+          },
+        }],
+      },
+    ]
+
+    const { rendered } = await renderAssistantWorkspaceWithHydratedLruFixtures(fixtures, {
+      afterFirstThreadReady: async () => {
+        await updateAssistantWorkspaceRuntimeControllers((current) => ({
+          ...current,
+          [protectedFixture.summary.threadId]: {
+            ...current[protectedFixture.summary.threadId],
+            runState: {
+              ...current[protectedFixture.summary.threadId]?.runState,
+              phase: 'awaiting_input',
+              runId: protectedFixture.replay.run.runId,
+              threadId: protectedFixture.summary.threadId,
+              segments: [{
+                kind: 'inline-form',
+                formState: 'pending',
+              }],
+            },
+            pendingHistorySyncRunId: protectedFixture.replay.run.runId,
+            lastAccessedAt: 0,
+          },
+        }))
+      },
+    })
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const controllerRecord = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId ?? {}
+      return Object.keys(controllerRecord).length === COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY
+        && controllerRecord[protectedFixture.summary.threadId] === undefined
+        && controllerRecord[evictableFixture.summary.threadId] !== undefined
+    }, 24)
+
+    rendered.unmount()
+  })
+
   it('restores a newly persisted live thread after remounting the workspace', async () => {
     mockCopilotChatPanel.mockClear()
 

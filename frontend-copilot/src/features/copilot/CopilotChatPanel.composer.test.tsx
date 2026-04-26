@@ -2531,6 +2531,638 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('prevents inline form submission when local validation fails', async () => {
+    const sendMessage = vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+      {
+        type: 'run_started',
+        runId: 'run-inline-form-validation',
+        sessionId: input.sessionId,
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-inline-form-validation:assistant',
+        },
+      },
+      createRuntimeToolEvent({
+        runId: 'run-inline-form-validation',
+        sessionId: input.sessionId,
+        sequence: 2,
+        payload: {
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          phase: 'completed',
+          title: '请求课程表单',
+          summary: '请填写课程编码。',
+          formRequest: {
+            formId: 'course-form',
+            title: '请求课程表单',
+            submitLabel: '提交',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+          },
+        },
+      }),
+      {
+        type: 'run_failed',
+        runId: 'run-inline-form-validation',
+        sessionId: input.sessionId,
+        sequence: 3,
+        payload: {
+          code: 'awaiting_user_input',
+          message: 'Run interrupted until the user submits the requested form.',
+          details: {
+            toolId: 'tool.request-user-form',
+            toolCallId: 'tool.request-user-form:call-1',
+          },
+        },
+      },
+    ]))
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={createPersistedWorkspaceStateLoader()}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '需要课程筛选条件')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    await clickElement(rendered.getByTestId('chat-message-inline-form-submit-1'))
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(rendered.getByTestId('chat-message-inline-form-error-courseCode-1').textContent).toContain('此项为必填。')
+    rendered.unmount()
+  })
+
+  it('submits inline form payload as a new user message and keeps the form readonly afterwards', async () => {
+    const sendMessage = vi.fn()
+      .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+        {
+          type: 'run_started',
+          runId: 'run-inline-form-first',
+          sessionId: input.sessionId,
+          sequence: 1,
+          payload: {
+            assistantMessageId: 'run-inline-form-first:assistant',
+          },
+        },
+        createRuntimeToolEvent({
+          runId: 'run-inline-form-first',
+          sessionId: input.sessionId,
+          sequence: 2,
+          payload: {
+            toolCallId: 'tool.request-user-form:call-1',
+            toolId: 'tool.request-user-form',
+            phase: 'completed',
+            title: '请求课程表单',
+            summary: '请填写课程编码。',
+            formRequest: {
+              formId: 'course-form',
+              title: '请求课程表单',
+              submitLabel: '提交',
+              fields: [{
+                name: 'courseCode',
+                label: '课程编码',
+                type: 'text',
+                required: true,
+              }],
+            },
+          },
+        }),
+        {
+          type: 'run_failed',
+          runId: 'run-inline-form-first',
+          sessionId: input.sessionId,
+          sequence: 3,
+          payload: {
+            code: 'awaiting_user_input',
+            message: 'Run interrupted until the user submits the requested form.',
+            details: {
+              toolId: 'tool.request-user-form',
+              toolCallId: 'tool.request-user-form:call-1',
+            },
+          },
+        },
+      ]))
+      .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+        {
+          type: 'run_started',
+          runId: 'run-inline-form-second',
+          sessionId: input.sessionId,
+          sequence: 1,
+          payload: {
+            assistantMessageId: 'run-inline-form-second:assistant',
+          },
+        },
+        {
+          type: 'text_delta',
+          runId: 'run-inline-form-second',
+          sessionId: input.sessionId,
+          sequence: 2,
+          payload: {
+            assistantMessageId: 'run-inline-form-second:assistant',
+            delta: '已收到课程编码。',
+          },
+        },
+        {
+          type: 'run_completed',
+          runId: 'run-inline-form-second',
+          sessionId: input.sessionId,
+          sequence: 3,
+          payload: {
+            assistantMessageId: 'run-inline-form-second:assistant',
+            assistantText: '已收到课程编码。',
+            resolvedModelId: 'openai/gpt-4.1',
+            resolvedModelRoute: createRuntimeResolvedModelRoute(),
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+        },
+      ]))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={createPersistedWorkspaceStateLoader()}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '需要课程筛选条件')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    const field = rendered.getByTestId('chat-message-inline-form-field-courseCode-1').querySelector('input') as HTMLInputElement
+    await setFormControlValue(field, 'CS304')
+    await clickElement(rendered.getByTestId('chat-message-inline-form-submit-1'))
+
+    expect(sendMessage).toHaveBeenCalledTimes(2)
+    expect(sendMessage.mock.calls[1]?.[0].message).toMatchObject({
+      content: '已提交表单：请求课程表单\n课程编码: CS304',
+      structuredPayload: {
+        type: 'inline_form_submission',
+        toolId: 'tool.request-user-form',
+        toolCallId: 'tool.request-user-form:call-1',
+        formId: 'course-form',
+        values: {
+          courseCode: 'CS304',
+        },
+      },
+    })
+    expect(rendered.queryByTestId('chat-message-inline-form-readonly-1')).toBeNull()
+    expect(rendered.getByTestId('chat-message-inline-form-value-courseCode-1').textContent).toContain('CS304')
+    expect(rendered.queryByTestId('chat-message-inline-form-submit-1')).toBeNull()
+    rendered.unmount()
+  })
+
+  it('keeps the composer enabled while an inline form is pending and expires the old form after a normal send', async () => {
+    const sendMessage = vi.fn()
+      .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+        {
+          type: 'run_started',
+          runId: 'run-inline-form-pending',
+          sessionId: input.sessionId,
+          sequence: 1,
+          payload: {
+            assistantMessageId: 'run-inline-form-pending:assistant',
+          },
+        },
+        createRuntimeToolEvent({
+          runId: 'run-inline-form-pending',
+          sessionId: input.sessionId,
+          sequence: 2,
+          payload: {
+            toolCallId: 'tool.request-user-form:call-1',
+            toolId: 'tool.request-user-form',
+            phase: 'completed',
+            title: '请求课程表单',
+            summary: '请填写课程编码。',
+            formRequest: {
+              formId: 'course-form',
+              title: '请求课程表单',
+              submitLabel: '提交',
+              fields: [{
+                name: 'courseCode',
+                label: '课程编码',
+                type: 'text',
+                required: true,
+              }],
+            },
+          },
+        }),
+        {
+          type: 'run_failed',
+          runId: 'run-inline-form-pending',
+          sessionId: input.sessionId,
+          sequence: 3,
+          payload: {
+            code: 'awaiting_user_input',
+            message: 'Run interrupted until the user submits the requested form.',
+            details: {
+              toolId: 'tool.request-user-form',
+              toolCallId: 'tool.request-user-form:call-1',
+            },
+          },
+        },
+      ]))
+      .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+        {
+          type: 'run_started',
+          runId: 'run-inline-form-bypass',
+          sessionId: input.sessionId,
+          sequence: 1,
+          payload: {
+            assistantMessageId: 'run-inline-form-bypass:assistant',
+          },
+        },
+        {
+          type: 'text_delta',
+          runId: 'run-inline-form-bypass',
+          sessionId: input.sessionId,
+          sequence: 2,
+          payload: {
+            assistantMessageId: 'run-inline-form-bypass:assistant',
+            delta: '收到说明，继续普通对话。',
+          },
+        },
+        {
+          type: 'run_completed',
+          runId: 'run-inline-form-bypass',
+          sessionId: input.sessionId,
+          sequence: 3,
+          payload: {
+            assistantMessageId: 'run-inline-form-bypass:assistant',
+            assistantText: '收到说明，继续普通对话。',
+            resolvedModelId: 'openai/gpt-4.1',
+            resolvedModelRoute: createRuntimeResolvedModelRoute(),
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+        },
+      ]))
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={createPersistedWorkspaceStateLoader()}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    await setFormControlValue(messageInput, '需要课程筛选条件')
+    await submitForm(composer)
+
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    expect(rendered.getByTestId('chat-message-inline-form-card-1').textContent).toContain('填写后继续')
+    expect(messageInput.disabled).toBe(false)
+    expect(rendered.container.textContent).toContain('需要你补充信息')
+
+    await setFormControlValue(messageInput, '先不用表单，直接说明原因')
+    expect(sendButton.disabled).toBe(false)
+    await submitForm(composer)
+
+    expect(sendMessage).toHaveBeenCalledTimes(2)
+    expect(sendMessage.mock.calls[1]?.[0].message).toMatchObject({
+      content: '先不用表单，直接说明原因',
+    })
+    expect(rendered.getByTestId('chat-message-inline-form-expired-1').textContent).toContain('该表单已过期，不能继续提交。')
+    expect(rendered.queryByTestId('chat-message-inline-form-submit-1')).toBeNull()
+    rendered.unmount()
+  })
+
+  it('keeps a pending inline form across session switches and keeps the composer usable after returning', async () => {
+    const firstSessionShell = createSessionShell({ sessionId: 'session-inline-form-a' })
+    const secondSessionShell = createSessionShell({ sessionId: 'session-inline-form-b' })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const firstSessionState = createCopilotThreadRuntimeControllerState(firstSessionShell)
+    const secondSessionState = createCopilotThreadRuntimeControllerState(secondSessionShell)
+    const runtimeControllerBySessionId: Record<string, CopilotThreadRuntimeControllerState> = {
+      [firstSessionShell.sessionId]: {
+        ...firstSessionState,
+        composerDraft: {
+          ...firstSessionState.composerDraft,
+          selectedModelId: 'provider-model|openrouter|openai%2Fgpt-4.1',
+          selectedModelRoute: createRuntimeModelRoute({
+            providerProfileId: 'openrouter',
+            modelId: 'openai/gpt-4.1',
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'openrouter',
+              modelId: 'openai/gpt-4.1',
+            },
+          }),
+        },
+        conversation: [{
+          id: 'session-inline-form-a:user-message',
+          kind: 'user',
+          title: '',
+          content: '需要课程筛选条件',
+          status: 'completed',
+        }],
+        runState: {
+          ...firstSessionState.runState,
+          phase: 'awaiting_input',
+          runId: 'run-inline-form-switch',
+          threadId: firstSessionShell.sessionId,
+          failure: {
+            code: 'awaiting_user_input',
+            message: 'Run interrupted until the user submits the requested form.',
+            details: {
+              toolId: 'tool.request-user-form',
+              toolCallId: 'tool.request-user-form:call-1',
+            },
+          },
+          segments: [{
+            id: 'inline-form:run-inline-form-switch:tool.request-user-form:call-1',
+            kind: 'inline-form',
+            runId: 'run-inline-form-switch',
+            startedSequence: 1,
+            lastSequence: 1,
+            status: 'completed',
+            toolCallId: 'tool.request-user-form:call-1',
+            toolId: 'tool.request-user-form',
+            formId: 'course-form',
+            title: '请求课程表单',
+            summary: '请填写课程编码。',
+            description: null,
+            submitLabel: '提交',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+            formState: 'pending',
+            formValues: {
+              courseCode: '',
+            },
+            submittedPayload: null,
+          }],
+        },
+      },
+      [secondSessionShell.sessionId]: {
+        ...secondSessionState,
+        composerDraft: {
+          ...secondSessionState.composerDraft,
+          selectedModelId: 'provider-model|openrouter|openai%2Fgpt-4.1',
+          selectedModelRoute: createRuntimeModelRoute({
+            providerProfileId: 'openrouter',
+            modelId: 'openai/gpt-4.1',
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'openrouter',
+              modelId: 'openai/gpt-4.1',
+            },
+          }),
+        },
+      },
+    }
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            threadId: firstSessionShell.sessionId,
+            lastRunId: 'run-inline-form-switch',
+            lastRunStatus: 'failed',
+            lastUserMessagePreview: '需要课程筛选条件',
+            lastAssistantMessagePreview: '请填写课程编码。',
+          },
+          selectedRunId: 'run-inline-form-switch',
+          runSummaries: [{
+            runId: 'run-inline-form-switch',
+            threadId: firstSessionShell.sessionId,
+            status: 'failed',
+            createdAt: '2026-04-14T08:00:00Z',
+            updatedAt: '2026-04-14T08:00:03Z',
+            startedAt: '2026-04-14T08:00:01Z',
+            terminalAt: '2026-04-14T08:00:03Z',
+            resolvedModelId: 'openai/gpt-4.1',
+            requestedMessageText: '需要课程筛选条件',
+            assistantText: '请填写课程编码。',
+          }],
+        })}
+        loadWorkspaceState={loadWorkspaceState}
+        runtimeControllerBySessionId={runtimeControllerBySessionId}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).toContain('需要课程筛选条件')
+    expect(rendered.container.textContent).toContain('请求课程表单')
+    expect(rendered.container.textContent).toContain('填写后继续')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={secondSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            threadId: secondSessionShell.sessionId,
+            lastRunId: 'run-second-session',
+          },
+          selectedRunId: 'run-second-session',
+        })}
+        loadWorkspaceState={loadWorkspaceState}
+        runtimeControllerBySessionId={runtimeControllerBySessionId}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).not.toContain('需要课程筛选条件')
+    expect(rendered.container.textContent).not.toContain('请求课程表单')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            threadId: firstSessionShell.sessionId,
+            lastRunId: 'run-inline-form-switch',
+            lastRunStatus: 'failed',
+            lastUserMessagePreview: '需要课程筛选条件',
+            lastAssistantMessagePreview: '请填写课程编码。',
+          },
+          selectedRunId: 'run-inline-form-switch',
+          runSummaries: [{
+            runId: 'run-inline-form-switch',
+            threadId: firstSessionShell.sessionId,
+            status: 'failed',
+            createdAt: '2026-04-14T08:00:00Z',
+            updatedAt: '2026-04-14T08:00:03Z',
+            startedAt: '2026-04-14T08:00:01Z',
+            terminalAt: '2026-04-14T08:00:03Z',
+            resolvedModelId: 'openai/gpt-4.1',
+            requestedMessageText: '需要课程筛选条件',
+            assistantText: '请填写课程编码。',
+          }],
+        })}
+        loadWorkspaceState={loadWorkspaceState}
+        runtimeControllerBySessionId={runtimeControllerBySessionId}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const fieldAfterReturn = rendered.container.querySelector('[data-testid^="chat-message-inline-form-field-courseCode-"] input') as HTMLInputElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    expect(fieldAfterReturn).not.toBeNull()
+    expect(fieldAfterReturn.disabled).toBe(false)
+    expect(messageInput.disabled).toBe(false)
+    await setFormControlValue(fieldAfterReturn, 'CS304')
+    await setFormControlValue(messageInput, '切回后直接继续普通对话')
+    expect(messageInput.disabled).toBe(false)
+    rendered.unmount()
+  })
+
+
+  it('does not expose inline form protocol details in the form card UI', async () => {
+    const sendMessage = vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+      {
+        type: 'run_started',
+        runId: 'run-inline-form-clean-ui',
+        sessionId: input.sessionId,
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-inline-form-clean-ui:assistant',
+        },
+      },
+      createRuntimeToolEvent({
+        runId: 'run-inline-form-clean-ui',
+        sessionId: input.sessionId,
+        sequence: 2,
+        payload: {
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          phase: 'completed',
+          title: '请求课程表单',
+          summary: '请填写课程编码。',
+          formRequest: {
+            formId: 'course-form',
+            title: '请求课程表单',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+          },
+        },
+      }),
+      {
+        type: 'run_failed',
+        runId: 'run-inline-form-clean-ui',
+        sessionId: input.sessionId,
+        sequence: 3,
+        payload: {
+          code: 'awaiting_user_input',
+          message: 'Run interrupted until the user submits the requested form.',
+          details: {},
+        },
+      },
+    ]))
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={createPersistedWorkspaceStateLoader()}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '需要课程筛选条件')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    const cardText = rendered.getByTestId('chat-message-inline-form-card-1').textContent ?? ''
+    expect(cardText).not.toContain('fieldCount')
+    expect(cardText).not.toContain('formId')
+    expect(cardText).not.toContain('type')
+    rendered.unmount()
+  })
+
   it('displays legacy-unsupported provider validation in the chat area without a composer error bar', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({

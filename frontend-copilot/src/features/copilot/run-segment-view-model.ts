@@ -1,4 +1,5 @@
 import {
+  type RuntimeInlineFormField,
   cloneRuntimeReasoningSuppressionBasis as cloneRuntimeReasoningSuppressionBasisValue,
   cloneRuntimeThinkingCapability as cloneRuntimeThinkingCapabilityValue,
   cloneRuntimeThinkingSelection as cloneRuntimeThinkingSelectionValue,
@@ -10,6 +11,7 @@ import {
   type CopilotErrorDetailSource,
 } from './error-detail-overlay-view-model'
 import type {
+  CopilotInlineFormSegmentState,
   CopilotRunDiagnosticSummary,
   CopilotRunFailureSummary,
   CopilotRunSegment,
@@ -22,6 +24,7 @@ export interface CopilotUserMessageItem {
   kind: 'user'
   title: string
   content: string
+  structuredPayload?: Record<string, unknown> | null
   status: 'completed'
 }
 
@@ -75,6 +78,21 @@ export interface CopilotToolMessageItem extends CopilotRunSegmentViewItemBase {
   errorDetail?: CopilotErrorDetailSource | null
 }
 
+export interface CopilotInlineFormMessageItem extends CopilotRunSegmentViewItemBase {
+  kind: 'inline-form'
+  title: string
+  content: string
+  toolCallId: string
+  toolId: string
+  formId: string
+  description: string | null
+  submitLabel: string
+  fields: RuntimeInlineFormField[]
+  formState: CopilotInlineFormSegmentState
+  formValues: Record<string, string | number | boolean>
+  submittedPayload: Record<string, unknown> | null
+}
+
 export interface CopilotDiagnosticMessageItem extends CopilotRunSegmentViewItemBase {
   kind: 'diagnostic'
   title: string
@@ -110,17 +128,25 @@ export type CopilotRunSegmentViewItem =
   | CopilotAssistantMessageItem
   | CopilotReasoningMessageItem
   | CopilotToolMessageItem
+  | CopilotInlineFormMessageItem
   | CopilotDiagnosticMessageItem
   | CopilotTerminalMessageItem
 
 export type CopilotMessageListItem = CopilotUserMessageItem | CopilotRunSegmentViewItem
 
-export function createUserMessageListItem(content: string): CopilotUserMessageItem {
+export function createUserMessageListItem(
+  input: string | {
+    content: string
+    structuredPayload?: Record<string, unknown> | null
+  },
+): CopilotUserMessageItem {
+  const content = typeof input === 'string' ? input : input.content
   return {
     id: `user:${content}:${Math.random().toString(36).slice(2)}`,
     kind: 'user',
     title: '',
     content,
+    ...(typeof input === 'string' ? {} : { structuredPayload: input.structuredPayload ?? null }),
     status: 'completed',
   }
 }
@@ -161,6 +187,13 @@ export function resolveCopilotAssistantPlaceholderState(
   }
 
   if (runState.segments.some((segment) => segment.kind === 'tool')) {
+    return {
+      shouldRender: false,
+      dismissReason: 'tool',
+    }
+  }
+
+  if (runState.segments.some((segment) => segment.kind === 'inline-form')) {
     return {
       shouldRender: false,
       dismissReason: 'tool',
@@ -249,12 +282,40 @@ function projectSegmentToViewItems(
       return shouldProjectReasoningSegment(runState) ? [projectReasoningSegment(segment)] : []
     case 'tool':
       return [projectToolSegment(segment, runState)]
+    case 'inline-form':
+      return [projectInlineFormSegment(segment)]
     case 'diagnostic':
       return [projectDiagnosticSegment(segment)]
     case 'terminal': {
       const terminalItem = projectTerminalSegment(segment, runState)
       return terminalItem === null ? [] : [terminalItem]
     }
+  }
+}
+
+function projectInlineFormSegment(
+  segment: Extract<CopilotRunSegment, { kind: 'inline-form' }>,
+): CopilotInlineFormMessageItem {
+  return {
+    id: segment.id,
+    kind: 'inline-form',
+    runId: segment.runId,
+    sequence: segment.lastSequence,
+    status: 'completed',
+    title: segment.title,
+    content: segment.summary,
+    toolCallId: segment.toolCallId,
+    toolId: segment.toolId,
+    formId: segment.formId,
+    description: segment.description,
+    submitLabel: segment.submitLabel,
+    fields: segment.fields.map((field) => ({
+      ...field,
+      ...(field.options === undefined ? {} : { options: field.options.map((option) => ({ ...option })) }),
+    })),
+    formState: segment.formState,
+    formValues: { ...segment.formValues },
+    submittedPayload: segment.submittedPayload === null ? null : { ...segment.submittedPayload },
   }
 }
 

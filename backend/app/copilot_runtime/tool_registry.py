@@ -56,6 +56,7 @@ FILE_CONVERT_TOOL_PROMPT = (
     "Use this tool to convert DOCX, PDF, or PPTX files into plain text before analysis."
 )
 WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
+REQUEST_USER_FORM_TOOL_ID = "tool.request-user-form"
 FILE_TOOL_READ_DISPLAY_NAME = "File Read"
 FILE_TOOL_READ_DESCRIPTION = (
     "Read UTF-8 text files from the workspace with line-based pagination."
@@ -95,6 +96,18 @@ WEATHER_CURRENT_TOOL_DESCRIPTION = (
 )
 WEATHER_CURRENT_TOOL_PROMPT = (
     "Use this tool to retrieve a simple current weather summary for a location."
+)
+REQUEST_USER_FORM_TOOL_DISPLAY_NAME = "Request User Form"
+REQUEST_USER_FORM_TOOL_DESCRIPTION = (
+    "Request a controlled inline form in chat to collect structured user input needed to continue. "
+    "Prefer it when structured fields, options, preferences, constraints, confirmations, or parameters would be clearer than free-text follow-up, even for a single field."
+)
+REQUEST_USER_FORM_TOOL_PROMPT = (
+    "Use this tool proactively when the next step depends on user-provided structured information and a form would be clearer than another natural-language question. "
+    "A single-field form is acceptable if it helps the user answer more clearly; multiple related fields should usually be grouped into one form. "
+    "The submitted form will arrive as the user's next message so the conversation can continue. "
+    "Write a short user-facing title and description that explain why the information is needed, use natural-language labels and concrete placeholders, mark only truly required fields as required, use select for choices from a fixed list, use checkbox only for a single boolean confirmation without options, and use text or textarea for open explanations. "
+    "Do not request file uploads, secrets, passwords, or tokens, and do not expose protocol details such as form ids, field counts, JSON, or field type internals to the user."
 )
 SKILL_ACTIVATE_TOOL_DISPLAY_NAME = "Skill Activate"
 SKILL_ACTIVATE_TOOL_DESCRIPTION = (
@@ -166,6 +179,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "返回指定地点的占位当前天气结果。",
             "prompt": "使用此工具获取某个地点的简要当前天气摘要。",
         },
+        REQUEST_USER_FORM_TOOL_ID: {
+            "displayName": "请求用户表单",
+            "description": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
+            "prompt": "当下一步依赖用户补充结构化信息，且表单比自然语言追问更清晰时，主动使用此工具。单字段表单也可以；多个相关字段更应合并为一个表单。表单提交后会作为用户下一条消息继续对话。标题和描述应面向用户并解释为何需要这些信息；字段标签使用自然语言，placeholder 给出具体示例，只把真正阻塞继续执行的字段标为必填；固定列表选项使用 select，checkbox 只用于单个布尔确认且不得携带 options，开放说明用 text 或 textarea。不要请求文件上传，也不要请求 secret、password、token 等敏感凭据；不要向用户暴露 form id、字段数量、JSON 或协议细节。",
+        },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": "Skill 激活",
             "description": "读取已启用 Skill 的 SKILL.md 入口说明和资源摘要。",
@@ -222,6 +240,11 @@ _BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
             "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
             "prompt": WEATHER_CURRENT_TOOL_PROMPT,
+        },
+        REQUEST_USER_FORM_TOOL_ID: {
+            "displayName": REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
+            "description": REQUEST_USER_FORM_TOOL_DESCRIPTION,
+            "prompt": REQUEST_USER_FORM_TOOL_PROMPT,
         },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": SKILL_ACTIVATE_TOOL_DISPLAY_NAME,
@@ -595,6 +618,85 @@ async def _execute_default_weather_tool(
     return await execute_weather_current_tool(arguments)
 
 
+def _normalize_optional_text_argument(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalize_required_text_argument(value: Any, *, field_name: str) -> str:
+    normalized = _normalize_optional_text_argument(value)
+    if normalized is None:
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return normalized
+
+
+def _normalize_form_field_option(value: Any) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise ValueError("field options must be objects")
+    return {
+        "value": _normalize_required_text_argument(value.get("value"), field_name="field.options[].value"),
+        "label": _normalize_required_text_argument(value.get("label"), field_name="field.options[].label"),
+    }
+
+
+def _normalize_form_field(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("fields must contain only objects")
+    field_type = _normalize_required_text_argument(value.get("type"), field_name="field.type")
+    if field_type not in {"text", "textarea", "number", "select", "checkbox"}:
+        raise ValueError("field.type must be one of text, textarea, number, select, checkbox")
+
+    normalized: dict[str, Any] = {
+        "name": _normalize_required_text_argument(value.get("name"), field_name="field.name"),
+        "label": _normalize_required_text_argument(value.get("label"), field_name="field.label"),
+        "type": field_type,
+    }
+    description = _normalize_optional_text_argument(value.get("description"))
+    placeholder = _normalize_optional_text_argument(value.get("placeholder"))
+    if description is not None:
+        normalized["description"] = description
+    if placeholder is not None:
+        normalized["placeholder"] = placeholder
+    if isinstance(value.get("required"), bool):
+        normalized["required"] = value.get("required")
+    if field_type == "select":
+        options = value.get("options")
+        if not isinstance(options, list) or len(options) == 0:
+            raise ValueError("select fields require a non-empty options array")
+        normalized["options"] = [_normalize_form_field_option(option) for option in options]
+    elif "options" in value:
+        raise ValueError("checkbox fields do not support options")
+    return normalized
+
+
+async def _execute_request_user_form_tool(
+    arguments: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    payload = dict(arguments or {})
+    raw_fields = payload.get("fields")
+    if not isinstance(raw_fields, list) or len(raw_fields) == 0:
+        raise ValueError("fields must be a non-empty array")
+
+    form_request: dict[str, Any] = {
+        "formId": _normalize_required_text_argument(payload.get("form_id"), field_name="form_id"),
+        "title": _normalize_required_text_argument(payload.get("title"), field_name="title"),
+        "fields": [_normalize_form_field(field) for field in raw_fields],
+    }
+    description = _normalize_optional_text_argument(payload.get("description"))
+    submit_label = _normalize_optional_text_argument(payload.get("submit_label"))
+    if description is not None:
+        form_request["description"] = description
+    if submit_label is not None:
+        form_request["submitLabel"] = submit_label
+
+    return {
+        "summary": description or f"请填写表单：{form_request['title']}",
+        "formRequest": form_request,
+    }
+
+
 _BUILTIN_TOOL_GROUP = ToolPresentationGroup(
     group_id="builtin-core",
     label_zh="内置基础工具",
@@ -633,6 +735,7 @@ _TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_TOOL_NOTEBOOK_EDIT_ID: _BUILTIN_TOOL_GROUP,
     FILE_TOOL_SWITCH_ROOT_ID: _BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: _BUILTIN_TOOL_GROUP,
+    REQUEST_USER_FORM_TOOL_ID: _BUILTIN_TOOL_GROUP,
     SKILL_ACTIVATE_TOOL_ID: _SKILL_TOOL_GROUP,
     SKILL_READ_RESOURCE_TOOL_ID: _SKILL_TOOL_GROUP,
     "blackboard.sql.query": _BLACKBOARD_TOOL_GROUP,
@@ -700,6 +803,12 @@ _TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
         "description_zh": "返回指定地点的占位当前天气结果。",
         "description_en": WEATHER_CURRENT_TOOL_DESCRIPTION,
+    },
+    REQUEST_USER_FORM_TOOL_ID: {
+        "display_name_zh": "请求用户表单",
+        "display_name_en": REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
+        "description_zh": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
+        "description_en": REQUEST_USER_FORM_TOOL_DESCRIPTION,
     },
     SKILL_ACTIVATE_TOOL_ID: {
         "display_name_zh": "Skill 激活",
@@ -803,6 +912,120 @@ _SKILL_READ_RESOURCE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["skill_id", "path"],
+}
+_REQUEST_USER_FORM_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "form_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Internal stable form identifier for the runtime protocol. Keep it machine-friendly and do not mention or display it to the user.",
+        },
+        "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Short user-facing form title that clearly states what the user should provide.",
+        },
+        "description": {
+            "type": "string",
+            "description": "Optional user-facing explanation of why this information is needed to continue. Do not describe JSON, protocol details, or implementation internals.",
+        },
+        "submit_label": {
+            "type": "string",
+            "description": "Optional short user-facing submit button label such as 'Continue' or 'Confirm'.",
+        },
+        "fields": {
+            "type": "array",
+            "minItems": 1,
+            "description": "One or more user-facing fields to collect the missing information. A single-field form is valid when it is clearer than a free-text follow-up. Group related fields into the same form when that helps the user answer in one pass.",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Internal machine-friendly field key used in the submitted payload. Do not expose this identifier as protocol detail to the user.",
+                    },
+                    "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Natural-language field label shown to the user. Make it specific and easy to understand.",
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["text", "textarea", "number", "select", "checkbox"],
+                        "description": "Choose the simplest supported field type. Use select for fixed lists of choices, use checkbox only for a single boolean confirmation, and use text or textarea for open-ended input. Do not imply unsupported file-upload inputs.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional short helper text for the user. Explain what good input looks like, not runtime or protocol mechanics.",
+                    },
+                    "placeholder": {
+                        "type": "string",
+                        "description": "Optional concrete example input that helps the user answer clearly.",
+                    },
+                    "required": {
+                        "type": "boolean",
+                        "description": "Mark true only when this field is necessary to continue safely or correctly.",
+                    },
+                    "options": {
+                        "type": "array",
+                        "description": "Allowed choices for select fields only. Provide a non-empty array when type is select. Do not use options with checkbox fields because checkbox represents a single boolean confirmation.",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "value": {
+                                    "type": "string",
+                                    "description": "Machine-friendly submitted value for this option.",
+                                },
+                                "label": {
+                                    "type": "string",
+                                    "description": "User-facing option label written in natural language.",
+                                },
+                            },
+                            "required": ["value", "label"],
+                        },
+                    },
+                },
+                "required": ["name", "label", "type"],
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {"const": "select"},
+                            },
+                            "required": ["type"],
+                        },
+                        "then": {
+                            "required": ["options"],
+                            "properties": {
+                                "options": {
+                                    "minItems": 1,
+                                }
+                            },
+                        },
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {"const": "checkbox"},
+                            },
+                            "required": ["type"],
+                        },
+                        "then": {
+                            "not": {
+                                "required": ["options"],
+                            }
+                        },
+                    },
+                ],
+            },
+        },
+    },
+    "required": ["form_id", "title", "fields"],
 }
 
 
@@ -992,6 +1215,20 @@ def build_default_tool_registry(
                         presentation=_TOOL_PRESENTATION_BY_ID[WEATHER_CURRENT_TOOL_ID],
                     ),
                     execute=_execute_default_weather_tool,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=REQUEST_USER_FORM_TOOL_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
+                        description=REQUEST_USER_FORM_TOOL_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=REQUEST_USER_FORM_TOOL_PROMPT,
+                        presentation=_TOOL_PRESENTATION_BY_ID[REQUEST_USER_FORM_TOOL_ID],
+                    ),
+                    execute=_execute_request_user_form_tool,
+                    function_name="request_user_form",
+                    parameters_json_schema=_REQUEST_USER_FORM_PARAMETERS_JSON_SCHEMA,
                 ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(

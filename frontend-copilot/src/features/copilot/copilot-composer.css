@@ -1307,6 +1307,13 @@
   line-height: 1.4;
 }
 
+.copilot-chat__composer-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.79rem;
+  line-height: 1.4;
+}
+
 @media (max-width: 900px) {
   .copilot-chat__composer-toolbar {
     gap: 0.4rem;

@@ -66,6 +66,7 @@ from .tool_approval_coordinator import (
 from .tool_permissions import RuntimeToolPermissionResolver
 from .tool_registry import (
     DEFAULT_WEATHER_LOCATION,
+    REQUEST_USER_FORM_TOOL_ID,
     ToolRegistry,
     WEATHER_CURRENT_TOOL_DESCRIPTION,
     WEATHER_CURRENT_TOOL_ID,
@@ -84,7 +85,10 @@ DEFAULT_AGENT_NAME = "default"
 DEFAULT_AGENT_SYSTEM_PROMPT = (
     "You are the SUSTech Copilot backend assistant. "
     "Provide concise, accurate, text-only answers. "
-    "Do not claim to have used tools when no tools are available."
+    "Do not claim to have used tools when no tools are available. "
+    "When structured user input would be clearer than a free-text follow-up, prefer the request_user_form tool, including for a single well-defined field. "
+    "After sending a form, wait for the user's next message to continue. "
+    "Do not use forms to request file uploads or sensitive credentials such as secrets, passwords, or tokens."
 )
 _RETRYABLE_TOOL_ERROR_CODES = frozenset(
     {
@@ -99,6 +103,7 @@ _RETRYABLE_TOOL_ERROR_CODES = frozenset(
         "timeout",
     }
 )
+AWAITING_USER_INPUT_CODE = "awaiting_user_input"
 ToolLifecyclePhase = Literal["started", "waiting_approval", "completed", "failed"]
 _EVENT_STREAM_DONE = object()
 AgentStreamEvent = (
@@ -170,6 +175,29 @@ class ToolInvocationError(AgentExecutionError):
         super().__init__(message)
 
 
+class AwaitingUserInputError(AgentExecutionError):
+    def __init__(
+        self,
+        *,
+        tool_id: str,
+        tool_call_id: str,
+        form_request: Mapping[str, Any],
+        summary: str,
+    ) -> None:
+        self.code = AWAITING_USER_INPUT_CODE
+        self.tool_id = tool_id
+        self.tool_call_id = tool_call_id
+        self.form_request = dict(form_request)
+        self.summary = summary
+        self.details = {
+            "toolId": tool_id,
+            "toolCallId": tool_call_id,
+            "summary": summary,
+            "formRequest": dict(form_request),
+        }
+        super().__init__("Run interrupted until the user submits the requested form.")
+
+
 class ProviderAdapterExecutionError(AgentExecutionError):
     def __init__(
         self,
@@ -194,6 +222,7 @@ class RuntimeToolLifecycleEvent:
     result_summary: str | None = None
     error_summary: str | None = None
     approval: dict[str, Any] | None = None
+    form_request: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -211,6 +240,8 @@ class RuntimeToolLifecycleEvent:
             payload["errorSummary"] = self.error_summary
         if self.approval is not None:
             payload["approval"] = dict(self.approval)
+        if self.form_request is not None:
+            payload["formRequest"] = dict(self.form_request)
         return payload
 
 
@@ -224,6 +255,16 @@ def _serialize_tool_result_for_display(result: Any) -> str:
 
 
 def _sanitize_tool_result_for_display(tool_id: str, result: dict[str, Any]) -> str:
+    if tool_id == REQUEST_USER_FORM_TOOL_ID:
+        summary = result.get("summary")
+        if isinstance(summary, str) and summary.strip() != "":
+            return summary.strip()
+        form_request = result.get("formRequest")
+        if isinstance(form_request, Mapping):
+            title = str(form_request.get("title") or "用户表单").strip() or "用户表单"
+            return f"需要你补充信息后才能继续：{title}"
+        return _serialize_tool_result_for_display(result)
+
     if tool_id not in {SKILL_ACTIVATE_TOOL_ID, SKILL_READ_RESOURCE_TOOL_ID}:
         return _serialize_tool_result_for_display(result)
 
@@ -1416,11 +1457,26 @@ class PydanticAIAgentExecutor:
             tool_id=tool_id,
             result=result,
         )
-        result_summary = summarize_tool_result(result)
+        result_summary = (
+            "表单请求已发送，等待用户提交。"
+            if tool_id == REQUEST_USER_FORM_TOOL_ID
+            else summarize_tool_result(result)
+        )
         result_payload = _sanitize_tool_result_for_display(tool_id, result)
+        form_request = result.get("formRequest") if isinstance(result.get("formRequest"), Mapping) else None
         completed_title = self._build_completed_title(
             tool_id=tool_id,
             display_name=display_name,
+        )
+        awaiting_user_input_error = (
+            None
+            if tool_id != REQUEST_USER_FORM_TOOL_ID or form_request is None
+            else AwaitingUserInputError(
+                tool_id=tool_id,
+                tool_call_id=tool_call_id,
+                form_request=form_request,
+                summary=result_payload,
+            )
         )
         self._emit_tool_event(
             ctx,
@@ -1432,6 +1488,7 @@ class PydanticAIAgentExecutor:
                 summary=result_payload,
                 input_summary=input_summary,
                 result_summary=result_summary,
+                form_request=None if form_request is None else dict(form_request),
             ),
         )
         self._write_debug_event(
@@ -1449,6 +1506,8 @@ class PydanticAIAgentExecutor:
                 "status": "succeeded",
             },
         )
+        if awaiting_user_input_error is not None:
+            raise awaiting_user_input_error
         return result
 
     def _apply_bound_tool_side_effects(

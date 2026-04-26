@@ -207,6 +207,9 @@ def _build_run_projection_payload(
                 "createdAt": _serialize_datetime(run.created_at),
                 "role": run.request_message_role,
                 "text": run.request_message_text,
+                "structuredPayload": _copy_mapping(
+                    (run.metadata_json or {}).get("requestStructuredPayload")
+                ),
             },
         )
     ]
@@ -293,6 +296,7 @@ def _build_run_projection_payload(
                     "errorSummary": _normalize_optional_string(
                         event.payload_json.get("errorSummary")
                     ),
+                    "formRequest": _copy_mapping(event.payload_json.get("formRequest")),
                     "phases": [],
                 }
                 tool_call_blocks_by_key[tool_call_key] = block
@@ -410,6 +414,7 @@ def _consume_delta_group(
         "sequenceStart": start_event.seq,
         "sequenceEnd": end_event.seq,
         "createdAt": _serialize_datetime(start_event.created_at),
+        "endedAt": _serialize_datetime(end_event.created_at),
         "text": text,
     }, next_index
 
@@ -430,6 +435,9 @@ def _apply_tool_event_to_block(*, block: dict[str, Any], event: RunEventModel) -
         next_value = _normalize_optional_string(event.payload_json.get(payload_key))
         if next_value is not None:
             block[field_name] = next_value
+    form_request = _copy_mapping(event.payload_json.get("formRequest"))
+    if form_request is not None:
+        block["formRequest"] = form_request
     phases = block.setdefault("phases", [])
     phases.append(
         {
@@ -448,6 +456,7 @@ def _apply_tool_event_to_block(*, block: dict[str, Any], event: RunEventModel) -
             "errorSummary": _normalize_optional_string(
                 event.payload_json.get("errorSummary")
             ),
+            "formRequest": form_request,
         }
     )
 

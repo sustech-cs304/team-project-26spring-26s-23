@@ -28,6 +28,10 @@ import {
 import { resolveRuntimeToolApproval } from '../tool-approval'
 import { appendCopilotDebugLog, isCopilotDebugModeEnabled } from '../debug-mode-log'
 import {
+  expirePendingCopilotInlineFormSegments,
+  markCopilotInlineFormSubmitted,
+} from '../run-segment-reducer'
+import {
   applyModelSelectionToComposerDraft,
   buildRuntimeToolPermissionPolicy,
   buildRuntimeDebugSummary,
@@ -42,6 +46,7 @@ import {
 } from '../persisted-history-drift'
 import {
   buildPersistedConversationFromHistory,
+  getPersistedInlineFormRebuildability,
   type PersistedConversationSource,
 } from '../persisted-history-view-model'
 import {
@@ -110,6 +115,13 @@ export interface CopilotChatPanelState {
   toolPermissionPolicy: Parameters<typeof buildRuntimeToolPermissionPolicy>[0]['policy']
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
+  onSubmitInlineForm: (input: {
+    toolCallId: string
+    formId: string
+    summary: string
+    structuredPayload: Record<string, unknown>
+    values: Record<string, string | number | boolean>
+  }) => Promise<void>
   onCancelCurrentRun: () => void
   onResolveToolApproval: (input: {
     runId: string
@@ -119,6 +131,7 @@ export interface CopilotChatPanelState {
   sendStatus: 'idle' | 'sending'
   canCancelSend: boolean
   sendDisabledReason: string | null
+  composerLockedReason: string | null
   historyDrift: PersistedHistoryDriftSummary | null
   historyRebindAcknowledged: boolean
   onAcknowledgeHistoryRebind: () => void
@@ -331,8 +344,10 @@ export function useCopilotChatPanelState({
       conversation: persistedConversation,
       runId: runState.runId,
       runPhase: runState.phase,
+      sessionHistory,
+      runState,
     }),
-    [persistedConversation, runState.phase, runState.runId],
+    [persistedConversation, runState, sessionHistory],
   )
   const hasRenderablePersistedHandoffConversation = useMemo(
     () => pendingHistorySyncRunId !== null && persistedHandoffConversation.length > 0,
@@ -343,8 +358,9 @@ export function useCopilotChatPanelState({
       conversation: persistedHandoffConversation,
       pendingRunId: pendingHistorySyncRunId,
       runState,
+      sessionHistory,
     }),
-    [pendingHistorySyncRunId, persistedHandoffConversation, runState],
+    [pendingHistorySyncRunId, persistedHandoffConversation, runState, sessionHistory],
   )
   const persistedSelectedRunConversationPending = useMemo(() => (
     sessionHistory !== null
@@ -364,7 +380,10 @@ export function useCopilotChatPanelState({
       return conversation.length > 0 || runState.phase !== 'idle'
     }
 
-    if (runState.phase === 'starting' || runState.phase === 'streaming') {
+    if (
+      runState.phase === 'starting'
+      || runState.phase === 'streaming'
+    ) {
       return true
     }
 
@@ -383,9 +402,14 @@ export function useCopilotChatPanelState({
     }
 
     if (sessionHistory.selectedRunId !== runId) {
-      const hasTerminalTransientRunForActiveSession = runState.threadId === sessionShell?.sessionId
-        && (runState.phase === 'completed' || runState.phase === 'failed' || runState.phase === 'cancelled')
-      return hasTerminalTransientRunForActiveSession
+      const hasProtectedTransientRunForActiveSession = runState.threadId === sessionShell?.sessionId
+        && (
+          runState.phase === 'awaiting_input'
+          || runState.phase === 'completed'
+          || runState.phase === 'failed'
+          || runState.phase === 'cancelled'
+        )
+      return hasProtectedTransientRunForActiveSession
         ? pendingHistorySyncRunId === runId || !hasRenderablePersistedSelectedConversation
         : false
     }
@@ -420,6 +444,7 @@ export function useCopilotChatPanelState({
     () => resolveCopilotAssistantPlaceholderState(runState),
     [runState],
   )
+  const composerLockedReason = useMemo(() => null, [])
   const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
   const canCancelSend = activeAbortController !== null && sendStatus === 'sending'
   const historyDrift = useMemo(
@@ -468,6 +493,7 @@ export function useCopilotChatPanelState({
         sessionRunState.phase !== 'completed'
         && sessionRunState.phase !== 'failed'
         && sessionRunState.phase !== 'cancelled'
+        && sessionRunState.phase !== 'awaiting_input'
       ) {
         continue
       }
@@ -937,23 +963,7 @@ export function useCopilotChatPanelState({
     return null
   }, [baseSendDisabledReason, historyDrift, historyRebindAcknowledged, sessionHistory, sessionShell])
 
-  const handleSend = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    if (historyDrift?.requiresExplicitRebind === true && !historyRebindAcknowledged) {
-      return
-    }
-
-    const abortController = new AbortController()
-    const boundSessionId = sessionShell?.sessionId ?? null
-    updateSessionTransientStateById(boundSessionId, (sessionState) => (
-      sessionState.activeAbortController === abortController
-        ? sessionState
-        : {
-            ...sessionState,
-            activeAbortController: abortController,
-          }
-    ))
+  const createBoundSessionDispatchers = useCallback((boundSessionId: string | null) => {
     const setBoundRunState: Dispatch<SetStateAction<CopilotRunState>> = (value) => {
       updateSessionTransientStateById(boundSessionId, (sessionState) => {
         const nextRunState = typeof value === 'function' ? value(sessionState.runState) : value
@@ -965,6 +975,7 @@ export function useCopilotChatPanelState({
             }
       })
     }
+
     const setBoundConversation: Dispatch<SetStateAction<CopilotMessageListItem[]>> = (value) => {
       updateSessionTransientStateById(boundSessionId, (sessionState) => {
         const nextConversation = typeof value === 'function' ? value(sessionState.conversation) : value
@@ -976,6 +987,7 @@ export function useCopilotChatPanelState({
             }
       })
     }
+
     const setBoundSendError: Dispatch<SetStateAction<CopilotTransientErrorState | null>> = (value) => {
       updateSessionTransientStateById(boundSessionId, (sessionState) => {
         const nextSendError = typeof value === 'function' ? value(sessionState.sendError) : value
@@ -987,6 +999,7 @@ export function useCopilotChatPanelState({
             }
       })
     }
+
     const setBoundComposerDraft: Dispatch<SetStateAction<CopilotChatComposerDraft>> = (value) => {
       updateSessionTransientStateById(boundSessionId, (sessionState) => {
         const nextComposerDraft = typeof value === 'function' ? value(sessionState.composerDraft) : value
@@ -999,12 +1012,44 @@ export function useCopilotChatPanelState({
       })
     }
 
+    return {
+      setBoundRunState,
+      setBoundConversation,
+      setBoundSendError,
+      setBoundComposerDraft,
+    }
+  }, [updateSessionTransientStateById])
+
+  const handleSend = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (historyDrift?.requiresExplicitRebind === true && !historyRebindAcknowledged) {
+      return
+    }
+
+    const abortController = new AbortController()
+    const boundSessionId = sessionShell?.sessionId ?? null
+    const {
+      setBoundRunState,
+      setBoundConversation,
+      setBoundSendError,
+      setBoundComposerDraft,
+    } = createBoundSessionDispatchers(boundSessionId)
+    updateSessionTransientStateById(boundSessionId, (sessionState) => (
+      sessionState.activeAbortController === abortController
+        ? sessionState
+        : {
+            ...sessionState,
+            activeAbortController: abortController,
+          }
+    ))
+
     try {
       await orchestrateCopilotSend({
         state,
         sessionShell,
         composerDraft: effectiveComposerDraft,
-        runState,
+        runState: expirePendingCopilotInlineFormSegments(runState),
         hasConfiguredModels,
         hasAvailableModels,
         selectedModelOption,
@@ -1018,6 +1063,67 @@ export function useCopilotChatPanelState({
         signal: abortController.signal,
         thinkingCapabilityOverride: (selectedModelOption?.thinkingCapabilityOverride ?? null) as Record<string, unknown> | null,
         toolPermissionPolicy: workspaceToolPermissionPolicy,
+      })
+    } finally {
+      updateSessionTransientStateById(boundSessionId, (sessionState) => (
+        sessionState.activeAbortController === abortController
+          ? {
+              ...sessionState,
+              activeAbortController: null,
+            }
+          : sessionState
+      ))
+    }
+  }
+
+  const handleSubmitInlineForm: CopilotChatPanelState['onSubmitInlineForm'] = async (input) => {
+    if (historyDrift?.requiresExplicitRebind === true && !historyRebindAcknowledged) {
+      throw new Error('历史线程依赖已变化，请先显式重新绑定当前配置后再继续。')
+    }
+
+    const abortController = new AbortController()
+    const boundSessionId = sessionShell?.sessionId ?? null
+    const {
+      setBoundRunState,
+      setBoundConversation,
+      setBoundSendError,
+      setBoundComposerDraft,
+    } = createBoundSessionDispatchers(boundSessionId)
+    const submittedRunState = markCopilotInlineFormSubmitted(runState, {
+      toolCallId: input.toolCallId,
+      values: input.values,
+      submittedPayload: input.structuredPayload,
+    })
+
+    updateSessionTransientStateById(boundSessionId, (sessionState) => ({
+      ...sessionState,
+      activeAbortController: abortController,
+    }))
+
+    try {
+      await orchestrateCopilotSend({
+        state,
+        sessionShell,
+        composerDraft: effectiveComposerDraft,
+        runState: submittedRunState,
+        hasConfiguredModels,
+        hasAvailableModels,
+        selectedModelOption,
+        composerInputRef,
+        sendMessage,
+        debugModeEnabled: isCopilotConnectableState(state) ? state.bootstrapFields.debugModeEnabled : false,
+        setRunState: setBoundRunState,
+        setSendError: setBoundSendError,
+        setComposerDraft: setBoundComposerDraft,
+        setConversation: setBoundConversation,
+        signal: abortController.signal,
+        thinkingCapabilityOverride: (selectedModelOption?.thinkingCapabilityOverride ?? null) as Record<string, unknown> | null,
+        toolPermissionPolicy: workspaceToolPermissionPolicy,
+        messageOverride: {
+          content: input.summary,
+          structuredPayload: input.structuredPayload,
+        },
+        clearComposerOnSend: false,
       })
     } finally {
       updateSessionTransientStateById(boundSessionId, (sessionState) => (
@@ -1071,11 +1177,13 @@ export function useCopilotChatPanelState({
     toolPermissionPolicy: workspaceToolPermissionPolicy,
     onComposerDraftChange: setComposerDraft,
     onSend: handleSend,
+    onSubmitInlineForm: handleSubmitInlineForm,
     onCancelCurrentRun: handleCancelCurrentRun,
     onResolveToolApproval: handleResolveToolApproval,
     sendStatus,
     canCancelSend,
     sendDisabledReason,
+    composerLockedReason,
     historyDrift,
     historyRebindAcknowledged,
     persistedSelectedRunConversationSource,
@@ -1093,13 +1201,29 @@ export function useCopilotChatPanelState({
   }
 }
 
-function hasSufficientPersistedConversationForRun(input: {
+export function hasPendingInlineFormSegment(runState: CopilotRunState): boolean {
+  return runState.segments.some((segment) => segment.kind === 'inline-form' && segment.formState === 'pending')
+}
+
+export function hasSufficientPersistedConversationForRun(input: {
   conversation: CopilotMessageListItem[]
   runId: string | null
   runPhase: CopilotRunState['phase']
+  sessionHistory: AssistantSessionHistoryState | null
+  runState: CopilotRunState
 }): boolean {
   if (input.conversation.length === 0) {
     return false
+  }
+
+  if (input.runPhase === 'awaiting_input') {
+    if (!hasPendingInlineFormSegment(input.runState)) {
+      return true
+    }
+
+    return getPersistedInlineFormRebuildability(input.sessionHistory, {
+      runId: input.runId,
+    }).hasPendingInlineForm
   }
 
   if (input.runPhase !== 'failed' && input.runPhase !== 'cancelled') {
@@ -1113,10 +1237,11 @@ function hasSufficientPersistedConversationForRun(input: {
   })
 }
 
-function resolvePersistedConversationHandoffWaitReason(input: {
+export function resolvePersistedConversationHandoffWaitReason(input: {
   conversation: CopilotMessageListItem[]
   pendingRunId: string | null
   runState: CopilotRunState
+  sessionHistory: AssistantSessionHistoryState | null
 }): string | null {
   if (input.conversation.length === 0) {
     return 'persisted-handoff-run-empty'
@@ -1125,6 +1250,14 @@ function resolvePersistedConversationHandoffWaitReason(input: {
   const pendingRunId = input.pendingRunId?.trim() ?? ''
   if (pendingRunId === '' || input.runState.runId !== pendingRunId) {
     return null
+  }
+
+  if (input.runState.phase === 'awaiting_input' && hasPendingInlineFormSegment(input.runState)) {
+    return getPersistedInlineFormRebuildability(input.sessionHistory, {
+      runId: pendingRunId,
+    }).hasPendingInlineForm
+      ? null
+      : 'awaiting-input-inline-form-missing-from-handoff'
   }
 
   if (input.runState.phase === 'failed' || input.runState.phase === 'cancelled') {

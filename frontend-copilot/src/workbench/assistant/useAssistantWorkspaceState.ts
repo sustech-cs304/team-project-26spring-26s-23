@@ -24,7 +24,10 @@ import {
   renameCopilotHistoryThread,
 } from '../../features/copilot/history'
 import { appendCopilotDebugLog, isCopilotDebugModeEnabled } from '../../features/copilot/debug-mode-log'
-import { buildPersistedConversationFromHistory } from '../../features/copilot/persisted-history-view-model'
+import {
+  buildPersistedConversationFromHistory,
+  getPersistedInlineFormRebuildability,
+} from '../../features/copilot/persisted-history-view-model'
 import {
   isCopilotThreadRuntimeControllerLruCandidate,
   syncCopilotThreadRuntimeControllerStateRecord,
@@ -239,6 +242,7 @@ function haveSameToolGroup(
 
 function hasRebuildablePersistedConversation(
   historyState: AssistantSessionHistoryState | undefined,
+  controllerState?: CopilotThreadRuntimeControllerState,
 ): boolean {
   if (
     historyState === undefined
@@ -248,7 +252,39 @@ function hasRebuildablePersistedConversation(
     return false
   }
 
+  if (controllerState?.runState.phase === 'awaiting_input') {
+    const hasPendingInlineForm = controllerState.runState.segments.some(
+      (segment) => segment.kind === 'inline-form' && segment.formState === 'pending',
+    )
+    if (hasPendingInlineForm) {
+      return getPersistedInlineFormRebuildability(historyState, {
+        runId: controllerState.pendingHistorySyncRunId ?? controllerState.runState.runId,
+      }).hasPendingInlineForm
+    }
+  }
+
   return buildPersistedConversationFromHistory(historyState).conversation.length > 0
+}
+
+function isAwaitingInputInlineFormLruCandidate(
+  controllerState: CopilotThreadRuntimeControllerState,
+  historyState: AssistantSessionHistoryState | undefined,
+): boolean {
+  if (
+    controllerState.activeAbortController !== null
+    || controllerState.runState.phase !== 'awaiting_input'
+  ) {
+    return false
+  }
+
+  const hasPendingInlineForm = controllerState.runState.segments.some(
+    (segment) => segment.kind === 'inline-form' && segment.formState === 'pending',
+  )
+  if (!hasPendingInlineForm) {
+    return false
+  }
+
+  return hasRebuildablePersistedConversation(historyState, controllerState)
 }
 
 function pruneCopilotThreadRuntimeControllers(input: {
@@ -271,8 +307,13 @@ function pruneCopilotThreadRuntimeControllers(input: {
   const evictableSessionIds = controllerEntries
     .filter(([sessionId, controllerState]) => (
       sessionId !== input.activeSessionId
-      && isCopilotThreadRuntimeControllerLruCandidate(controllerState)
-      && hasRebuildablePersistedConversation(input.sessionHistoryById[sessionId])
+      && (
+        (
+          isCopilotThreadRuntimeControllerLruCandidate(controllerState)
+          && hasRebuildablePersistedConversation(input.sessionHistoryById[sessionId], controllerState)
+        )
+        || isAwaitingInputInlineFormLruCandidate(controllerState, input.sessionHistoryById[sessionId])
+      )
     ))
     .sort(([leftSessionId, leftControllerState], [rightSessionId, rightControllerState]) => {
       if (leftControllerState.lastAccessedAt !== rightControllerState.lastAccessedAt) {

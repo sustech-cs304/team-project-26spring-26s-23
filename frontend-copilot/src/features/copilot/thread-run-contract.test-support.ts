@@ -700,6 +700,7 @@ export function createRuntimeToolEvent(
       ...(overrides.payload?.errorSummary === undefined ? {} : { errorSummary: overrides.payload.errorSummary }),
       ...(overrides.payload?.security === undefined ? {} : { security: overrides.payload.security }),
       ...(overrides.payload?.approval === undefined ? {} : { approval: overrides.payload.approval }),
+      ...(overrides.payload?.formRequest === undefined ? {} : { formRequest: overrides.payload.formRequest }),
     },
   }
 }

@@ -39,6 +39,7 @@ function projectSegmentToTurn(
       return []
     case 'tool':
       return [projectToolSegment(segment)]
+    case 'inline-form':
     case 'diagnostic':
     case 'terminal':
       return []

@@ -94,6 +94,8 @@ def test_create_thread_materializes_mapping_metadata() -> None:
 
     assert thread.metadata == {"source": "connect"}
     assert isinstance(thread.metadata, dict)
+
+
 def test_thread_run_source_projects_completed_messages_and_event_log() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
@@ -136,6 +138,39 @@ def test_thread_run_source_projects_completed_messages_and_event_log() -> None:
     ]
 
 
+def test_completed_run_projects_structured_user_payload_into_model_history() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    store.create_run(
+        thread_id="thread-1",
+        run_id="run-structured",
+        request=_build_stored_run_input(
+            user_text="  已提交表单：请求课程表单  ",
+            structured_payload={
+                "type": "inline_form_submission",
+                "formId": "course-form",
+                "values": {
+                    "courseCode": "CS304",
+                },
+            },
+        ),
+    )
+    store.mark_run_completed("run-structured", assistant_text="已收到课程编码。")
+
+    messages = store.list_messages("thread-1")
+
+    assert [(message.role, message.content) for message in messages] == [
+        (
+            "user",
+            "已提交表单：请求课程表单\n\n"
+            "[structured_payload]\n"
+            '{"formId": "course-form", "type": "inline_form_submission", "values": {"courseCode": "CS304"}}',
+        ),
+        ("assistant", "已收到课程编码。"),
+    ]
+
+
 def test_failed_and_cancelled_runs_do_not_project_messages() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
@@ -164,6 +199,119 @@ def test_failed_and_cancelled_runs_do_not_project_messages() -> None:
     assert cancelled_run.status == "cancelled"
     assert store.get_latest_run_for_thread("thread-1") is cancelled_run
     assert store.list_messages("thread-1") == ()
+
+
+def test_awaiting_user_input_failed_run_projects_structured_user_payload() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    store.create_run(
+        thread_id="thread-1",
+        run_id="run-awaiting-structured-input",
+        request=_build_stored_run_input(
+            user_text="  已提交表单：请求课程表单  ",
+            structured_payload={
+                "type": "inline_form_submission",
+                "formId": "course-form",
+                "values": {
+                    "courseCode": "CS304",
+                },
+            },
+        ),
+    )
+    store.record_run_event(
+        "run-awaiting-structured-input",
+        event_type="tool_event",
+        payload={
+            "toolCallId": "tool.request-user-form:call-1",
+            "toolId": "tool.request-user-form",
+            "phase": "completed",
+            "summary": "请填写课程编码。",
+            "formRequest": {
+                "formId": "course-form",
+                "title": "请求课程表单",
+                "fields": [{
+                    "name": "courseCode",
+                    "label": "课程编码",
+                    "type": "text",
+                    "required": True,
+                }],
+            },
+        },
+        sequence=1,
+    )
+    store.mark_run_failed(
+        "run-awaiting-structured-input",
+        metadata={
+            "terminal_event": "run_failed",
+            "terminal_payload": {
+                "code": "awaiting_user_input",
+                "message": "Run interrupted until the user submits the requested form.",
+                "details": {},
+            },
+        },
+    )
+
+    messages = store.list_messages("thread-1")
+
+    assert [(message.role, message.content) for message in messages] == [
+        (
+            "user",
+            "已提交表单：请求课程表单\n\n"
+            "[structured_payload]\n"
+            '{"formId": "course-form", "type": "inline_form_submission", "values": {"courseCode": "CS304"}}',
+        ),
+        ("assistant", "请填写课程编码。"),
+    ]
+
+
+def test_awaiting_user_input_failed_run_projects_user_and_assistant_prompt() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    run = store.create_run(
+        thread_id="thread-1",
+        run_id="run-awaiting-input",
+        request=_build_stored_run_input(user_text="  hello  "),
+    )
+    store.record_run_event(
+        "run-awaiting-input",
+        event_type="tool_event",
+        payload={
+            "toolCallId": "tool.request-user-form:call-1",
+            "toolId": "tool.request-user-form",
+            "phase": "completed",
+            "summary": "请填写课程编码。",
+            "formRequest": {
+                "formId": "course-form",
+                "title": "请求课程表单",
+                "fields": [{
+                    "name": "courseCode",
+                    "label": "课程编码",
+                    "type": "text",
+                    "required": True,
+                }],
+            },
+        },
+        sequence=1,
+    )
+    store.mark_run_failed(
+        "run-awaiting-input",
+        metadata={
+            "terminal_event": "run_failed",
+            "terminal_payload": {
+                "code": "awaiting_user_input",
+                "message": "Run interrupted until the user submits the requested form.",
+                "details": {},
+            },
+        },
+    )
+
+    assert run.status == "failed"
+    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
+        ("user", "hello"),
+        ("assistant", "请填写课程编码。"),
+    ]
 
 
 def test_multiple_completed_runs_project_thread_history_in_run_order() -> None:
@@ -229,10 +377,17 @@ def test_get_latest_run_for_thread_falls_back_to_sorted_runs_when_pointer_missin
     assert store.get_latest_run_for_thread("thread-1") is second_run
     assert first_run.run_id == "run-1"
 
-def _build_stored_run_input(*, user_text: str, agent_id: str = "default") -> RuntimeStoredRunInput:
+
+def _build_stored_run_input(
+    *,
+    user_text: str,
+    agent_id: str = "default",
+    structured_payload: dict[str, object] | None = None,
+) -> RuntimeStoredRunInput:
     return RuntimeStoredRunInput(
         message_role="user",
         message_content=user_text,
+        message_structured_payload=structured_payload,
         policy=RuntimeStoredRunPolicy(
             model_route=RuntimeStoredModelRoute(
                 provider_profile_id="provider-1",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -124,6 +125,7 @@ class RuntimeStoredRunInput:
     message_role: RuntimeMessageRole
     message_content: str
     policy: RuntimeStoredRunPolicy
+    message_structured_payload: dict[str, Any] | None = None
     agent_id: str | None = None
 
 
@@ -215,11 +217,35 @@ class RuntimeRunRecord:
         self._mark_terminal(status="cancelled", metadata=metadata)
 
     def projected_messages(self) -> tuple[RuntimeTextMessage, ...]:
-        if self.status != "completed":
+        projected_user_text = _build_projected_user_text(
+            self.request.message_content,
+            self.request.message_structured_payload,
+        )
+        if self.status == "completed":
+            projected_assistant_text = _normalize_projected_text(self.assistant_text)
+            if projected_user_text is None or projected_assistant_text is None:
+                return ()
+
+            assistant_created_at = self.terminal_at or self.updated_at
+            return (
+                RuntimeTextMessage(
+                    role=self.request.message_role,
+                    content=projected_user_text,
+                    created_at=self.created_at,
+                ),
+                RuntimeTextMessage(
+                    role="assistant",
+                    content=projected_assistant_text,
+                    created_at=assistant_created_at,
+                ),
+            )
+
+        if not _is_awaiting_user_input_run(self):
             return ()
 
-        projected_user_text = _normalize_projected_text(self.request.message_content)
-        projected_assistant_text = _normalize_projected_text(self.assistant_text)
+        projected_assistant_text = _normalize_projected_text(
+            _resolve_awaiting_user_input_assistant_text(self)
+        )
         if projected_user_text is None or projected_assistant_text is None:
             return ()
 
@@ -525,6 +551,55 @@ def _normalize_projected_text(value: str | None) -> str | None:
     if normalized_value == "":
         return None
     return normalized_value
+
+
+def _build_projected_user_text(
+    value: str | None,
+    structured_payload: Mapping[str, Any] | None,
+) -> str | None:
+    projected_text = _normalize_projected_text(value)
+    if projected_text is None:
+        return None
+    if not structured_payload:
+        return projected_text
+
+    serialized_payload = json.dumps(
+        dict(structured_payload),
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return f"{projected_text}\n\n[structured_payload]\n{serialized_payload}"
+
+
+def _is_awaiting_user_input_run(run: RuntimeRunRecord) -> bool:
+    if run.status != "failed":
+        return False
+    terminal_payload = run.metadata.get("terminal_payload")
+    if not isinstance(terminal_payload, Mapping):
+        return False
+    return terminal_payload.get("code") == "awaiting_user_input"
+
+
+def _resolve_awaiting_user_input_assistant_text(run: RuntimeRunRecord) -> str | None:
+    for event in reversed(run.event_log):
+        if event.event_type != "tool_event":
+            continue
+        payload = event.payload
+        form_request = payload.get("formRequest")
+        if not isinstance(form_request, Mapping):
+            continue
+        summary = _normalize_projected_text(
+            payload.get("summary") if isinstance(payload.get("summary"), str) else None
+        )
+        if summary is not None:
+            return summary
+        title = _normalize_projected_text(
+            form_request.get("title") if isinstance(form_request.get("title"), str) else None
+        )
+        if title is not None:
+            return f"请填写表单：{title}"
+    return None
 
 
 def _normalize_optional_non_empty_string(value: object) -> str | None:

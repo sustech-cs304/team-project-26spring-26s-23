@@ -20,6 +20,7 @@ from .message_run_stream import (
 )
 from ..agent import (
     AgentExecutionError,
+    AwaitingUserInputError,
     ModelNotConfiguredError,
     ProviderAdapterExecutionError,
 )
@@ -44,6 +45,7 @@ from ..execution_support import (
     InvalidSessionHistoryError,
     ThreadNotFoundError,
     ToolNotFoundError,
+    build_runtime_user_prompt,
     build_message_history,
     extract_unknown_tool_id,
 )
@@ -546,7 +548,7 @@ class RuntimeMessageRunOrchestrator:
                 agent_executor=prepared.agent_executor,
                 run_id=context.run_id,
                 agent_name=prepared.thread.bound_agent_id,
-                user_prompt=request.message.content,
+                user_prompt=build_runtime_user_prompt(request.message),
                 message_history=prepared.message_history,
                 model_route=prepared.resolved_model_route,
                 enabled_tools=prepared.resolved_tool_ids,
@@ -811,6 +813,12 @@ class RuntimeMessageRunOrchestrator:
                 message=str(exc),
                 details=dict(exc.details),
                 diagnostic_stage="execute_model",
+            )
+        if isinstance(exc, AwaitingUserInputError):
+            return _FailureEventDetails(
+                code=exc.code,
+                message=str(exc),
+                details=dict(exc.details),
             )
         if isinstance(exc, AgentExecutionError):
             return _FailureEventDetails(

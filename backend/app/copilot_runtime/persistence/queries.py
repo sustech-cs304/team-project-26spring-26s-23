@@ -327,6 +327,9 @@ def _build_run_historical_snapshot(
             "requestMessage": {
                 "role": run_model.request_message_role,
                 "content": run_model.request_message_text,
+                "structuredPayload": _copy_mapping(
+                    run_model.metadata_json.get("requestStructuredPayload")
+                ),
             },
             "selectedModelRoute": dict(run_model.selected_model_route_json or {}),
             "resolvedModelRoute": dict(run_model.resolved_model_route_json or {}),

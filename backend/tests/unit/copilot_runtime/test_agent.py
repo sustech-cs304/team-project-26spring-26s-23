@@ -28,6 +28,8 @@ from app.integrations.sustech.blackboard.api.dto import CourseCatalogResultDTO
 from app.integrations.sustech.blackboard.provider.results import CourseCatalogSearchResult
 from app.copilot_runtime.agent import (
     AgentExecutionError,
+    AwaitingUserInputError,
+    DEFAULT_AGENT_SYSTEM_PROMPT,
     ModelNotConfiguredError,
     PydanticAIAgentExecutor,
     RuntimeToolLifecycleEvent,
@@ -44,6 +46,7 @@ from app.copilot_runtime.mcp_snapshot_provider import McpCapabilitySnapshot
 from app.copilot_runtime.mcp_tool_executor import build_mcp_executable_tools
 from app.copilot_runtime.mcp_snapshot_provider import McpSnapshotProvider
 from app.copilot_runtime.tool_registry import (
+    REQUEST_USER_FORM_TOOL_ID,
     SKILL_ACTIVATE_TOOL_ID,
     SKILL_READ_RESOURCE_TOOL_ID,
     WEATHER_CURRENT_TOOL_ID,
@@ -118,6 +121,20 @@ def test_resolve_model_no_longer_falls_back_to_environment_keys() -> None:
         runtime_env_executor.resolve_model()
 
     assert runtime_env_executor.model_configured is False
+
+
+
+def test_default_agent_system_prompt_prefers_structured_forms_and_blocks_uploads_and_secrets() -> None:
+    executor = PydanticAIAgentExecutor()
+
+    prompt = executor._compose_system_prompt(None)
+
+    assert prompt == DEFAULT_AGENT_SYSTEM_PROMPT
+    assert "prefer the request_user_form tool" in prompt
+    assert "including for a single well-defined field" in prompt
+    assert "wait for the user's next message to continue" in prompt
+    assert "Do not use forms to request file uploads" in prompt
+    assert "secrets, passwords, or tokens" in prompt
 
 
 
@@ -331,6 +348,35 @@ def test_runtime_tool_lifecycle_event_to_payload_preserves_canonical_summary_and
         "summary": canonical_summary,
         "inputSummary": '{"location": "Shenzhen"}',
         "resultSummary": "Shenzhen：晴 / 24°C / 湿度 60%",
+    }
+
+
+def test_runtime_tool_lifecycle_event_to_payload_includes_form_request_when_present() -> None:
+    payload = RuntimeToolLifecycleEvent(
+        tool_call_id="tool.request-user-form:call-1",
+        tool_id=REQUEST_USER_FORM_TOOL_ID,
+        phase="completed",
+        title="请求课程表单",
+        summary="请填写课程编码。",
+        form_request={
+            "formId": "course-form",
+            "title": "请求课程表单",
+            "fields": [{
+                "name": "courseCode",
+                "label": "课程编码",
+                "type": "text",
+            }],
+        },
+    ).to_payload()
+
+    assert payload["formRequest"] == {
+        "formId": "course-form",
+        "title": "请求课程表单",
+        "fields": [{
+            "name": "courseCode",
+            "label": "课程编码",
+            "type": "text",
+        }],
     }
 
 
@@ -1564,6 +1610,63 @@ def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
     )
     assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
     assert emitted_tool_events[-1].error_summary == "blackboard search exploded"
+
+
+def test_execute_bound_tool_raises_awaiting_user_input_for_inline_form_tool() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    workspace_root = str(Path.cwd().resolve(strict=False).as_posix())
+    ctx = _build_tool_run_context(
+        tool_call_id=f"{REQUEST_USER_FORM_TOOL_ID}:call-1",
+        deps=SimpleNamespace(
+            tool_registry=registry,
+            enabled_tool_ids=frozenset({REQUEST_USER_FORM_TOOL_ID}),
+            emit_tool_event=emitted_tool_events.append,
+            run_id="run-inline-form",
+            workspace_root=workspace_root,
+            default_root=workspace_root,
+            tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+            approval_coordinator=RuntimeToolApprovalCoordinator(),
+            debug_enabled=False,
+        ),
+    )
+
+    with pytest.raises(AwaitingUserInputError) as captured:
+        asyncio.run(
+            executor._execute_bound_tool(
+                ctx,
+                tool_id=REQUEST_USER_FORM_TOOL_ID,
+                arguments={
+                    "form_id": "course-form",
+                    "title": "请求课程表单",
+                    "description": "请填写课程编码。",
+                    "fields": [{
+                        "name": "courseCode",
+                        "label": "课程编码",
+                        "type": "text",
+                        "required": True,
+                    }],
+                },
+            )
+        )
+
+    assert captured.value.code == "awaiting_user_input"
+    assert captured.value.details["toolId"] == REQUEST_USER_FORM_TOOL_ID
+    assert captured.value.details["toolCallId"] == f"{REQUEST_USER_FORM_TOOL_ID}:call-1"
+    assert [event.phase for event in emitted_tool_events] == ["started", "completed"]
+    assert emitted_tool_events[-1].summary == "请填写课程编码。"
+    assert emitted_tool_events[-1].form_request == {
+        "formId": "course-form",
+        "title": "请求课程表单",
+        "description": "请填写课程编码。",
+        "fields": [{
+            "name": "courseCode",
+            "label": "课程编码",
+            "type": "text",
+            "required": True,
+        }],
+    }
 
 
 

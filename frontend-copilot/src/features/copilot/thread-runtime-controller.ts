@@ -77,6 +77,7 @@ export function isCopilotThreadRuntimeControllerLruCandidate(
     && !isCopilotThreadRuntimeControllerHandoffPending(state)
     && (
       state.runState.phase === 'idle'
+      || state.runState.phase === 'awaiting_input'
       || state.runState.phase === 'completed'
       || state.runState.phase === 'failed'
       || state.runState.phase === 'cancelled'
