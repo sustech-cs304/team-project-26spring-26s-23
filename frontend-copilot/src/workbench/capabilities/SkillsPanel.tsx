@@ -8,6 +8,7 @@ import type { SkillRegistrySkillViewModel } from './skill-registry-view-model'
 
 interface SkillsPanelProps {
   skills: readonly SkillRegistrySkillViewModel[]
+  statusMessage?: string | null
   importValidationErrors: readonly SkillValidationIssue[]
   onToggleEnabled: (skillId: string) => Promise<void>
   onDelete: (skillId: string) => Promise<void>
@@ -16,6 +17,7 @@ interface SkillsPanelProps {
 
 export function SkillsPanel({
   skills,
+  statusMessage,
   importValidationErrors,
   onToggleEnabled,
   onDelete,
@@ -25,6 +27,9 @@ export function SkillsPanel({
 
   return (
     <section className="capabilities-surface capabilities-surface--skills">
+      {statusMessage ? (
+        <p className="capabilities-surface__status" aria-live="polite">{statusMessage}</p>
+      ) : null}
       {importValidationErrors.length > 0 ? (
         <ValidationIssueList
           title="导入遇到问题"

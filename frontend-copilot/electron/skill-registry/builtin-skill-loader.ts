@@ -12,11 +12,13 @@ export interface BuiltinSkillSource {
 }
 
 export async function resolveBuiltinSkillsSourceRoot(): Promise<string> {
-  const candidates = [
+  const candidates = Array.from(new Set([
     path.join(path.resolve(MODULE_DIR, '..', '..'), BUILTIN_SKILLS_DIR_NAME),
     path.join(path.resolve(MODULE_DIR, '..', '..', '..'), 'frontend-copilot', BUILTIN_SKILLS_DIR_NAME),
     path.join(path.resolve(MODULE_DIR, '..', '..', '..'), BUILTIN_SKILLS_DIR_NAME),
-  ]
+    path.join(process.cwd(), BUILTIN_SKILLS_DIR_NAME),
+    path.join(process.cwd(), 'frontend-copilot', BUILTIN_SKILLS_DIR_NAME),
+  ]))
 
   for (const candidate of candidates) {
     try {
