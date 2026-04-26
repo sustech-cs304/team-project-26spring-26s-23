@@ -50,7 +50,7 @@ export type CopilotConfigMissingField = 'runtimeUrl'
 export type CopilotRuntimeSource = 'hosted' | 'dev-override' | 'none'
 export type CopilotAgentNameSource = 'config-center' | 'missing'
 export type CopilotModeSource = 'resolved' | 'expected'
-export type CopilotRunPhase = 'idle' | 'starting' | 'streaming' | 'completed' | 'failed' | 'cancelled'
+export type CopilotRunPhase = 'idle' | 'starting' | 'streaming' | 'awaiting_input' | 'completed' | 'failed' | 'cancelled'
 export type CopilotReasoningTraceState = 'not_observed' | 'suppressed' | 'visible'
 
 export interface CopilotDiagnosticsSummary {

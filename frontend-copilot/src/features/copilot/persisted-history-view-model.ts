@@ -12,6 +12,8 @@ import {
   type CopilotToolMessageItem,
 } from './run-segment-view-model'
 import {
+  type RuntimeInlineFormField,
+  type RuntimeInlineFormRequest,
   cloneRuntimeReasoningSuppressionBasis,
   cloneRuntimeThinkingCapability,
   cloneRuntimeThinkingSelection,
@@ -20,6 +22,10 @@ import {
   type RuntimeRunEvent,
   type RuntimeRunThinkingMetadata,
 } from './thread-run-contract'
+import {
+  CONTROLLED_INLINE_FORM_TOOL_ID,
+  createDefaultInlineFormValues,
+} from './inline-form'
 
 interface PersistedRunContext {
   resolvedModelId: string | null
@@ -40,6 +46,11 @@ export type PersistedConversationSource = 'none' | 'summary' | 'timeline' | 'rep
 export interface PersistedConversationBuildResult {
   conversation: CopilotMessageListItem[]
   selectedRunConversationSource: PersistedConversationSource
+}
+
+export interface PersistedInlineFormRebuildability {
+  hasInlineForm: boolean
+  hasPendingInlineForm: boolean
 }
 
 export interface PersistedConversationBuildOptions {
@@ -63,11 +74,11 @@ export function buildPersistedConversationFromHistory(
       : history.selectedRunId,
   )
   const runContexts = buildPersistedRunContextMap(history)
-  const timelineConversation = buildPersistedConversationFromTimeline({
+  const timelineConversation = reconcileInlineFormSubmissionState(buildPersistedConversationFromTimeline({
     history,
     timelineItems: filterTimelineItemsForSelectedRun(history.timelineItems, targetRunId),
     runContexts,
-  })
+  }))
   const summaryConversation = buildPersistedConversationFromRunSummary({
     history,
     selectedRunId: targetRunId,
@@ -78,13 +89,32 @@ export function buildPersistedConversationFromHistory(
     return resolvePersistedConversationFallbackResult(timelineConversation, summaryConversation)
   }
 
-  const replayConversation = buildPersistedConversationFromReplay(history, targetRunId)
+  const replayConversation = reconcileInlineFormSubmissionState(buildPersistedConversationFromReplay(history, targetRunId))
+  if (shouldPreferTimelineConversation({ timelineConversation, replayConversation })) {
+    return {
+      conversation: timelineConversation,
+      selectedRunConversationSource: 'timeline',
+    }
+  }
   return replayConversation.some((item) => item.kind !== 'user')
     ? {
         conversation: replayConversation,
         selectedRunConversationSource: 'replay',
       }
     : resolvePersistedConversationFallbackResult(timelineConversation, summaryConversation)
+}
+
+export function getPersistedInlineFormRebuildability(
+  history: AssistantSessionHistoryState | null,
+  options: PersistedConversationBuildOptions = {},
+): PersistedInlineFormRebuildability {
+  const persistedConversation = buildPersistedConversationFromHistory(history, options).conversation
+  const inlineFormSegments = persistedConversation.filter((item) => item.kind === 'inline-form')
+
+  return {
+    hasInlineForm: inlineFormSegments.length > 0,
+    hasPendingInlineForm: inlineFormSegments.some((item) => item.formState === 'pending'),
+  }
 }
 
 function buildPersistedConversationFromTimeline(input: {
@@ -492,11 +522,14 @@ function mapPersistedRunEventToRuntimeRunEvent(
           toolId: normalizeOptionalString(readString(payload.toolId)) ?? normalizeOptionalString(event.toolId) ?? 'unknown-tool',
           phase,
           title,
-          summary,
-          inputSummary: normalizeOptionalString(readString(payload.inputSummary)) ?? undefined,
-          resultSummary: normalizeOptionalString(readString(payload.resultSummary)) ?? undefined,
-          errorSummary: normalizeOptionalString(readString(payload.errorSummary)) ?? undefined,
-        },
+            summary,
+            inputSummary: normalizeOptionalString(readString(payload.inputSummary)) ?? undefined,
+            resultSummary: normalizeOptionalString(readString(payload.resultSummary)) ?? undefined,
+            errorSummary: normalizeOptionalString(readString(payload.errorSummary)) ?? undefined,
+            ...(parsePersistedInlineFormRequest(payload.formRequest) === undefined
+              ? {}
+              : { formRequest: parsePersistedInlineFormRequest(payload.formRequest) }),
+          },
       }
     }
     case 'run_diagnostic':
@@ -602,6 +635,7 @@ function mapUserMessageItem(
     kind: 'user',
     title: '',
     content,
+    structuredPayload: cloneRecord(asRecord(timelineItem.structuredPayload)),
     status: 'completed',
   }]
 }
@@ -653,6 +687,7 @@ function mapReasoningMessageItem(
   }
 
   const observedAt = resolveTimestamp(timelineItem.createdAt) ?? Date.now()
+  const observedEndedAt = resolveTimestamp(timelineItem.endedAt) ?? observedAt
   const runId = normalizeOptionalString(readString(timelineItem.runId)) ?? `history-run-${index}`
   const item: CopilotReasoningMessageItem = {
     id: buildHistoryItemId('reasoning', timelineItem, index),
@@ -662,7 +697,7 @@ function mapReasoningMessageItem(
     title: '思考',
     content,
     observedStartedAt: observedAt,
-    observedFinishedAt: observedAt,
+    observedFinishedAt: observedEndedAt,
     status: 'completed',
     isCollapsedByDefault: true,
   }
@@ -675,6 +710,33 @@ function mapToolMessageItem(
   index: number,
 ): CopilotMessageListItem[] {
   const runId = normalizeOptionalString(readString(timelineItem.runId)) ?? `history-run-${index}`
+  const toolId = normalizeOptionalString(readString(timelineItem.toolId)) ?? 'unknown-tool'
+  const formRequest = findInlineFormRequestInToolBlock(timelineItem)
+  if (toolId === CONTROLLED_INLINE_FORM_TOOL_ID && formRequest !== null) {
+    return [{
+      id: buildHistoryItemId('inline-form', timelineItem, index),
+      kind: 'inline-form',
+      runId,
+      sequence: readNumber(timelineItem.sequenceStart) ?? index,
+      status: 'completed',
+      toolCallId: normalizeOptionalString(readString(timelineItem.toolCallId)) ?? `history-tool-call-${index}`,
+      toolId,
+      formId: formRequest.formId,
+      title: formRequest.title,
+      content: normalizeOptionalString(
+        readString(timelineItem.summary)
+          ?? readString(timelineItem.resultSummary)
+          ?? readString(timelineItem.errorSummary),
+      ) ?? formRequest.description ?? formRequest.title,
+      description: formRequest.description ?? null,
+      submitLabel: formRequest.submitLabel ?? '提交',
+      fields: formRequest.fields.map(cloneInlineFormField),
+      formState: 'pending',
+      formValues: createDefaultInlineFormValues(formRequest.fields),
+      submittedPayload: null,
+    } satisfies CopilotMessageListItem]
+  }
+
   const phases = Array.isArray(timelineItem.phases)
     ? timelineItem.phases.map((phase) => cloneRecord(phase))
     : []
@@ -693,7 +755,7 @@ function mapToolMessageItem(
     sequence: readNumber(timelineItem.sequenceStart) ?? index,
     status,
     toolCallId: normalizeOptionalString(readString(timelineItem.toolCallId)) ?? `history-tool-call-${index}`,
-    toolId: normalizeOptionalString(readString(timelineItem.toolId)) ?? 'unknown-tool',
+    toolId,
     toolPhase: status === 'failed' ? 'failed' : status === 'streaming' ? 'started' : 'completed',
     title,
     content,
@@ -741,6 +803,13 @@ function mapTerminalMessageItem(
 ): CopilotMessageListItem[] {
   const terminalStatus = normalizeOptionalString(readString(timelineItem.status))
   if (terminalStatus !== 'failed' && terminalStatus !== 'cancelled') {
+    return []
+  }
+
+  if (
+    terminalStatus === 'failed'
+    && normalizeOptionalString(readString(timelineItem.failureCode)) === 'awaiting_user_input'
+  ) {
     return []
   }
 
@@ -803,6 +872,210 @@ function resolveToolMessageStatus(phases: Array<Record<string, unknown>>): Copil
     return 'completed'
   }
   return 'streaming'
+}
+
+function shouldPreferTimelineConversation(input: {
+  timelineConversation: CopilotMessageListItem[]
+  replayConversation: CopilotMessageListItem[]
+}): boolean {
+  if (input.timelineConversation.length === 0 || input.replayConversation.length === 0) {
+    return false
+  }
+
+  if (input.timelineConversation.some((item) => item.kind === 'inline-form')) {
+    return !input.replayConversation.some((item) => item.kind === 'inline-form')
+  }
+
+  return input.timelineConversation.some((item) => item.kind === 'reasoning')
+}
+
+function reconcileInlineFormSubmissionState(
+  conversation: CopilotMessageListItem[],
+): CopilotMessageListItem[] {
+  const nextConversation = conversation.map((item) => {
+    if (item.kind !== 'inline-form') {
+      return item
+    }
+
+    return {
+      ...item,
+      fields: item.fields.map(cloneInlineFormField),
+      formValues: { ...item.formValues },
+      submittedPayload: item.submittedPayload === null ? null : { ...item.submittedPayload },
+    }
+  })
+
+  for (let index = 0; index < nextConversation.length; index += 1) {
+    const item = nextConversation[index]
+    if (item?.kind !== 'user') {
+      continue
+    }
+
+    const submission = parseInlineFormSubmissionPayload(item.structuredPayload)
+    if (submission === null) {
+      continue
+    }
+
+    for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
+      const candidate = nextConversation[previousIndex]
+      if (candidate?.kind !== 'inline-form') {
+        continue
+      }
+
+      if (
+        candidate.toolCallId !== submission.toolCallId
+        || candidate.formId !== submission.formId
+      ) {
+        continue
+      }
+
+      nextConversation[previousIndex] = {
+        ...candidate,
+        formState: 'submitted',
+        formValues: { ...submission.values },
+        submittedPayload: { ...submission.raw },
+      }
+      break
+    }
+  }
+
+  return nextConversation
+}
+
+function findInlineFormRequestInToolBlock(
+  timelineItem: Record<string, unknown>,
+): RuntimeInlineFormRequest | null {
+  const topLevelFormRequest = parsePersistedInlineFormRequest(timelineItem.formRequest)
+  if (topLevelFormRequest !== undefined) {
+    return topLevelFormRequest
+  }
+
+  if (!Array.isArray(timelineItem.phases)) {
+    return null
+  }
+
+  for (const phase of timelineItem.phases) {
+    const formRequest = parsePersistedInlineFormRequest(asRecord(phase)?.formRequest)
+    if (formRequest !== undefined) {
+      return formRequest
+    }
+  }
+
+  return null
+}
+
+function parsePersistedInlineFormRequest(
+  value: unknown,
+): RuntimeInlineFormRequest | undefined {
+  const record = asRecord(value)
+  if (record === null) {
+    return undefined
+  }
+
+  const formId = normalizeOptionalString(readString(record.formId))
+  const title = normalizeOptionalString(readString(record.title))
+  const fields = Array.isArray(record.fields)
+    ? record.fields.map((field) => parsePersistedInlineFormField(field)).filter((field): field is RuntimeInlineFormField => field !== null)
+    : []
+
+  if (formId === null || title === null || fields.length === 0) {
+    return undefined
+  }
+
+  const description = normalizeOptionalString(readString(record.description))
+  const submitLabel = normalizeOptionalString(readString(record.submitLabel))
+  return {
+    formId,
+    title,
+    ...(description === null ? {} : { description }),
+    ...(submitLabel === null ? {} : { submitLabel }),
+    fields,
+  }
+}
+
+function parsePersistedInlineFormField(
+  value: unknown,
+): RuntimeInlineFormField | null {
+  const record = asRecord(value)
+  if (record === null) {
+    return null
+  }
+
+  const name = normalizeOptionalString(readString(record.name))
+  const label = normalizeOptionalString(readString(record.label))
+  const type = normalizeOptionalString(readString(record.type))
+  if (
+    name === null
+    || label === null
+    || (type !== 'text' && type !== 'textarea' && type !== 'number' && type !== 'select' && type !== 'checkbox')
+  ) {
+    return null
+  }
+
+  const description = normalizeOptionalString(readString(record.description))
+  const placeholder = normalizeOptionalString(readString(record.placeholder))
+  const options = Array.isArray(record.options)
+    ? record.options
+      .map((option) => asRecord(option))
+      .map((option) => {
+        const optionValue = normalizeOptionalString(readString(option?.value))
+        const optionLabel = normalizeOptionalString(readString(option?.label))
+        return optionValue === null || optionLabel === null
+          ? null
+          : { value: optionValue, label: optionLabel }
+      })
+      .filter((option): option is { value: string, label: string } => option !== null)
+    : undefined
+
+  return {
+    name,
+    label,
+    type,
+    ...(description === null ? {} : { description }),
+    ...(placeholder === null ? {} : { placeholder }),
+    ...(typeof record.required === 'boolean' ? { required: record.required } : {}),
+    ...(options === undefined ? {} : { options }),
+  }
+}
+
+function parseInlineFormSubmissionPayload(value: unknown): {
+  toolCallId: string
+  formId: string
+  values: Record<string, string | number | boolean>
+  raw: Record<string, unknown>
+} | null {
+  const record = asRecord(value)
+  if (record === null || readString(record.type) !== 'inline_form_submission') {
+    return null
+  }
+
+  const toolCallId = normalizeOptionalString(readString(record.toolCallId))
+  const formId = normalizeOptionalString(readString(record.formId))
+  const valuesRecord = asRecord(record.values)
+  if (toolCallId === null || formId === null || valuesRecord === null) {
+    return null
+  }
+
+  const values: Record<string, string | number | boolean> = {}
+  for (const [key, rawValue] of Object.entries(valuesRecord)) {
+    if (typeof rawValue === 'string' || typeof rawValue === 'number' || typeof rawValue === 'boolean') {
+      values[key] = rawValue
+    }
+  }
+
+  return {
+    toolCallId,
+    formId,
+    values,
+    raw: { ...record },
+  }
+}
+
+function cloneInlineFormField(field: RuntimeInlineFormField): RuntimeInlineFormField {
+  return {
+    ...field,
+    ...(field.options === undefined ? {} : { options: field.options.map((option) => ({ ...option })) }),
+  }
 }
 
 function buildHistoryItemId(

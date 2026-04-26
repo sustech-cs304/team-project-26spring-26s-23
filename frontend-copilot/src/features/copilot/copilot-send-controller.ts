@@ -368,6 +368,11 @@ export async function orchestrateCopilotSend(input: {
   signal?: AbortSignal
   thinkingCapabilityOverride?: Record<string, unknown> | null
   toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
+  messageOverride?: {
+    content: string
+    structuredPayload?: Record<string, unknown> | null
+  }
+  clearComposerOnSend?: boolean
 }) {
   if (!isCopilotConnectableState(input.state) || input.sessionShell === null) {
     return
@@ -417,7 +422,7 @@ export async function orchestrateCopilotSend(input: {
     return
   }
 
-  const trimmedMessage = input.composerDraft.messageText.trim()
+  const trimmedMessage = (input.messageOverride?.content ?? input.composerDraft.messageText).trim()
   if (trimmedMessage === '') {
     input.setSendError(createPreflightTransientErrorState({
       message: '请输入消息内容后再发送。',
@@ -499,6 +504,7 @@ export async function orchestrateCopilotSend(input: {
         messageText: trimmedMessage,
       },
       requestOptions,
+      structuredPayload: input.messageOverride?.structuredPayload,
       toolPermissionPolicy: input.toolPermissionPolicy,
       thinkingCapabilityOverride: input.thinkingCapabilityOverride,
     })
@@ -517,7 +523,10 @@ export async function orchestrateCopilotSend(input: {
   input.setConversation((current) => [
     ...current,
     ...buildCopilotRunSegmentViewModel(input.runState),
-    createUserMessageListItem(trimmedMessage),
+    createUserMessageListItem({
+      content: trimmedMessage,
+      structuredPayload: runtimeInput.message.structuredPayload ?? null,
+    }),
   ])
   input.setSendError(null)
   input.setRunState(createStartingCopilotRunState({
@@ -525,12 +534,14 @@ export async function orchestrateCopilotSend(input: {
     activeModelRoute: runtimeInput.modelRoute,
     requestOptions,
   }))
-  input.setComposerDraft((current) => ({
-    ...current,
-    messageText: '',
-  }))
-  if (input.composerInputRef.current !== null) {
-    input.composerInputRef.current.value = ''
+  if (input.clearComposerOnSend !== false) {
+    input.setComposerDraft((current) => ({
+      ...current,
+      messageText: '',
+    }))
+    if (input.composerInputRef.current !== null) {
+      input.composerInputRef.current.value = ''
+    }
   }
 
   let runStarted = false

@@ -915,6 +915,106 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).not.toContain('<br/>')
   })
 
+  it('projects and renders controlled inline form segments inside the chat stream', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'completed',
+      runId: 'run-form-1',
+      threadId: 'session-1',
+      segments: [
+        {
+          id: 'inline-form:run-form-1:tool.request-user-form:call-1',
+          kind: 'inline-form',
+          runId: 'run-form-1',
+          startedSequence: 2,
+          lastSequence: 2,
+          status: 'completed',
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          formId: 'course-search-form',
+          title: '补充课程查询条件',
+          summary: '请填写课程编码与学期。',
+          description: '仅用于继续当前对话。',
+          submitLabel: '提交表单',
+          fields: [
+            {
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            },
+            {
+              name: 'term',
+              label: '学期',
+              type: 'select',
+              required: true,
+              options: [
+                { value: '2026-spring', label: '2026 春' },
+              ],
+            },
+          ],
+          formState: 'pending',
+          formValues: {
+            courseCode: '',
+            term: '',
+          },
+          submittedPayload: null,
+        },
+      ],
+    })
+
+    expect(html).toContain('chat-message-inline-form-card-1')
+    expect(html).toContain('补充课程查询条件')
+    expect(html).toContain('课程编码')
+    expect(html).toContain('学期')
+    expect(html).toContain('提交表单')
+  })
+
+  it('renders submitted inline forms as readonly history entries', () => {
+    const html = renderConversation({
+      ...createIdleCopilotRunState(),
+      phase: 'completed',
+      runId: 'run-form-2',
+      threadId: 'session-1',
+      segments: [
+        {
+          id: 'inline-form:run-form-2:tool.request-user-form:call-1',
+          kind: 'inline-form',
+          runId: 'run-form-2',
+          startedSequence: 2,
+          lastSequence: 2,
+          status: 'completed',
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          formId: 'course-search-form',
+          title: '补充课程查询条件',
+          summary: '请填写课程编码与学期。',
+          description: null,
+          submitLabel: '提交表单',
+          fields: [
+            {
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            },
+          ],
+          formState: 'submitted',
+          formValues: {
+            courseCode: 'CS304',
+          },
+          submittedPayload: {
+            type: 'inline_form_submission',
+          },
+        },
+      ],
+    })
+
+    expect(html).not.toContain('chat-message-inline-form-readonly-1')
+    expect(html).toContain('CS304')
+    expect(html).not.toContain('chat-message-inline-form-submit-1')
+  })
+
   it('uses a dedicated assistant markdown divider style instead of the old dotted visual', () => {
     const cssFilePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), './copilot-message-list.css')
     const css = readFileSync(cssFilePath, 'utf8')

@@ -58,6 +58,7 @@ export interface CopilotComposerShellProps {
   sendStatus: 'idle' | 'sending'
   canCancel: boolean
   sendDisabledReason: string | null
+  controlsLockedReason?: string | null
   interactionLocked?: boolean
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
@@ -77,6 +78,7 @@ export function CopilotComposerShell({
   sendStatus,
   canCancel,
   sendDisabledReason,
+  controlsLockedReason = null,
   interactionLocked = false,
   composerInputRef,
   composerHeight,
@@ -85,8 +87,9 @@ export function CopilotComposerShell({
   const copy = getCopilotChatCopy(language)
   const hasAvailableModels = modelGroups.some((group) => group.models.length > 0)
   const isSending = sendStatus === 'sending'
-  const controlsDisabled = isSending || interactionLocked
-  const inputDisabled = interactionLocked
+  const controlsLocked = controlsLockedReason !== null
+  const controlsDisabled = isSending || interactionLocked || controlsLocked
+  const inputDisabled = interactionLocked || controlsLocked
   const thinkingControlRef = useRef<HTMLDivElement | null>(null)
   const thinkingPanelId = useId()
   const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
@@ -345,6 +348,10 @@ export function CopilotComposerShell({
             : <ArrowUp className="copilot-chat__send-button-icon" aria-hidden="true" />}
         </button>
       </div>
+
+      {controlsLockedReason !== null && (
+        <p className="copilot-chat__composer-note" data-testid="chat-composer-note">{controlsLockedReason}</p>
+      )}
 
     </form>
   )

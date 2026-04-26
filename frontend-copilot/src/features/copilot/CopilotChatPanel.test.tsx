@@ -5,7 +5,15 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import type { CopilotHistoryRunReplaySuccess } from '../../../electron/copilot-history'
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
-import { buildPersistedConversationFromHistory } from './persisted-history-view-model'
+import {
+  buildPersistedConversationFromHistory,
+  getPersistedInlineFormRebuildability,
+} from './persisted-history-view-model'
+import { createIdleCopilotRunState } from './run-segment-reducer'
+import {
+  hasSufficientPersistedConversationForRun,
+  resolvePersistedConversationHandoffWaitReason,
+} from './state/useCopilotChatPanelState'
 import { CopilotChatPanel } from './CopilotChatPanel'
 import {
   clickElement,
@@ -538,6 +546,439 @@ describe('CopilotChatPanel', () => {
       { kind: 'user', content: '用户原问题' },
       { kind: 'assistant', content: '持久化助手回复' },
     ])
+  })
+
+  it('prefers timeline history when replay drops persisted inline-form and reasoning state', () => {
+    const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      selectedRunId: 'run-form-history',
+      timelineItems: [
+        {
+          kind: 'user_message',
+          runId: 'run-form-history',
+          threadId: 'thread-1',
+          sequenceStart: 0,
+          sequenceEnd: 0,
+          createdAt: '2026-04-13T15:00:00Z',
+          text: '需要课程筛选条件',
+          structuredPayload: null,
+        },
+        {
+          kind: 'reasoning_block',
+          runId: 'run-form-history',
+          threadId: 'thread-1',
+          sequenceStart: 1,
+          sequenceEnd: 3,
+          createdAt: '2026-04-13T15:00:01Z',
+          endedAt: '2026-04-13T15:00:03Z',
+          text: '先分析需求，再请求表单。',
+        },
+        {
+          kind: 'tool_call_block',
+          runId: 'run-form-history',
+          threadId: 'thread-1',
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          sequenceStart: 4,
+          sequenceEnd: 4,
+          createdAt: '2026-04-13T15:00:04Z',
+          title: '请求课程表单',
+          summary: '请填写课程编码。',
+          resultSummary: '表单请求已发送，等待用户提交。',
+          formRequest: {
+            formId: 'course-form',
+            title: '请求课程表单',
+            submitLabel: '提交',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+          },
+          phases: [{
+            phase: 'completed',
+            sequence: 4,
+            createdAt: '2026-04-13T15:00:04Z',
+            title: '请求课程表单',
+            summary: '请填写课程编码。',
+            resultSummary: '表单请求已发送，等待用户提交。',
+            formRequest: {
+              formId: 'course-form',
+              title: '请求课程表单',
+              submitLabel: '提交',
+              fields: [{
+                name: 'courseCode',
+                label: '课程编码',
+                type: 'text',
+                required: true,
+              }],
+            },
+          }],
+        },
+        {
+          kind: 'user_message',
+          runId: 'run-form-history',
+          threadId: 'thread-1',
+          sequenceStart: 5,
+          sequenceEnd: 5,
+          createdAt: '2026-04-13T15:00:05Z',
+          text: '已提交表单：请求课程表单\n课程编码: CS304',
+          structuredPayload: {
+            type: 'inline_form_submission',
+            toolId: 'tool.request-user-form',
+            toolCallId: 'tool.request-user-form:call-1',
+            formId: 'course-form',
+            values: {
+              courseCode: 'CS304',
+            },
+          },
+        },
+      ],
+      runSummaries: [{
+        runId: 'run-form-history',
+        threadId: 'thread-1',
+        status: 'completed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:00:08Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:00:08Z',
+        resolvedModelId: 'openai/gpt-4.1',
+        requestedMessageText: '需要课程筛选条件',
+        assistantText: '已收到课程编码。',
+      }],
+      replayStatus: 'ready',
+      replay: createRunReplayResult({
+        run: {
+          runId: 'run-form-history',
+          requestedMessageText: '需要课程筛选条件',
+          assistantText: '已收到课程编码。',
+        },
+        historicalSnapshot: {
+          requestMessage: {
+            role: 'user',
+            content: '需要课程筛选条件',
+          },
+        },
+        orderedEvents: [{
+          eventType: 'run_completed',
+          sequence: 8,
+          createdAt: '2026-04-13T15:00:08Z',
+          payload: {
+            assistantMessageId: 'run-form-history:assistant',
+            assistantText: '已收到课程编码。',
+            resolvedModelId: 'openai/gpt-4.1',
+            resolvedModelRoute: {},
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+          toolCallId: null,
+          toolId: null,
+          phase: null,
+          isRedacted: false,
+          redactionVersion: 0,
+        }],
+      }),
+    }))
+
+    expect(conversation.selectedRunConversationSource).toBe('timeline')
+    expect(conversation.conversation.some((item) => item.kind === 'reasoning' && item.observedFinishedAt !== item.observedStartedAt)).toBe(true)
+    expect(conversation.conversation.some((item) => item.kind === 'inline-form' && item.formState === 'submitted')).toBe(true)
+    expect(conversation.conversation.some((item) => item.kind === 'user' && item.structuredPayload !== undefined)).toBe(true)
+  })
+
+  it('rebuilds an unsubmitted pending inline form from persisted timeline history', () => {
+    const history = createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      selectedRunId: 'run-form-pending-history',
+      timelineItems: [
+        {
+          kind: 'user_message',
+          runId: 'run-form-pending-history',
+          threadId: 'thread-1',
+          sequenceStart: 0,
+          sequenceEnd: 0,
+          createdAt: '2026-04-13T15:00:00Z',
+          text: '需要课程筛选条件',
+          structuredPayload: null,
+        },
+        {
+          kind: 'tool_call_block',
+          runId: 'run-form-pending-history',
+          threadId: 'thread-1',
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          sequenceStart: 1,
+          sequenceEnd: 1,
+          createdAt: '2026-04-13T15:00:01Z',
+          title: '请求课程表单',
+          summary: '请填写课程编码。',
+          resultSummary: '表单请求已发送，等待用户提交。',
+          formRequest: {
+            formId: 'course-form',
+            title: '请求课程表单',
+            submitLabel: '提交',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+          },
+          phases: [{
+            phase: 'completed',
+            sequence: 1,
+            createdAt: '2026-04-13T15:00:01Z',
+            title: '请求课程表单',
+            summary: '请填写课程编码。',
+            resultSummary: '表单请求已发送，等待用户提交。',
+            formRequest: {
+              formId: 'course-form',
+              title: '请求课程表单',
+              submitLabel: '提交',
+              fields: [{
+                name: 'courseCode',
+                label: '课程编码',
+                type: 'text',
+                required: true,
+              }],
+            },
+          }],
+        },
+      ],
+      runSummaries: [{
+        runId: 'run-form-pending-history',
+        threadId: 'thread-1',
+        status: 'failed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:00:03Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:00:03Z',
+        resolvedModelId: 'openai/gpt-4.1',
+        requestedMessageText: '需要课程筛选条件',
+        assistantText: '请填写课程编码。',
+      }],
+      replayStatus: 'idle',
+      replay: null,
+    })
+
+    const conversation = buildPersistedConversationFromHistory(history)
+    const rebuildability = getPersistedInlineFormRebuildability(history)
+
+    expect(conversation.selectedRunConversationSource).toBe('timeline')
+    expect(conversation.conversation.some((item) => item.kind === 'inline-form' && item.formState === 'pending')).toBe(true)
+    expect(conversation.conversation.some((item) => item.kind === 'user' && item.content === '需要课程筛选条件')).toBe(true)
+    expect(rebuildability).toMatchObject({
+      hasInlineForm: true,
+      hasPendingInlineForm: true,
+    })
+  })
+
+  it('does not treat summary-only persisted history as sufficient for awaiting-input runs with pending inline forms', () => {
+    const sessionHistory = createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      selectedRunId: 'run-form-pending-history',
+      timelineItems: [{
+        kind: 'user_message',
+        runId: 'run-form-pending-history',
+        threadId: 'thread-1',
+        sequenceStart: 0,
+        sequenceEnd: 0,
+        createdAt: '2026-04-13T15:00:00Z',
+        text: '需要课程筛选条件',
+        structuredPayload: null,
+      }],
+      runSummaries: [{
+        runId: 'run-form-pending-history',
+        threadId: 'thread-1',
+        status: 'failed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:00:03Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:00:03Z',
+        resolvedModelId: 'openai/gpt-4.1',
+        requestedMessageText: '需要课程筛选条件',
+        assistantText: '请填写课程编码。',
+      }],
+      replayStatus: 'idle',
+      replay: null,
+    })
+    const runState = {
+      ...createIdleCopilotRunState(),
+      phase: 'awaiting_input' as const,
+      runId: 'run-form-pending-history',
+      threadId: 'thread-1',
+      segments: [{
+        id: 'inline-form:run-form-pending-history:tool.request-user-form:call-1',
+        kind: 'inline-form' as const,
+        runId: 'run-form-pending-history',
+        startedSequence: 1,
+        lastSequence: 1,
+        status: 'completed' as const,
+        toolCallId: 'tool.request-user-form:call-1',
+        toolId: 'tool.request-user-form',
+        formId: 'course-form',
+        title: '请求课程表单',
+        summary: '请填写课程编码。',
+        description: null,
+        submitLabel: '提交',
+        fields: [{
+          name: 'courseCode',
+          label: '课程编码',
+          type: 'text' as const,
+          required: true,
+        }],
+        formState: 'pending' as const,
+        formValues: {
+          courseCode: '',
+        },
+        submittedPayload: null,
+      }],
+    }
+    const persistedConversation = buildPersistedConversationFromHistory(sessionHistory)
+
+    expect(hasSufficientPersistedConversationForRun({
+      conversation: persistedConversation.conversation,
+      runId: 'run-form-pending-history',
+      runPhase: 'awaiting_input',
+      sessionHistory,
+      runState,
+    })).toBe(false)
+
+    expect(resolvePersistedConversationHandoffWaitReason({
+      conversation: persistedConversation.conversation,
+      pendingRunId: 'run-form-pending-history',
+      runState,
+      sessionHistory,
+    })).toBe('awaiting-input-inline-form-missing-from-handoff')
+  })
+
+  it('allows handoff when persisted history can rebuild the pending inline form for awaiting-input runs', () => {
+    const sessionHistory = createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      selectedRunId: 'run-form-pending-history',
+      timelineItems: [
+        {
+          kind: 'user_message',
+          runId: 'run-form-pending-history',
+          threadId: 'thread-1',
+          sequenceStart: 0,
+          sequenceEnd: 0,
+          createdAt: '2026-04-13T15:00:00Z',
+          text: '需要课程筛选条件',
+          structuredPayload: null,
+        },
+        {
+          kind: 'tool_call_block',
+          runId: 'run-form-pending-history',
+          threadId: 'thread-1',
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          sequenceStart: 1,
+          sequenceEnd: 1,
+          createdAt: '2026-04-13T15:00:01Z',
+          title: '请求课程表单',
+          summary: '请填写课程编码。',
+          resultSummary: '表单请求已发送，等待用户提交。',
+          formRequest: {
+            formId: 'course-form',
+            title: '请求课程表单',
+            submitLabel: '提交',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+          },
+          phases: [{
+            phase: 'completed',
+            sequence: 1,
+            createdAt: '2026-04-13T15:00:01Z',
+            title: '请求课程表单',
+            summary: '请填写课程编码。',
+            resultSummary: '表单请求已发送，等待用户提交。',
+            formRequest: {
+              formId: 'course-form',
+              title: '请求课程表单',
+              submitLabel: '提交',
+              fields: [{
+                name: 'courseCode',
+                label: '课程编码',
+                type: 'text',
+                required: true,
+              }],
+            },
+          }],
+        },
+      ],
+      runSummaries: [{
+        runId: 'run-form-pending-history',
+        threadId: 'thread-1',
+        status: 'failed',
+        createdAt: '2026-04-13T15:00:00Z',
+        updatedAt: '2026-04-13T15:00:03Z',
+        startedAt: '2026-04-13T15:00:01Z',
+        terminalAt: '2026-04-13T15:00:03Z',
+        resolvedModelId: 'openai/gpt-4.1',
+        requestedMessageText: '需要课程筛选条件',
+        assistantText: '请填写课程编码。',
+      }],
+      replayStatus: 'idle',
+      replay: null,
+    })
+    const runState = {
+      ...createIdleCopilotRunState(),
+      phase: 'awaiting_input' as const,
+      runId: 'run-form-pending-history',
+      threadId: 'thread-1',
+      segments: [{
+        id: 'inline-form:run-form-pending-history:tool.request-user-form:call-1',
+        kind: 'inline-form' as const,
+        runId: 'run-form-pending-history',
+        startedSequence: 1,
+        lastSequence: 1,
+        status: 'completed' as const,
+        toolCallId: 'tool.request-user-form:call-1',
+        toolId: 'tool.request-user-form',
+        formId: 'course-form',
+        title: '请求课程表单',
+        summary: '请填写课程编码。',
+        description: null,
+        submitLabel: '提交',
+        fields: [{
+          name: 'courseCode',
+          label: '课程编码',
+          type: 'text' as const,
+          required: true,
+        }],
+        formState: 'pending' as const,
+        formValues: {
+          courseCode: '',
+        },
+        submittedPayload: null,
+      }],
+    }
+    const persistedConversation = buildPersistedConversationFromHistory(sessionHistory)
+
+    expect(hasSufficientPersistedConversationForRun({
+      conversation: persistedConversation.conversation,
+      runId: 'run-form-pending-history',
+      runPhase: 'awaiting_input',
+      sessionHistory,
+      runState,
+    })).toBe(true)
+
+    expect(resolvePersistedConversationHandoffWaitReason({
+      conversation: persistedConversation.conversation,
+      pendingRunId: 'run-form-pending-history',
+      runState,
+      sessionHistory,
+    })).toBeNull()
   })
 
   it('keeps restored history visible while the directory is still loading if a session is already active', () => {

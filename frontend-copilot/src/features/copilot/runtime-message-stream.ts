@@ -1,6 +1,9 @@
 import { formatThinkingTokenCount } from '../../workbench/thinking-display'
 import type {
   RuntimeCanonicalThinkingSelection,
+  RuntimeInlineFormField,
+  RuntimeInlineFormFieldOption,
+  RuntimeInlineFormRequest,
   RuntimeReasoningDeltaEvent,
   RuntimeReasoningSuppressionBasis,
   RuntimeResolvedModelRoute,
@@ -272,6 +275,11 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
         )
       }
 
+      const formRequest = parseOptionalRuntimeInlineFormRequest(payload.formRequest)
+      if (formRequest !== undefined) {
+        toolEventPayload.formRequest = formRequest
+      }
+
       return {
         type: 'tool_event',
         runId,
@@ -330,6 +338,66 @@ function requireRuntimeToolEventApproval(value: unknown, label: string): Runtime
     ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
     ...(timeoutAction === undefined ? {} : { timeoutAction }),
   }
+}
+
+function parseOptionalRuntimeInlineFormRequest(value: unknown): RuntimeInlineFormRequest | undefined {
+  if (value === undefined || value === null) {
+    return undefined
+  }
+
+  return requireRuntimeInlineFormRequest(value, 'runtime event payload.formRequest')
+}
+
+function requireRuntimeInlineFormRequest(value: unknown, label: string): RuntimeInlineFormRequest {
+  const record = requireRecord(value, label)
+  const description = requireOptionalString(record.description, `${label}.description`)
+  const submitLabel = requireOptionalString(record.submitLabel, `${label}.submitLabel`)
+  if (!Array.isArray(record.fields)) {
+    throw new Error(`${label}.fields must be an array`)
+  }
+
+  return {
+    formId: requireNonEmptyString(record.formId, `${label}.formId`),
+    title: requireNonEmptyString(record.title, `${label}.title`),
+    ...(description === undefined ? {} : { description }),
+    ...(submitLabel === undefined ? {} : { submitLabel }),
+    fields: record.fields.map((field, index) => requireRuntimeInlineFormField(field, `${label}.fields[${index}]`)),
+  }
+}
+
+function requireRuntimeInlineFormField(value: unknown, label: string): RuntimeInlineFormField {
+  const record = requireRecord(value, label)
+  const type = requireNonEmptyString(record.type, `${label}.type`)
+  if (type !== 'text' && type !== 'textarea' && type !== 'number' && type !== 'select' && type !== 'checkbox') {
+    throw new Error(`${label}.type must be a supported inline form field type.`)
+  }
+
+  const description = requireOptionalString(record.description, `${label}.description`)
+  const placeholder = requireOptionalString(record.placeholder, `${label}.placeholder`)
+
+  return {
+    name: requireNonEmptyString(record.name, `${label}.name`),
+    label: requireNonEmptyString(record.label, `${label}.label`),
+    type,
+    ...(description === undefined ? {} : { description }),
+    ...(placeholder === undefined ? {} : { placeholder }),
+    ...(record.required === undefined ? {} : { required: requireBoolean(record.required, `${label}.required`) }),
+    ...(record.options === undefined ? {} : { options: requireRuntimeInlineFormFieldOptions(record.options, `${label}.options`) }),
+  }
+}
+
+function requireRuntimeInlineFormFieldOptions(value: unknown, label: string): RuntimeInlineFormFieldOption[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array.`)
+  }
+
+  return value.map((item, index) => {
+    const record = requireRecord(item, `${label}[${index}]`)
+    return {
+      value: requireString(record.value, `${label}[${index}].value`),
+      label: requireString(record.label, `${label}[${index}].label`),
+    }
+  })
 }
 
 function requireRuntimeModelRouteRef(value: unknown, label: string): RuntimeResolvedModelRoute['routeRef'] {

@@ -74,6 +74,13 @@ export interface CopilotPanelShellProps {
   toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
+  onSubmitInlineForm?: (input: {
+    toolCallId: string
+    formId: string
+    summary: string
+    structuredPayload: Record<string, unknown>
+    values: Record<string, string | number | boolean>
+  }) => Promise<void>
   onCancelCurrentRun: () => void
   onResolveToolApproval?: (input: {
     runId: string
@@ -84,6 +91,7 @@ export interface CopilotPanelShellProps {
   sendStatus: 'idle' | 'sending'
   canCancelSend: boolean
   sendDisabledReason: string | null
+  composerLockedReason?: string | null
   historyDrift: PersistedHistoryDriftSummary | null
   historyRebindAcknowledged: boolean
   onAcknowledgeHistoryRebind: () => void
@@ -287,6 +295,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
                   models={props.modelGroups.flatMap((group) => group.models)}
                   transientError={props.sendError ?? createTransientSessionError(props.sessionError)}
                   runtimeUrl={props.runtimeUrl}
+                  onSubmitInlineForm={props.onSubmitInlineForm}
                   onResolveToolApproval={props.onResolveToolApproval}
                   onOpenErrorDetail={props.onOpenErrorDetail}
                   emptyState={hasAvailableModels
@@ -310,6 +319,7 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
           sendStatus={props.sendStatus}
           canCancel={props.canCancelSend}
           sendDisabledReason={props.sendDisabledReason}
+          controlsLockedReason={props.composerLockedReason}
           interactionLocked={props.composerInteractionLocked}
           composerInputRef={props.composerInputRef}
           composerHeight={props.composerHeight}

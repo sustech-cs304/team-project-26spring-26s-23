@@ -241,6 +241,32 @@ export interface RuntimeThinkingCapabilityGetResponse {
 export interface RuntimeMessagePayload {
   role: 'user' | 'assistant'
   content: string
+  structuredPayload?: Record<string, unknown> | null
+}
+
+export type RuntimeInlineFormFieldType = 'text' | 'textarea' | 'number' | 'select' | 'checkbox'
+
+export interface RuntimeInlineFormFieldOption {
+  value: string
+  label: string
+}
+
+export interface RuntimeInlineFormField {
+  name: string
+  label: string
+  type: RuntimeInlineFormFieldType
+  description?: string
+  placeholder?: string
+  required?: boolean
+  options?: RuntimeInlineFormFieldOption[]
+}
+
+export interface RuntimeInlineFormRequest {
+  formId: string
+  title: string
+  description?: string
+  submitLabel?: string
+  fields: RuntimeInlineFormField[]
 }
 
 export interface RuntimeModelRoute {
@@ -391,6 +417,7 @@ export type RuntimeToolEvent = RuntimeRunEventBase<'tool_event', {
   errorSummary?: string
   security?: RuntimeToolEventSecurity
   approval?: RuntimeToolEventApproval
+  formRequest?: RuntimeInlineFormRequest
 }>
 
 export type RuntimeRunEvent =

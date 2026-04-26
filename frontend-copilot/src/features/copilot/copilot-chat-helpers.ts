@@ -54,6 +54,7 @@ export interface RuntimeMessageSendInput {
   message: {
     role: 'user'
     content: string
+    structuredPayload?: Record<string, unknown> | null
   }
   modelRoute: RuntimeModelRoute
   thinkingSelection: RuntimeThinkingSelection | null
@@ -146,6 +147,7 @@ export function buildRuntimeMessageSendInput(input: {
   sessionShell: AssistantSessionShell
   draft: CopilotChatComposerDraft
   requestOptions: Record<string, unknown>
+  structuredPayload?: Record<string, unknown> | null
   toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
 }): RuntimeMessageSendInput {
@@ -171,6 +173,7 @@ export function buildRuntimeMessageSendInput(input: {
     message: {
       role: 'user',
       content: input.draft.messageText.trim(),
+      ...(input.structuredPayload === undefined ? {} : { structuredPayload: input.structuredPayload }),
     },
     modelRoute: cloneRuntimeModelRoute(input.draft.selectedModelRoute),
     thinkingSelection,
