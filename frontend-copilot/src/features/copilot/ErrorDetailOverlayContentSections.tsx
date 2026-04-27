@@ -32,8 +32,8 @@ export function renderContentItem(item: ErrorDetailOverlayContentItem, key: stri
         <div key={key} className="error-detail-overlay__list-block">
           <p className="error-detail-overlay__list-label">{item.label}</p>
           <ul className="error-detail-overlay__list-values">
-            {item.values.map((value) => (
-              <li key={`${key}:${value}`} className="error-detail-overlay__list-item">{value}</li>
+            {item.values.map((value, index) => (
+              <li key={`${key}:${index}:${value}`} className="error-detail-overlay__list-item">{value}</li>
             ))}
           </ul>
         </div>

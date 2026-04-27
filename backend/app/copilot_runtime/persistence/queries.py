@@ -28,6 +28,7 @@ from .query_dtos import (
     PersistedDatabaseBackupResponse,
     PersistedDatabaseRestoreResponse,
     PersistedRunReplayResponse,
+    PersistedRunSummaryDTO,
     PersistedThreadDeleteResponse,
     PersistedThreadDetailResponse,
     PersistedThreadDuplicateResponse,
@@ -96,7 +97,7 @@ class PersistedChatQueryService:
             thread_projection = _ensure_thread_projection(repositories, thread_model.id)
             run_models = repositories.runs.list_for_thread(thread_id)
             timeline_items: list[PersistedTimelineItemDTO] = []
-            run_summaries: list = []
+            run_summaries: list[PersistedRunSummaryDTO] = []
             for run_model in run_models:
                 run_summaries.append(_build_run_summary(run_model))
                 run_projection = _ensure_run_projection(repositories, run_model.id)

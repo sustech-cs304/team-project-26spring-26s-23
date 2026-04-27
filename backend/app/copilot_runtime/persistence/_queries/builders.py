@@ -39,7 +39,7 @@ def _build_thread_summary(
     repositories: PersistenceRepositories,
     thread_model: ThreadModel,
     *,
-    drift_evaluator: "PersistedHistoryDriftEvaluator | None" = None,
+    drift_evaluator: PersistedHistoryDriftEvaluator | None = None,
 ) -> PersistedThreadSummaryDTO:
     thread_projection = _ensure_thread_projection(repositories, thread_model.id)
     run_models = repositories.runs.list_for_thread(thread_model.id)

@@ -46,9 +46,6 @@ export function readNestedIdentity(value: unknown): {
   title: string | null
 } | null {
   const record = readRecord(value)
-  if (record === null) {
-    return null
-  }
 
   const key = firstNonEmptyString([
     readStringRecordField(record, 'id'),

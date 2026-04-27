@@ -25,7 +25,7 @@ from .constants import (
 )
 
 
-def _require_non_empty_text(value: str, *, field_name: str) -> str:
+def _require_non_empty_text(value: Any, *, field_name: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{field_name} must be a string.")
     normalized = value.strip()
