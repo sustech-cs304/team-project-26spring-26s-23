@@ -33,7 +33,7 @@ describe('getRuntimeCapabilities', () => {
       signal: undefined,
     })
     expect(response.capabilitiesVersion).toBe('cap-v12')
-    expect(response.tools.map((tool) => tool.toolId)).toEqual([
+    expect(response.tools.map((tool: { toolId: string }) => tool.toolId)).toEqual([
       'tool.fs.read',
       'tool.remote-search',
     ])

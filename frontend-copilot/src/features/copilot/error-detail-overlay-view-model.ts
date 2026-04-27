@@ -3,93 +3,31 @@ import type {
   RuntimeResolvedModelRoute,
 } from './thread-run-contract'
 
-export type CopilotErrorDetailSourceKind = 'preflight' | 'run-start' | 'streaming'
+import type {
+  CopilotErrorDetailMeta,
+  CopilotErrorDetailSourceKind,
+  CopilotErrorDetailSource,
+  ErrorDetailOverlayGroupKey,
+  ErrorDetailOverlayStructuredJsonValue,
+  ErrorDetailOverlayContentItem,
+  ErrorDetailOverlayGroup,
+  ErrorDetailOverlayViewModel,
+} from './_error-detail-overlay-view-model/types'
 
-export interface CopilotErrorDetailMeta {
-  stage?: string | null
-  requestedMethod?: string | null
-  status?: number | null
-  rawMessage?: string | null
-  summaryMessage?: string | null
-  resolvedToolIds?: string[]
+import { ERROR_DETAIL_META_KEYS, groupOrder } from './_error-detail-overlay-view-model/constants'
+
+export type {
+  CopilotErrorDetailSourceKind,
+  CopilotErrorDetailMeta,
+  CopilotErrorDetailSource,
+  ErrorDetailOverlayGroupKey,
+  ErrorDetailOverlayStructuredJsonValue,
+  ErrorDetailOverlayContentItem,
+  ErrorDetailOverlayGroup,
+  ErrorDetailOverlayViewModel,
 }
 
-export interface CopilotErrorDetailSource {
-  source: CopilotErrorDetailSourceKind
-  title: string
-  summaryMessage: string
-  rawMessage: string | null
-  code: string | null
-  stage: string | null
-  requestedMethod: string | null
-  status: number | null
-  details: Record<string, unknown>
-  resolvedModelId: string | null
-  resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
-  resolvedToolIds: string[]
-  requestOptions: Record<string, unknown>
-}
-
-export type ErrorDetailOverlayGroupKey =
-  | 'summary'
-  | 'request-context'
-  | 'tool-model-context'
-  | 'raw-details'
-
-export type ErrorDetailOverlayStructuredJsonValue = Record<string, unknown> | unknown[]
-
-export type ErrorDetailOverlayContentItem =
-  | {
-      kind: 'key-value'
-      label: string
-      value: string
-    }
-  | {
-      kind: 'list'
-      label: string
-      values: string[]
-    }
-  | {
-      kind: 'text'
-      label: string | null
-      text: string
-      presentation?: 'plain-text' | 'json'
-      structuredValue?: ErrorDetailOverlayStructuredJsonValue
-    }
-
-export interface ErrorDetailOverlayGroup {
-  key: ErrorDetailOverlayGroupKey
-  title: string
-  description: string
-  items: ErrorDetailOverlayContentItem[]
-}
-
-export interface ErrorDetailOverlayViewModel {
-  title: string
-  summaryMessage: string
-  source: CopilotErrorDetailSourceKind
-  code: string | null
-  stage: string | null
-  groups: ErrorDetailOverlayGroup[]
-  hasAdditionalDetails: boolean
-  emptyStateMessage: string | null
-}
-
-const ERROR_DETAIL_META_KEYS = {
-  stage: '__copilotMeta_stage',
-  requestedMethod: '__copilotMeta_requestedMethod',
-  status: '__copilotMeta_status',
-  rawMessage: '__copilotMeta_rawMessage',
-  summaryMessage: '__copilotMeta_summaryMessage',
-  resolvedToolIds: '__copilotMeta_resolvedToolIds',
-} as const
-
-const groupOrder: Record<ErrorDetailOverlayGroupKey, number> = {
-  summary: 0,
-  'request-context': 1,
-  'tool-model-context': 2,
-  'raw-details': 3,
-}
+export { ERROR_DETAIL_META_KEYS, groupOrder }
 
 export function withCopilotErrorDetailMeta(
   details: Record<string, unknown> | null | undefined,

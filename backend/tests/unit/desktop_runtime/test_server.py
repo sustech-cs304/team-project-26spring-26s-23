@@ -30,7 +30,12 @@ from app.copilot_runtime.provider_adapter_registry import (
     build_default_provider_adapter_registry,
 )
 from app.copilot_runtime.session_store import InMemorySessionStore
-from app.copilot_runtime.tool_registry import FILE_CONVERT_TOOL_ID, REQUEST_USER_FORM_TOOL_ID
+from app.copilot_runtime.tool_registry import (
+    FILE_CONVERT_TOOL_ID,
+    REQUEST_USER_FORM_TOOL_ID,
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_ID,
+)
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.desktop_runtime.config import (
     DEFAULT_HOST,
@@ -277,8 +282,8 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(
         FILE_CONVERT_TOOL_ID,
         "tool.weather-current",
         REQUEST_USER_FORM_TOOL_ID,
-        "skill.activate",
-        "skill.read_resource",
+        SKILL_ACTIVATE_TOOL_ID,
+        SKILL_READ_RESOURCE_TOOL_ID,
     ]
     expected_tool_ids = [*expected_builtin_tool_ids, *expected_contract_tool_ids]
     assert toolset_summary["toolCount"] == len(expected_tool_ids)

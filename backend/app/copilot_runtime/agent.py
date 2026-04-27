@@ -6,7 +6,7 @@ from collections.abc import AsyncIterable, AsyncIterator, Callable, Mapping, Seq
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Protocol, cast
 
 from datetime import UTC, datetime
 
@@ -44,14 +44,9 @@ from .skill_snapshot_provider import (
 )
 from .debug_log_store import DebugLogCategory, DebugLogLevel, RuntimeDebugLogWriter
 from .execution_event_graph import (
-    TOOL_COMPLETED_EVENT_TYPE,
-    TOOL_FAILED_EVENT_TYPE,
-    TOOL_STARTED_EVENT_TYPE,
-    TOOL_WAITING_APPROVAL_EVENT_TYPE,
     RuntimeExecutionEvent,
     RuntimeExecutionEventBuffer,
     RuntimeExecutionEventFactory,
-    RuntimeExecutionEventType,
 )
 from .model_routes import ResolvedRuntimeModelRoute
 from .provider_adapter_registry import (
@@ -81,6 +76,19 @@ from app.tooling.runtime_adapter.copilot_runtime import (
     runtime_tool_execution_scope,
 )
 
+from .agent_exceptions import (
+    AgentExecutionError,
+    AwaitingUserInputError,
+    ModelNotConfiguredError,
+    ProviderAdapterExecutionError,
+)
+from .agent_tool_lifecycle import (
+    RuntimeToolLifecycleEvent,
+    ToolLifecycleSink,
+    _sanitize_tool_result_for_display,
+    tool_lifecycle_event_to_execution_event,
+)
+
 DEFAULT_AGENT_NAME = "default"
 DEFAULT_AGENT_SYSTEM_PROMPT = (
     "You are the SUSTech Copilot backend assistant. "
@@ -103,8 +111,6 @@ _RETRYABLE_TOOL_ERROR_CODES = frozenset(
         "timeout",
     }
 )
-AWAITING_USER_INPUT_CODE = "awaiting_user_input"
-ToolLifecyclePhase = Literal["started", "waiting_approval", "completed", "failed"]
 _EVENT_STREAM_DONE = object()
 AgentStreamEvent = (
     PartStartEvent
@@ -143,161 +149,6 @@ def _coerce_model_settings(
     if len(normalized) == 0:
         return None
     return cast(ModelSettings, normalized)
-
-
-class ModelNotConfiguredError(RuntimeError):
-    pass
-
-
-class AgentExecutionError(RuntimeError):
-    pass
-
-
-class ToolInvocationError(AgentExecutionError):
-    def __init__(
-        self,
-        *,
-        code: str,
-        message: str,
-        tool_id: str,
-        tool_call_id: str | None = None,
-        details: Mapping[str, Any] | None = None,
-    ) -> None:
-        self.code = code
-        self.tool_id = tool_id
-        self.tool_call_id = tool_call_id
-        normalized_details: dict[str, Any] = {"toolId": tool_id}
-        if tool_call_id is not None:
-            normalized_details["toolCallId"] = tool_call_id
-        if details is not None:
-            normalized_details.update(dict(details))
-        self.details = normalized_details
-        super().__init__(message)
-
-
-class AwaitingUserInputError(AgentExecutionError):
-    def __init__(
-        self,
-        *,
-        tool_id: str,
-        tool_call_id: str,
-        form_request: Mapping[str, Any],
-        summary: str,
-    ) -> None:
-        self.code = AWAITING_USER_INPUT_CODE
-        self.tool_id = tool_id
-        self.tool_call_id = tool_call_id
-        self.form_request = dict(form_request)
-        self.summary = summary
-        self.details = {
-            "toolId": tool_id,
-            "toolCallId": tool_call_id,
-            "summary": summary,
-            "formRequest": dict(form_request),
-        }
-        super().__init__("Run interrupted until the user submits the requested form.")
-
-
-class ProviderAdapterExecutionError(AgentExecutionError):
-    def __init__(
-        self,
-        *,
-        code: str,
-        message: str,
-        details: Mapping[str, Any] | None = None,
-    ) -> None:
-        self.code = code
-        self.details = dict(details or {})
-        super().__init__(message)
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeToolLifecycleEvent:
-    tool_call_id: str
-    tool_id: str
-    phase: ToolLifecyclePhase
-    title: str
-    summary: str
-    input_summary: str | None = None
-    result_summary: str | None = None
-    error_summary: str | None = None
-    approval: dict[str, Any] | None = None
-    form_request: dict[str, Any] | None = None
-
-    def to_payload(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "toolCallId": self.tool_call_id,
-            "toolId": self.tool_id,
-            "phase": self.phase,
-            "title": self.title,
-            "summary": self.summary,
-        }
-        if self.input_summary is not None:
-            payload["inputSummary"] = self.input_summary
-        if self.result_summary is not None:
-            payload["resultSummary"] = self.result_summary
-        if self.error_summary is not None:
-            payload["errorSummary"] = self.error_summary
-        if self.approval is not None:
-            payload["approval"] = dict(self.approval)
-        if self.form_request is not None:
-            payload["formRequest"] = dict(self.form_request)
-        return payload
-
-
-def _serialize_tool_result_for_display(result: Any) -> str:
-    try:
-        return json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
-    except TypeError:
-        return json.dumps(
-            result, ensure_ascii=False, indent=2, sort_keys=True, default=str
-        )
-
-
-def _sanitize_tool_result_for_display(tool_id: str, result: dict[str, Any]) -> str:
-    if tool_id == REQUEST_USER_FORM_TOOL_ID:
-        summary = result.get("summary")
-        if isinstance(summary, str) and summary.strip() != "":
-            return summary.strip()
-        form_request = result.get("formRequest")
-        if isinstance(form_request, Mapping):
-            title = str(form_request.get("title") or "用户表单").strip() or "用户表单"
-            return f"需要你补充信息后才能继续：{title}"
-        return _serialize_tool_result_for_display(result)
-
-    if tool_id not in {SKILL_ACTIVATE_TOOL_ID, SKILL_READ_RESOURCE_TOOL_ID}:
-        return _serialize_tool_result_for_display(result)
-
-    sanitized: dict[str, Any] = {
-        "ok": result.get("ok"),
-    }
-    for key in ("skillId", "displayName", "path", "snapshotRevision", "errorCode"):
-        if key in result:
-            sanitized[key] = result[key]
-    if isinstance(result.get("resources"), list):
-        sanitized["resourceCount"] = len(cast(list[Any], result.get("resources")))
-    if isinstance(result.get("entryContent"), str):
-        sanitized["entryContentLength"] = len(cast(str, result.get("entryContent")))
-    if isinstance(result.get("content"), str):
-        sanitized["contentLength"] = len(cast(str, result.get("content")))
-    return _serialize_tool_result_for_display(sanitized)
-
-
-ToolLifecycleSink = Callable[[RuntimeToolLifecycleEvent], None]
-
-
-def tool_lifecycle_event_to_execution_event(
-    tool_event: RuntimeToolLifecycleEvent,
-) -> RuntimeExecutionEvent:
-    if tool_event.phase == "started":
-        event_type: RuntimeExecutionEventType = TOOL_STARTED_EVENT_TYPE
-    elif tool_event.phase == "waiting_approval":
-        event_type = TOOL_WAITING_APPROVAL_EVENT_TYPE
-    elif tool_event.phase == "completed":
-        event_type = TOOL_COMPLETED_EVENT_TYPE
-    else:
-        event_type = TOOL_FAILED_EVENT_TYPE
-    return RuntimeExecutionEvent(type=event_type, payload=tool_event.to_payload())
 
 
 @dataclass(slots=True)
