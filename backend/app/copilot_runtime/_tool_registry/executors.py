@@ -117,6 +117,16 @@ async def execute_command_run_tool(
 
     raw_cwd = payload.get("cwd")
     cwd = raw_cwd.strip() if isinstance(raw_cwd, str) and raw_cwd.strip() != "" else None
+    resolved_cwd: str | None = None
+    if cwd is not None:
+        cwd_path = Path(cwd)
+        if cwd_path.is_absolute():
+            raise ValueError("cwd must be a relative path")
+        base_dir = Path.cwd().resolve(strict=False)
+        resolved_path = (base_dir / cwd_path).resolve(strict=False)
+        if base_dir != resolved_path and base_dir not in resolved_path.parents:
+            raise ValueError("cwd must be within the backend working directory")
+        resolved_cwd = str(resolved_path)
 
     timeout_seconds = payload.get("timeoutSeconds")
     if timeout_seconds is None:
@@ -146,7 +156,7 @@ async def execute_command_run_tool(
     proc = await asyncio.create_subprocess_exec(
         program,
         *args,
-        cwd=cwd,
+        cwd=resolved_cwd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -207,7 +217,7 @@ async def execute_command_run_tool(
     return {
         "program": program,
         "args": args,
-        "cwd": cwd,
+        "cwd": resolved_cwd,
         "timeoutSeconds": resolved_timeout_seconds,
         "timedOut": timed_out,
         "exitCode": proc.returncode,
