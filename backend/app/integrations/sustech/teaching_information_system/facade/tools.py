@@ -1,10 +1,20 @@
-"""Tool-contract facade for selected TIS domain capabilities."""
+"""Tool-contract facade for selected TIS domain capabilities.
+
+This module is the stable entry-point for the TIS tool facade.
+Domain-specific implementations live in sibling submodules:
+  - grades.py          (personal grades)
+  - gpa.py             (credit / GPA)
+  - selected_courses.py (selected courses)
+  - diagnostics.py     (SQL query / introspection)
+  - result_mapping.py  (shared result helpers)
+
+Only shared infrastructure, stable re-exports, and thin orchestration
+remain in this file.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import json
-import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
@@ -18,13 +28,6 @@ from app.integrations.sustech.facade_contract_models import (
     ResolvedCredentialContract,
     SustechToolArgumentsModel,
     SustechToolBoundaryModel,
-    parse_tool_arguments,
-)
-
-from app.integrations.sustech.teaching_information_system.api.dto import (
-    TISCreditGPAQueryResult,
-    TISGradeQueryResult,
-    TISSelectedCoursesQueryResult,
 )
 from app.integrations.sustech.teaching_information_system.data import TISDatabaseManager
 from app.integrations.sustech.teaching_information_system.provider.use_cases import (
@@ -32,12 +35,10 @@ from app.integrations.sustech.teaching_information_system.provider.use_cases imp
     fetch_personal_grades_with_credentials,
     fetch_selected_courses_with_credentials,
 )
-from app.integrations.sustech.teaching_information_system.shared import TISLogEvent
 from app.tooling import (
     ArtifactStore,
     DatabaseResolver,
     HostCapabilityOperationError,
-    HostCapabilityRequirement,
     HostEvent,
     MissingHostCapabilityError,
     NormalizedToolError,
@@ -55,6 +56,10 @@ from app.tooling.contract.errors import (
     redact_tool_error_value,
 )
 
+# ---------------------------------------------------------------------------
+# State namespace constants
+# ---------------------------------------------------------------------------
+
 _STATE_NAMESPACE_PERSONAL_GRADES = "tis.personal_grades.fetch"
 _STATE_NAMESPACE_CREDIT_GPA = "tis.credit_gpa.fetch"
 _STATE_NAMESPACE_SELECTED_COURSES = "tis.selected_courses.fetch"
@@ -62,11 +67,10 @@ _STATE_NAMESPACE_SELECTED_COURSES = "tis.selected_courses.fetch"
 
 def _build_secret_registry_key(namespace: str, key_name: str) -> str:
     """Build host secret registry keys without embedding credentials in code."""
-
     return f"{namespace}.{key_name}"
 
 
-# Host-side secret registry key names for credential lookup, not credential values.
+# Host-side secret registry key names for credential lookup.
 _DEFAULT_SUSTECH_USERNAME_SECRET_NAME = _build_secret_registry_key(
     "sustech", "username"
 )
@@ -77,6 +81,11 @@ _DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = _build_secret_registry_key(
 
 class TISAuthenticationError(RuntimeError):
     """Raised when TIS credentials cannot be resolved or authenticated."""
+
+
+# ---------------------------------------------------------------------------
+# Base tool class (shared decorator / lifecycle)
+# ---------------------------------------------------------------------------
 
 
 class _TISFacadeToolBase:
@@ -151,6 +160,11 @@ class _TISFacadeToolBase:
         raise NotImplementedError
 
 
+# ---------------------------------------------------------------------------
+# Shared argument helpers
+# ---------------------------------------------------------------------------
+
+
 def _normalize_arguments(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     if arguments is None:
         return {}
@@ -201,6 +215,11 @@ def _read_bool(arguments: Mapping[str, Any], field_name: str, *, default: bool) 
     raise ValueError(f"{field_name} must be a boolean.")
 
 
+# ---------------------------------------------------------------------------
+# JSON serialisation
+# ---------------------------------------------------------------------------
+
+
 def _jsonable(value: Any) -> Any:
     if isinstance(value, Path):
         return value.as_posix()
@@ -232,6 +251,11 @@ def _schema(
 
 JsonObject = dict[str, Any]
 JsonArray = list[Any]
+
+
+# ---------------------------------------------------------------------------
+# Shared normalisation helpers (used by sub-module argument models)
+# ---------------------------------------------------------------------------
 
 
 def _normalize_optional_text_value(value: Any) -> str | None:
@@ -273,6 +297,11 @@ def _normalize_bool_value(value: Any, field_name: str, *, default: bool) -> bool
         if normalized in {"false", "0", "no", "off"}:
             return False
     raise ValueError(f"{field_name} must be a boolean.")
+
+
+# ---------------------------------------------------------------------------
+# Shared argument / persistence models (used by multiple sub-domains)
+# ---------------------------------------------------------------------------
 
 
 class _TISToolArguments(SustechToolArgumentsModel):
@@ -319,87 +348,6 @@ class _TISToolArguments(SustechToolArgumentsModel):
         return _normalize_bool_value(value, "resetSchema", default=False)
 
 
-class _TISPersonalGradesFetchArguments(_TISToolArguments):
-    pass
-
-
-class _TISCreditGPAFetchArguments(_TISToolArguments):
-    pass
-
-
-class _TISSelectedCoursesFetchArguments(_TISToolArguments):
-    semester: str | None = None
-    pageNum: int = 1
-    pageSize: int = 19
-
-    @field_validator("semester", mode="before")
-    @classmethod
-    def _normalize_semester(cls, value: Any) -> str | None:
-        return _normalize_optional_text_value(value)
-
-    @field_validator("pageNum", mode="before")
-    @classmethod
-    def _normalize_page_num(cls, value: Any) -> int:
-        normalized = _normalize_optional_int_value(value, "pageNum")
-        return 1 if normalized is None else normalized
-
-    @field_validator("pageSize", mode="before")
-    @classmethod
-    def _normalize_page_size(cls, value: Any) -> int:
-        normalized = _normalize_optional_int_value(value, "pageSize")
-        return 19 if normalized is None else normalized
-
-    @field_validator("pageNum")
-    @classmethod
-    def _validate_page_num(cls, value: int) -> int:
-        if value <= 0:
-            raise ValueError("pageNum must be a positive integer.")
-        return value
-
-    @field_validator("pageSize")
-    @classmethod
-    def _validate_page_size(cls, value: int) -> int:
-        if value <= 0:
-            raise ValueError("pageSize must be a positive integer.")
-        return value
-
-
-class _TISSQLQueryArguments(SustechToolArgumentsModel):
-    sql: str = Field(default="", validate_default=True)
-    dbRelativePath: str | None = None
-    dbPath: str | None = None
-    resultLimit: int = 50
-    persistArtifact: bool = False
-
-    @field_validator("sql", mode="before")
-    @classmethod
-    def _normalize_sql(cls, value: Any) -> str:
-        return _normalize_required_text_value(value, "sql")
-
-    @field_validator("dbRelativePath", "dbPath", mode="before")
-    @classmethod
-    def _normalize_optional_text_fields(cls, value: Any) -> str | None:
-        return _normalize_optional_text_value(value)
-
-    @field_validator("resultLimit", mode="before")
-    @classmethod
-    def _normalize_result_limit(cls, value: Any) -> int:
-        normalized = _normalize_optional_int_value(value, "resultLimit")
-        return 50 if normalized is None else normalized
-
-    @field_validator("resultLimit")
-    @classmethod
-    def _validate_result_limit(cls, value: int) -> int:
-        if value <= 0:
-            raise ValueError("resultLimit must be a positive integer.")
-        return value
-
-    @field_validator("persistArtifact", mode="before")
-    @classmethod
-    def _normalize_persist_artifact(cls, value: Any) -> bool:
-        return _normalize_bool_value(value, "persistArtifact", default=False)
-
-
 class _PersistenceStateSummary(SustechToolBoundaryModel):
     namespace: str
     key: str
@@ -419,116 +367,9 @@ class _TISOutputPersistence(SustechToolBoundaryModel):
         return persistence or None
 
 
-class _TISPersonalGradesOutput(SustechToolBoundaryModel):
-    sourceUrl: str
-    totalRecords: int
-    terms: list[str]
-    counts: JsonObject
-    resolvedRoleCode: str | None = None
-    logSummary: JsonObject
-    persistence: JsonObject | None = None
-
-
-class _TISPersonalGradesPersistedOutput(SustechToolBoundaryModel):
-    sourceUrl: str
-    totalRecords: int
-    resolvedRoleCode: str | None = None
-    homepage: JsonObject
-    gradeRecords: JsonArray
-    probes: JsonArray
-    logSummary: JsonObject
-    logs: JsonArray
-    persistence: JsonObject | None = None
-
-
-class _TISCreditGPAOutput(SustechToolBoundaryModel):
-    sourceUrl: str
-    pageUrl: str
-    apiUrl: str
-    resolvedRoleCode: str | None = None
-    summary: JsonObject
-    counts: JsonObject
-    logSummary: JsonObject
-    persistence: JsonObject | None = None
-
-
-class _TISCreditGPAPersistedOutput(SustechToolBoundaryModel):
-    sourceUrl: str
-    pageUrl: str
-    apiUrl: str
-    resolvedRoleCode: str | None = None
-    homepage: JsonObject
-    summary: JsonObject
-    termRecords: JsonArray
-    yearRecords: JsonArray
-    probes: JsonArray
-    logSummary: JsonObject
-    logs: JsonArray
-    persistence: JsonObject | None = None
-
-
-class _TISSelectedCoursesOutput(SustechToolBoundaryModel):
-    sourceUrl: str
-    pageUrl: str
-    apiUrl: str
-    semester: JsonObject
-    currentSemester: JsonObject | None
-    semesterSource: str | None = None
-    resolvedRoleCode: str | None = None
-    resolvedPylx: str | None = None
-    summary: JsonObject
-    courseCount: int
-    counts: JsonObject
-    logSummary: JsonObject
-    persistence: JsonObject | None = None
-
-
-class _TISSelectedCoursesPersistedOutput(SustechToolBoundaryModel):
-    sourceUrl: str
-    pageUrl: str
-    apiUrl: str
-    semester: JsonObject
-    currentSemester: JsonObject | None
-    semesterSource: str | None = None
-    resolvedRoleCode: str | None = None
-    resolvedPylx: str | None = None
-    homepage: JsonObject
-    summary: JsonObject
-    courseCount: int
-    courses: JsonArray
-    probes: JsonArray
-    logSummary: JsonObject
-    logs: JsonArray
-    persistence: JsonObject | None = None
-
-
-class _SQLDatabaseSummary(SustechToolBoundaryModel):
-    path: str
-    source: str
-
-
-class _TISSQLQueryOutput(SustechToolBoundaryModel):
-    sql: str
-    database: _SQLDatabaseSummary
-    usedDefaultDatabase: bool
-    hasResultSet: bool
-    columns: list[str]
-    rowsPreview: JsonArray
-    truncated: bool
-    rowCount: int | None
-    executionSummary: JsonObject
-    artifact: JsonObject | None
-
-
-class _TISSQLQueryArtifactPayload(SustechToolBoundaryModel):
-    sql: str
-    database: _SQLDatabaseSummary
-    usedDefaultDatabase: bool
-    hasResultSet: bool
-    columns: list[str]
-    rows: JsonArray
-    rowCount: int
-    executionSummary: JsonObject
+# ---------------------------------------------------------------------------
+# Error mapping (shared across all tools)
+# ---------------------------------------------------------------------------
 
 
 def _message_or_fallback(error: Exception, fallback: str) -> str:
@@ -715,6 +556,11 @@ def _map_exception(
     )
 
 
+# ---------------------------------------------------------------------------
+# Event emission
+# ---------------------------------------------------------------------------
+
+
 def _emit_event(
     host: ToolHostCapabilities,
     *,
@@ -737,6 +583,11 @@ def _emit_event(
         )
     except Exception:
         return
+
+
+# ---------------------------------------------------------------------------
+# Credential resolution (shared across grades / gpa / selected-courses)
+# ---------------------------------------------------------------------------
 
 
 async def _resolve_credentials(
@@ -798,6 +649,11 @@ def _read_persist_flag(arguments: Mapping[str, Any]) -> bool:
     return _read_bool(arguments, "persist", default=False)
 
 
+# ---------------------------------------------------------------------------
+# Persistence helpers (shared across grades / gpa / selected-courses)
+# ---------------------------------------------------------------------------
+
+
 def _validate_persistence_arguments(
     arguments: Mapping[str, Any], *, persist: bool
 ) -> None:
@@ -839,126 +695,6 @@ def _resolve_db_manager(
         TISDatabaseManager(db_path=resolved_path, reset_schema=reset_schema),
         "database_relative" if db_relative_path is not None else "default",
     )
-
-
-def _read_sql_query_result_limit(arguments: Mapping[str, Any]) -> int:
-    raw_limit = _read_optional_int(arguments, "resultLimit")
-    if raw_limit is None:
-        return 50
-    if raw_limit <= 0:
-        raise ValueError("resultLimit must be a positive integer.")
-    return raw_limit
-
-
-def _default_tis_sql_query_db_path(host: ToolHostCapabilities) -> Path:
-    database_resolver = cast(
-        DatabaseResolver,
-        host.require_capability("database_resolver"),
-    )
-    return database_resolver.resolve_database_path(
-        relative_path=_default_tis_db_relative_path()
-    )
-
-
-def _resolve_sql_query_db_path(
-    arguments: Mapping[str, Any],
-    host: ToolHostCapabilities,
-) -> tuple[Path, str, bool]:
-    if _read_optional_text(arguments, "dbPath") is not None:
-        raise ValueError(
-            "dbPath is no longer supported. Use dbRelativePath anchored under the host database directory."
-        )
-
-    db_relative_path = _read_optional_text(arguments, "dbRelativePath")
-    if db_relative_path is not None:
-        database_resolver = cast(
-            DatabaseResolver,
-            host.require_capability("database_resolver"),
-        )
-        return (
-            database_resolver.resolve_database_path(relative_path=db_relative_path),
-            "database_relative",
-            False,
-        )
-
-    return _default_tis_sql_query_db_path(host), "default", True
-
-
-def _sql_statement_type(sql: str) -> str:
-    stripped = sql.lstrip()
-    if stripped == "":
-        return "UNKNOWN"
-    return stripped.split(maxsplit=1)[0].rstrip(";").upper()
-
-
-def _normalize_sql_value(value: Any) -> Any:
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return _jsonable(value)
-
-
-def _sql_row_to_mapping(columns: Sequence[str], row: Sequence[Any]) -> dict[str, Any]:
-    return {column: _normalize_sql_value(value) for column, value in zip(columns, row)}
-
-
-def _execute_sql_query(
-    *,
-    sql: str,
-    db_path: Path,
-    result_limit: int,
-) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    statement_type = _sql_statement_type(sql)
-    with sqlite3.connect(str(db_path)) as connection:
-        cursor = connection.cursor()
-        cursor.execute(sql)
-        has_result_set = cursor.description is not None
-        if has_result_set:
-            columns = [str(description[0]) for description in cursor.description]
-            rows = cursor.fetchall()
-            full_rows = [_sql_row_to_mapping(columns, row) for row in rows]
-            row_count = len(full_rows)
-            rows_preview = full_rows[:result_limit]
-            execution_summary = {
-                "statementType": statement_type,
-                "previewRowCount": len(rows_preview),
-                "rowCount": row_count,
-                "message": f"SQL query returned {row_count} row(s).",
-            }
-            return (
-                {
-                    "hasResultSet": True,
-                    "columns": columns,
-                    "rowsPreview": rows_preview,
-                    "truncated": row_count > result_limit,
-                    "rowCount": row_count,
-                    "executionSummary": execution_summary,
-                },
-                {
-                    "hasResultSet": True,
-                    "columns": columns,
-                    "rows": full_rows,
-                    "rowCount": row_count,
-                    "executionSummary": execution_summary,
-                },
-            )
-
-        connection.commit()
-        affected_row_count = cursor.rowcount if cursor.rowcount >= 0 else None
-        return (
-            {
-                "hasResultSet": False,
-                "columns": [],
-                "rowsPreview": [],
-                "truncated": False,
-                "rowCount": None,
-                "executionSummary": {
-                    "statementType": statement_type,
-                    "affectedRowCount": affected_row_count,
-                    "message": "SQL statement executed without a result set.",
-                },
-            },
-            None,
-        )
 
 
 async def _persist_state_if_requested(
@@ -1020,76 +756,9 @@ async def _persist_artifact_if_requested(
     )
 
 
-async def _persist_sql_query_artifact_if_requested(
-    *,
-    persist_artifact: bool,
-    context: ToolInvocationContext,
-    host: ToolHostCapabilities,
-    output: Mapping[str, Any],
-    full_result: Mapping[str, Any] | None,
-) -> tuple[dict[str, Any] | None, tuple[ToolArtifactReference, ...]]:
-    if not persist_artifact or full_result is None or not bool(output.get("truncated")):
-        return None, ()
-
-    artifact_store = cast(ArtifactStore, host.require_capability("artifact_store"))
-    artifact = await artifact_store.save_text(
-        name=f"{context.tool_id.replace('.', '-')}-{context.invocation_id}.json",
-        text=json.dumps(
-            dict(full_result), ensure_ascii=False, indent=2, sort_keys=True
-        ),
-        content_type="application/json",
-        metadata={
-            "toolId": context.tool_id,
-            "invocationId": context.invocation_id,
-            "rowCount": full_result.get("rowCount"),
-        },
-    )
-    reference = ToolArtifactReference(
-        artifact_id=artifact.artifact_id,
-        name=artifact.name,
-        content_type=artifact.content_type,
-        uri=artifact.uri,
-        metadata=artifact.metadata,
-    )
-    return reference.to_dict(), (reference,)
-
-
-def _summarize_logs(logs: Sequence[TISLogEvent]) -> dict[str, Any]:
-    by_level: dict[str, int] = {}
-    by_layer: dict[str, int] = {}
-    by_source: dict[str, int] = {}
-    for log in logs:
-        by_level[log.level] = by_level.get(log.level, 0) + 1
-        by_layer[log.layer] = by_layer.get(log.layer, 0) + 1
-        by_source[log.source] = by_source.get(log.source, 0) + 1
-    return {
-        "total": len(logs),
-        "by_level": by_level,
-        "by_layer": by_layer,
-        "by_source": by_source,
-    }
-
-
-def _common_metadata(
-    *,
-    credential_source: str,
-    persist: bool,
-    db_path_source: str | None,
-) -> dict[str, Any]:
-    metadata: dict[str, Any] = {
-        "credentialSource": credential_source,
-        "persistenceRequested": persist,
-    }
-    if db_path_source is not None:
-        metadata["dbPathSource"] = db_path_source
-    return metadata
-
-
-def _detail_export_requested(arguments: Mapping[str, Any]) -> bool:
-    return (
-        _read_optional_text(arguments, "stateKey") is not None
-        or _read_optional_text(arguments, "artifactName") is not None
-    )
+# ---------------------------------------------------------------------------
+# Output persistence wrapper (shared across grades / gpa / selected-courses)
+# ---------------------------------------------------------------------------
 
 
 def _build_output_persistence(
@@ -1118,870 +787,14 @@ def _build_output_persistence(
     ).to_optional_contract_dict()
 
 
-def _personal_grades_output(result: TISGradeQueryResult) -> dict[str, Any]:
-    terms = sorted(
-        {
-            term.strip()
-            for term in (record.term for record in result.grade_records)
-            if isinstance(term, str) and term.strip() != ""
-        }
-    )
-    model = _TISPersonalGradesOutput(
-        sourceUrl=result.source_url,
-        totalRecords=result.total_records,
-        terms=terms,
-        counts={
-            "records": result.total_records,
-            "terms": len(terms),
-            "probes": len(result.probes),
-        },
-        resolvedRoleCode=result.resolved_role_code,
-        logSummary=_summarize_logs(result.logs),
-        persistence=(
-            cast(JsonObject, _jsonable(result.persistence))
-            if result.persistence is not None
-            else None
-        ),
-    )
-    exclude: set[str] = set()
-    if result.persistence is None:
-        exclude.add("persistence")
-    return model.to_contract_dict(exclude=exclude)
+# ---------------------------------------------------------------------------
+# Thin orchestration — import sub-domain implementations and re-export
+# ---------------------------------------------------------------------------
 
-
-def _personal_grades_persisted_output(result: TISGradeQueryResult) -> dict[str, Any]:
-    model = _TISPersonalGradesPersistedOutput(
-        sourceUrl=result.source_url,
-        totalRecords=result.total_records,
-        resolvedRoleCode=result.resolved_role_code,
-        homepage=cast(JsonObject, _jsonable(result.homepage)),
-        gradeRecords=cast(JsonArray, _jsonable(result.grade_records)),
-        probes=cast(JsonArray, _jsonable(result.probes)),
-        logSummary=_summarize_logs(result.logs),
-        logs=cast(JsonArray, _jsonable(result.logs)),
-        persistence=(
-            cast(JsonObject, _jsonable(result.persistence))
-            if result.persistence is not None
-            else None
-        ),
-    )
-    exclude: set[str] = set()
-    if result.persistence is None:
-        exclude.add("persistence")
-    return model.to_contract_dict(exclude=exclude)
-
-
-def _credit_gpa_output(result: TISCreditGPAQueryResult) -> dict[str, Any]:
-    model = _TISCreditGPAOutput(
-        sourceUrl=result.source_url,
-        pageUrl=result.page_url,
-        apiUrl=result.api_url,
-        resolvedRoleCode=result.resolved_role_code,
-        summary=cast(JsonObject, _jsonable(result.summary)),
-        counts={
-            "terms": len(result.term_records),
-            "years": len(result.year_records),
-            "probes": len(result.probes),
-        },
-        logSummary=_summarize_logs(result.logs),
-        persistence=(
-            cast(JsonObject, _jsonable(result.persistence))
-            if result.persistence is not None
-            else None
-        ),
-    )
-    exclude: set[str] = set()
-    if result.persistence is None:
-        exclude.add("persistence")
-    return model.to_contract_dict(exclude=exclude)
-
-
-def _credit_gpa_persisted_output(result: TISCreditGPAQueryResult) -> dict[str, Any]:
-    model = _TISCreditGPAPersistedOutput(
-        sourceUrl=result.source_url,
-        pageUrl=result.page_url,
-        apiUrl=result.api_url,
-        resolvedRoleCode=result.resolved_role_code,
-        homepage=cast(JsonObject, _jsonable(result.homepage)),
-        summary=cast(JsonObject, _jsonable(result.summary)),
-        termRecords=cast(JsonArray, _jsonable(result.term_records)),
-        yearRecords=cast(JsonArray, _jsonable(result.year_records)),
-        probes=cast(JsonArray, _jsonable(result.probes)),
-        logSummary=_summarize_logs(result.logs),
-        logs=cast(JsonArray, _jsonable(result.logs)),
-        persistence=(
-            cast(JsonObject, _jsonable(result.persistence))
-            if result.persistence is not None
-            else None
-        ),
-    )
-    exclude: set[str] = set()
-    if result.persistence is None:
-        exclude.add("persistence")
-    return model.to_contract_dict(exclude=exclude)
-
-
-def _selected_courses_output(result: TISSelectedCoursesQueryResult) -> dict[str, Any]:
-    model = _TISSelectedCoursesOutput(
-        sourceUrl=result.source_url,
-        pageUrl=result.page_url,
-        apiUrl=result.api_url,
-        semester=cast(JsonObject, _jsonable(result.semester)),
-        currentSemester=cast(JsonObject | None, _jsonable(result.current_semester)),
-        semesterSource=result.semester_source,
-        resolvedRoleCode=result.resolved_role_code,
-        resolvedPylx=result.resolved_pylx,
-        summary=cast(JsonObject, _jsonable(result.summary)),
-        courseCount=len(result.courses),
-        counts={
-            "courses": len(result.courses),
-            "probes": len(result.probes),
-        },
-        logSummary=_summarize_logs(result.logs),
-        persistence=(
-            cast(JsonObject, _jsonable(result.persistence))
-            if result.persistence is not None
-            else None
-        ),
-    )
-    exclude: set[str] = set()
-    if result.persistence is None:
-        exclude.add("persistence")
-    return model.to_contract_dict(exclude=exclude)
-
-
-def _selected_courses_persisted_output(
-    result: TISSelectedCoursesQueryResult,
-) -> dict[str, Any]:
-    model = _TISSelectedCoursesPersistedOutput(
-        sourceUrl=result.source_url,
-        pageUrl=result.page_url,
-        apiUrl=result.api_url,
-        semester=cast(JsonObject, _jsonable(result.semester)),
-        currentSemester=cast(JsonObject | None, _jsonable(result.current_semester)),
-        semesterSource=result.semester_source,
-        resolvedRoleCode=result.resolved_role_code,
-        resolvedPylx=result.resolved_pylx,
-        homepage=cast(JsonObject, _jsonable(result.homepage)),
-        summary=cast(JsonObject, _jsonable(result.summary)),
-        courseCount=len(result.courses),
-        courses=cast(JsonArray, _jsonable(result.courses)),
-        probes=cast(JsonArray, _jsonable(result.probes)),
-        logSummary=_summarize_logs(result.logs),
-        logs=cast(JsonArray, _jsonable(result.logs)),
-        persistence=(
-            cast(JsonObject, _jsonable(result.persistence))
-            if result.persistence is not None
-            else None
-        ),
-    )
-    exclude: set[str] = set()
-    if result.persistence is None:
-        exclude.add("persistence")
-    return model.to_contract_dict(exclude=exclude)
-
-
-_SQL_QUERY_METADATA = ToolMetadata(
-    tool_id="tis.sql.query",
-    display_name="TIS SQL Query",
-    description=(
-        "Execute raw SQL directly against the local TIS SQLite database for inspection and retrieval. "
-        "Unless explicitly allowed, avoid DDL, DML, PRAGMA, and ATTACH statements."
-    ),
-    input_schema=_schema(
-        properties={
-            "sql": {
-                "type": "string",
-                "minLength": 1,
-                "description": "SQL statement to execute against the local TIS SQLite database.",
-            },
-            "dbRelativePath": {
-                "type": "string",
-                "description": "Optional path, relative to the host database directory, of the SQLite database to query; omit to use the default TIS database.",
-            },
-            "resultLimit": {
-                "type": "integer",
-                "description": "Maximum number of rows returned inline in rowsPreview before truncation; defaults to 50.",
-            },
-            "persistArtifact": {
-                "type": "boolean",
-                "description": "When true and the inline preview is truncated, save the full SQL result as a JSON artifact.",
-            },
-        },
-        required=("sql",),
-    ),
-    output_schema=_schema(
-        properties={
-            "sql": {"type": "string"},
-            "database": {"type": "object"},
-            "usedDefaultDatabase": {"type": "boolean"},
-            "hasResultSet": {"type": "boolean"},
-            "columns": {"type": "array"},
-            "rowsPreview": {"type": "array"},
-            "truncated": {"type": "boolean"},
-            "rowCount": {"type": ["integer", "null"]},
-            "executionSummary": {"type": "object"},
-            "artifact": {"type": ["object", "null"]},
-        },
-        required=(
-            "sql",
-            "database",
-            "usedDefaultDatabase",
-            "hasResultSet",
-            "columns",
-            "rowsPreview",
-            "truncated",
-            "rowCount",
-            "executionSummary",
-            "artifact",
-        ),
-    ),
-    capability_requirements=(
-        HostCapabilityRequirement(
-            capability="database_resolver",
-            required=False,
-            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
-        ),
-        HostCapabilityRequirement(
-            capability="artifact_store",
-            required=False,
-            purpose="Persist full SQL query results as host-owned artifacts when inline preview is truncated.",
-        ),
-        HostCapabilityRequirement(
-            capability="event_sink",
-            required=False,
-            purpose="Emit tool lifecycle events to the host.",
-        ),
-    ),
-    tags=("tis", "sql", "query"),
-    annotations={"domain": "teaching_information_system", "facade": "tool-contract"},
-    idempotent=False,
-)
-
-
-_PERSONAL_GRADES_FETCH_METADATA = ToolMetadata(
-    tool_id="tis.personal_grades.fetch",
-    display_name="TIS Personal Grades Fetch",
-    description="Fetch personal grade records from TIS with optional persistence and host-managed state or artifact export.",
-    input_schema=_schema(
-        properties={
-            "username": {
-                "type": "string",
-                "description": "TIS/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
-            },
-            "password": {
-                "type": "string",
-                "description": "TIS/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
-            },
-            "usernameSecretName": {
-                "type": "string",
-                "description": "Host secret name that stores the TIS/CAS username. Usually omit it to use the default secret `sustech.username`.",
-            },
-            "passwordSecretName": {
-                "type": "string",
-                "description": "Host secret name that stores the TIS/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
-            },
-            "roleCode": {
-                "type": "string",
-                "description": "Optional TIS RoleCode header. Leave empty to let the tool derive the first available role from the homepage, falling back to `01` when needed.",
-            },
-            "persist": {
-                "type": "boolean",
-                "description": "When true, sync the fetched records into the local TIS SQLite database.",
-            },
-            "ownerKey": {
-                "type": "string",
-                "description": "Logical owner key used when persisting records. Defaults to the resolved username and requires `persist=true`.",
-            },
-            "dbRelativePath": {
-                "type": "string",
-                "description": "SQLite path relative to the host database directory for persistence. Requires `persist=true`; omit it to use the default TIS database path.",
-            },
-            "resetSchema": {
-                "type": "boolean",
-                "description": "When `persist=true`, recreate the target SQLite schema before syncing the fetched data.",
-            },
-            "stateKey": {
-                "type": "string",
-                "description": "If provided, save the result under this key in the host state store.",
-            },
-            "artifactName": {
-                "type": "string",
-                "description": "If provided, export the result JSON to the host artifact store using this artifact name.",
-            },
-        }
-    ),
-    output_schema=_schema(
-        properties={
-            "sourceUrl": {"type": "string"},
-            "totalRecords": {"type": "integer"},
-            "terms": {"type": "array"},
-            "counts": {"type": "object"},
-            "resolvedRoleCode": {"type": ["string", "null"]},
-            "logSummary": {"type": "object"},
-            "persistence": {"type": ["object", "null"]},
-        },
-        required=(
-            "sourceUrl",
-            "totalRecords",
-            "terms",
-            "counts",
-            "logSummary",
-        ),
-    ),
-    capability_requirements=(
-        HostCapabilityRequirement(
-            capability="secret_provider",
-            required=False,
-            purpose="Resolve TIS/CAS credentials from host-managed secrets.",
-        ),
-        HostCapabilityRequirement(
-            capability="database_resolver",
-            required=False,
-            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used for persistence.",
-        ),
-        HostCapabilityRequirement(
-            capability="state_store",
-            required=False,
-            purpose="Persist fetch summaries into host-managed state.",
-        ),
-        HostCapabilityRequirement(
-            capability="artifact_store",
-            required=False,
-            purpose="Persist fetch summaries as host-owned artifacts.",
-        ),
-        HostCapabilityRequirement(
-            capability="event_sink",
-            required=False,
-            purpose="Emit tool lifecycle events to the host.",
-        ),
-    ),
-    tags=("tis", "grades", "fetch"),
-    annotations={"domain": "teaching_information_system", "facade": "tool-contract"},
-    idempotent=False,
-)
-
-_CREDIT_GPA_FETCH_METADATA = ToolMetadata(
-    tool_id="tis.credit_gpa.fetch",
-    display_name="TIS Credit GPA Fetch",
-    description="Fetch credit and GPA summaries from TIS with optional persistence and host-managed state or artifact export.",
-    input_schema=_schema(
-        properties={
-            "username": {
-                "type": "string",
-                "description": "TIS/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
-            },
-            "password": {
-                "type": "string",
-                "description": "TIS/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
-            },
-            "usernameSecretName": {
-                "type": "string",
-                "description": "Host secret name that stores the TIS/CAS username. Usually omit it to use the default secret `sustech.username`.",
-            },
-            "passwordSecretName": {
-                "type": "string",
-                "description": "Host secret name that stores the TIS/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
-            },
-            "roleCode": {
-                "type": "string",
-                "description": "Optional TIS RoleCode header. Leave empty to let the tool derive the first available role from the homepage, falling back to `01` when needed.",
-            },
-            "persist": {
-                "type": "boolean",
-                "description": "When true, sync the fetched credit and GPA data into the local TIS SQLite database.",
-            },
-            "ownerKey": {
-                "type": "string",
-                "description": "Logical owner key used when persisting records. Defaults to the resolved username and requires `persist=true`.",
-            },
-            "dbRelativePath": {
-                "type": "string",
-                "description": "SQLite path relative to the host database directory for persistence. Requires `persist=true`; omit it to use the default TIS database path.",
-            },
-            "resetSchema": {
-                "type": "boolean",
-                "description": "When `persist=true`, recreate the target SQLite schema before syncing the fetched data.",
-            },
-            "stateKey": {
-                "type": "string",
-                "description": "If provided, save the result under this key in the host state store.",
-            },
-            "artifactName": {
-                "type": "string",
-                "description": "If provided, export the result JSON to the host artifact store using this artifact name.",
-            },
-        }
-    ),
-    output_schema=_schema(
-        properties={
-            "sourceUrl": {"type": "string"},
-            "pageUrl": {"type": "string"},
-            "apiUrl": {"type": "string"},
-            "resolvedRoleCode": {"type": ["string", "null"]},
-            "summary": {"type": "object"},
-            "counts": {"type": "object"},
-            "logSummary": {"type": "object"},
-            "persistence": {"type": ["object", "null"]},
-        },
-        required=(
-            "sourceUrl",
-            "pageUrl",
-            "apiUrl",
-            "summary",
-            "counts",
-            "logSummary",
-        ),
-    ),
-    capability_requirements=(
-        HostCapabilityRequirement(
-            capability="secret_provider",
-            required=False,
-            purpose="Resolve TIS/CAS credentials from host-managed secrets.",
-        ),
-        HostCapabilityRequirement(
-            capability="database_resolver",
-            required=False,
-            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used for persistence.",
-        ),
-        HostCapabilityRequirement(
-            capability="state_store",
-            required=False,
-            purpose="Persist fetch summaries into host-managed state.",
-        ),
-        HostCapabilityRequirement(
-            capability="artifact_store",
-            required=False,
-            purpose="Persist fetch summaries as host-owned artifacts.",
-        ),
-        HostCapabilityRequirement(
-            capability="event_sink",
-            required=False,
-            purpose="Emit tool lifecycle events to the host.",
-        ),
-    ),
-    tags=("tis", "credit-gpa", "fetch"),
-    annotations={"domain": "teaching_information_system", "facade": "tool-contract"},
-    idempotent=False,
-)
-
-_SELECTED_COURSES_FETCH_METADATA = ToolMetadata(
-    tool_id="tis.selected_courses.fetch",
-    display_name="TIS Selected Courses Fetch",
-    description="Fetch selected course records from TIS with optional semester selection, persistence, and host-managed state or artifact export.",
-    input_schema=_schema(
-        properties={
-            "username": {
-                "type": "string",
-                "description": "TIS/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
-            },
-            "password": {
-                "type": "string",
-                "description": "TIS/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
-            },
-            "usernameSecretName": {
-                "type": "string",
-                "description": "Host secret name that stores the TIS/CAS username. Usually omit it to use the default secret `sustech.username`.",
-            },
-            "passwordSecretName": {
-                "type": "string",
-                "description": "Host secret name that stores the TIS/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
-            },
-            "semester": {
-                "type": "string",
-                "description": "Semester to fetch. Leave empty for the current term; also accepts `当前学期`, `current`, `current_semester`, `2024-2025-1`, or `2024-20251`.",
-            },
-            "roleCode": {
-                "type": "string",
-                "description": "Optional TIS RoleCode header. Leave empty to let the tool derive the first available role from the homepage, falling back to `01` when needed.",
-            },
-            "pageNum": {
-                "type": "integer",
-                "description": "1-based page number passed to the selected-courses API. Defaults to 1.",
-            },
-            "pageSize": {
-                "type": "integer",
-                "description": "Page size passed to the selected-courses API. Defaults to 19.",
-            },
-            "persist": {
-                "type": "boolean",
-                "description": "When true, sync the fetched selected-course records into the local TIS SQLite database.",
-            },
-            "ownerKey": {
-                "type": "string",
-                "description": "Logical owner key used when persisting records. Defaults to the resolved username and requires `persist=true`.",
-            },
-            "dbRelativePath": {
-                "type": "string",
-                "description": "SQLite path relative to the host database directory for persistence. Requires `persist=true`; omit it to use the default TIS database path.",
-            },
-            "resetSchema": {
-                "type": "boolean",
-                "description": "When `persist=true`, recreate the target SQLite schema before syncing the fetched data.",
-            },
-            "stateKey": {
-                "type": "string",
-                "description": "If provided, save the result under this key in the host state store.",
-            },
-            "artifactName": {
-                "type": "string",
-                "description": "If provided, export the result JSON to the host artifact store using this artifact name.",
-            },
-        }
-    ),
-    output_schema=_schema(
-        properties={
-            "sourceUrl": {"type": "string"},
-            "pageUrl": {"type": "string"},
-            "apiUrl": {"type": "string"},
-            "semester": {"type": "object"},
-            "currentSemester": {"type": ["object", "null"]},
-            "semesterSource": {"type": ["string", "null"]},
-            "resolvedRoleCode": {"type": ["string", "null"]},
-            "resolvedPylx": {"type": ["string", "null"]},
-            "summary": {"type": "object"},
-            "courseCount": {"type": "integer"},
-            "counts": {"type": "object"},
-            "logSummary": {"type": "object"},
-            "persistence": {"type": ["object", "null"]},
-        },
-        required=(
-            "sourceUrl",
-            "pageUrl",
-            "apiUrl",
-            "semester",
-            "currentSemester",
-            "summary",
-            "courseCount",
-            "counts",
-            "logSummary",
-        ),
-    ),
-    capability_requirements=(
-        HostCapabilityRequirement(
-            capability="secret_provider",
-            required=False,
-            purpose="Resolve TIS/CAS credentials from host-managed secrets.",
-        ),
-        HostCapabilityRequirement(
-            capability="database_resolver",
-            required=False,
-            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used for persistence.",
-        ),
-        HostCapabilityRequirement(
-            capability="state_store",
-            required=False,
-            purpose="Persist fetch summaries into host-managed state.",
-        ),
-        HostCapabilityRequirement(
-            capability="artifact_store",
-            required=False,
-            purpose="Persist fetch summaries as host-owned artifacts.",
-        ),
-        HostCapabilityRequirement(
-            capability="event_sink",
-            required=False,
-            purpose="Emit tool lifecycle events to the host.",
-        ),
-    ),
-    tags=("tis", "selected-courses", "fetch"),
-    annotations={"domain": "teaching_information_system", "facade": "tool-contract"},
-    idempotent=False,
-)
-
-
-class TISPersonalGradesFetchTool(_TISFacadeToolBase):
-    _metadata = _PERSONAL_GRADES_FETCH_METADATA
-
-    async def _invoke_impl(
-        self,
-        *,
-        arguments: dict[str, Any],
-        context: ToolInvocationContext,
-        host: ToolHostCapabilities,
-    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        parsed_arguments = parse_tool_arguments(
-            _TISPersonalGradesFetchArguments,
-            arguments,
-        )
-        normalized_arguments = parsed_arguments.to_contract_dict(exclude_none=False)
-        credentials = await _resolve_credentials(
-            normalized_arguments,
-            host,
-            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
-            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
-        )
-        persist = parsed_arguments.persist
-        _validate_persistence_arguments(normalized_arguments, persist=persist)
-        db_manager, db_path_source = _resolve_db_manager(
-            normalized_arguments,
-            host,
-            persist=persist,
-        )
-        result = await asyncio.to_thread(
-            fetch_personal_grades_with_credentials,
-            credentials.username,
-            credentials.password,
-            role_code=parsed_arguments.roleCode,
-            persist=persist,
-            db_manager=db_manager,
-            owner_key=parsed_arguments.ownerKey,
-        )
-        output = _personal_grades_output(result)
-        persisted_output = (
-            _personal_grades_persisted_output(result)
-            if _detail_export_requested(normalized_arguments)
-            else output
-        )
-        metadata = _common_metadata(
-            credential_source=credentials.source,
-            persist=persist,
-            db_path_source=db_path_source,
-        )
-        state_payload = await _persist_state_if_requested(
-            namespace=_STATE_NAMESPACE_PERSONAL_GRADES,
-            arguments=normalized_arguments,
-            context=context,
-            host=host,
-            output=persisted_output,
-        )
-        metadata.update(state_payload)
-        artifacts = await _persist_artifact_if_requested(
-            arguments=normalized_arguments,
-            context=context,
-            host=host,
-            output=persisted_output,
-        )
-        persistence_summary = _build_output_persistence(
-            result_persistence=result.persistence,
-            state_payload=state_payload,
-            artifacts=artifacts,
-        )
-        if persistence_summary is not None:
-            output["persistence"] = persistence_summary
-        return output, artifacts, metadata
-
-
-class TISCreditGPAFetchTool(_TISFacadeToolBase):
-    _metadata = _CREDIT_GPA_FETCH_METADATA
-
-    async def _invoke_impl(
-        self,
-        *,
-        arguments: dict[str, Any],
-        context: ToolInvocationContext,
-        host: ToolHostCapabilities,
-    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        parsed_arguments = parse_tool_arguments(
-            _TISCreditGPAFetchArguments,
-            arguments,
-        )
-        normalized_arguments = parsed_arguments.to_contract_dict(exclude_none=False)
-        credentials = await _resolve_credentials(
-            normalized_arguments,
-            host,
-            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
-            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
-        )
-        persist = parsed_arguments.persist
-        _validate_persistence_arguments(normalized_arguments, persist=persist)
-        db_manager, db_path_source = _resolve_db_manager(
-            normalized_arguments,
-            host,
-            persist=persist,
-        )
-        result = await asyncio.to_thread(
-            fetch_credit_gpa_with_credentials,
-            credentials.username,
-            credentials.password,
-            role_code=parsed_arguments.roleCode,
-            persist=persist,
-            db_manager=db_manager,
-            owner_key=parsed_arguments.ownerKey,
-        )
-        output = _credit_gpa_output(result)
-        persisted_output = (
-            _credit_gpa_persisted_output(result)
-            if _detail_export_requested(normalized_arguments)
-            else output
-        )
-        metadata = _common_metadata(
-            credential_source=credentials.source,
-            persist=persist,
-            db_path_source=db_path_source,
-        )
-        state_payload = await _persist_state_if_requested(
-            namespace=_STATE_NAMESPACE_CREDIT_GPA,
-            arguments=normalized_arguments,
-            context=context,
-            host=host,
-            output=persisted_output,
-        )
-        metadata.update(state_payload)
-        artifacts = await _persist_artifact_if_requested(
-            arguments=normalized_arguments,
-            context=context,
-            host=host,
-            output=persisted_output,
-        )
-        persistence_summary = _build_output_persistence(
-            result_persistence=result.persistence,
-            state_payload=state_payload,
-            artifacts=artifacts,
-        )
-        if persistence_summary is not None:
-            output["persistence"] = persistence_summary
-        return output, artifacts, metadata
-
-
-class TISSelectedCoursesFetchTool(_TISFacadeToolBase):
-    _metadata = _SELECTED_COURSES_FETCH_METADATA
-
-    async def _invoke_impl(
-        self,
-        *,
-        arguments: dict[str, Any],
-        context: ToolInvocationContext,
-        host: ToolHostCapabilities,
-    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        parsed_arguments = parse_tool_arguments(
-            _TISSelectedCoursesFetchArguments,
-            arguments,
-        )
-        normalized_arguments = parsed_arguments.to_contract_dict(exclude_none=False)
-        credentials = await _resolve_credentials(
-            normalized_arguments,
-            host,
-            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
-            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
-        )
-        persist = parsed_arguments.persist
-        _validate_persistence_arguments(normalized_arguments, persist=persist)
-        db_manager, db_path_source = _resolve_db_manager(
-            normalized_arguments,
-            host,
-            persist=persist,
-        )
-        result = await asyncio.to_thread(
-            fetch_selected_courses_with_credentials,
-            credentials.username,
-            credentials.password,
-            semester=parsed_arguments.semester,
-            role_code=parsed_arguments.roleCode,
-            page_num=parsed_arguments.pageNum,
-            page_size=parsed_arguments.pageSize,
-            persist=persist,
-            db_manager=db_manager,
-            owner_key=parsed_arguments.ownerKey,
-        )
-        output = _selected_courses_output(result)
-        persisted_output = (
-            _selected_courses_persisted_output(result)
-            if _detail_export_requested(normalized_arguments)
-            else output
-        )
-        metadata = _common_metadata(
-            credential_source=credentials.source,
-            persist=persist,
-            db_path_source=db_path_source,
-        )
-        state_payload = await _persist_state_if_requested(
-            namespace=_STATE_NAMESPACE_SELECTED_COURSES,
-            arguments=normalized_arguments,
-            context=context,
-            host=host,
-            output=persisted_output,
-        )
-        metadata.update(state_payload)
-        artifacts = await _persist_artifact_if_requested(
-            arguments=normalized_arguments,
-            context=context,
-            host=host,
-            output=persisted_output,
-        )
-        persistence_summary = _build_output_persistence(
-            result_persistence=result.persistence,
-            state_payload=state_payload,
-            artifacts=artifacts,
-        )
-        if persistence_summary is not None:
-            output["persistence"] = persistence_summary
-        return output, artifacts, metadata
-
-
-class TISSQLQueryTool(_TISFacadeToolBase):
-    _metadata = _SQL_QUERY_METADATA
-
-    async def _invoke_impl(
-        self,
-        *,
-        arguments: dict[str, Any],
-        context: ToolInvocationContext,
-        host: ToolHostCapabilities,
-    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        parsed_arguments = parse_tool_arguments(
-            _TISSQLQueryArguments,
-            arguments,
-        )
-        normalized_arguments = parsed_arguments.to_contract_dict(exclude_none=False)
-        db_path, db_path_source, used_default_database = _resolve_sql_query_db_path(
-            normalized_arguments,
-            host,
-        )
-        query_output, full_result = await asyncio.to_thread(
-            _execute_sql_query,
-            sql=parsed_arguments.sql,
-            db_path=db_path,
-            result_limit=parsed_arguments.resultLimit,
-        )
-        database_summary = _SQLDatabaseSummary(
-            path=db_path.as_posix(),
-            source=db_path_source,
-        )
-        output_model = _TISSQLQueryOutput(
-            sql=parsed_arguments.sql,
-            database=database_summary,
-            usedDefaultDatabase=used_default_database,
-            hasResultSet=bool(query_output["hasResultSet"]),
-            columns=cast(list[str], query_output["columns"]),
-            rowsPreview=cast(JsonArray, query_output["rowsPreview"]),
-            truncated=bool(query_output["truncated"]),
-            rowCount=cast(int | None, query_output["rowCount"]),
-            executionSummary=cast(JsonObject, query_output["executionSummary"]),
-            artifact=None,
-        )
-        output = output_model.to_contract_dict()
-        artifact_payload: dict[str, Any] | None = None
-        if full_result is not None:
-            artifact_payload = _TISSQLQueryArtifactPayload(
-                sql=parsed_arguments.sql,
-                database=database_summary,
-                usedDefaultDatabase=used_default_database,
-                hasResultSet=bool(full_result["hasResultSet"]),
-                columns=cast(list[str], full_result["columns"]),
-                rows=cast(JsonArray, full_result["rows"]),
-                rowCount=cast(int, full_result["rowCount"]),
-                executionSummary=cast(JsonObject, full_result["executionSummary"]),
-            ).to_contract_dict()
-        artifact_output, artifacts = await _persist_sql_query_artifact_if_requested(
-            persist_artifact=parsed_arguments.persistArtifact,
-            context=context,
-            host=host,
-            output=output,
-            full_result=artifact_payload,
-        )
-        output = output_model.model_copy(
-            update={"artifact": artifact_output}
-        ).to_contract_dict()
-        return (
-            output,
-            artifacts,
-            {
-                "dbPathSource": db_path_source,
-                "persistArtifactRequested": parsed_arguments.persistArtifact,
-            },
-        )
-
+from .diagnostics import TISSQLQueryTool  # noqa: E402
+from .grades import TISPersonalGradesFetchTool  # noqa: E402
+from .gpa import TISCreditGPAFetchTool  # noqa: E402
+from .selected_courses import TISSelectedCoursesFetchTool  # noqa: E402
 
 TIS_FACADE_TOOLS: tuple[ToolContract, ...] = (
     TISPersonalGradesFetchTool(),
@@ -1993,7 +806,6 @@ TIS_FACADE_TOOLS: tuple[ToolContract, ...] = (
 
 def get_tis_tool_contracts() -> tuple[ToolContract, ...]:
     """Return stable TIS tool-contract facades for runtime or transport adapters."""
-
     return TIS_FACADE_TOOLS
 
 
@@ -2003,5 +815,8 @@ __all__ = [
     "TISPersonalGradesFetchTool",
     "TISSQLQueryTool",
     "TIS_FACADE_TOOLS",
+    "fetch_credit_gpa_with_credentials",
+    "fetch_personal_grades_with_credentials",
+    "fetch_selected_courses_with_credentials",
     "get_tis_tool_contracts",
 ]

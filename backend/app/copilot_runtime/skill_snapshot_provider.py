@@ -12,6 +12,10 @@ from typing import Any, Literal, TypeAlias, cast
 
 from pydantic import Field, field_validator, model_validator
 
+from app.copilot_runtime._tool_registry.constants import (
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_ID,
+)
 from app.copilot_runtime.pydantic_contracts import RuntimeContractModel
 
 SKILL_SNAPSHOT_VERSION = 1
@@ -26,8 +30,6 @@ SKILL_REGISTRY_MANAGED_SKILLS_DIR_NAME = "skills"
 SKILL_ENTRY_MAX_BYTES = 256 * 1024
 SKILL_RESOURCE_MAX_BYTES = 256 * 1024
 
-SKILL_ACTIVATE_TOOL_ID = "skill.activate"
-SKILL_READ_RESOURCE_TOOL_ID = "skill.read_resource"
 SKILL_ACTIVATE_FUNCTION_NAME = "skill_activate"
 SKILL_READ_RESOURCE_FUNCTION_NAME = "skill_read_resource"
 

@@ -1,109 +1,39 @@
-import type { RuntimeToolDirectoryEntry } from './thread-run-contract'
+import type {
+  CopilotToolPlatformGroup,
+  CopilotToolPresentation,
+  CopilotToolPresentationSource,
+} from './_presentation/types'
+import {
+  FALLBACK_GROUP_ORDER,
+  MCP_GROUP_ORDER,
+  STATIC_TOOL_PLATFORM_GROUPS,
+  TOOL_NAMESPACE_DESCRIPTIONS,
+  TOOL_PRESENTATION_OVERRIDES,
+} from './_presentation/constants'
+import {
+  buildIdBasedToolName,
+  containsCjk,
+  extractToolNamespace,
+  firstNonEmptyString,
+  formatExplicitPlatformTitle,
+  formatMcpRemoteToolLabel,
+  formatPlatformLabel,
+  isBuiltinToolKind,
+  normalizeGroupKey,
+  normalizeText,
+  readNestedIdentity,
+  readRecord,
+  readStringRecordField,
+  stripOpaqueMcpSuffix,
+  truncateText,
+} from './_presentation/helpers'
 
-export interface CopilotToolPresentationSource extends Pick<RuntimeToolDirectoryEntry,
-  'toolId'
-  | 'displayName'
-  | 'description'
-  | 'kind'
-  | 'displayNameZh'
-  | 'displayNameEn'
-  | 'descriptionZh'
-  | 'descriptionEn'
-  | 'group'
-> {}
-
-export interface CopilotToolPresentation {
-  name: string
-  description: string
-  searchKeywords: string[]
+// Re-export types for backward compatibility
+export type {
+  CopilotToolPlatformGroup,
+  CopilotToolPresentation,
+  CopilotToolPresentationSource,
 }
-
-export interface CopilotToolPlatformGroup {
-  key: string
-  title: string
-  order: number
-  sourceKind: 'builtin' | 'sustech-blackboard' | 'sustech-tis' | 'mcp-server' | 'fallback'
-  searchKeywords: string[]
-}
-
-const TOOL_PRESENTATION_OVERRIDES: Record<string, { name: string, description: string }> = {
-  'tool.remote-search': {
-    name: '联网搜索',
-    description: '搜索外部公开信息',
-  },
-}
-
-const TOOL_NAMESPACE_DESCRIPTIONS: Record<string, string> = {
-  blackboard: 'Blackboard 相关操作',
-  tis: 'TIS 相关操作',
-  tool: '内建辅助能力',
-}
-
-const TOOL_TOKEN_LABELS: Record<string, string> = {
-  blackboard: 'Blackboard',
-  tis: 'TIS',
-  tool: '工具',
-  file: '文件',
-  convert: '转换',
-  weather: '天气',
-  current: '当前',
-  remote: '远程',
-  search: '搜索',
-  sql: 'SQL',
-  query: '查询',
-  course: '课程',
-  courses: '课程',
-  catalog: '目录',
-  calendar: '日历',
-  refresh: '刷新',
-  snapshot: '快照',
-  sync: '同步',
-  resources: '资源',
-  resource: '资源',
-  skill: '技能',
-  activate: '激活',
-  read: '读取',
-  personal: '个人',
-  grades: '成绩',
-  grade: '成绩',
-  credit: '学分',
-  gpa: '绩点',
-  selected: '已选',
-  fetch: '获取',
-}
-
-const STATIC_TOOL_PLATFORM_GROUPS: Record<string, Omit<CopilotToolPlatformGroup, 'searchKeywords'>> = {
-  tool: {
-    key: 'builtin',
-    title: 'Candue 内建',
-    order: 0,
-    sourceKind: 'builtin',
-  },
-  blackboard: {
-    key: 'sustech-blackboard',
-    title: 'SUSTech Blackboard',
-    order: 10,
-    sourceKind: 'sustech-blackboard',
-  },
-  tis: {
-    key: 'sustech-tis',
-    title: 'SUSTech TIS',
-    order: 20,
-    sourceKind: 'sustech-tis',
-  },
-}
-
-const PLATFORM_TOKEN_LABELS: Record<string, string> = {
-  api: 'API',
-  fs: 'FS',
-  mcp: 'MCP',
-  sql: 'SQL',
-  sustech: 'SUSTech',
-  tis: 'TIS',
-}
-
-const MCP_GROUP_ORDER = 100
-const FALLBACK_GROUP_ORDER = 200
 
 export function resolveCopilotToolPresentation(tool: CopilotToolPresentationSource): CopilotToolPresentation {
   const override = TOOL_PRESENTATION_OVERRIDES[tool.toolId]
@@ -183,6 +113,8 @@ export function resolveCopilotToolPlatformGroup(tool: CopilotToolPresentationSou
     sourceKind: 'fallback',
   }, ['其他工具', tool.kind])
 }
+
+// ---- Private orchestration helpers ----
 
 function resolveCanonicalName(tool: CopilotToolPresentationSource): string | null {
   return normalizeText(tool.displayNameZh)
@@ -392,210 +324,4 @@ function resolveMcpRemoteToolLabelFromToolId(toolId: string): string | null {
   }
 
   return formatMcpRemoteToolLabel(remoteSegments.join(' '))
-}
-
-function stripOpaqueMcpSuffix(segments: string[]): string[] {
-  if (segments.length === 0) {
-    return segments
-  }
-
-  const lastSegment = segments[segments.length - 1]?.trim() ?? ''
-  if (/^[0-9a-f]{6,}$/iu.test(lastSegment)) {
-    return segments.slice(0, -1)
-  }
-
-  return segments
-}
-
-function formatMcpRemoteToolLabel(value: string | null | undefined): string | null {
-  const normalizedValue = normalizeText(value)
-  if (normalizedValue === null) {
-    return null
-  }
-
-  return formatPlatformLabel(normalizedValue)
-}
-
-function readNestedIdentity(value: unknown): {
-  key: string | null
-  title: string | null
-} | null {
-  const record = readRecord(value)
-  if (record === null) {
-    return null
-  }
-
-  const key = firstNonEmptyString([
-    readStringRecordField(record, 'id'),
-    readStringRecordField(record, 'key'),
-    readStringRecordField(record, 'serverId'),
-    readStringRecordField(record, 'providerId'),
-  ])
-  const title = firstNonEmptyString([
-    readStringRecordField(record, 'title'),
-    readStringRecordField(record, 'name'),
-    readStringRecordField(record, 'label'),
-    readStringRecordField(record, 'serverName'),
-    readStringRecordField(record, 'providerName'),
-  ])
-
-  if (key === null && title === null) {
-    return null
-  }
-
-  return {
-    key,
-    title,
-  }
-}
-
-function readRecord(value: unknown): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return {}
-  }
-
-  return value as Record<string, unknown>
-}
-
-function readStringRecordField(record: Record<string, unknown>, key: string): string | null {
-  const value = record[key]
-  return typeof value === 'string' ? normalizeText(value) : null
-}
-
-function firstNonEmptyString(values: Array<string | null | undefined>): string | null {
-  for (const value of values) {
-    const normalizedValue = normalizeText(value)
-    if (normalizedValue !== null) {
-      return normalizedValue
-    }
-  }
-
-  return null
-}
-
-function buildIdBasedToolName(toolId: string): string | null {
-  const normalizedToolId = normalizeText(toolId)
-  if (normalizedToolId === null) {
-    return null
-  }
-
-  const tokens = normalizedToolId
-    .split(/[.:/_-]+/)
-    .map((token) => token.trim().toLowerCase())
-    .filter((token) => token !== '')
-  if (tokens.length === 0) {
-    return null
-  }
-
-  const translatedTokens = tokens
-    .map((token) => TOOL_TOKEN_LABELS[token])
-    .filter((token): token is string => token !== undefined)
-  if (translatedTokens.length === 0) {
-    return null
-  }
-
-  if (tokens[0] === 'blackboard') {
-    const coreTokens = translatedTokens.filter((token) => token !== 'Blackboard').slice(-3)
-    return coreTokens.length > 0 ? truncateText(coreTokens.join(''), 18) : 'Blackboard 工具'
-  }
-
-  if (tokens[0] === 'tis') {
-    const coreTokens = translatedTokens.filter((token) => token !== 'TIS').slice(-3)
-    return coreTokens.length > 0 ? truncateText(coreTokens.join(''), 18) : 'TIS 工具'
-  }
-
-  const coreTokens = translatedTokens.filter((token) => token !== '工具').slice(-3)
-  if (coreTokens.length > 0) {
-    return truncateText(coreTokens.join(''), 18)
-  }
-
-  return truncateText(translatedTokens.join(''), 18)
-}
-
-function extractToolNamespace(toolId: string): string | null {
-  const normalizedToolId = normalizeText(toolId)
-  if (normalizedToolId === null) {
-    return null
-  }
-
-  const [namespace] = normalizedToolId.split(/[.:/]+/)
-  return namespace ? namespace.toLowerCase() : null
-}
-
-function isBuiltinToolKind(kind: string): boolean {
-  return normalizeText(kind)?.toLowerCase() === 'builtin'
-}
-
-function formatExplicitPlatformTitle(value: string | null | undefined): string | null {
-  const normalizedValue = normalizeText(value)
-  if (normalizedValue === null) {
-    return null
-  }
-
-  if (containsCjk(normalizedValue) || /\s/u.test(normalizedValue) || /[A-Z]/u.test(normalizedValue)) {
-    return normalizedValue
-  }
-
-  return formatPlatformLabel(normalizedValue)
-}
-
-function formatPlatformLabel(value: string): string {
-  const normalizedValue = normalizeText(value)
-  if (normalizedValue === null) {
-    return '其他工具'
-  }
-
-  const tokens = normalizedValue
-    .split(/[.:/_-]+/)
-    .map((token) => token.trim())
-    .filter((token) => token !== '')
-  if (tokens.length === 0) {
-    return normalizedValue
-  }
-
-  return tokens.map((token) => formatPlatformToken(token)).join(' ')
-}
-
-function formatPlatformToken(token: string): string {
-  const lowerToken = token.toLowerCase()
-  if (PLATFORM_TOKEN_LABELS[lowerToken] !== undefined) {
-    return PLATFORM_TOKEN_LABELS[lowerToken]
-  }
-
-  if (/^[A-Z0-9]+$/u.test(token)) {
-    return token
-  }
-
-  return `${token.slice(0, 1).toUpperCase()}${token.slice(1)}`
-}
-
-function normalizeGroupKey(value: string | null | undefined): string | null {
-  const normalizedValue = normalizeText(value)
-  if (normalizedValue === null) {
-    return null
-  }
-
-  const normalizedKey = normalizedValue
-    .toLowerCase()
-    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-
-  return normalizedKey === '' ? null : normalizedKey
-}
-
-function normalizeText(value: string | null | undefined): string | null {
-  const normalizedValue = value?.trim()
-  return normalizedValue ? normalizedValue : null
-}
-
-function containsCjk(value: string): boolean {
-  return /[\u4e00-\u9fff]/u.test(value)
-}
-
-function truncateText(value: string, maxLength: number): string {
-  if (value.length <= maxLength) {
-    return value
-  }
-
-  return `${value.slice(0, maxLength - 1).trimEnd()}…`
 }
