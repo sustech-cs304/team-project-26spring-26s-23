@@ -26,6 +26,11 @@ from app.copilot_runtime.skill_snapshot_provider import (
 )
 
 from .constants import (
+    COMMAND_RUN_PARAMETERS_JSON_SCHEMA,
+    COMMAND_RUN_TOOL_DESCRIPTION,
+    COMMAND_RUN_TOOL_DISPLAY_NAME,
+    COMMAND_RUN_TOOL_ID,
+    COMMAND_RUN_TOOL_PROMPT,
     DEFAULT_TOOLSET_DESCRIPTION,
     DEFAULT_TOOLSET_LABEL,
     DEFAULT_TOOLSET_NAME,
@@ -84,6 +89,7 @@ from .constants import (
     WEATHER_CURRENT_TOOL_PROMPT,
 )
 from .executors import (
+    execute_command_run_tool,
     execute_default_file_convert_tool,
     execute_default_weather_tool,
     execute_request_user_form_tool,
@@ -284,6 +290,20 @@ def build_default_tool_registry(
                         presentation=TOOL_PRESENTATION_BY_ID[WEATHER_CURRENT_TOOL_ID],
                     ),
                     execute=execute_default_weather_tool,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=COMMAND_RUN_TOOL_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=COMMAND_RUN_TOOL_DISPLAY_NAME,
+                        description=COMMAND_RUN_TOOL_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=COMMAND_RUN_TOOL_PROMPT,
+                        presentation=TOOL_PRESENTATION_BY_ID[COMMAND_RUN_TOOL_ID],
+                    ),
+                    execute=execute_command_run_tool,
+                    function_name="command_run",
+                    parameters_json_schema=COMMAND_RUN_PARAMETERS_JSON_SCHEMA,
                 ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(

@@ -281,6 +281,7 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(
         "tool.fs.switch_root",
         FILE_CONVERT_TOOL_ID,
         "tool.weather-current",
+        "tool.command-run",
         REQUEST_USER_FORM_TOOL_ID,
         SKILL_ACTIVATE_TOOL_ID,
         SKILL_READ_RESOURCE_TOOL_ID,

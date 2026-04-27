@@ -40,6 +40,17 @@ WEATHER_CURRENT_TOOL_PROMPT = (
     "Use this tool to retrieve a simple current weather summary for a location."
 )
 
+COMMAND_RUN_TOOL_ID = "tool.command-run"
+COMMAND_RUN_TOOL_DISPLAY_NAME = "Command Run"
+COMMAND_RUN_TOOL_DESCRIPTION = (
+    "Run a command on the backend host and return stdout/stderr plus exit code."
+)
+COMMAND_RUN_TOOL_PROMPT = (
+    "Use this tool to run a single command on the backend host. "
+    "Pass a program and an args array; do not embed shell operators like |, >, or && inside args. "
+    "Prefer safe, read-only commands when possible, and request user approval before executing potentially destructive actions."
+)
+
 REQUEST_USER_FORM_TOOL_ID = "tool.request-user-form"
 REQUEST_USER_FORM_TOOL_DISPLAY_NAME = "Request User Form"
 REQUEST_USER_FORM_TOOL_DESCRIPTION = (
@@ -153,6 +164,11 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "返回指定地点的占位当前天气结果。",
             "prompt": "使用此工具获取某个地点的简要当前天气摘要。",
         },
+        COMMAND_RUN_TOOL_ID: {
+            "displayName": "命令执行",
+            "description": "在后端运行一条命令并返回 stdout/stderr 以及退出码。",
+            "prompt": "使用此工具在后端运行一条命令。请提供 program 和 args 数组；不要把 |、>、&& 等 shell 操作符塞进 args。尽量优先使用只读/查询类命令；涉及删除、覆盖、安装、网络访问等高风险操作必须先征求用户明确批准。",
+        },
         REQUEST_USER_FORM_TOOL_ID: {
             "displayName": "请求用户表单",
             "description": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
@@ -214,6 +230,11 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
             "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
             "prompt": WEATHER_CURRENT_TOOL_PROMPT,
+        },
+        COMMAND_RUN_TOOL_ID: {
+            "displayName": COMMAND_RUN_TOOL_DISPLAY_NAME,
+            "description": COMMAND_RUN_TOOL_DESCRIPTION,
+            "prompt": COMMAND_RUN_TOOL_PROMPT,
         },
         REQUEST_USER_FORM_TOOL_ID: {
             "displayName": REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
@@ -301,6 +322,41 @@ SKILL_READ_RESOURCE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["skill_id", "path"],
+}
+
+COMMAND_RUN_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "program": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Executable name or absolute/relative path available on the backend host.",
+        },
+        "args": {
+            "type": "array",
+            "description": "Command arguments passed as a string array. Do not include shell operators like |, >, or &&.",
+            "items": {"type": "string"},
+            "default": [],
+        },
+        "cwd": {
+            "type": "string",
+            "description": "Optional working directory for the command on the backend host.",
+        },
+        "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 30,
+            "description": "Maximum time in seconds to wait for the command before terminating it.",
+        },
+        "maxOutputChars": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20000,
+            "description": "Maximum stdout/stderr characters to retain before truncation.",
+        },
+    },
+    "required": ["program"],
 }
 
 REQUEST_USER_FORM_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {

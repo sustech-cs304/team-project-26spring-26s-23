@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from ._tool_registry.builders import build_default_tool_registry
 from ._tool_registry.constants import (
+    COMMAND_RUN_TOOL_DESCRIPTION,
+    COMMAND_RUN_TOOL_DISPLAY_NAME,
+    COMMAND_RUN_TOOL_ID,
     DEFAULT_TOOLSET_NAME,
     DEFAULT_WEATHER_LOCATION,
     FILE_CONVERT_TOOL_DESCRIPTION,
@@ -58,6 +61,9 @@ __all__ = [
     "DEFAULT_TOOLSET_NAME",
     "DEFAULT_WEATHER_LOCATION",
     "ExecutableTool",
+    "COMMAND_RUN_TOOL_DESCRIPTION",
+    "COMMAND_RUN_TOOL_DISPLAY_NAME",
+    "COMMAND_RUN_TOOL_ID",
     "FILE_CONVERT_TOOL_DESCRIPTION",
     "FILE_CONVERT_TOOL_DISPLAY_NAME",
     "FILE_CONVERT_TOOL_ID",

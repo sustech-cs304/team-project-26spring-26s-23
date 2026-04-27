@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import locale
 import random
 from collections.abc import Mapping
 from pathlib import Path
@@ -90,6 +92,129 @@ async def execute_request_user_form_tool(
     return {
         "summary": description or f"请填写表单：{form_request['title']}",
         "formRequest": form_request,
+    }
+
+
+async def execute_command_run_tool(
+    arguments: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    payload = dict(arguments or {})
+    raw_program = payload.get("program")
+    if not isinstance(raw_program, str) or raw_program.strip() == "":
+        raise ValueError("program must be a non-empty string")
+    program = raw_program.strip()
+
+    raw_args = payload.get("args", [])
+    if raw_args is None:
+        raw_args = []
+    if not isinstance(raw_args, list):
+        raise ValueError("args must be an array of strings")
+    args: list[str] = []
+    for value in raw_args:
+        if not isinstance(value, str):
+            raise ValueError("args must be an array of strings")
+        args.append(value)
+
+    raw_cwd = payload.get("cwd")
+    cwd = raw_cwd.strip() if isinstance(raw_cwd, str) and raw_cwd.strip() != "" else None
+
+    timeout_seconds = payload.get("timeoutSeconds")
+    if timeout_seconds is None:
+        resolved_timeout_seconds = 30
+    elif isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
+        raise ValueError("timeoutSeconds must be a positive integer")
+    else:
+        resolved_timeout_seconds = int(timeout_seconds)
+    if resolved_timeout_seconds <= 0:
+        raise ValueError("timeoutSeconds must be a positive integer")
+    if resolved_timeout_seconds > 300:
+        resolved_timeout_seconds = 300
+
+    max_output_chars = payload.get("maxOutputChars")
+    if max_output_chars is None:
+        resolved_max_output_chars = 20000
+    elif isinstance(max_output_chars, bool) or not isinstance(max_output_chars, (int, float)):
+        raise ValueError("maxOutputChars must be a positive integer")
+    else:
+        resolved_max_output_chars = int(max_output_chars)
+    if resolved_max_output_chars <= 0:
+        raise ValueError("maxOutputChars must be a positive integer")
+    if resolved_max_output_chars > 200000:
+        resolved_max_output_chars = 200000
+
+    max_output_bytes = resolved_max_output_chars * 4
+    proc = await asyncio.create_subprocess_exec(
+        program,
+        *args,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    async def read_stream_limited(
+        stream: asyncio.StreamReader | None,
+        *,
+        limit_bytes: int,
+    ) -> tuple[bytes, bool]:
+        if stream is None:
+            return b"", False
+        buffer = bytearray()
+        truncated = False
+        while True:
+            chunk = await stream.read(4096)
+            if not chunk:
+                break
+            remaining = limit_bytes - len(buffer)
+            if remaining > 0:
+                buffer.extend(chunk[:remaining])
+                if len(chunk) > remaining:
+                    truncated = True
+            else:
+                truncated = True
+        return bytes(buffer), truncated
+
+    stdout_task = asyncio.create_task(
+        read_stream_limited(proc.stdout, limit_bytes=max_output_bytes)
+    )
+    stderr_task = asyncio.create_task(
+        read_stream_limited(proc.stderr, limit_bytes=max_output_bytes)
+    )
+
+    timed_out = False
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=resolved_timeout_seconds)
+    except asyncio.TimeoutError:
+        timed_out = True
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=2)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+
+    stdout_bytes, stdout_truncated = await stdout_task
+    stderr_bytes, stderr_truncated = await stderr_task
+
+    def decode_output(data: bytes) -> str:
+        if not data:
+            return ""
+        try:
+            return data.decode("utf-8", errors="replace")
+        except Exception:
+            encoding = locale.getpreferredencoding(False) or "utf-8"
+            return data.decode(encoding, errors="replace")
+
+    return {
+        "program": program,
+        "args": args,
+        "cwd": cwd,
+        "timeoutSeconds": resolved_timeout_seconds,
+        "timedOut": timed_out,
+        "exitCode": proc.returncode,
+        "stdout": decode_output(stdout_bytes),
+        "stderr": decode_output(stderr_bytes),
+        "truncated": bool(stdout_truncated or stderr_truncated),
+        "maxOutputChars": resolved_max_output_chars,
     }
 
 
