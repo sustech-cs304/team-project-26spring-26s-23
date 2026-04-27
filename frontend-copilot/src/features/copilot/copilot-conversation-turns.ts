@@ -305,22 +305,10 @@ function resolveToolTurnInsertIndex(
 
 function cloneRuntimeResolvedModelRoute(route: RuntimeResolvedModelRoute): RuntimeResolvedModelRoute {
   return {
+    ...route,
     routeRef: {
-      routeKind: route.routeRef.routeKind,
-      profileId: route.routeRef.profileId,
-      modelId: route.routeRef.modelId,
+      ...route.routeRef,
     },
-    providerProfileId: route.providerProfileId,
-    provider: route.provider,
-    providerId: route.providerId,
-    adapterId: route.adapterId,
-    runtimeStatus: route.runtimeStatus,
-    catalogRevision: route.catalogRevision,
-    endpointFamily: route.endpointFamily,
-    endpointType: route.endpointType,
-    baseUrl: route.baseUrl,
-    modelId: route.modelId,
-    authKind: route.authKind,
   }
 }
 
