@@ -22,7 +22,7 @@ from .models.chat import RunModel, ThreadModel
 from .repositories.chat import PersistenceRepositories, run_lifecycle_transaction
 
 if TYPE_CHECKING:
-    from .models.chat import RunEventModel
+    pass
 
 
 @dataclass(frozen=True, slots=True)

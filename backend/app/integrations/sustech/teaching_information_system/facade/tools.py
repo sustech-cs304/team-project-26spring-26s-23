@@ -14,7 +14,6 @@ remain in this file.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
@@ -29,13 +28,6 @@ from app.integrations.sustech.facade_contract_models import (
     ResolvedCredentialContract,
     SustechToolArgumentsModel,
     SustechToolBoundaryModel,
-    parse_tool_arguments,
-)
-
-from app.integrations.sustech.teaching_information_system.api.dto import (
-    TISCreditGPAQueryResult,
-    TISGradeQueryResult,
-    TISSelectedCoursesQueryResult,
 )
 from app.integrations.sustech.teaching_information_system.data import TISDatabaseManager
 from app.integrations.sustech.teaching_information_system.provider.use_cases import (
@@ -43,12 +35,10 @@ from app.integrations.sustech.teaching_information_system.provider.use_cases imp
     fetch_personal_grades_with_credentials,
     fetch_selected_courses_with_credentials,
 )
-from app.integrations.sustech.teaching_information_system.shared import TISLogEvent
 from app.tooling import (
     ArtifactStore,
     DatabaseResolver,
     HostCapabilityOperationError,
-    HostCapabilityRequirement,
     HostEvent,
     MissingHostCapabilityError,
     NormalizedToolError,
@@ -825,5 +815,8 @@ __all__ = [
     "TISPersonalGradesFetchTool",
     "TISSQLQueryTool",
     "TIS_FACADE_TOOLS",
+    "fetch_credit_gpa_with_credentials",
+    "fetch_personal_grades_with_credentials",
+    "fetch_selected_courses_with_credentials",
     "get_tis_tool_contracts",
 ]

@@ -35,7 +35,7 @@ from .query_dtos import (
     PersistedThreadRenameResponse,
     PersistedTimelineItemDTO,
 )
-from .repositories import PersistenceRepositories, run_lifecycle_transaction
+from .repositories import run_lifecycle_transaction
 
 if TYPE_CHECKING:
     from ..agent_registry import AgentRegistry

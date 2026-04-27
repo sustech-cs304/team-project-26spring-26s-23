@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from typing import Any, cast
 
 from app.integrations.sustech.facade_contract_models import parse_tool_arguments

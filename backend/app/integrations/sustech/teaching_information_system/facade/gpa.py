@@ -3,22 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from typing import Any, cast
 
-from pydantic import field_validator
 
 from app.integrations.sustech.facade_contract_models import parse_tool_arguments
-from app.integrations.sustech.teaching_information_system.api.dto import TISCreditGPAQueryResult
-from app.integrations.sustech.teaching_information_system.data import TISDatabaseManager
-from app.integrations.sustech.teaching_information_system.shared import TISLogEvent
+from app.integrations.sustech.teaching_information_system.api.dto import (
+    TISCreditGPAQueryResult,
+)
 from app.tooling import (
     HostCapabilityRequirement,
     ToolArtifactReference,
     ToolHostCapabilities,
     ToolInvocationContext,
     ToolMetadata,
-    ToolSchema,
 )
 
 from . import tools

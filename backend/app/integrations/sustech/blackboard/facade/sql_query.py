@@ -361,7 +361,9 @@ class BlackboardSQLQueryTool(tools._BlackboardFacadeToolBase):
                 columns=cast(list[str], full_result["columns"]),
                 rows=cast(tools.JsonArray, full_result["rows"]),
                 rowCount=cast(int, full_result["rowCount"]),
-                executionSummary=cast(tools.JsonObject, full_result["executionSummary"]),
+                executionSummary=cast(
+                    tools.JsonObject, full_result["executionSummary"]
+                ),
             ).to_contract_dict()
         artifact_output, artifacts = await _persist_sql_query_artifact_if_requested(
             persist_artifact=parsed_arguments.persistArtifact,

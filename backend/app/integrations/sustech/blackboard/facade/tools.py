@@ -28,14 +28,18 @@ from app.integrations.sustech.facade_contract_models import (
     ResolvedCredentialContract,
     SustechToolArgumentsModel,
     SustechToolBoundaryModel,
-    parse_tool_arguments,
 )
 from app.integrations.sustech.blackboard.data.db_manager import DatabaseManager
+from app.integrations.sustech.blackboard.provider.use_cases import (
+    refresh_calendar_ics_subscription,
+    run_blackboard_course_resources_sync,
+    run_blackboard_snapshot_sync,
+    search_course_catalog_with_credentials,
+)
 from app.tooling import (
     ArtifactStore,
     DatabaseResolver,
     HostCapabilityOperationError,
-    HostCapabilityRequirement,
     HostEvent,
     MissingHostCapabilityError,
     NormalizedToolError,
@@ -69,6 +73,7 @@ _DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"  # nosec B105
 # Shared exception
 # ---------------------------------------------------------------------------
 
+
 class BlackboardAuthenticationError(RuntimeError):
     """Raised when Blackboard credentials cannot be resolved or authenticated."""
 
@@ -76,6 +81,7 @@ class BlackboardAuthenticationError(RuntimeError):
 # ---------------------------------------------------------------------------
 # Base tool class (shared decorator / lifecycle)
 # ---------------------------------------------------------------------------
+
 
 class _BlackboardFacadeToolBase:
     _metadata: ToolMetadata
@@ -152,6 +158,7 @@ class _BlackboardFacadeToolBase:
 # ---------------------------------------------------------------------------
 # Shared argument readers / normalizers
 # ---------------------------------------------------------------------------
+
 
 def _normalize_arguments(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     if arguments is None:
@@ -370,6 +377,7 @@ def _normalize_required_string_list_value(
 # Shared argument models
 # ---------------------------------------------------------------------------
 
+
 class _BlackboardToolArguments(SustechToolArgumentsModel):
     username: str | None = None
     password: str | None = None
@@ -400,6 +408,7 @@ class _BlackboardToolArguments(SustechToolArgumentsModel):
 # Shared output models
 # ---------------------------------------------------------------------------
 
+
 class _SyncStatsSummary(SustechToolBoundaryModel):
     inserted: int
     updated: int
@@ -429,6 +438,7 @@ class _PersistenceSummary(SustechToolBoundaryModel):
 # ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
+
 
 def _message_or_fallback(error: Exception, fallback: str) -> str:
     message = str(error).strip()
@@ -599,6 +609,7 @@ def _map_exception(
 # Event emission
 # ---------------------------------------------------------------------------
 
+
 def _emit_event(
     host: ToolHostCapabilities,
     *,
@@ -626,6 +637,7 @@ def _emit_event(
 # ---------------------------------------------------------------------------
 # Credential resolution
 # ---------------------------------------------------------------------------
+
 
 async def _resolve_credentials(
     arguments: Mapping[str, Any],
@@ -686,6 +698,7 @@ def _normalize_secret(value: Any) -> str | None:
 # Database path resolution
 # ---------------------------------------------------------------------------
 
+
 def _reject_explicit_db_path(arguments: Mapping[str, Any]) -> None:
     if _read_optional_text(arguments, "dbPath") is not None:
         raise ValueError(
@@ -718,6 +731,7 @@ def _db_path_source(arguments: Mapping[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # Shared persistence helpers
 # ---------------------------------------------------------------------------
+
 
 async def _persist_state_if_requested(
     *,
@@ -782,6 +796,7 @@ async def _persist_artifact_if_requested(
 # Shared sync helpers
 # ---------------------------------------------------------------------------
 
+
 def _compact_sync_stats(stats: Mapping[str, Any]) -> dict[str, int]:
     return {
         "inserted": int(stats.get("inserted", 0)),
@@ -833,12 +848,6 @@ def _build_output_persistence_summary(
 # monkeypatch them through the facade module entry point.
 # ---------------------------------------------------------------------------
 
-from app.integrations.sustech.blackboard.provider.use_cases import (  # noqa: E402
-    refresh_calendar_ics_subscription,
-    run_blackboard_course_resources_sync,
-    run_blackboard_snapshot_sync,
-    search_course_catalog_with_credentials,
-)
 
 # ---------------------------------------------------------------------------
 # Thin orchestration — import sub-domain implementations and re-export
@@ -871,5 +880,9 @@ __all__ = [
     "BlackboardCourseResourcesSyncTool",
     "BlackboardSnapshotSyncTool",
     "BlackboardSQLQueryTool",
+    "refresh_calendar_ics_subscription",
+    "run_blackboard_course_resources_sync",
+    "run_blackboard_snapshot_sync",
+    "search_course_catalog_with_credentials",
     "get_blackboard_tool_contracts",
 ]

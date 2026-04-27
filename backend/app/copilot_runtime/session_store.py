@@ -489,7 +489,9 @@ def _resolve_awaiting_user_input_assistant_text(run: RuntimeRunRecord) -> str | 
         if summary is not None:
             return summary
         title = _normalize_projected_text(
-            form_request.get("title") if isinstance(form_request.get("title"), str) else None
+            form_request.get("title")
+            if isinstance(form_request.get("title"), str)
+            else None
         )
         if title is not None:
             return f"请填写表单：{title}"

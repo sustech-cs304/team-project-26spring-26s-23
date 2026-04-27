@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any, ClassVar, Self, cast
+from typing import Any, ClassVar, Self
 
 from pydantic import (
     BaseModel,

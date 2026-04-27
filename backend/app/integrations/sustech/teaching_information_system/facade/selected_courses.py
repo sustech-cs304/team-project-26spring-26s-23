@@ -3,22 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from typing import Any, cast
 
 from pydantic import field_validator
 
 from app.integrations.sustech.facade_contract_models import parse_tool_arguments
-from app.integrations.sustech.teaching_information_system.api.dto import TISSelectedCoursesQueryResult
-from app.integrations.sustech.teaching_information_system.data import TISDatabaseManager
-from app.integrations.sustech.teaching_information_system.shared import TISLogEvent
+from app.integrations.sustech.teaching_information_system.api.dto import (
+    TISSelectedCoursesQueryResult,
+)
 from app.tooling import (
     HostCapabilityRequirement,
     ToolArtifactReference,
     ToolHostCapabilities,
     ToolInvocationContext,
     ToolMetadata,
-    ToolSchema,
 )
 
 from . import tools
@@ -107,7 +105,9 @@ def _selected_courses_output(result: TISSelectedCoursesQueryResult) -> dict[str,
         pageUrl=result.page_url,
         apiUrl=result.api_url,
         semester=cast(tools.JsonObject, tools._jsonable(result.semester)),
-        currentSemester=cast(tools.JsonObject | None, tools._jsonable(result.current_semester)),
+        currentSemester=cast(
+            tools.JsonObject | None, tools._jsonable(result.current_semester)
+        ),
         semesterSource=result.semester_source,
         resolvedRoleCode=result.resolved_role_code,
         resolvedPylx=result.resolved_pylx,
@@ -138,7 +138,9 @@ def _selected_courses_persisted_output(
         pageUrl=result.page_url,
         apiUrl=result.api_url,
         semester=cast(tools.JsonObject, tools._jsonable(result.semester)),
-        currentSemester=cast(tools.JsonObject | None, tools._jsonable(result.current_semester)),
+        currentSemester=cast(
+            tools.JsonObject | None, tools._jsonable(result.current_semester)
+        ),
         semesterSource=result.semester_source,
         resolvedRoleCode=result.resolved_role_code,
         resolvedPylx=result.resolved_pylx,

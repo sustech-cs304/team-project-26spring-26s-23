@@ -19,6 +19,13 @@ from .pydantic_contracts import (
 from .session_store import RuntimeRunRecord, RuntimeThreadRecord
 from .tool_permissions import RuntimeToolPermissionResolver
 from .tool_registry import ToolRegistry, build_default_tool_registry
+from ._contracts.thinking import (
+    _build_reasoning_suppression_basis,
+    _build_runtime_thinking_value_from_legacy,
+    _coerce_mapping_dict,
+    _coerce_runtime_thinking_selection,
+    _resolve_policy_thinking_selection,
+)
 
 AGENTS_LIST_METHOD = "agents/list"
 THREAD_CREATE_METHOD = "thread/create"
@@ -895,22 +902,6 @@ def _build_runtime_tool_catalogs(
         )
         for toolset_name in tool_registry.build_view()
     }
-
-
-from ._contracts.thinking import (
-    _build_reasoning_suppression_basis,
-    _build_runtime_thinking_value_from_legacy,
-    _coerce_mapping_dict,
-    _coerce_runtime_budget_thinking_value,
-    _coerce_runtime_code_thinking_value,
-    _coerce_runtime_fixed_thinking_value,
-    _coerce_runtime_thinking_selection,
-    _coerce_runtime_thinking_value,
-    _extract_runtime_thinking_value_fields,
-    _normalize_optional_runtime_thinking_label,
-    _resolve_policy_thinking_level_intent,
-    _resolve_policy_thinking_selection,
-)
 
 
 def _jsonable(value: Any) -> Any:

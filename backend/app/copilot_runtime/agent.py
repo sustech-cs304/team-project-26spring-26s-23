@@ -1158,7 +1158,9 @@ class PydanticAIAgentExecutor:
                 "displayName": display_name,
                 "enabledToolIds": list(enabled_tool_ids),
                 "fileSystemState": self._build_bound_tool_file_system_state(ctx),
-                "skillRuntime": self._build_bound_tool_skill_runtime_state(ctx, tool_id),
+                "skillRuntime": self._build_bound_tool_skill_runtime_state(
+                    ctx, tool_id
+                ),
             },
         )
 
@@ -1314,7 +1316,11 @@ class PydanticAIAgentExecutor:
             else summarize_tool_result(result)
         )
         result_payload = _sanitize_tool_result_for_display(tool_id, result)
-        form_request = result.get("formRequest") if isinstance(result.get("formRequest"), Mapping) else None
+        form_request = (
+            result.get("formRequest")
+            if isinstance(result.get("formRequest"), Mapping)
+            else None
+        )
         completed_title = self._build_completed_title(
             tool_id=tool_id,
             display_name=display_name,

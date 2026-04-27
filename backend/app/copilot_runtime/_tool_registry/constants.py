@@ -66,9 +66,7 @@ SKILL_ACTIVATE_TOOL_PROMPT = (
 
 SKILL_READ_RESOURCE_TOOL_ID = "tool.skill-read-resource"
 SKILL_READ_RESOURCE_TOOL_DISPLAY_NAME = "Skill Read Resource"
-SKILL_READ_RESOURCE_TOOL_DESCRIPTION = (
-    "Read a UTF-8 text resource listed by an enabled Skill without requiring prior activation."
-)
+SKILL_READ_RESOURCE_TOOL_DESCRIPTION = "Read a UTF-8 text resource listed by an enabled Skill without requiring prior activation."
 SKILL_READ_RESOURCE_TOOL_PROMPT = (
     "Use this tool when you need a relative resource path listed in a Skill's resource summaries. "
     "Pass the skill id or display name plus the listed resource path."
@@ -78,51 +76,35 @@ FILE_TOOL_READ_DISPLAY_NAME = "File Read"
 FILE_TOOL_READ_DESCRIPTION = (
     "Read UTF-8 text files from the workspace with line-based pagination."
 )
-FILE_TOOL_READ_PROMPT = (
-    "Use this tool to inspect workspace text files in paginated line ranges before making edits."
-)
+FILE_TOOL_READ_PROMPT = "Use this tool to inspect workspace text files in paginated line ranges before making edits."
 FILE_TOOL_WRITE_DISPLAY_NAME = "File Write"
-FILE_TOOL_WRITE_DESCRIPTION = (
-    "Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics."
-)
-FILE_TOOL_WRITE_PROMPT = (
-    "Use this tool to create or replace a workspace text file when you know the full target content."
-)
+FILE_TOOL_WRITE_DESCRIPTION = "Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics."
+FILE_TOOL_WRITE_PROMPT = "Use this tool to create or replace a workspace text file when you know the full target content."
 FILE_TOOL_EDIT_DISPLAY_NAME = "File Edit"
 FILE_TOOL_EDIT_DESCRIPTION = (
     "Edit UTF-8 text files in the workspace using exact replacement semantics."
 )
-FILE_TOOL_EDIT_PROMPT = (
-    "Use this tool to replace exact text in a workspace UTF-8 file when you know the current snippet to match."
-)
+FILE_TOOL_EDIT_PROMPT = "Use this tool to replace exact text in a workspace UTF-8 file when you know the current snippet to match."
 FILE_TOOL_GLOB_DISPLAY_NAME = "File Glob"
 FILE_TOOL_GLOB_DESCRIPTION = (
     "Discover workspace files and directories by glob pattern without reading contents."
 )
-FILE_TOOL_GLOB_PROMPT = (
-    "Use this tool to discover workspace files or folders by glob pattern before reading them."
-)
+FILE_TOOL_GLOB_PROMPT = "Use this tool to discover workspace files or folders by glob pattern before reading them."
 FILE_TOOL_GREP_DISPLAY_NAME = "File Grep"
 FILE_TOOL_GREP_DESCRIPTION = (
     "Search workspace text files by literal or regex pattern with bounded line context."
 )
-FILE_TOOL_GREP_PROMPT = (
-    "Use this tool to search workspace text files and inspect nearby lines before reading or editing."
-)
+FILE_TOOL_GREP_PROMPT = "Use this tool to search workspace text files and inspect nearby lines before reading or editing."
 FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME = "Notebook Edit"
 FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION = (
     "Edit workspace notebooks with transactional cell operations."
 )
-FILE_TOOL_NOTEBOOK_EDIT_PROMPT = (
-    "Use this tool to replace, insert, or delete notebook cells transactionally after inspecting notebook structure."
-)
+FILE_TOOL_NOTEBOOK_EDIT_PROMPT = "Use this tool to replace, insert, or delete notebook cells transactionally after inspecting notebook structure."
 FILE_TOOL_SWITCH_ROOT_DISPLAY_NAME = "File Switch Root"
 FILE_TOOL_SWITCH_ROOT_DESCRIPTION = (
     "Validate and resolve a new default file root directory for later tool calls."
 )
-FILE_TOOL_SWITCH_ROOT_PROMPT = (
-    "Use this tool to validate a directory as the next default root for subsequent file tool calls."
-)
+FILE_TOOL_SWITCH_ROOT_PROMPT = "Use this tool to validate a directory as the next default root for subsequent file tool calls."
 
 BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
     "zh-CN": {

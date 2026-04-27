@@ -118,11 +118,7 @@ def build_runtime_user_prompt(message: RuntimeMessagePayload) -> str:
         sort_keys=True,
         default=str,
     )
-    return (
-        f"{content}\n\n"
-        "[structured_payload]\n"
-        f"{serialized_payload}"
-    )
+    return f"{content}\n\n[structured_payload]\n{serialized_payload}"
 
 
 __all__ = [

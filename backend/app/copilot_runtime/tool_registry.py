@@ -54,8 +54,6 @@ from ._tool_registry.models import (
 )
 
 
-
-
 __all__ = [
     "DEFAULT_TOOLSET_NAME",
     "DEFAULT_WEATHER_LOCATION",
