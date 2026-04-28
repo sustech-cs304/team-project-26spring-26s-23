@@ -49,6 +49,7 @@ from .middlewares import (
 from .routes.diagnostics import build_diagnostics_router
 from .routes.debug_logs import build_debug_log_router
 from .routes.history import build_history_router
+from .routes.calendar import build_calendar_router
 
 _DESKTOP_LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
 _RUNTIME_LOGGER = logging.getLogger("uvicorn.error")
@@ -247,6 +248,7 @@ def create_app(
     app.include_router(build_diagnostics_router())
     app.include_router(build_debug_log_router())
     app.include_router(build_history_router())
+    app.include_router(build_calendar_router())
     return app
 
 
