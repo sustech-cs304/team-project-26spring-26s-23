@@ -1,4 +1,3 @@
-import type { ReactElement, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeMathjax from 'rehype-mathjax/svg'
@@ -6,13 +5,17 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import type { Components } from 'react-markdown'
 
-interface MarkdownCodeElementProps {
-  className?: string
-  children?: ReactNode
+interface RehypeNode {
+  tagName?: string
+  properties?: {
+    className?: unknown
+  }
+  children?: unknown[]
 }
 
 const assistantMarkdownRemarkPlugins = [remarkGfm, remarkMath]
 const assistantMarkdownRehypePlugins = [rehypeHighlight, rehypeMathjax]
+const blockCodeNodes = new WeakSet<object>()
 
 const assistantMarkdownComponents: Components = {
   hr({ node: _node, className, ...props }) {
@@ -23,9 +26,9 @@ const assistantMarkdownComponents: Components = {
       />
     )
   },
-  pre({ node: _node, className, children, ...props }) {
-    const codeChild = findCodeElement(children)
-    const languageLabel = resolveCodeLanguageLabel(codeChild?.props.className)
+  pre({ node, className, children, ...props }) {
+    markBlockCodeNodes(node)
+    const languageLabel = resolveCodeLanguageLabel(readCodeClassNameFromPreNode(node))
 
     return (
       <div className="copilot-chat__code-block" data-language={languageLabel}>
@@ -41,14 +44,16 @@ const assistantMarkdownComponents: Components = {
       </div>
     )
   },
-  code({ node: _node, className, children, ...props }) {
-    const isBlockCode = className?.includes('language-') === true || className?.includes('hljs') === true
+  code({ node, className, children, ...props }) {
+    const isBlockCode = isTrackedBlockCodeNode(node)
+      || className?.includes('language-') === true
+      || className?.includes('hljs') === true
 
     if (!isBlockCode) {
       return (
         <code
           {...props}
-          className={joinClassNames('copilot-chat__inline-code', className)}
+          className={joinClassNames('copilot-chat__inline-code', stripInlineCodeClass(className))}
         >
           {children}
         </code>
@@ -58,7 +63,7 @@ const assistantMarkdownComponents: Components = {
     return (
       <code
         {...props}
-        className={joinClassNames('hljs', className)}
+        className={normalizeBlockCodeClassName(className)}
       >
         {children}
       </code>
@@ -80,27 +85,38 @@ export function renderAssistantMarkdownMessageBody(content: string) {
   )
 }
 
-function findCodeElement(children: ReactNode): ReactElement<MarkdownCodeElementProps> | null {
-  if (Array.isArray(children)) {
-    for (const child of children) {
-      const resolvedChild = findCodeElement(child)
-      if (resolvedChild !== null) {
-        return resolvedChild
-      }
+function markBlockCodeNodes(node: unknown) {
+  if (!isRehypeNode(node) || node.tagName !== 'pre' || !Array.isArray(node.children)) {
+    return
+  }
+
+  for (const child of node.children) {
+    if (!isRehypeNode(child) || child.tagName !== 'code' || !isWeakSetCompatible(child)) {
+      continue
     }
 
-    return null
+    blockCodeNodes.add(child)
   }
-
-  if (!isCodeElement(children)) {
-    return null
-  }
-
-  return children
 }
 
-function isCodeElement(value: ReactNode): value is ReactElement<MarkdownCodeElementProps> {
-  return typeof value === 'object' && value !== null && 'props' in value
+function isTrackedBlockCodeNode(node: unknown): boolean {
+  return isWeakSetCompatible(node) && blockCodeNodes.has(node)
+}
+
+function readCodeClassNameFromPreNode(node: unknown): string | undefined {
+  if (!isRehypeNode(node) || !Array.isArray(node.children)) {
+    return undefined
+  }
+
+  for (const child of node.children) {
+    if (!isRehypeNode(child) || child.tagName !== 'code') {
+      continue
+    }
+
+    return readClassName(child.properties?.className)
+  }
+
+  return undefined
 }
 
 function resolveCodeLanguageLabel(className?: string): string {
@@ -139,6 +155,38 @@ function resolveCodeLanguageLabel(className?: string): string {
     default:
       return languageId === '' ? 'Text' : `${languageId.slice(0, 1).toUpperCase()}${languageId.slice(1)}`
   }
+}
+
+function normalizeBlockCodeClassName(className?: string): string {
+  const tokens = stripInlineCodeClass(className)
+    .split(/\s+/)
+    .filter((value) => value !== '' && value !== 'hljs')
+
+  return ['hljs', ...tokens].join(' ')
+}
+
+function stripInlineCodeClass(className?: string): string {
+  return className
+    ?.split(/\s+/)
+    .filter((value) => value !== '' && value !== 'copilot-chat__inline-code')
+    .join(' ')
+    ?? ''
+}
+
+function isRehypeNode(value: unknown): value is RehypeNode {
+  return typeof value === 'object' && value !== null
+}
+
+function isWeakSetCompatible(value: unknown): value is object {
+  return typeof value === 'object' && value !== null
+}
+
+function readClassName(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string').join(' ')
+  }
+
+  return typeof value === 'string' ? value : undefined
 }
 
 function joinClassNames(...values: Array<string | null | undefined | false>): string {

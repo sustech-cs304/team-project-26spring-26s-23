@@ -903,6 +903,40 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('copilot-chat__message-text--markdown')
   })
 
+  it('renders fenced code blocks without a declared language as block code instead of inline code', () => {
+    const modelCatalog = createTestModelCatalog()
+    const conversation: CopilotMessageListItem[] = [{
+      id: 'assistant:run-markdown-no-language:1',
+      kind: 'assistant',
+      runId: 'run-markdown-no-language',
+      sequence: 1,
+      title: '助手响应',
+      content: '```\nconst answer = 42\n```',
+      status: 'completed',
+      resolvedModelId: 'openai/gpt-4.1',
+      resolvedModelRoute: createRuntimeModelRoute({
+        providerProfileId: 'provider-openai',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://api.example.com/v1',
+          modelId: 'openai/gpt-4.1',
+        },
+      }),
+      resolvedToolIds: [],
+      requestOptions: {},
+    }]
+
+    const html = renderToStaticMarkup(
+      <CopilotMessageList conversation={conversation} models={modelCatalog.models} />,
+    )
+
+    expect(html).toContain('copilot-chat__code-block')
+    expect(html).toContain('copilot-chat__code-block-language">Text</span>')
+    expect(html).toContain('<pre class="copilot-chat__code-block-pre"><code class="hljs">const answer = 42\n</code></pre>')
+    expect(html).not.toContain('copilot-chat__inline-code">const answer = 42')
+  })
+
   it('keeps user content as plain text and does not render markdown syntax as html', () => {
     const html = renderToStaticMarkup(
       <CopilotMessageList
