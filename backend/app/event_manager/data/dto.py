@@ -70,3 +70,19 @@ class CourseEvent(EventDTO):
                 filter(lambda week: week not in self.week_canceled, all_weeks)
             )
         return all_weeks
+
+
+@dataclass(slots=True)
+class UnifiedCalendarEventDTO(EventDTO):
+    """统一日历事件的 DTO 类。"""
+    title: str
+    start_time: datetime
+    source: str
+    
+    id: int | None = None
+    description: str | None = None
+    end_time: datetime | None = None
+    is_all_day: bool = False
+    source_id: str | None = None
+    status: str = "not_started"
+    metadata_payload: dict[str, Any] | None = None
