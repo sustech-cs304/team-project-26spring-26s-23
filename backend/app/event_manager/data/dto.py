@@ -73,7 +73,7 @@ class CourseEvent(EventDTO):
 
 
 @dataclass(slots=True)
-class UnifiedCalendarEventDTO(EventDTO):
+class UnifiedCalendarEvent(EventDTO):
     """统一日历事件的 DTO 类。"""
     title: str
     start_time: datetime

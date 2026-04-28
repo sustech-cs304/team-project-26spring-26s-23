@@ -9,8 +9,8 @@ from app.event_manager.data.db_manager import (
     DatabaseManager,
     resolve_default_event_manager_db_path,
 )
-from app.event_manager.data.dto import CourseEvent
-from app.event_manager.data.models import CourseEventModel
+from app.event_manager.data.dto import CourseEvent, UnifiedCalendarEvent
+from app.event_manager.data.models import CourseEventModel, UnifiedCalendarEventModel
 
 
 def _make_course_event(**overrides) -> CourseEvent:
@@ -298,3 +298,40 @@ def test_delete_course_event_delete_group_soft_deletes_whole_group(tmp_path: Pat
     assert db_manager.delete_course_event(event1.id, delete_group=True)
     assert db_manager.get_all_course_events() == []
     assert not db_manager.delete_course_event(event1.id, delete_group=True)
+
+
+def test_unified_calendar_event_dto_serialization():
+    from datetime import UTC
+    
+    # 1. Test DTO creation and to_dict
+    now = datetime.now(UTC).replace(tzinfo=None)
+    dto = UnifiedCalendarEvent(
+        title="Group Meeting",
+        start_time=now,
+        source="custom",
+        source_id="team_01",
+        status="in_progress",
+        metadata_payload={"room": "302"}
+    )
+    
+    serialized = dto.to_dict()
+    assert serialized["title"] == "Group Meeting"
+    assert serialized["source"] == "custom"
+    assert serialized["status"] == "in_progress"
+    assert serialized["metadata_payload"] == {"room": "302"}
+    
+    # 2. Test from_obj with matching model
+    model_obj = UnifiedCalendarEventModel(
+        title="Group Meeting",
+        start_time=now,
+        source="custom",
+        source_id="team_01",
+        status="in_progress",
+        metadata_payload={"room": "302"}
+    )
+    
+    restored_dto = UnifiedCalendarEvent.from_obj(model_obj)
+    assert restored_dto.title == "Group Meeting"
+    assert restored_dto.source == "custom"
+    assert restored_dto.metadata_payload == {"room": "302"}
+

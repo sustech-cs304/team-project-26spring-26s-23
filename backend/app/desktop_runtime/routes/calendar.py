@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.event_manager.data.dto import UnifiedCalendarEventDTO
+from app.event_manager.data.dto import UnifiedCalendarEvent
 from ..config import DesktopRuntimeConfig
 from ..security import require_local_token
 
@@ -28,7 +28,7 @@ def build_calendar_router() -> APIRouter:
         now = _utc_now()
         
         mock_events = [
-            UnifiedCalendarEventDTO(
+            UnifiedCalendarEvent(
                 id=1,
                 title="DSAA Assignment 6",
                 description="Implement red-black tree operations.",
@@ -40,7 +40,7 @@ def build_calendar_router() -> APIRouter:
                 status="not_started",
                 metadata_payload={"link": "https://bb.cuhk.edu.cn/dsaa/ass6"}
             ),
-            UnifiedCalendarEventDTO(
+            UnifiedCalendarEvent(
                 id=2,
                 title="SWE Group Meeting",
                 description="Sync up on project progress.",
@@ -52,7 +52,7 @@ def build_calendar_router() -> APIRouter:
                 status="in_progress",
                 metadata_payload=None
             ),
-            UnifiedCalendarEventDTO(
+            UnifiedCalendarEvent(
                 id=3,
                 title="Database Systems Lab",
                 description="SQL Query Optimization Lab",

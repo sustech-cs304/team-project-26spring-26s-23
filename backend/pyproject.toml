@@ -58,3 +58,8 @@ quote-style = "double"
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "venv"]
 skips = ["B101"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
