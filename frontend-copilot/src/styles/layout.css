@@ -1,8 +1,8 @@
 .workbench-shell {
   display: grid;
   grid-template-columns: 60px minmax(0, 1fr);
-  height: 100vh;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: var(--app-bg);
   color: var(--text-primary);
   overflow: hidden;
@@ -35,13 +35,13 @@
 .workbench-viewport {
   position: relative;
   min-height: 0;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
 }
 
 .workbench-viewport > .startup-screen,
 .workbench-view > .startup-screen {
-  min-height: 100vh;
+  min-height: 100%;
 }
 
 .workbench-view {
@@ -168,8 +168,8 @@
 
 .workspace-stage {
   display: grid;
-  height: 100vh;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 100%;
   overflow: hidden;
 }
 

@@ -3,6 +3,7 @@ import type { CopilotRuntimeLoadResult } from './copilot-runtime'
 import type { DesktopNotificationRequest } from './desktop-notification'
 import type { MainProcessServices } from './main-services'
 import { registerRendererIpcHandlers } from './renderer-ipc-registration'
+import type { DesktopWindowState } from './window-controls'
 
 type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
 
@@ -10,6 +11,10 @@ export interface MainProcessRuntimeIpcHandlers {
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   notifyDesktopNotification: (request: DesktopNotificationRequest) => Promise<void>
+  loadDesktopWindowState: () => Promise<DesktopWindowState>
+  minimizeDesktopWindow: () => Promise<void>
+  toggleMaximizeDesktopWindow: () => Promise<DesktopWindowState>
+  closeDesktopWindow: () => Promise<void>
   notifyBootstrapWindowReady: () => Promise<void>
 }
 
@@ -19,7 +24,17 @@ export function registerMainProcessIpcHandlers(
     services: MainProcessServices
   } & MainProcessRuntimeIpcHandlers,
 ): void {
-  const { services, loadCopilotRuntime, retryCopilotRuntime, notifyDesktopNotification, notifyBootstrapWindowReady } = options
+  const {
+    services,
+    loadCopilotRuntime,
+    retryCopilotRuntime,
+    notifyDesktopNotification,
+    loadDesktopWindowState,
+    minimizeDesktopWindow,
+    toggleMaximizeDesktopWindow,
+    closeDesktopWindow,
+    notifyBootstrapWindowReady,
+  } = options
 
   registerRendererIpcHandlers(ipcMain, {
     loadConfigCenterPublicSnapshot: services.loadConfigCenterPublicSnapshot,
@@ -75,6 +90,10 @@ export function registerMainProcessIpcHandlers(
     revealEntryInFolder: services.revealEntryInFolder,
     copyTextToClipboard: services.copyTextToClipboard,
     notifyDesktopNotification,
+    loadDesktopWindowState,
+    minimizeDesktopWindow,
+    toggleMaximizeDesktopWindow,
+    closeDesktopWindow,
     notifyBootstrapWindowReady,
   })
 }

@@ -38,6 +38,7 @@ vi.mock('node:fs', () => ({
 }))
 
 interface BrowserWindowConstructorOptions {
+  frame?: boolean
   webPreferences?: {
     preload?: string
     contextIsolation?: boolean
@@ -79,6 +80,7 @@ describe('createMainWindow', () => {
     expect(electronMocks.targetWindow.loadURL).toHaveBeenCalledWith('http://127.0.0.1:5173')
 
     const constructorOptions = electronMocks.constructorOptions[0] as BrowserWindowConstructorOptions
+    expect(constructorOptions.frame).toBe(false)
     expect(constructorOptions.webPreferences).toEqual({
       preload: 'C:/candue/preload.mjs',
       contextIsolation: true,

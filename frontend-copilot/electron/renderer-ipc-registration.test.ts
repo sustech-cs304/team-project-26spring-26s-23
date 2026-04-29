@@ -37,6 +37,12 @@ import {
 import { TOOL_CATALOG_LOAD_CHANNEL } from './tool-catalog/ipc'
 import { DESKTOP_NOTIFICATION_SHOW_CHANNEL } from './desktop-notification'
 import {
+  DESKTOP_WINDOW_CLOSE_CHANNEL,
+  DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+  DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+  DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+} from './window-controls'
+import {
   FILE_MANAGER_COPY_ENTRIES_CHANNEL,
   FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
   FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
@@ -107,6 +113,10 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_RUNTIME_RETRY_CHANNEL,
       DESKTOP_NOTIFICATION_SHOW_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
+      DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+      DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+      DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+      DESKTOP_WINDOW_CLOSE_CHANNEL,
       FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
       FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
       FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
@@ -163,6 +173,10 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_RUNTIME_RETRY_CHANNEL,
       DESKTOP_NOTIFICATION_SHOW_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
+      DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+      DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+      DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+      DESKTOP_WINDOW_CLOSE_CHANNEL,
       FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
       FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
       FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
@@ -212,6 +226,10 @@ describe('registerRendererIpcHandlers', () => {
     const retryRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_RETRY_CHANNEL)
     const notifyDesktopNotificationHandler = getRegisteredHandler(registeredHandlers, DESKTOP_NOTIFICATION_SHOW_CHANNEL)
     const notifyBootstrapWindowReadyHandler = getRegisteredHandler(registeredHandlers, BOOTSTRAP_WINDOW_READY_CHANNEL)
+    const loadDesktopWindowStateHandler = getRegisteredHandler(registeredHandlers, DESKTOP_WINDOW_STATE_LOAD_CHANNEL)
+    const minimizeDesktopWindowHandler = getRegisteredHandler(registeredHandlers, DESKTOP_WINDOW_MINIMIZE_CHANNEL)
+    const toggleMaximizeDesktopWindowHandler = getRegisteredHandler(registeredHandlers, DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL)
+    const closeDesktopWindowHandler = getRegisteredHandler(registeredHandlers, DESKTOP_WINDOW_CLOSE_CHANNEL)
 
     await expect(loadSnapshotHandler()).resolves.toEqual(await handlers.loadConfigCenterPublicSnapshot())
     await expect(applyPatchHandler(undefined, {
@@ -303,6 +321,12 @@ describe('registerRendererIpcHandlers', () => {
     })
     await expect(notifyBootstrapWindowReadyHandler()).resolves.toBeUndefined()
     expect(handlers.notifyBootstrapWindowReady).toHaveBeenCalledOnce()
+    await expect(loadDesktopWindowStateHandler()).resolves.toEqual(await handlers.loadDesktopWindowState())
+    await expect(minimizeDesktopWindowHandler()).resolves.toBeUndefined()
+    expect(handlers.minimizeDesktopWindow).toHaveBeenCalledOnce()
+    await expect(toggleMaximizeDesktopWindowHandler()).resolves.toEqual(await handlers.toggleMaximizeDesktopWindow())
+    await expect(closeDesktopWindowHandler()).resolves.toBeUndefined()
+    expect(handlers.closeDesktopWindow).toHaveBeenCalledOnce()
 
     const watchDirectoriesHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL)
     const unwatchDirectoriesHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL)
@@ -360,6 +384,10 @@ describe('registerRendererIpcHandlers', () => {
       loadCopilotRuntime: rendererHandlers.loadCopilotRuntime,
       retryCopilotRuntime: rendererHandlers.retryCopilotRuntime,
       notifyDesktopNotification: rendererHandlers.notifyDesktopNotification,
+      loadDesktopWindowState: rendererHandlers.loadDesktopWindowState,
+      minimizeDesktopWindow: rendererHandlers.minimizeDesktopWindow,
+      toggleMaximizeDesktopWindow: rendererHandlers.toggleMaximizeDesktopWindow,
+      closeDesktopWindow: rendererHandlers.closeDesktopWindow,
       notifyBootstrapWindowReady: rendererHandlers.notifyBootstrapWindowReady,
     })
 

@@ -885,16 +885,16 @@ const workbenchShellCopy: Record<WorkbenchLanguage, {
   reloadPage: string
 }> = {
   'zh-CN': {
-    railAriaLabel: '主图标栏',
-    workspaceLoadFailureDescription: '当前工作区模块未能完成懒加载或渲染，但工作台外壳仍保持可解释失败态，不会退化为纯白屏。',
-    retryCurrentWorkspace: '重试当前工作区',
-    switchBackToAssistant: '切换回助手工作区',
+    railAriaLabel: '导航栏',
+    workspaceLoadFailureDescription: '当前页面加载失败，请尝试切换到其他页面或重试。',
+    retryCurrentWorkspace: '重试当前页面',
+    switchBackToAssistant: '切换回助手页面',
     reloadPage: '重新加载页面',
   },
   'en-US': {
-    railAriaLabel: 'Primary workspace rail',
-    workspaceLoadFailureDescription: 'The current workspace module failed to lazy-load or render, but the workbench shell stays visible with an explainable failure state instead of a blank screen.',
-    retryCurrentWorkspace: 'Retry current workspace',
+    railAriaLabel: 'Navigation bar',
+    workspaceLoadFailureDescription: 'The current page failed to load. Please try switching to another page or retry.',
+    retryCurrentWorkspace: 'Retry current page',
     switchBackToAssistant: 'Switch back to Assistant',
     reloadPage: 'Reload page',
   },
@@ -904,45 +904,45 @@ const workspaceMetaByLanguage: Record<WorkbenchLanguage, Record<WorkspaceView, {
   'zh-CN': {
     assistant: {
       label: '助手',
-      loadingDescription: '助手工作区已从工作台壳拆分为独立懒加载模块；当前仅加载默认首屏所需代码。',
+      loadingDescription: '正在加载助手页面…',
     },
     settings: {
       label: '设置',
-      loadingDescription: '设置工作区已从入口壳层剥离，仅在切换到设置时再按需加载。',
+      loadingDescription: '正在加载设置页面…',
     },
     capabilities: {
       label: '能力',
-      loadingDescription: '能力工作区模块正在按需加载，不再与默认助手首屏共同打包在一个超级入口文件中。',
+      loadingDescription: '正在加载能力页面…',
     },
     files: {
       label: '文件',
-      loadingDescription: '文件工作区模块正在按需加载，以缩短默认首屏装配链。',
+      loadingDescription: '正在加载文件管理页面…',
     },
     developer: {
       label: '开发',
-      loadingDescription: '开发工作区模块正在按需加载，避免与默认助手首屏形成死耦合。',
+      loadingDescription: '正在加载开发页面…',
     },
   },
   'en-US': {
     assistant: {
       label: 'Assistant',
-      loadingDescription: 'The assistant workspace is split into a standalone lazy-loaded module so the default first screen only loads what it immediately needs.',
+      loadingDescription: 'Loading assistant page…',
     },
     settings: {
       label: 'Settings',
-      loadingDescription: 'The settings workspace is split out of the entry shell and is loaded on demand only when the user switches to it.',
+      loadingDescription: 'Loading settings page…',
     },
     capabilities: {
       label: 'Capabilities',
-      loadingDescription: 'The capabilities workspace is loaded on demand instead of being bundled together with the default assistant first screen in one oversized entry module.',
+      loadingDescription: 'Loading capabilities page…',
     },
     files: {
       label: 'Files',
-      loadingDescription: 'The files workspace is loaded on demand to shorten the default first-screen bootstrap chain.',
+      loadingDescription: 'Loading file management page…',
     },
     developer: {
       label: 'Developer',
-      loadingDescription: 'The developer workspace is loaded on demand to avoid hard-coupling it with the default assistant first screen.',
+      loadingDescription: 'Loading developer page…',
     },
   },
 }

@@ -19,6 +19,7 @@ const PRELOAD_BRIDGE_KEYS = [
   'skillRegistrySubscription',
   'toolCatalog',
   'desktopNotification',
+  'windowControls',
   'bootstrapWindow',
   'fileManager',
 ] as const satisfies ReadonlyArray<keyof PreloadBridgeApis>
