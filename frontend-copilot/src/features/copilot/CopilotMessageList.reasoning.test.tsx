@@ -84,7 +84,8 @@ describe('CopilotMessageList reasoning card', () => {
     expect(panel.querySelector('.copilot-chat__message-text--markdown')).not.toBeNull()
     expect(panel.innerHTML).toContain('<strong>重点</strong>')
     expect(panel.innerHTML).toContain('<ul>')
-    expect(panel.innerHTML).toContain('<code>代码</code>')
+    expect(panel.innerHTML).toContain('class="copilot-chat__inline-code"')
+    expect(panel.textContent).toContain('代码')
 
     await clickElement(rendered.getByTestId('chat-message-reasoning-toggle-0'))
 

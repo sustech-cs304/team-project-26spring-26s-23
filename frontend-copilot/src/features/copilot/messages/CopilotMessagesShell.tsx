@@ -1,9 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import rehypeMathjax from 'rehype-mathjax/svg'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
-import type { Components } from 'react-markdown'
 
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import { ModelPickerIcon } from '../components/ModelPicker'
@@ -30,22 +25,7 @@ import {
   type RenderedAssistantPlaceholderState,
 } from './assistant-placeholder'
 
-const assistantMarkdownComponents: Components = {
-  hr({ className, ...props }) {
-    return (
-      <hr
-        {...props}
-        className={[
-          'copilot-chat__markdown-divider',
-          className,
-        ].filter((value) => value !== undefined && value !== '').join(' ')}
-      />
-    )
-  },
-}
-
-const assistantMarkdownRemarkPlugins = [remarkGfm, remarkMath]
-const assistantMarkdownRehypePlugins = [rehypeMathjax]
+import { renderAssistantMarkdownMessageBody } from './assistant-markdown'
 
 const assistantPlaceholderExitMs = 180
 
@@ -410,23 +390,10 @@ function findFirstNonEmptyValue(...values: Array<string | null | undefined>): st
   return null
 }
 
-function renderMarkdownMessageBody(content: string) {
-  return (
-    <div className="copilot-chat__message-text copilot-chat__message-text--markdown">
-      <ReactMarkdown
-        components={assistantMarkdownComponents}
-        remarkPlugins={assistantMarkdownRemarkPlugins}
-        rehypePlugins={assistantMarkdownRehypePlugins}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  )
-}
 
 function renderMessageBody(turn: CopilotMessageListItem) {
   if (turn.kind === 'assistant') {
-    return renderMarkdownMessageBody(turn.content)
+    return renderAssistantMarkdownMessageBody(turn.content)
   }
 
   if (turn.kind === 'user') {
