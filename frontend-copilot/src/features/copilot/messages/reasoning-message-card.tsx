@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Lightbulb } from 'lucide-react'
 
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import { formatCopilotReasoningDurationLabel, type CopilotReasoningMessageItem } from '../run-segment-view-model'
@@ -59,6 +60,9 @@ export function ReasoningMessageCard({
               }}
             >
               <span className="copilot-chat__reasoning-toggle-main">
+                <span className="copilot-chat__step-icon copilot-chat__step-icon--reasoning" aria-hidden="true">
+                  <Lightbulb size={14} strokeWidth={2.2} />
+                </span>
                 <span className="copilot-chat__reasoning-toggle-icon" aria-hidden="true">▾</span>
                 <span className="copilot-chat__message-label">{reasoningTitle}</span>
               </span>
@@ -82,6 +86,9 @@ export function ReasoningMessageCard({
               }}
             >
               <span className="copilot-chat__reasoning-toggle-main">
+                <span className="copilot-chat__step-icon copilot-chat__step-icon--reasoning" aria-hidden="true">
+                  <Lightbulb size={14} strokeWidth={2.2} />
+                </span>
                 <span className="copilot-chat__reasoning-toggle-icon" aria-hidden="true">▸</span>
                 <span className="copilot-chat__message-label">{reasoningTitle}</span>
               </span>

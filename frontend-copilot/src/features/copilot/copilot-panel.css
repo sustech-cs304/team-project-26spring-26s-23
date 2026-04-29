@@ -142,8 +142,8 @@
 .copilot-panel__history-message-list-skeleton {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem 1rem 1rem;
+  gap: 1.55rem;
+  padding: clamp(0.9rem, 1.4vw, 1.35rem) clamp(1rem, 3vw, 2.8rem) 1rem;
   flex: 1 1 auto;
   overflow: hidden;
   mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0) 100%);
@@ -152,18 +152,20 @@
 
 .copilot-panel__history-message-skeleton {
   display: flex;
-  width: 100%;
+  width: min(100%, 68rem);
+  align-self: center;
 }
 
 .copilot-panel__history-message-skeleton--user {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .copilot-panel__history-message-skeleton--user .copilot-panel__history-skeleton-bubble {
-  background: var(--surface-muted);
-  border-radius: 12px 12px 2px 12px;
-  padding: 0.85rem 1rem;
-  max-width: 80%;
+  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 64%, transparent);
+  border-radius: 13px;
+  padding: 0.72rem 0.9rem;
+  max-width: min(100%, 46rem);
   min-width: 120px;
 }
 
@@ -178,7 +180,7 @@
 .copilot-panel__history-message-skeleton--assistant .copilot-panel__history-skeleton-bubble {
   background: transparent;
   padding: 0;
-  max-width: 85%;
+  max-width: min(100%, 58rem);
   min-width: 200px;
 }
 

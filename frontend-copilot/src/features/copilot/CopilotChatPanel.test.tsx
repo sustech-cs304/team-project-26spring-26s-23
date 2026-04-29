@@ -206,6 +206,66 @@ describe('CopilotChatPanel', () => {
     expect(html).not.toContain('data-testid="chat-history-retry-button"')
   })
 
+  it('keeps canonical JSON tool summaries as persisted tool primary content for structured rendering', () => {
+    const canonicalToolSummary = '{\n  "items": [\n    1,\n    2,\n    3\n  ],\n  "ok": true\n}'
+    const truncatedResultSummary = '{"items": [1, 2…'
+    const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      selectedRunId: 'run-json-history',
+      timelineItems: [
+        {
+          kind: 'tool_call_block',
+          runId: 'run-json-history',
+          threadId: 'thread-1',
+          toolCallId: 'tool.remote-search:call-json',
+          toolId: 'tool.remote-search',
+          sequenceStart: 1,
+          sequenceEnd: 2,
+          createdAt: '2026-04-13T15:00:01Z',
+          title: '天气工具已返回结果',
+          summary: canonicalToolSummary,
+          inputSummary: '{"location":"Shenzhen"}',
+          resultSummary: truncatedResultSummary,
+          errorSummary: null,
+          phases: [
+            {
+              phase: 'started',
+              sequence: 1,
+              createdAt: '2026-04-13T15:00:01Z',
+              title: '调用天气工具',
+              summary: '正在获取 Shenzhen 的天气。',
+              inputSummary: '{"location":"Shenzhen"}',
+              resultSummary: null,
+              errorSummary: null,
+            },
+            {
+              phase: 'completed',
+              sequence: 2,
+              createdAt: '2026-04-13T15:00:02Z',
+              title: '天气工具已返回结果',
+              summary: canonicalToolSummary,
+              inputSummary: '{"location":"Shenzhen"}',
+              resultSummary: truncatedResultSummary,
+              errorSummary: null,
+            },
+          ],
+        },
+      ],
+      replayStatus: 'idle',
+      replay: null,
+    }))
+    const toolItem = conversation.conversation.find((item) => item.kind === 'tool')
+
+    expect(conversation.selectedRunConversationSource).toBe('timeline')
+    expect(toolItem?.kind).toBe('tool')
+    if (toolItem?.kind !== 'tool') {
+      throw new Error('Expected persisted tool item in restored conversation.')
+    }
+    expect(toolItem.content).toBe(canonicalToolSummary)
+    expect(toolItem.resultSummary).toBe(truncatedResultSummary)
+  })
+
   it('keeps the last restored history visible when a later detail refresh fails', () => {
     const html = renderToStaticMarkup(
       <CopilotChatPanel

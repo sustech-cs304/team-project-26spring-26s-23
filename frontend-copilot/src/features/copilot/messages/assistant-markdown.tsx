@@ -1,20 +1,42 @@
+import { Check, Copy, Download, TextWrap } from 'lucide-react'
+import { isValidElement, useEffect, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeMathjax from 'rehype-mathjax/svg'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import type { Components } from 'react-markdown'
+import type { PluggableList } from 'unified'
 
 interface RehypeNode {
+  type?: string
   tagName?: string
+  value?: unknown
   properties?: {
     className?: unknown
   }
   children?: unknown[]
 }
 
+type AssistantCodeBlockProps = ComponentPropsWithoutRef<'pre'> & {
+  node?: unknown
+  children?: ReactNode
+}
+
+type AssistantCodeProps = ComponentPropsWithoutRef<'code'> & {
+  node?: unknown
+  children?: ReactNode
+}
+
+type CodeCopyStatus = 'idle' | 'copied' | 'failed'
+
+const typstPlainTextAliases = ['typst', 'typ']
 const assistantMarkdownRemarkPlugins = [remarkGfm, remarkMath]
-const assistantMarkdownRehypePlugins = [rehypeHighlight, rehypeMathjax]
+const assistantMarkdownRehypePlugins: PluggableList = [
+  [rehypeHighlight, { plainText: typstPlainTextAliases }],
+  rehypeTypstHighlight,
+  rehypeMathjax,
+]
 const blockCodeNodes = new WeakSet<object>()
 
 const assistantMarkdownComponents: Components = {
@@ -26,49 +48,8 @@ const assistantMarkdownComponents: Components = {
       />
     )
   },
-  pre({ node, className, children, ...props }) {
-    markBlockCodeNodes(node)
-    const languageLabel = resolveCodeLanguageLabel(readCodeClassNameFromPreNode(node))
-
-    return (
-      <div className="copilot-chat__code-block" data-language={languageLabel}>
-        <div className="copilot-chat__code-block-header">
-          <span className="copilot-chat__code-block-language">{languageLabel}</span>
-        </div>
-        <pre
-          {...props}
-          className={joinClassNames('copilot-chat__code-block-pre', className)}
-        >
-          {children}
-        </pre>
-      </div>
-    )
-  },
-  code({ node, className, children, ...props }) {
-    const isBlockCode = isTrackedBlockCodeNode(node)
-      || className?.includes('language-') === true
-      || className?.includes('hljs') === true
-
-    if (!isBlockCode) {
-      return (
-        <code
-          {...props}
-          className={joinClassNames('copilot-chat__inline-code', stripInlineCodeClass(className))}
-        >
-          {children}
-        </code>
-      )
-    }
-
-    return (
-      <code
-        {...props}
-        className={normalizeBlockCodeClassName(className)}
-      >
-        {children}
-      </code>
-    )
-  },
+  pre: AssistantCodeBlock,
+  code: AssistantCode,
 }
 
 export function renderAssistantMarkdownMessageBody(content: string) {
@@ -83,6 +64,253 @@ export function renderAssistantMarkdownMessageBody(content: string) {
       </ReactMarkdown>
     </div>
   )
+}
+
+function AssistantCodeBlock({ node, className, children, ...props }: AssistantCodeBlockProps) {
+  markBlockCodeNodes(node)
+  const codeClassName = readCodeClassNameFromPreNode(node)
+  const languageId = resolveCodeLanguageId(codeClassName)
+  const languageLabel = resolveCodeLanguageLabelFromId(languageId)
+  const codeText = useMemo(() => extractTextFromReactNode(children), [children])
+  const [isWrapped, setIsWrapped] = useState(true)
+  const [copyStatus, setCopyStatus] = useState<CodeCopyStatus>('idle')
+
+  useEffect(() => {
+    if (copyStatus === 'idle') {
+      return undefined
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCopyStatus('idle')
+    }, 1_600)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [copyStatus])
+
+  const handleCopyCode = async () => {
+    const copied = await copyCodeTextToClipboard(codeText)
+    setCopyStatus(copied ? 'copied' : 'failed')
+  }
+
+  const handleDownloadCode = () => {
+    downloadCodeText(codeText, languageId)
+  }
+
+  const copyLabel = copyStatus === 'copied'
+    ? '代码已复制'
+    : copyStatus === 'failed'
+      ? '复制失败'
+      : '复制代码'
+  const wrapLabel = isWrapped ? '取消自动换行' : '启用自动换行'
+
+  return (
+    <div
+      className={joinClassNames('copilot-chat__code-block', !isWrapped && 'copilot-chat__code-block--nowrap')}
+      data-language={languageLabel}
+      data-language-id={languageId || 'text'}
+    >
+      <div className="copilot-chat__code-block-header">
+        <span className="copilot-chat__code-block-language">{languageLabel}</span>
+        <span className="copilot-chat__code-block-actions" aria-label="代码块操作">
+          <button
+            type="button"
+            className={joinClassNames(
+              'copilot-chat__code-block-action',
+              copyStatus === 'copied' && 'copilot-chat__code-block-action--success',
+              copyStatus === 'failed' && 'copilot-chat__code-block-action--danger',
+            )}
+            aria-label={copyLabel}
+            title={copyLabel}
+            data-code-block-action="copy"
+            onClick={() => {
+              void handleCopyCode()
+            }}
+          >
+            {copyStatus === 'copied' ? <Check size={14} strokeWidth={2.4} /> : <Copy size={14} strokeWidth={2.2} />}
+          </button>
+          <button
+            type="button"
+            className="copilot-chat__code-block-action"
+            aria-label="下载代码"
+            title="下载代码"
+            data-code-block-action="download"
+            onClick={handleDownloadCode}
+          >
+            <Download size={14} strokeWidth={2.2} />
+          </button>
+          <button
+            type="button"
+            className={joinClassNames('copilot-chat__code-block-action', !isWrapped && 'copilot-chat__code-block-action--active')}
+            aria-label={wrapLabel}
+            title={wrapLabel}
+            data-code-block-action="wrap"
+            data-code-block-wrap-mode={isWrapped ? 'wrapped' : 'scroll'}
+            onClick={() => setIsWrapped((current) => !current)}
+          >
+            <TextWrap size={14} strokeWidth={2.2} />
+          </button>
+        </span>
+      </div>
+      <pre
+        {...props}
+        className={joinClassNames('copilot-chat__code-block-pre', className)}
+      >
+        {children}
+      </pre>
+    </div>
+  )
+}
+
+function AssistantCode({ node, className, children, ...props }: AssistantCodeProps) {
+  const isBlockCode = isTrackedBlockCodeNode(node)
+    || className?.includes('language-') === true
+    || className?.includes('hljs') === true
+
+  if (!isBlockCode) {
+    return (
+      <code
+        {...props}
+        className={joinClassNames('copilot-chat__inline-code', stripInlineCodeClass(className))}
+      >
+        {children}
+      </code>
+    )
+  }
+
+  return (
+    <code
+      {...props}
+      className={normalizeBlockCodeClassName(className)}
+    >
+      {children}
+    </code>
+  )
+}
+
+function rehypeTypstHighlight() {
+  return (tree: unknown) => {
+    visitTypstCodeNodes(tree, undefined)
+  }
+}
+
+function visitTypstCodeNodes(node: unknown, parent: RehypeNode | undefined) {
+  if (!isRehypeNode(node)) {
+    return
+  }
+
+  if (node.tagName === 'code' && parent?.tagName === 'pre' && isTypstCodeNode(node)) {
+    highlightTypstCodeNode(node)
+    return
+  }
+
+  if (!Array.isArray(node.children)) {
+    return
+  }
+
+  for (const child of node.children) {
+    visitTypstCodeNodes(child, node)
+  }
+}
+
+function isTypstCodeNode(node: RehypeNode): boolean {
+  const languageId = resolveCodeLanguageId(readClassName(node.properties?.className))
+  return languageId === 'typst' || languageId === 'typ'
+}
+
+function highlightTypstCodeNode(node: RehypeNode) {
+  const classNameTokens = readClassName(node.properties?.className)
+    ?.split(/\s+/)
+    .filter((value) => value !== '')
+    ?? []
+
+  if (!classNameTokens.includes('hljs')) {
+    classNameTokens.unshift('hljs')
+  }
+
+  node.properties = {
+    ...node.properties,
+    className: classNameTokens,
+  }
+  node.children = tokenizeTypstCode(readTextFromHast(node))
+}
+
+function tokenizeTypstCode(value: string): unknown[] {
+  const nodes: unknown[] = []
+  const tokenPattern = /(^={1,6}[^\n]*|\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|\$[^$]*\$|#[A-Za-z_][\w-]*|\b(?:as|auto|break|context|continue|else|false|for|if|import|in|include|let|none|return|set|show|true|while)\b|\b\d+(?:\.\d+)?(?:%|pt|em|cm|mm|in|deg|rad|s|ms)?\b|[()[\]{}.,:;+\-*/=<>!]+)/gm
+  let cursor = 0
+  let match: RegExpExecArray | null
+
+  while ((match = tokenPattern.exec(value)) !== null) {
+    const [token] = match
+    if (match.index > cursor) {
+      nodes.push(createHastText(value.slice(cursor, match.index)))
+    }
+
+    nodes.push(createHastSpan(resolveTypstTokenClassName(token), token))
+    cursor = match.index + token.length
+  }
+
+  if (cursor < value.length) {
+    nodes.push(createHastText(value.slice(cursor)))
+  }
+
+  return nodes
+}
+
+function resolveTypstTokenClassName(token: string): string {
+  if (token.startsWith('//') || token.startsWith('/*')) {
+    return 'hljs-comment'
+  }
+
+  if (token.startsWith('"') || token.startsWith('$')) {
+    return 'hljs-string'
+  }
+
+  if (token.startsWith('=')) {
+    return 'hljs-title'
+  }
+
+  if (token.startsWith('#') || /^(?:as|auto|break|context|continue|else|false|for|if|import|in|include|let|none|return|set|show|true|while)$/.test(token)) {
+    return 'hljs-keyword'
+  }
+
+  if (/^\d/.test(token)) {
+    return 'hljs-number'
+  }
+
+  return 'hljs-punctuation'
+}
+
+function createHastText(value: string): unknown {
+  return {
+    type: 'text',
+    value,
+  }
+}
+
+function createHastSpan(className: string, value: string): unknown {
+  return {
+    type: 'element',
+    tagName: 'span',
+    properties: {
+      className: [className],
+    },
+    children: [createHastText(value)],
+  }
+}
+
+function readTextFromHast(node: unknown): string {
+  if (!isRehypeNode(node)) {
+    return ''
+  }
+
+  if (node.type === 'text') {
+    return typeof node.value === 'string' ? node.value : ''
+  }
+
+  return Array.isArray(node.children)
+    ? node.children.map((child) => readTextFromHast(child)).join('')
+    : ''
 }
 
 function markBlockCodeNodes(node: unknown) {
@@ -119,9 +347,11 @@ function readCodeClassNameFromPreNode(node: unknown): string | undefined {
   return undefined
 }
 
-function resolveCodeLanguageLabel(className?: string): string {
-  const languageId = className?.match(/(?:^|\s)language-([a-zA-Z0-9_+-]+)/)?.[1]?.toLowerCase() ?? ''
+function resolveCodeLanguageId(className?: string): string {
+  return className?.match(/(?:^|\s)language-([a-zA-Z0-9_+-]+)/)?.[1]?.toLowerCase() ?? ''
+}
 
+function resolveCodeLanguageLabelFromId(languageId: string): string {
   switch (languageId) {
     case 'js':
     case 'javascript':
@@ -148,12 +378,56 @@ function resolveCodeLanguageLabel(className?: string): string {
     case 'md':
     case 'markdown':
       return 'Markdown'
+    case 'typ':
+    case 'typst':
+      return 'Typst'
     case 'text':
     case 'plain':
     case 'plaintext':
       return 'Text'
     default:
       return languageId === '' ? 'Text' : `${languageId.slice(0, 1).toUpperCase()}${languageId.slice(1)}`
+  }
+}
+
+function resolveCodeLanguageFileExtension(languageId: string): string {
+  switch (languageId) {
+    case 'js':
+    case 'javascript':
+      return 'js'
+    case 'ts':
+    case 'typescript':
+      return 'ts'
+    case 'tsx':
+      return 'tsx'
+    case 'jsx':
+      return 'jsx'
+    case 'py':
+    case 'python':
+      return 'py'
+    case 'sh':
+    case 'bash':
+    case 'shell':
+      return 'sh'
+    case 'json':
+      return 'json'
+    case 'yaml':
+    case 'yml':
+      return 'yml'
+    case 'md':
+    case 'markdown':
+      return 'md'
+    case 'typ':
+    case 'typst':
+      return 'typ'
+    case 'html':
+      return 'html'
+    case 'css':
+      return 'css'
+    default:
+      return languageId === '' || languageId === 'text' || languageId === 'plain' || languageId === 'plaintext'
+        ? 'txt'
+        : languageId.replace(/[^a-z0-9_-]/g, '') || 'txt'
   }
 }
 
@@ -171,6 +445,81 @@ function stripInlineCodeClass(className?: string): string {
     .filter((value) => value !== '' && value !== 'copilot-chat__inline-code')
     .join(' ')
     ?? ''
+}
+
+function extractTextFromReactNode(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node)
+  }
+
+  if (Array.isArray(node)) {
+    return node.map((child) => extractTextFromReactNode(child)).join('')
+  }
+
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return extractTextFromReactNode(node.props.children)
+  }
+
+  return ''
+}
+
+async function copyCodeTextToClipboard(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value)
+      return true
+    }
+  } catch {
+    return copyCodeTextWithTextArea(value)
+  }
+
+  return copyCodeTextWithTextArea(value)
+}
+
+function copyCodeTextWithTextArea(value: string): boolean {
+  if (typeof document === 'undefined') {
+    return false
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.inset = '0 auto auto 0'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  document.body.appendChild(textarea)
+  textarea.select()
+
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    textarea.remove()
+  }
+}
+
+function downloadCodeText(value: string, languageId: string) {
+  if (typeof document === 'undefined' || typeof URL === 'undefined') {
+    return
+  }
+
+  const blob = new Blob([value], { type: 'text/plain;charset=utf-8' })
+  const objectUrl = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = buildCodeDownloadFileName(languageId)
+  anchor.rel = 'noopener'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
+}
+
+function buildCodeDownloadFileName(languageId: string): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  return `copilot-code-${timestamp}.${resolveCodeLanguageFileExtension(languageId)}`
 }
 
 function isRehypeNode(value: unknown): value is RehypeNode {
