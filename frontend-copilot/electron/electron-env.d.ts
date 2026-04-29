@@ -14,6 +14,7 @@ import type { McpRegistryApi, McpRegistrySubscriptionApi } from './mcp-registry/
 import type { SkillRegistryApi, SkillRegistrySubscriptionApi } from './skill-registry/ipc'
 import type { SettingsWorkspaceSecretsApi, SettingsWorkspaceStateApi } from './settings-workspace/ipc'
 import type { ToolCatalogApi } from './tool-catalog/ipc'
+import type { FileManagerApi } from './file-manager/ipc'
 
 declare namespace NodeJS {
   interface ProcessEnv {
@@ -54,6 +55,7 @@ declare global {
     toolCatalog: ToolCatalogApi
     desktopNotification: DesktopNotificationApi
     bootstrapWindow: BootstrapWindowApi
+    fileManager: FileManagerApi
   }
 }
 

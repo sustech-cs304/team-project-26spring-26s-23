@@ -85,6 +85,9 @@ const mainProcessServices = createMainProcessServices({
   prepareRuntimePaths: prepareApplicationRuntimePaths,
   userDataPath: app.getPath('userData'),
   ensureHostedBackendService,
+  getMainWindow() {
+    return win
+  },
   appendMainRuntimeLog(level, message, context) {
     return mainRuntimeLogger.appendMainRuntimeLog(level, message, context)
   },
