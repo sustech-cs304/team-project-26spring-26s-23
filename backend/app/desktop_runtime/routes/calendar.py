@@ -8,7 +8,6 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.event_manager.data.dto import UnifiedCalendarEvent
-from ..config import DesktopRuntimeConfig
 from ..security import require_local_token
 
 
