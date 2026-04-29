@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -300,38 +300,83 @@ def test_delete_course_event_delete_group_soft_deletes_whole_group(tmp_path: Pat
     assert not db_manager.delete_course_event(event1.id, delete_group=True)
 
 
-def test_unified_calendar_event_dto_serialization():
-    from datetime import UTC
-    
-    # 1. Test DTO creation and to_dict
-    now = datetime.now(UTC).replace(tzinfo=None)
+def test_unified_calendar_event_dto_serialization() -> None:
+    now = datetime(2026, 4, 29, 13, 0, tzinfo=UTC)
     dto = UnifiedCalendarEvent(
         title="Group Meeting",
         start_time=now,
         source="custom",
         source_id="team_01",
         status="in_progress",
-        metadata_payload={"room": "302"}
+        metadata_payload={"room": "302"},
     )
-    
+
     serialized = dto.to_dict()
     assert serialized["title"] == "Group Meeting"
     assert serialized["source"] == "custom"
     assert serialized["status"] == "in_progress"
     assert serialized["metadata_payload"] == {"room": "302"}
-    
-    # 2. Test from_obj with matching model
+    assert serialized["start_time"] == "2026-04-29T13:00:00Z"
+
     model_obj = UnifiedCalendarEventModel(
         title="Group Meeting",
         start_time=now,
         source="custom",
         source_id="team_01",
         status="in_progress",
-        metadata_payload={"room": "302"}
+        metadata_payload={"room": "302"},
     )
-    
+
     restored_dto = UnifiedCalendarEvent.from_obj(model_obj)
     assert restored_dto.title == "Group Meeting"
     assert restored_dto.source == "custom"
     assert restored_dto.metadata_payload == {"room": "302"}
+    assert restored_dto.start_time == now
+
+
+def test_unified_calendar_allows_reinserting_source_after_soft_delete(tmp_path: Path) -> None:
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
+    session = db_manager.SessionLocal()
+    try:
+        original = UnifiedCalendarEventModel(
+            title="Blackboard Homework",
+            start_time=datetime(2026, 4, 29, 13, 0),
+            source="bb",
+            source_id="assignment-1",
+            is_deleted=False,
+        )
+        session.add(original)
+        session.commit()
+        session.refresh(original)
+
+        original.is_deleted = True
+        session.commit()
+
+        replacement = UnifiedCalendarEventModel(
+            title="Blackboard Homework Resynced",
+            start_time=datetime(2026, 4, 30, 13, 0),
+            source="bb",
+            source_id="assignment-1",
+            is_deleted=False,
+        )
+        session.add(replacement)
+        session.commit()
+        session.refresh(replacement)
+
+        rows = (
+            session.query(UnifiedCalendarEventModel)
+            .filter(UnifiedCalendarEventModel.source == "bb")
+            .filter(UnifiedCalendarEventModel.source_id == "assignment-1")
+            .order_by(UnifiedCalendarEventModel.id.asc())
+            .all()
+        )
+    finally:
+        session.close()
+        db_manager.engine.dispose()
+
+    assert len(rows) == 2
+    assert rows[0].is_deleted is True
+    assert rows[1].is_deleted is False
 

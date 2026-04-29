@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, PickleType, String, JSON, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Index, Integer, PickleType, String, JSON, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.mutable import MutableDict
 
@@ -59,7 +59,13 @@ class UnifiedCalendarEventModel(TimestampSoftDeleteMixin, Base):
     __tablename__ = "event_unified_calendar"
 
     __table_args__ = (
-        UniqueConstraint("source", "source_id", name="uq_unified_calendar_source_id"),
+        Index(
+            "uq_unified_calendar_source_id_active",
+            "source",
+            "source_id",
+            unique=True,
+            sqlite_where=text("is_deleted = 0"),
+        ),
     )
 
     title: Mapped[str] = mapped_column(String(255), nullable=False)
