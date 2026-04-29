@@ -81,6 +81,21 @@ const SettingsWorkspace = lazy(async () => {
   }
 })
 
+const FilesWorkspace = lazy(async () => {
+  const startedAt = performance.now()
+  logStartupTrace('files-workspace-import:start')
+
+  const module = await import('./workbench/files/FilesWorkspace')
+
+  logStartupTrace('files-workspace-import:resolved', {
+    durationMs: Math.round(performance.now() - startedAt),
+  })
+
+  return {
+    default: module.FilesWorkspace,
+  }
+})
+
 interface AppProps {
   bootstrap: CopilotBootstrapController
 }
@@ -338,6 +353,10 @@ function renderActiveWorkspace(
 
   if (activeWorkspace === 'capabilities') {
     return <CapabilitiesWorkspace />
+  }
+
+  if (activeWorkspace === 'files') {
+    return <FilesWorkspace />
   }
 
   if (isHubWorkspaceView(activeWorkspace)) {

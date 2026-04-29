@@ -1128,18 +1128,6 @@ const workspaceMetaByLanguage: Record<WorkbenchLanguage, Record<WorkspaceView, {
 
 const hubWorkspaceContentByLanguage: Record<WorkbenchLanguage, Record<HubWorkspaceView, HubWorkspaceContent>> = {
   'zh-CN': {
-    files: {
-      eyebrow: '文件工作区',
-      title: '知识文件与资料入口',
-      panelTitle: '文件分区',
-      spotlightTitle: '课程资料与上下文挂载',
-      highlights: ['课程资料库', '会话附件管理', '知识索引与标签'],
-      entries: [
-        { id: 'files-courseware', title: '课程课件目录' },
-        { id: 'files-notes', title: '个人笔记区' },
-        { id: 'files-attachments', title: '对话附件' },
-      ],
-    },
     developer: {
       eyebrow: '开发工作台',
       title: '开发任务与联调面板',
@@ -1154,18 +1142,6 @@ const hubWorkspaceContentByLanguage: Record<WorkbenchLanguage, Record<HubWorkspa
     },
   },
   'en-US': {
-    files: {
-      eyebrow: 'Files',
-      title: 'Knowledge Files and Resource Entry',
-      panelTitle: 'File Areas',
-      spotlightTitle: 'Course Resources and Context Mounting',
-      highlights: ['Course material library', 'Session attachment management', 'Knowledge indexing and tags'],
-      entries: [
-        { id: 'files-courseware', title: 'Course Material Directory' },
-        { id: 'files-notes', title: 'Personal Notes' },
-        { id: 'files-attachments', title: 'Conversation Attachments' },
-      ],
-    },
     developer: {
       eyebrow: 'Developer',
       title: 'Development Tasks and Integration Panel',

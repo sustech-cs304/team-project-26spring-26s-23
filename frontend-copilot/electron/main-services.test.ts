@@ -59,6 +59,25 @@ const hoisted = vi.hoisted(() => {
   const managedRuntimeService = {
     load: vi.fn(),
   }
+  const fileManagerService = {
+    selectRootDirectory: vi.fn(),
+    listDirectory: vi.fn(),
+    probeDirectory: vi.fn(),
+    createDirectory: vi.fn(),
+    copyEntries: vi.fn(),
+    moveEntries: vi.fn(),
+    renameEntry: vi.fn(),
+    trashEntries: vi.fn(),
+    deleteEntriesPermanently: vi.fn(),
+    watchDirectories: vi.fn(),
+    unwatchDirectories: vi.fn(),
+    loadLastRootDirectory: vi.fn(),
+    saveLastRootDirectory: vi.fn(),
+    clearLastRootDirectory: vi.fn(),
+    openEntryWithSystem: vi.fn(),
+    revealEntryInFolder: vi.fn(),
+    copyTextToClipboard: vi.fn(),
+  }
   const copilotHistoryService = {
     listThreads: vi.fn(),
     getThreadDetail: vi.fn(),
@@ -78,6 +97,7 @@ const hoisted = vi.hoisted(() => {
     createElectronMcpRegistryService,
     createElectronSkillRegistryService,
     createElectronManagedRuntimeService,
+    createElectronFileManagerService: vi.fn(),
     unifiedConfigService,
     settingsWorkspaceService,
     capabilityBridgeService,
@@ -85,6 +105,7 @@ const hoisted = vi.hoisted(() => {
     mcpRegistryService,
     skillRegistryService,
     managedRuntimeService,
+    fileManagerService,
     copilotHistoryService,
   }
 })
@@ -115,6 +136,10 @@ vi.mock('./skill-registry/main-process', () => ({
 
 vi.mock('./managed-runtime/main-process', () => ({
   createElectronManagedRuntimeService: hoisted.createElectronManagedRuntimeService,
+}))
+
+vi.mock('./file-manager/service', () => ({
+  createElectronFileManagerService: hoisted.createElectronFileManagerService,
 }))
 
 import {
@@ -406,6 +431,37 @@ describe('createMainProcessServices', () => {
     hoisted.copilotHistoryService.backupDatabase.mockResolvedValue(backupHistoryDatabaseResult)
     hoisted.copilotHistoryService.restoreDatabase.mockResolvedValue(restoreHistoryDatabaseResult)
 
+    const selectRootDirectoryResult = { ok: true as const, rootPath: '/test/root', entries: [] }
+    const listDirectoryResult = { ok: true as const, entries: [] }
+    const probeDirectoryResult = { ok: true as const, totalItems: 0, isLarge: false, maxDepth: 0 }
+    const fileOperationResult = { ok: true as const, affectedPaths: [] }
+
+    hoisted.fileManagerService.selectRootDirectory.mockResolvedValue(selectRootDirectoryResult)
+    hoisted.fileManagerService.listDirectory.mockResolvedValue(listDirectoryResult)
+    hoisted.fileManagerService.probeDirectory.mockResolvedValue(probeDirectoryResult)
+    hoisted.fileManagerService.createDirectory.mockResolvedValue(fileOperationResult)
+    hoisted.fileManagerService.copyEntries.mockResolvedValue(fileOperationResult)
+    hoisted.fileManagerService.moveEntries.mockResolvedValue(fileOperationResult)
+    hoisted.fileManagerService.renameEntry.mockResolvedValue(fileOperationResult)
+    hoisted.fileManagerService.trashEntries.mockResolvedValue(fileOperationResult)
+    hoisted.fileManagerService.deleteEntriesPermanently.mockResolvedValue(fileOperationResult)
+    hoisted.fileManagerService.watchDirectories.mockResolvedValue(fileOperationResult)
+    hoisted.fileManagerService.unwatchDirectories.mockResolvedValue(fileOperationResult)
+
+    const loadLastRootDirectoryResult = { ok: true as const, rootPath: '/test/last-root' }
+    const openEntryWithSystemResult = { ok: true as const, affectedPaths: ['/test/opened-file.txt'] }
+    const revealEntryInFolderResult = { ok: true as const, affectedPaths: ['/test/revealed-entry'] }
+    const copyTextToClipboardResult = { ok: true as const, affectedPaths: [] }
+    hoisted.fileManagerService.loadLastRootDirectory.mockResolvedValue(loadLastRootDirectoryResult)
+    hoisted.fileManagerService.saveLastRootDirectory.mockResolvedValue({
+      ok: true as const,
+      affectedPaths: ['/test/saved-root'],
+    })
+    hoisted.fileManagerService.clearLastRootDirectory.mockResolvedValue(fileOperationResult)
+    hoisted.fileManagerService.openEntryWithSystem.mockResolvedValue(openEntryWithSystemResult)
+    hoisted.fileManagerService.revealEntryInFolder.mockResolvedValue(revealEntryInFolderResult)
+    hoisted.fileManagerService.copyTextToClipboard.mockResolvedValue(copyTextToClipboardResult)
+
     hoisted.createElectronUnifiedConfigService.mockReturnValue(hoisted.unifiedConfigService)
     hoisted.createElectronSettingsWorkspaceService.mockReturnValue(hoisted.settingsWorkspaceService)
     hoisted.createElectronDesktopCapabilityBridgeService.mockReturnValue(hoisted.capabilityBridgeService)
@@ -413,6 +469,7 @@ describe('createMainProcessServices', () => {
     hoisted.createElectronMcpRegistryService.mockReturnValue(hoisted.mcpRegistryService)
     hoisted.createElectronSkillRegistryService.mockReturnValue(hoisted.skillRegistryService)
     hoisted.createElectronManagedRuntimeService.mockReturnValue(hoisted.managedRuntimeService)
+    hoisted.createElectronFileManagerService.mockReturnValue(hoisted.fileManagerService)
 
     const hostedBackendService = { getLocalToken: vi.fn(() => 'runtime-token') }
     hoisted.unifiedConfigService.getHostedBackendService.mockResolvedValue(hostedBackendService)
@@ -499,6 +556,62 @@ describe('createMainProcessServices', () => {
       capabilityResponse,
     )
 
+    await expect(services.selectRootDirectory()).resolves.toEqual(selectRootDirectoryResult)
+    await expect(services.listDirectory({ rootPath: '/test/root', directoryPath: '/test/root/sub' })).resolves.toEqual(
+      listDirectoryResult,
+    )
+    await expect(services.probeDirectory({ rootPath: '/test/root' })).resolves.toEqual(probeDirectoryResult)
+    await expect(
+      services.createDirectory({ rootPath: '/test/root', parentPath: '/test/root/sub', name: 'new-folder' }),
+    ).resolves.toEqual(fileOperationResult)
+    await expect(
+      services.copyEntries({
+        rootPath: '/test/root',
+        sourcePaths: ['/test/root/file1.txt'],
+        destinationDirectory: '/test/root/target',
+        operationType: 'copy',
+      }),
+    ).resolves.toEqual(fileOperationResult)
+    await expect(
+      services.moveEntries({
+        rootPath: '/test/root',
+        sourcePaths: ['/test/root/file1.txt'],
+        destinationDirectory: '/test/root/target',
+      }),
+    ).resolves.toEqual(fileOperationResult)
+    await expect(
+      services.renameEntry({
+        rootPath: '/test/root',
+        entryPath: '/test/root/old.txt',
+        newName: 'new.txt',
+      }),
+    ).resolves.toEqual(fileOperationResult)
+    await expect(
+      services.trashEntries({ rootPath: '/test/root', entryPaths: ['/test/root/delete-me.txt'] }),
+    ).resolves.toEqual(fileOperationResult)
+    await expect(
+      services.deleteEntriesPermanently({ rootPath: '/test/root', entryPaths: ['/test/root/permanent.txt'] }),
+    ).resolves.toEqual(fileOperationResult)
+
+    await expect(
+      services.watchDirectories({ paths: ['/test/root', '/test/root/sub'] }),
+    ).resolves.toEqual(fileOperationResult)
+
+    await expect(
+      services.unwatchDirectories({ paths: ['/test/root/sub'] }),
+    ).resolves.toEqual(fileOperationResult)
+
+    await expect(services.loadLastRootDirectory()).resolves.toEqual(loadLastRootDirectoryResult)
+
+    await expect(
+      services.saveLastRootDirectory({ rootPath: '/test/saved-root' }),
+    ).resolves.toEqual({ ok: true, affectedPaths: ['/test/saved-root'] })
+
+    await expect(services.clearLastRootDirectory()).resolves.toEqual(fileOperationResult)
+    await expect(services.openEntryWithSystem({ path: '/test/file.txt' })).resolves.toEqual(openEntryWithSystemResult)
+    await expect(services.revealEntryInFolder({ path: '/test/dir' })).resolves.toEqual(revealEntryInFolderResult)
+    await expect(services.copyTextToClipboard({ text: 'copied text' })).resolves.toEqual(copyTextToClipboardResult)
+
     expect(hoisted.createElectronUnifiedConfigService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronSettingsWorkspaceService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronDesktopCapabilityBridgeService).toHaveBeenCalledTimes(1)
@@ -554,6 +667,66 @@ describe('createMainProcessServices', () => {
     expect(hoisted.copilotHistoryService.deleteThread).toHaveBeenCalledWith('thread-1')
     expect(hoisted.copilotHistoryService.backupDatabase).toHaveBeenCalledWith({ targetPath: 'backups/history.db' })
     expect(hoisted.copilotHistoryService.restoreDatabase).toHaveBeenCalledWith({ sourcePath: 'backups/history.db' })
+
+    expect(hoisted.createElectronFileManagerService).toHaveBeenCalledTimes(1)
+    expect(hoisted.fileManagerService.selectRootDirectory).toHaveBeenCalledOnce()
+    expect(hoisted.fileManagerService.listDirectory).toHaveBeenCalledWith({
+      rootPath: '/test/root',
+      directoryPath: '/test/root/sub',
+    })
+    expect(hoisted.fileManagerService.probeDirectory).toHaveBeenCalledWith({ rootPath: '/test/root' })
+    expect(hoisted.fileManagerService.createDirectory).toHaveBeenCalledWith({
+      rootPath: '/test/root',
+      parentPath: '/test/root/sub',
+      name: 'new-folder',
+    })
+    expect(hoisted.fileManagerService.copyEntries).toHaveBeenCalledWith({
+      rootPath: '/test/root',
+      sourcePaths: ['/test/root/file1.txt'],
+      destinationDirectory: '/test/root/target',
+      operationType: 'copy',
+    })
+    expect(hoisted.fileManagerService.moveEntries).toHaveBeenCalledWith({
+      rootPath: '/test/root',
+      sourcePaths: ['/test/root/file1.txt'],
+      destinationDirectory: '/test/root/target',
+    })
+    expect(hoisted.fileManagerService.renameEntry).toHaveBeenCalledWith({
+      rootPath: '/test/root',
+      entryPath: '/test/root/old.txt',
+      newName: 'new.txt',
+    })
+    expect(hoisted.fileManagerService.trashEntries).toHaveBeenCalledWith({
+      rootPath: '/test/root',
+      entryPaths: ['/test/root/delete-me.txt'],
+    })
+    expect(hoisted.fileManagerService.deleteEntriesPermanently).toHaveBeenCalledWith({
+      rootPath: '/test/root',
+      entryPaths: ['/test/root/permanent.txt'],
+    })
+    expect(hoisted.fileManagerService.watchDirectories).toHaveBeenCalledWith({
+      paths: ['/test/root', '/test/root/sub'],
+    })
+    expect(hoisted.fileManagerService.unwatchDirectories).toHaveBeenCalledWith({
+      paths: ['/test/root/sub'],
+    })
+    expect(hoisted.fileManagerService.loadLastRootDirectory).toHaveBeenCalledOnce()
+    expect(hoisted.fileManagerService.saveLastRootDirectory).toHaveBeenCalledWith({
+      rootPath: '/test/saved-root',
+    })
+    expect(hoisted.fileManagerService.clearLastRootDirectory).toHaveBeenCalledOnce()
+    expect(hoisted.fileManagerService.openEntryWithSystem).toHaveBeenCalledWith({
+      path: '/test/file.txt',
+    })
+    expect(hoisted.fileManagerService.revealEntryInFolder).toHaveBeenCalledWith({
+      path: '/test/dir',
+    })
+    expect(hoisted.fileManagerService.copyTextToClipboard).toHaveBeenCalledWith({
+      text: 'copied text',
+    })
+
+    const fileManagerOptions = hoisted.createElectronFileManagerService.mock.calls[0]?.[0]
+    expect(fileManagerOptions?.getMainWindow).toBeUndefined()
 
     const unifiedConfigOptions = hoisted.createElectronUnifiedConfigService.mock.calls[0]?.[0]
     const settingsWorkspaceOptions = hoisted.createElectronSettingsWorkspaceService.mock.calls[0]?.[0]
