@@ -70,6 +70,28 @@ import {
   type SkillRegistrySubscriptionApi,
 } from '../skill-registry/ipc'
 import { TOOL_CATALOG_LOAD_CHANNEL, type ToolCatalogApi } from '../tool-catalog/ipc'
+import {
+  FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+  FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+  FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
+  FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL,
+  FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+  FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
+  FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
+  FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_RENAME_ENTRY_CHANNEL,
+  FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+  FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
+  FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
+  type DirectoryChangedEvent,
+  type FileManagerApi,
+} from '../file-manager/ipc'
 
 export interface PreloadBridgeApis {
   copilotRuntime: CopilotRuntimeApi
@@ -87,6 +109,7 @@ export interface PreloadBridgeApis {
   toolCatalog: ToolCatalogApi
   desktopNotification: DesktopNotificationApi
   bootstrapWindow: BootstrapWindowApi
+  fileManager: FileManagerApi
 }
 
 type IpcRendererLike = Pick<IpcRenderer, 'invoke' | 'on' | 'off'>
@@ -229,6 +252,68 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
     bootstrapWindow: {
       signalBootstrapScreenReady() {
         return ipcRenderer.invoke(BOOTSTRAP_WINDOW_READY_CHANNEL)
+      },
+    },
+    fileManager: {
+      selectRootDirectory() {
+        return ipcRenderer.invoke(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL)
+      },
+      listDirectory(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_LIST_DIRECTORY_CHANNEL, request)
+      },
+      probeDirectory(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_PROBE_DIRECTORY_CHANNEL, request)
+      },
+      createDirectory(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_CREATE_DIRECTORY_CHANNEL, request)
+      },
+      copyEntries(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_COPY_ENTRIES_CHANNEL, request)
+      },
+      moveEntries(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_MOVE_ENTRIES_CHANNEL, request)
+      },
+      renameEntry(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_RENAME_ENTRY_CHANNEL, request)
+      },
+      trashEntries(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_TRASH_ENTRIES_CHANNEL, request)
+      },
+      deleteEntriesPermanently(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL, request)
+      },
+      watchDirectories(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL, request)
+      },
+      unwatchDirectories(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL, request)
+      },
+      onDirectoryChanged(listener: (event: DirectoryChangedEvent) => void): () => void {
+        const handler = (_event: unknown, event: DirectoryChangedEvent) => {
+          listener(event)
+        }
+        ipcRenderer.on(FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL, handler)
+        return () => {
+          ipcRenderer.off(FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL, handler)
+        }
+      },
+      loadLastRootDirectory() {
+        return ipcRenderer.invoke(FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL)
+      },
+      saveLastRootDirectory(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL, request)
+      },
+      clearLastRootDirectory() {
+        return ipcRenderer.invoke(FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL)
+      },
+      openEntryWithSystem(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL, request)
+      },
+      revealEntryInFolder(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL, request)
+      },
+      copyTextToClipboard(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL, request)
       },
     },
   }

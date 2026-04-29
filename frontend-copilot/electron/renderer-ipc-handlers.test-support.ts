@@ -55,6 +55,13 @@ import type {
   SettingsWorkspaceSustechCasSecretLoadResult,
   SettingsWorkspaceSustechCasSecretMutationResult,
 } from './settings-workspace/ipc'
+import type {
+  FileOperationResult,
+  ListDirectoryResult,
+  LoadLastRootDirectoryResult,
+  ProbeDirectoryResult,
+  SelectDirectoryResult,
+} from './file-manager/ipc'
 
 export function createRendererIpcHandlers(): RendererIpcHandlers {
   return {
@@ -323,5 +330,76 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
       return undefined
     }),
     notifyBootstrapWindowReady: vi.fn(async () => undefined),
+    selectRootDirectory: vi.fn(async (): Promise<SelectDirectoryResult> => ({
+      ok: true,
+      rootPath: '/test/root',
+      entries: [],
+    })),
+    listDirectory: vi.fn(async (): Promise<ListDirectoryResult> => ({
+      ok: true,
+      entries: [],
+    })),
+    probeDirectory: vi.fn(async (): Promise<ProbeDirectoryResult> => ({
+      ok: true,
+      totalItems: 0,
+      isLarge: false,
+      maxDepth: 0,
+    })),
+    createDirectory: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: [],
+    })),
+    copyEntries: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: [],
+    })),
+    moveEntries: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: [],
+    })),
+    renameEntry: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: [],
+    })),
+    trashEntries: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: [],
+    })),
+    deleteEntriesPermanently: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: [],
+    })),
+    watchDirectories: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: [],
+    })),
+    unwatchDirectories: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: [],
+    })),
+    loadLastRootDirectory: vi.fn(async (): Promise<LoadLastRootDirectoryResult> => ({
+      ok: true,
+      rootPath: '/test/last-root',
+    })),
+    saveLastRootDirectory: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: ['/test/saved-root'],
+    })),
+    clearLastRootDirectory: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: [],
+    })),
+    openEntryWithSystem: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: ['/test/opened-file.txt'],
+    })),
+    revealEntryInFolder: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: ['/test/revealed-entry'],
+    })),
+    copyTextToClipboard: vi.fn(async (): Promise<FileOperationResult> => ({
+      ok: true,
+      affectedPaths: [],
+    })),
   }
 }

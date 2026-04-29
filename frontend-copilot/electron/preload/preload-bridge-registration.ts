@@ -20,6 +20,7 @@ const PRELOAD_BRIDGE_KEYS = [
   'toolCatalog',
   'desktopNotification',
   'bootstrapWindow',
+  'fileManager',
 ] as const satisfies ReadonlyArray<keyof PreloadBridgeApis>
 
 export function exposePreloadBridgeApis(
