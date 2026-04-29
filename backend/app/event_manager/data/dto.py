@@ -78,11 +78,11 @@ class UnifiedCalendarEvent(EventDTO):
     title: str
     start_time: datetime
     source: str
+    source_id: str
     
     id: int | None = None
     description: str | None = None
     end_time: datetime | None = None
     is_all_day: bool = False
-    source_id: str | None = None
     status: str = "not_started"
     metadata_payload: dict[str, Any] | None = None

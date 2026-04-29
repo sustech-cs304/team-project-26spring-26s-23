@@ -71,8 +71,8 @@ class UnifiedCalendarEventModel(TimestampSoftDeleteMixin, Base):
     
     # 来源标识：bb（BlackBoard）、course（课程）、custom（用户自定义）
     source: Mapped[str] = mapped_column(String(32), nullable=False)
-    # 源数据中的唯一ID，用于避免相同数据重复创建
-    source_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # 源数据中的唯一ID，用于防重。为确保联合唯一约束生效，此字段不允许为 NULL，无外部ID的事件需自行生成唯一ID（如 UUID）。
+    source_id: Mapped[str] = mapped_column(String(128), nullable=False)
     
     # 任务状态类型：not_started（未开始）、in_progress（进行中）、completed（已完成）
     status: Mapped[str] = mapped_column(String(32), default="not_started", nullable=False)
