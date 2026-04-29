@@ -379,6 +379,21 @@
   min-height: 100%;
 }
 
+/* Keepalive wrapper: restore direct-child layout semantics
+   when .copilot-panel is wrapped by a keepalive container.
+   Active panel wrapper must fill the chat layout identically. */
+.conversation-workspace .workspace-chat-layout > .workspace-chat-keepalive-panel:not([hidden]) {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 100%;
+}
+
+.conversation-workspace .workspace-chat-layout > .workspace-chat-keepalive-panel:not([hidden]) > .copilot-panel {
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+
 .workspace-main__content {
   flex: 1 1 auto;
   display: flex;
@@ -396,4 +411,23 @@
 .settings-workspace .workspace-main__content--flush > .settings-page {
   flex: 1 1 auto;
   min-height: 100%;
+}
+
+/* Settings keepalive wrapper: restore direct-child layout semantics
+   when .settings-page is wrapped by a section-visit keepalive container. */
+.settings-workspace .workspace-main__content--flush > .settings-section-keepalive-panel:not([hidden]) {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 100%;
+}
+
+.settings-workspace .workspace-main__content--flush > .settings-section-keepalive-panel:not([hidden]) > .settings-page {
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+
+/* Keepalive containers: hidden workspaces / panels must not participate in layout or accessibility */
+[aria-hidden='true'][hidden] {
+  display: none;
 }

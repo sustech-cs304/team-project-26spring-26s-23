@@ -682,8 +682,11 @@ describe('CapabilitiesWorkspace', () => {
     )
 
     await clickElement(getNavButton(rendered.container, 'mcp-servers'))
+    await waitForNextFrame()
 
-    expect(rendered.container.querySelector('[aria-label="工具权限列表"]')).toBeNull()
+    const toolPermissionsList = rendered.container.querySelector('[aria-label="工具权限列表"]')
+    expect(toolPermissionsList).toBeTruthy()
+    expect(toolPermissionsList!.closest('[hidden]')).toBeTruthy()
     expect(rendered.container.querySelector('.mcp-server-row')).toBeTruthy()
     expect(rendered.container.textContent).toContain('MCP 服务器')
     expect(rendered.container.textContent).toContain('stdio stub server')
@@ -841,8 +844,11 @@ describe('CapabilitiesWorkspace', () => {
     await clickElement(getNavButton(document.body, 'tool-permissions'))
     await waitForNextFrame()
 
-    expect(rendered.container.textContent).toContain('Filesystem MCP')
-    expect(rendered.container.textContent).toContain('读取文本文件')
+    const tpContainer = rendered.container.querySelector('[aria-label="工具权限列表"]')
+    expect(tpContainer).toBeTruthy()
+    expect(tpContainer!.closest('[hidden]')).toBeNull()
+    expect(tpContainer!.textContent).toContain('Filesystem MCP')
+    expect(tpContainer!.textContent).toContain('读取文本文件')
 
     rendered.unmount()
   })
@@ -1387,10 +1393,13 @@ describe('CapabilitiesWorkspace', () => {
     expect(mockedRefreshMcpCatalog).not.toHaveBeenCalled()
 
     await clickElement(document.body.querySelector('button[aria-label="删除 stdio stub server"]') as HTMLButtonElement)
+    await waitForNextFrame()
 
     expect(queryServerRow(document.body, 'stdio stub server')).toBeNull()
-    expect(document.body.textContent).toContain('还没有可用的服务器')
-    expect(document.body.textContent?.match(/还没有可用的服务器/g)?.length).toBe(1)
+    const mcpContent = document.body.querySelector('.capabilities-main__content')
+    expect(mcpContent).toBeTruthy()
+    expect(mcpContent!.textContent).toContain('还没有可用的服务器')
+    expect(mcpContent!.textContent?.match(/还没有可用的服务器/g)?.length).toBe(1)
 
     rendered.unmount()
   })

@@ -36,6 +36,8 @@ function logStartupTrace(stage: string, data: Record<string, unknown> = {}) {
 
 logStartupTrace('module-evaluated')
 
+const ALL_WORKSPACE_VIEWS: WorkspaceView[] = ['assistant', 'capabilities', 'files', 'developer', 'settings']
+
 const AssistantWorkspace = lazy(async () => {
   const startedAt = performance.now()
   logStartupTrace('assistant-workspace-import:start')
@@ -102,6 +104,9 @@ interface AppProps {
 
 function App({ bootstrap }: AppProps) {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('assistant')
+  const [visitedWorkspaces, setVisitedWorkspaces] = useState<Set<WorkspaceView>>(
+    () => new Set<WorkspaceView>(['assistant']),
+  )
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode)
   const [animationsEnabled, setAnimationsEnabled] = useState(resolveInitialAnimationsEnabled)
   const [workbenchLanguage, setWorkbenchLanguage] = useState<WorkbenchLanguage>('zh-CN')
@@ -219,6 +224,18 @@ function App({ bootstrap }: AppProps) {
     })
   }, [activeWorkspace, bootstrap.state.status])
 
+  const activateWorkspace = useCallback((target: WorkspaceView) => {
+    setVisitedWorkspaces((prev) => {
+      if (prev.has(target)) {
+        return prev
+      }
+      const next = new Set(prev)
+      next.add(target)
+      return next
+    })
+    setActiveWorkspace(target)
+  }, [])
+
   const workspaceMeta = useMemo(
     () => getWorkspaceMeta(workbenchLanguage, activeWorkspace),
     [activeWorkspace, workbenchLanguage],
@@ -248,7 +265,7 @@ function App({ bootstrap }: AppProps) {
               title={label}
               aria-label={label}
               aria-pressed={active}
-              onClick={() => setActiveWorkspace(item.id)}
+              onClick={() => activateWorkspace(item.id)}
             >
               <Icon size={18} className="rail-button__icon" />
             </button>
@@ -270,7 +287,7 @@ function App({ bootstrap }: AppProps) {
               title={label}
               aria-label={label}
               aria-pressed={active}
-              onClick={() => setActiveWorkspace(item.id)}
+              onClick={() => activateWorkspace(item.id)}
             >
               <Icon size={18} className="rail-button__icon" />
             </button>
@@ -279,7 +296,6 @@ function App({ bootstrap }: AppProps) {
       </aside>
 
       <RecoverableErrorBoundary
-        resetKeys={[activeWorkspace]}
         fallback={({ error, reset }) => (
           <BootstrapScreen
             title={workbenchLanguage === 'en-US'
@@ -299,7 +315,7 @@ function App({ bootstrap }: AppProps) {
                     return
                   }
 
-                  setActiveWorkspace('assistant')
+                  activateWorkspace('assistant')
                 },
               },
               {
@@ -314,33 +330,49 @@ function App({ bootstrap }: AppProps) {
         <Suspense
           fallback={<BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />}
         >
-          {renderActiveWorkspace(
-            activeWorkspace,
-            bootstrap,
-            themeMode,
-            handleThemeModeChange,
-            workbenchLanguage,
-            applyWorkbenchLanguage,
-          )}
+          {ALL_WORKSPACE_VIEWS.map((view) => {
+            if (!visitedWorkspaces.has(view)) {
+              return null
+            }
+
+            const isActive = view === activeWorkspace
+
+            return (
+              <div
+                key={view}
+                hidden={!isActive}
+                aria-hidden={!isActive}
+              >
+                {renderWorkspace(
+                  view,
+                  bootstrap,
+                  themeMode,
+                  handleThemeModeChange,
+                  workbenchLanguage,
+                  applyWorkbenchLanguage,
+                )}
+              </div>
+            )
+          })}
         </Suspense>
       </RecoverableErrorBoundary>
     </div>
   )
 }
 
-function renderActiveWorkspace(
-  activeWorkspace: WorkspaceView,
+function renderWorkspace(
+  view: WorkspaceView,
   bootstrap: CopilotBootstrapController,
   themeMode: ThemeMode,
   onThemeModeChange: (value: ThemeMode) => void,
   workbenchLanguage: WorkbenchLanguage,
   onWorkbenchLanguageChange: (value: string) => void,
 ) {
-  if (activeWorkspace === 'assistant') {
+  if (view === 'assistant') {
     return <AssistantWorkspace bootstrap={bootstrap} language={workbenchLanguage} />
   }
 
-  if (activeWorkspace === 'settings') {
+  if (view === 'settings') {
     return (
       <SettingsWorkspace
         bootstrap={bootstrap}
@@ -351,16 +383,16 @@ function renderActiveWorkspace(
     )
   }
 
-  if (activeWorkspace === 'capabilities') {
+  if (view === 'capabilities') {
     return <CapabilitiesWorkspace />
   }
 
-  if (activeWorkspace === 'files') {
+  if (view === 'files') {
     return <FilesWorkspace />
   }
 
-  if (isHubWorkspaceView(activeWorkspace)) {
-    return <HubWorkspace view={activeWorkspace} language={workbenchLanguage} />
+  if (isHubWorkspaceView(view)) {
+    return <HubWorkspace view={view} language={workbenchLanguage} />
   }
 
   return null

@@ -1,5 +1,5 @@
 import { FolderPlus, LoaderCircle, RefreshCw } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   SettingsWorkspaceStateSaveInput,
@@ -40,6 +40,9 @@ import {
 
 export function CapabilitiesWorkspace() {
   const [activeSection, setActiveSection] = useState<CapabilitiesSection>('tool-permissions')
+  const [visitedSections, setVisitedSections] = useState<Set<CapabilitiesSection>>(
+    () => new Set<CapabilitiesSection>(['tool-permissions']),
+  )
   const [toolPermissions, setToolPermissions] = useState<ToolPermissionRecord[]>([])
   const [editorState, setEditorState] = useState<McpServerEditorState | null>(null)
   const [settingsState, setSettingsState] = useState<SettingsWorkspaceStateSaveInput | null>(null)
@@ -265,7 +268,17 @@ export function CapabilitiesWorkspace() {
         <CapabilitiesSecondaryNav
           items={capabilitiesNavItems}
           activeSection={activeSection}
-          onSelect={setActiveSection}
+          onSelect={useCallback((section: CapabilitiesSection) => {
+            setVisitedSections((prev) => {
+              if (prev.has(section)) {
+                return prev
+              }
+              const next = new Set(prev)
+              next.add(section)
+              return next
+            })
+            setActiveSection(section)
+          }, [])}
         />
 
         <main className="workspace-main capabilities-main" aria-label="能力中心主内容区">
@@ -324,33 +337,40 @@ export function CapabilitiesWorkspace() {
 
           <section
             className="workspace-main__content capabilities-main__content"
-            id={`capabilities-panel-${activeSection}`}
             aria-label={`${activeNavItem.label}内容区`}
           >
-            {activeSection === 'tool-permissions' ? (
-              <ToolPermissionsPanel
-                tools={toolPermissions}
-                statusMessage={resolveToolPermissionStatusMessage(toolCatalogLoadState)}
-                onModeChange={handleModeChange}
-                onDelayActionChange={handleDelayActionChange}
-                onDelaySecondsChange={handleDelaySecondsChange}
-              />
-            ) : activeSection === 'mcp-servers' ? (
-              <McpServersPanel
-                servers={mcpRegistry.servers}
-                statusMessage={mcpRegistry.statusMessage}
-                onToggleEnabled={mcpRegistry.toggleServerEnabled}
-                onDelete={mcpRegistry.deleteServer}
-                onTestConnection={mcpRegistry.testServerConnection}
-              />
-            ) : (
-              <SkillsPanel
-                skills={skillRegistry.skills}
-                importValidationErrors={skillRegistry.importValidationErrors}
-                onToggleEnabled={skillRegistry.toggleSkillEnabled}
-                onDelete={skillRegistry.deleteSkill}
-                onRefresh={skillRegistry.refreshSkill}
-              />
+            {visitedSections.has('tool-permissions') && (
+              <div hidden={activeSection !== 'tool-permissions'} aria-hidden={activeSection !== 'tool-permissions'}>
+                <ToolPermissionsPanel
+                  tools={toolPermissions}
+                  statusMessage={resolveToolPermissionStatusMessage(toolCatalogLoadState)}
+                  onModeChange={handleModeChange}
+                  onDelayActionChange={handleDelayActionChange}
+                  onDelaySecondsChange={handleDelaySecondsChange}
+                />
+              </div>
+            )}
+            {visitedSections.has('mcp-servers') && (
+              <div hidden={activeSection !== 'mcp-servers'} aria-hidden={activeSection !== 'mcp-servers'}>
+                <McpServersPanel
+                  servers={mcpRegistry.servers}
+                  statusMessage={mcpRegistry.statusMessage}
+                  onToggleEnabled={mcpRegistry.toggleServerEnabled}
+                  onDelete={mcpRegistry.deleteServer}
+                  onTestConnection={mcpRegistry.testServerConnection}
+                />
+              </div>
+            )}
+            {visitedSections.has('skills') && (
+              <div hidden={activeSection !== 'skills'} aria-hidden={activeSection !== 'skills'}>
+                <SkillsPanel
+                  skills={skillRegistry.skills}
+                  importValidationErrors={skillRegistry.importValidationErrors}
+                  onToggleEnabled={skillRegistry.toggleSkillEnabled}
+                  onDelete={skillRegistry.deleteSkill}
+                  onRefresh={skillRegistry.refreshSkill}
+                />
+              </div>
             )}
           </section>
         </main>

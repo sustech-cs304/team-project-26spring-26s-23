@@ -1,6 +1,12 @@
 /* eslint-disable react-refresh/only-export-components */
 
 import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
+import {
   createRuntimeThread,
   getRuntimeCapabilities,
   listRuntimeAgents,
@@ -41,6 +47,8 @@ export interface AssistantWorkspaceShellProps {
   initialSessionShell?: AssistantSessionShell | null
 }
 
+const UI_PANEL_KEEPALIVE_CAPACITY = 10
+
 export function AssistantWorkspaceShell({
   bootstrap,
   language = 'zh-CN',
@@ -60,7 +68,7 @@ export function AssistantWorkspaceShell({
     directoryState,
     selectedAgent,
     sessionShell,
-    activeSessionHistory,
+    sessionHistoryById,
     runtimeControllerBySessionId,
     setRuntimeControllerBySessionId,
     sessionListState,
@@ -113,6 +121,36 @@ export function AssistantWorkspaceShell({
     initialSessionShell,
   })
 
+  const activeSessionId = sessionShell?.sessionId ?? null
+  const [keepAliveSessionIds, setKeepAliveSessionIds] = useState<string[]>(() => (
+    activeSessionId !== null ? [activeSessionId] : []
+  ))
+  const prevActiveSessionIdRef = useRef<string | null>(activeSessionId)
+
+  useEffect(() => {
+    if (activeSessionId === null) {
+      return
+    }
+
+    if (prevActiveSessionIdRef.current !== activeSessionId) {
+      prevActiveSessionIdRef.current = activeSessionId
+      setKeepAliveSessionIds((current) => computeKeepAliveSessionIds(
+        current,
+        activeSessionId,
+        UI_PANEL_KEEPALIVE_CAPACITY,
+      ))
+    }
+  }, [activeSessionId])
+
+  const sessionShellById = useRef<Map<string, AssistantSessionShell>>(new Map())
+  sessionShellById.current.clear()
+  for (const sessionEntry of sessionListState.sessions) {
+    sessionShellById.current.set(sessionEntry.sessionId, sessionEntry)
+  }
+
+  const activeNoop = useCallback(() => {}, [])
+  const activeSessionRunSettledNoop = useCallback(() => {}, [])
+
   return (
     <section className="workspace-stage conversation-workspace" aria-label="助手工作区">
       <AssistantAgentDirectoryPane
@@ -160,26 +198,83 @@ export function AssistantWorkspaceShell({
 
       <main className="workspace-main workspace-main--chat" aria-label="会话主内容区">
         <div className="workspace-chat-layout" data-testid="assistant-chat-workspace">
-          <CopilotChatPanel
-            language={language}
-            state={bootstrap.state}
-            retrying={bootstrap.retrying}
-            retry={bootstrap.retry}
-            selectedAgent={selectedAgent}
-            sessionShell={sessionShell}
-            directoryState={directoryState}
-            sessionStatus={sessionStatus}
-            sessionError={sessionError}
-            historyRestoreError={historyRestoreError}
-            sessionHistory={activeSessionHistory}
-            retrySessionHistory={retryActiveSessionHistoryLoad}
-            selectSessionHistoryRun={selectActiveSessionHistoryRun}
-            onSessionRunSettled={handleActiveSessionRunSettled}
-            runtimeControllerBySessionId={runtimeControllerBySessionId}
-            setRuntimeControllerBySessionId={setRuntimeControllerBySessionId}
-          />
+          {keepAliveSessionIds.length === 0 ? (
+            <CopilotChatPanel
+              language={language}
+              state={bootstrap.state}
+              retrying={bootstrap.retrying}
+              retry={bootstrap.retry}
+              selectedAgent={selectedAgent}
+              sessionShell={sessionShell}
+              directoryState={directoryState}
+              sessionStatus={sessionStatus}
+              sessionError={sessionError}
+              historyRestoreError={historyRestoreError}
+              sessionHistory={null}
+              retrySessionHistory={retryActiveSessionHistoryLoad}
+              selectSessionHistoryRun={selectActiveSessionHistoryRun}
+              onSessionRunSettled={handleActiveSessionRunSettled}
+              runtimeControllerBySessionId={runtimeControllerBySessionId}
+              setRuntimeControllerBySessionId={setRuntimeControllerBySessionId}
+            />
+          ) : (
+            keepAliveSessionIds.map((sessionId) => {
+            const isActive = sessionId === activeSessionId
+            const panelSessionShell = sessionShellById.current.get(sessionId) ?? null
+            const panelSessionHistory = sessionHistoryById[sessionId] ?? null
+
+            if (panelSessionShell === null) {
+              return null
+            }
+
+            return (
+              <div
+                key={sessionId}
+                className="workspace-chat-keepalive-panel"
+                hidden={!isActive}
+                aria-hidden={!isActive}
+                data-keepalive-panel={sessionId}
+                style={isActive ? undefined : { display: 'none' }}
+              >
+                <CopilotChatPanel
+                  language={language}
+                  state={bootstrap.state}
+                  retrying={bootstrap.retrying}
+                  retry={bootstrap.retry}
+                  selectedAgent={selectedAgent}
+                  sessionShell={panelSessionShell}
+                  directoryState={directoryState}
+                  sessionStatus={isActive ? sessionStatus : 'idle'}
+                  sessionError={isActive ? sessionError : null}
+                  historyRestoreError={isActive ? historyRestoreError : null}
+                  sessionHistory={panelSessionHistory}
+                  retrySessionHistory={isActive ? retryActiveSessionHistoryLoad : activeNoop}
+                  selectSessionHistoryRun={isActive ? selectActiveSessionHistoryRun : undefined}
+                  onSessionRunSettled={isActive ? handleActiveSessionRunSettled : activeSessionRunSettledNoop}
+                  runtimeControllerBySessionId={runtimeControllerBySessionId}
+                  setRuntimeControllerBySessionId={setRuntimeControllerBySessionId}
+                />
+              </div>
+            )
+            })
+          )}
         </div>
       </main>
     </section>
   )
+}
+
+function computeKeepAliveSessionIds(
+  current: readonly string[],
+  activeSessionId: string,
+  capacity: number,
+): string[] {
+  const filtered = current.filter((id) => id !== activeSessionId)
+  const next = [activeSessionId, ...filtered]
+
+  if (next.length <= capacity) {
+    return next
+  }
+
+  return next.slice(0, capacity)
 }

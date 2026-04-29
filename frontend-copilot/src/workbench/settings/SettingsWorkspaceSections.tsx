@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactElement } from 'react'
+import { useEffect, useState, type ComponentProps, type ReactElement } from 'react'
 
 import type { SettingsSection } from '../types'
 import {
@@ -67,5 +67,42 @@ const sectionRenderers: Record<SettingsSection, SectionRenderer> = {
 }
 
 export function SettingsWorkspaceSections({ activeSection, ...sectionDomains }: SettingsWorkspaceSectionsProps) {
-  return sectionRenderers[activeSection](sectionDomains)
+  const [visitedSections, setVisitedSections] = useState<Set<SettingsSection>>(
+    () => new Set<SettingsSection>([activeSection]),
+  )
+
+  useEffect(() => {
+    setVisitedSections((prev) => {
+      if (prev.has(activeSection)) {
+        return prev
+      }
+      const next = new Set(prev)
+      next.add(activeSection)
+      return next
+    })
+  }, [activeSection])
+
+  return (
+    <>
+      {(Object.keys(sectionRenderers) as SettingsSection[]).map((section) => {
+        if (!visitedSections.has(section)) {
+          return null
+        }
+
+        const renderer = sectionRenderers[section]
+        const isActive = section === activeSection
+
+        return (
+          <div
+            key={section}
+            className="settings-section-keepalive-panel"
+            hidden={!isActive}
+            aria-hidden={!isActive}
+          >
+            {renderer(sectionDomains)}
+          </div>
+        )
+      })}
+    </>
+  )
 }

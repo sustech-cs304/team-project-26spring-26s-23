@@ -108,6 +108,7 @@ interface UseAssistantWorkspaceStateResult {
   selectedAgent: AgentType | null
   sessionShell: AssistantSessionShell | null
   activeSessionHistory: AssistantSessionHistoryState | null
+  sessionHistoryById: Record<string, AssistantSessionHistoryState>
   runtimeControllerBySessionId: Record<string, CopilotThreadRuntimeControllerState>
   setRuntimeControllerBySessionId: Dispatch<SetStateAction<Record<string, CopilotThreadRuntimeControllerState>>>
   sessionListState: AssistantSessionListState
@@ -129,7 +130,9 @@ interface UseAssistantWorkspaceStateResult {
   selectAgent: (agentId: string | null) => void
   handleCreateSession: () => Promise<void>
   retryActiveSessionHistoryLoad: () => void
+  retrySessionHistoryLoadById: (sessionId: string) => void
   selectActiveSessionHistoryRun: (runId: string | null) => void
+  selectSessionHistoryRunById: (sessionId: string, runId: string | null) => void
   handleActiveSessionRunSettled: (runId: string | null, sessionId: string | null) => void
   handleSessionPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => void
   handleSessionClick: (sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => void
@@ -161,7 +164,7 @@ function summarizeAssistantHistoryStateForLog(
   }
 }
 
-export const COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY = 8
+export const COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY = 10
 
 function shouldApplyLiveCapabilitiesUpdate(input: {
   previousCapabilitiesVersion: string | null
@@ -818,6 +821,10 @@ export function useAssistantWorkspaceState({
     retrySessionHistoryLoad(sessionShell.sessionId)
   }, [retrySessionHistoryLoad, sessionShell])
 
+  const retrySessionHistoryLoadById = useCallback((sessionId: string) => {
+    retrySessionHistoryLoad(sessionId)
+  }, [retrySessionHistoryLoad])
+
   const selectActiveSessionHistoryRun = useCallback((runId: string | null) => {
     if (sessionShell === null) {
       return
@@ -845,6 +852,30 @@ export function useAssistantWorkspaceState({
           }
     })
   }, [appendWorkspaceDebugLog, sessionShell])
+
+  const selectSessionHistoryRunById = useCallback((sessionId: string, runId: string | null) => {
+    setSessionHistoryById((current) => {
+      const historyState = current[sessionId]
+      if (historyState === undefined) {
+        return current
+      }
+
+      const nextHistoryState = selectAssistantSessionHistoryRun(historyState, runId)
+      appendWorkspaceDebugLog('session-run-selected-by-id', {
+        sessionId,
+        previousSelectedRunId: historyState.selectedRunId,
+        nextSelectedRunId: runId,
+        replayStatus: historyState.replayStatus,
+        cachedReplayRunId: historyState.replay?.run.runId ?? null,
+      })
+      return nextHistoryState === historyState
+        ? current
+        : {
+            ...current,
+            [sessionId]: nextHistoryState,
+          }
+    })
+  }, [appendWorkspaceDebugLog])
 
   const handleActiveSessionRunSettled = useCallback((runId: string | null, sessionId: string | null) => {
     const settledSessionId = sessionId?.trim() ?? ''
@@ -1656,6 +1687,7 @@ export function useAssistantWorkspaceState({
     selectedAgent,
     sessionShell,
     activeSessionHistory,
+    sessionHistoryById,
     runtimeControllerBySessionId,
     setRuntimeControllerBySessionId,
     sessionListState,
@@ -1677,7 +1709,9 @@ export function useAssistantWorkspaceState({
     selectAgent,
     handleCreateSession,
     retryActiveSessionHistoryLoad,
+    retrySessionHistoryLoadById,
     selectActiveSessionHistoryRun,
+    selectSessionHistoryRunById,
     handleActiveSessionRunSettled,
     handleSessionPointerDown,
     handleSessionClick,
