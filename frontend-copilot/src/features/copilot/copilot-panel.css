@@ -354,6 +354,77 @@
   }
 }
 
+/* ── Content enter animation ── */
+@keyframes copilot-panel-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes copilot-panel-fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.copilot-panel__enter {
+  animation: copilot-panel-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.copilot-panel__exit {
+  animation: copilot-panel-fade-out 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  pointer-events: none;
+}
+
+.copilot-panel__enter--delay-1 {
+  animation-delay: 50ms;
+}
+
+.copilot-panel__enter--delay-2 {
+  animation-delay: 100ms;
+}
+
+/* ── CrossFade transition wrapper ── */
+.cross-fade {
+  min-height: 0;
+}
+
+.cross-fade__stage {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cross-fade__stage--entering {
+  animation: copilot-panel-fade-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.cross-fade__stage--exiting {
+  animation: copilot-panel-fade-out 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* ── Chat workspace transition wrapper ── */
+.copilot-chat-workspace__content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 @media (max-width: 900px) {
   .copilot-panel {
     min-height: auto;

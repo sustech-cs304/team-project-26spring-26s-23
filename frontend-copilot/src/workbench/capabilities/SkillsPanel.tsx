@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import type { SkillValidationIssue } from '../../../electron/skill-registry/types'
+import { resolveCapabilitiesListItemEnterDelayMs } from './capabilities-list-animation'
 import type { SkillRegistrySkillViewModel } from './skill-registry-view-model'
 
 interface SkillsPanelProps {
@@ -35,7 +36,7 @@ export function SkillsPanel({
 
       <div className="skill-list">
         {skills.length === 0 ? (
-          <article className="skill-row skill-row--empty">
+          <article className="skill-row skill-row--empty" style={{ animationDelay: '0ms' }}>
             <div className="skill-row__meta">
               <h3 className="skill-row__title">还没有 Skills</h3>
               <p className="skill-row__description">
@@ -45,12 +46,13 @@ export function SkillsPanel({
           </article>
         ) : null}
 
-        {skills.map((skill) => {
+        {skills.map((skill, index) => {
           const expanded = expandedSkillId === skill.skillId
           return (
             <article
               key={skill.skillId}
               className={`skill-row skill-row--${skill.status}${skill.enabled ? ' skill-row--enabled' : ' skill-row--disabled'}${skill.busy ? ' skill-row--busy' : ''}`}
+              style={{ animationDelay: `${resolveCapabilitiesListItemEnterDelayMs(index)}ms` }}
             >
               <div className="skill-row__meta">
                 <div className="skill-row__title-line">

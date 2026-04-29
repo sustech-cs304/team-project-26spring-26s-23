@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentProps, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ComponentProps, type ReactElement } from 'react'
 
 import type { SettingsSection } from '../types'
 import {
@@ -66,12 +66,28 @@ const sectionRenderers: Record<SettingsSection, SectionRenderer> = {
   ),
 }
 
+const SETTINGS_SECTION_FADE_OUT_MS = 110
+
 export function SettingsWorkspaceSections({ activeSection, ...sectionDomains }: SettingsWorkspaceSectionsProps) {
   const [visitedSections, setVisitedSections] = useState<Set<SettingsSection>>(
     () => new Set<SettingsSection>([activeSection]),
   )
+  const [visibleSection, setVisibleSection] = useState<SettingsSection>(activeSection)
+  const [exitingSection, setExitingSection] = useState<SettingsSection | null>(null)
+  const targetSectionRef = useRef<SettingsSection>(activeSection)
+  const visibleSectionRef = useRef<SettingsSection>(activeSection)
+  const sectionTransitionTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
+    return () => {
+      if (sectionTransitionTimerRef.current !== null) {
+        window.clearTimeout(sectionTransitionTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    targetSectionRef.current = activeSection
     setVisitedSections((prev) => {
       if (prev.has(activeSection)) {
         return prev
@@ -80,6 +96,26 @@ export function SettingsWorkspaceSections({ activeSection, ...sectionDomains }: 
       next.add(activeSection)
       return next
     })
+
+    if (sectionTransitionTimerRef.current !== null) {
+      window.clearTimeout(sectionTransitionTimerRef.current)
+      sectionTransitionTimerRef.current = null
+    }
+
+    if (activeSection === visibleSectionRef.current) {
+      setExitingSection(null)
+      return
+    }
+
+    const sectionToFadeOut = visibleSectionRef.current
+    setExitingSection(sectionToFadeOut)
+    sectionTransitionTimerRef.current = window.setTimeout(() => {
+      const sectionToFadeIn = targetSectionRef.current
+      visibleSectionRef.current = sectionToFadeIn
+      setVisibleSection(sectionToFadeIn)
+      setExitingSection(null)
+      sectionTransitionTimerRef.current = null
+    }, SETTINGS_SECTION_FADE_OUT_MS)
   }, [activeSection])
 
   return (
@@ -90,13 +126,20 @@ export function SettingsWorkspaceSections({ activeSection, ...sectionDomains }: 
         }
 
         const renderer = sectionRenderers[section]
-        const isActive = section === activeSection
+        const isExiting = section === exitingSection
+        const isActive = section === visibleSection && !isExiting
+        const isVisible = section === visibleSection || isExiting
 
         return (
           <div
             key={section}
-            className="settings-section-keepalive-panel"
-            hidden={!isActive}
+            className={[
+              'settings-section-keepalive-panel',
+              isActive ? 'settings-section-keepalive-panel--active' : null,
+              isExiting ? 'settings-section-keepalive-panel--exiting' : null,
+            ].filter(Boolean).join(' ')}
+            data-settings-section={section}
+            hidden={!isVisible}
             aria-hidden={!isActive}
           >
             {renderer(sectionDomains)}

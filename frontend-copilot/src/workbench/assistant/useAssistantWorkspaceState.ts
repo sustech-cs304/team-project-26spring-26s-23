@@ -1451,7 +1451,7 @@ export function useAssistantWorkspaceState({
 
     setSessionHistoryById((current) => ({
       ...current,
-      [sessionId]: setAssistantSessionHistoryDetailLoading(historyState),
+      [sessionId]: setAssistantSessionHistoryDetailLoading(current[sessionId] ?? historyState),
     }))
     appendWorkspaceDebugLog('history-detail-request-started', {
       sessionId,
@@ -1559,7 +1559,7 @@ export function useAssistantWorkspaceState({
     if (tracksSelectedRunReplay) {
       setSessionHistoryById((current) => ({
         ...current,
-        [sessionId]: setAssistantSessionHistoryReplayLoading(historyState, replayRequestRunId),
+        [sessionId]: setAssistantSessionHistoryReplayLoading(current[sessionId] ?? historyState, replayRequestRunId),
       }))
     }
     appendWorkspaceDebugLog('history-replay-request-started', {

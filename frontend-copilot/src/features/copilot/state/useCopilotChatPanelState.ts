@@ -99,6 +99,7 @@ export interface CopilotChatPanelShellProps {
   selectSessionHistoryRun?: (runId: string | null) => void
   onSessionRunSettled?: (runId: string | null, sessionId: string | null) => void
   persistedSelectedRunConversationPending?: boolean
+  renderLoadingSkeleton?: boolean
   sendMessage?: typeof dispatchCopilotMessage
   cancelRun?: typeof cancelRuntimeRun
   getThinkingCapability?: typeof getRuntimeThinkingCapability

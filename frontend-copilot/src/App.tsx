@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { BootstrapScreen, BOOTSTRAP_PREPARING_MESSAGE } from './components/BootstrapScreen'
 import { RecoverableErrorBoundary } from './components/RecoverableErrorBoundary'
@@ -37,6 +37,7 @@ function logStartupTrace(stage: string, data: Record<string, unknown> = {}) {
 logStartupTrace('module-evaluated')
 
 const ALL_WORKSPACE_VIEWS: WorkspaceView[] = ['assistant', 'capabilities', 'files', 'developer', 'settings']
+const WORKBENCH_WORKSPACE_TRANSITION_MS = 180
 
 const AssistantWorkspace = lazy(async () => {
   const startedAt = performance.now()
@@ -107,6 +108,8 @@ function App({ bootstrap }: AppProps) {
   const [visitedWorkspaces, setVisitedWorkspaces] = useState<Set<WorkspaceView>>(
     () => new Set<WorkspaceView>(['assistant']),
   )
+  const [exitingWorkspace, setExitingWorkspace] = useState<WorkspaceView | null>(null)
+  const workspaceTransitionTimerRef = useRef<number | null>(null)
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode)
   const [animationsEnabled, setAnimationsEnabled] = useState(resolveInitialAnimationsEnabled)
   const [workbenchLanguage, setWorkbenchLanguage] = useState<WorkbenchLanguage>('zh-CN')
@@ -224,7 +227,19 @@ function App({ bootstrap }: AppProps) {
     })
   }, [activeWorkspace, bootstrap.state.status])
 
+  useEffect(() => {
+    return () => {
+      if (workspaceTransitionTimerRef.current !== null) {
+        window.clearTimeout(workspaceTransitionTimerRef.current)
+      }
+    }
+  }, [])
+
   const activateWorkspace = useCallback((target: WorkspaceView) => {
+    if (target === activeWorkspace) {
+      return
+    }
+
     setVisitedWorkspaces((prev) => {
       if (prev.has(target)) {
         return prev
@@ -233,8 +248,19 @@ function App({ bootstrap }: AppProps) {
       next.add(target)
       return next
     })
+
+    if (workspaceTransitionTimerRef.current !== null) {
+      window.clearTimeout(workspaceTransitionTimerRef.current)
+    }
+
+    const previousWorkspace = activeWorkspace
+    setExitingWorkspace(previousWorkspace)
     setActiveWorkspace(target)
-  }, [])
+    workspaceTransitionTimerRef.current = window.setTimeout(() => {
+      setExitingWorkspace((current) => (current === previousWorkspace ? null : current))
+      workspaceTransitionTimerRef.current = null
+    }, WORKBENCH_WORKSPACE_TRANSITION_MS)
+  }, [activeWorkspace])
 
   const workspaceMeta = useMemo(
     () => getWorkspaceMeta(workbenchLanguage, activeWorkspace),
@@ -295,67 +321,77 @@ function App({ bootstrap }: AppProps) {
         })}
       </aside>
 
-      <RecoverableErrorBoundary
-        fallback={({ error, reset }) => (
-          <BootstrapScreen
-            title={workbenchLanguage === 'en-US'
-              ? `${workspaceMeta.label} workspace failed to load`
-              : `${workspaceMeta.label}工作区加载失败`}
-            description={workbenchShellCopy.workspaceLoadFailureDescription}
-            tone="error"
-            details={<pre className="startup-shell__pre">{formatErrorMessage(error)}</pre>}
-            actions={[
-              {
-                label: activeWorkspace === 'assistant'
-                  ? workbenchShellCopy.retryCurrentWorkspace
-                  : workbenchShellCopy.switchBackToAssistant,
-                onClick: () => {
-                  if (activeWorkspace === 'assistant') {
-                    reset()
-                    return
-                  }
+      <div className="workbench-viewport">
+        <RecoverableErrorBoundary
+          fallback={({ error, reset }) => (
+            <BootstrapScreen
+              title={workbenchLanguage === 'en-US'
+                ? `${workspaceMeta.label} workspace failed to load`
+                : `${workspaceMeta.label}工作区加载失败`}
+              description={workbenchShellCopy.workspaceLoadFailureDescription}
+              tone="error"
+              details={<pre className="startup-shell__pre">{formatErrorMessage(error)}</pre>}
+              actions={[
+                {
+                  label: activeWorkspace === 'assistant'
+                    ? workbenchShellCopy.retryCurrentWorkspace
+                    : workbenchShellCopy.switchBackToAssistant,
+                  onClick: () => {
+                    if (activeWorkspace === 'assistant') {
+                      reset()
+                      return
+                    }
 
-                  activateWorkspace('assistant')
+                    activateWorkspace('assistant')
+                  },
                 },
-              },
-              {
-                label: workbenchShellCopy.reloadPage,
-                onClick: () => window.location.reload(),
-                emphasis: 'secondary',
-              },
-            ]}
-          />
-        )}
-      >
-        <Suspense
-          fallback={<BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />}
+                {
+                  label: workbenchShellCopy.reloadPage,
+                  onClick: () => window.location.reload(),
+                  emphasis: 'secondary',
+                },
+              ]}
+            />
+          )}
         >
-          {ALL_WORKSPACE_VIEWS.map((view) => {
-            if (!visitedWorkspaces.has(view)) {
-              return null
-            }
+          <Suspense
+            fallback={<BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />}
+          >
+            {ALL_WORKSPACE_VIEWS.map((view) => {
+              if (!visitedWorkspaces.has(view)) {
+                return null
+              }
 
-            const isActive = view === activeWorkspace
+              const isActive = view === activeWorkspace
+              const isExiting = exitingWorkspace === view && !isActive
+              const isVisible = isActive || isExiting
 
-            return (
-              <div
-                key={view}
-                hidden={!isActive}
-                aria-hidden={!isActive}
-              >
-                {renderWorkspace(
-                  view,
-                  bootstrap,
-                  themeMode,
-                  handleThemeModeChange,
-                  workbenchLanguage,
-                  applyWorkbenchLanguage,
-                )}
-              </div>
-            )
-          })}
-        </Suspense>
-      </RecoverableErrorBoundary>
+              return (
+                <div
+                  key={view}
+                  className={[
+                    'workbench-view',
+                    isActive ? 'workbench-view--active' : null,
+                    isExiting ? 'workbench-view--exiting' : null,
+                  ].filter(Boolean).join(' ')}
+                  data-workspace-view={view}
+                  hidden={!isVisible}
+                  aria-hidden={!isActive}
+                >
+                  {renderWorkspace(
+                    view,
+                    bootstrap,
+                    themeMode,
+                    handleThemeModeChange,
+                    workbenchLanguage,
+                    applyWorkbenchLanguage,
+                  )}
+                </div>
+              )
+            })}
+          </Suspense>
+        </RecoverableErrorBoundary>
+      </div>
     </div>
   )
 }

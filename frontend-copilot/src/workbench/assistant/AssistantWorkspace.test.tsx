@@ -547,6 +547,49 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
+  it('does not restart restored thread capability hydration when detail loading starts concurrently', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const historyFixture = createPersistedHistoryFixture()
+    const pendingCapabilities = createDeferred<ReturnType<typeof createCapabilitiesResponse>>()
+    const pendingDetail = createDeferred<typeof historyFixture.detail>()
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true,
+      version: 'chat-history-v1',
+      threads: [historyFixture.summary],
+    })
+    const getCapabilities = vi.fn().mockImplementation(() => pendingCapabilities.promise)
+    const getHistoryThreadDetail = vi.fn().mockImplementation(() => pendingDetail.promise)
+    const getHistoryRunReplay = vi.fn().mockResolvedValue(historyFixture.replay)
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listHistoryThreads={listHistoryThreads}
+        getCapabilities={getCapabilities}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getCapabilities.mock.calls.length >= 1
+      && getHistoryThreadDetail.mock.calls.length >= 1
+    ))
+    await flushAssistantWorkspaceEffects()
+
+    expect(getCapabilities).toHaveBeenCalledTimes(1)
+    expect(getLastMockCopilotChatPanelProps().sessionHistory).toMatchObject({
+      detailStatus: 'loading',
+      capabilitiesStatus: 'loading',
+    })
+
+    rendered.unmount()
+  })
+
   it('creates history state for a new live session and refreshes persisted detail after run settlement', async () => {
     mockCopilotChatPanel.mockClear()
 
@@ -1383,6 +1426,82 @@ describe('AssistantWorkspace render + interactions', () => {
       expect(hiddenWrapper.getAttribute('aria-hidden')).toBe('true')
       expect(hiddenWrapper.getAttribute('data-keepalive-panel')).toBeTruthy()
     }
+
+    rendered.unmount()
+  })
+
+  it('keeps the previous visited panel visible and locked while an unvisited restored thread loads', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const firstFixture = createPersistedHistoryFixture()
+    const secondFixture = createMultiRunPersistedHistoryFixture()
+    const pendingSecondDetail = createDeferred<typeof secondFixture.detail>()
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: [firstFixture.summary, secondFixture.summary],
+    })
+    const getCapabilities = vi.fn().mockImplementation(async ({ sessionId }: { sessionId: string }) => createCapabilitiesResponse({
+      sessionId,
+      capabilitiesVersion: `cap-${sessionId}`,
+    }))
+    const getHistoryThreadDetail = vi.fn().mockImplementation((threadId: string) => (
+      threadId === secondFixture.summary.threadId ? pendingSecondDetail.promise : Promise.resolve(firstFixture.detail)
+    ))
+    const getHistoryRunReplay = vi.fn().mockImplementation(async (runId: string) => {
+      if (runId === firstFixture.replay.run.runId) {
+        return firstFixture.replay
+      }
+
+      return secondFixture.replaysByRunId[runId as keyof typeof secondFixture.replaysByRunId]
+    })
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listHistoryThreads={listHistoryThreads}
+        getCapabilities={getCapabilities}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === firstFixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+    ))
+
+    await clickElement(rendered.getByTestId(`assistant-session-card-${secondFixture.summary.threadId}`))
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === secondFixture.summary.threadId)
+    ))
+    await flushAssistantWorkspaceEffects()
+
+    const retainedPanel = rendered.container.querySelector(`[data-keepalive-panel="${firstFixture.summary.threadId}"]`)
+    const pendingPanel = rendered.container.querySelector(`[data-keepalive-panel="${secondFixture.summary.threadId}"]`)
+    expect(retainedPanel).not.toBeNull()
+    expect(retainedPanel?.hasAttribute('hidden')).toBe(false)
+    expect(retainedPanel?.getAttribute('aria-hidden')).toBe('false')
+    expect(retainedPanel?.getAttribute('data-session-switch-retained')).toBe('true')
+    expect(retainedPanel?.hasAttribute('inert')).toBe(true)
+    expect(pendingPanel === null || pendingPanel.hasAttribute('hidden')).toBe(true)
+
+    pendingSecondDetail.resolve(secondFixture.detail)
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === secondFixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+    ))
+
+    const readyPanel = rendered.container.querySelector(`[data-keepalive-panel="${secondFixture.summary.threadId}"]`)
+    expect(readyPanel).not.toBeNull()
+    expect(readyPanel?.hasAttribute('hidden')).toBe(false)
+    expect(readyPanel?.getAttribute('aria-hidden')).toBe('false')
+    expect(readyPanel?.hasAttribute('inert')).toBe(false)
+    expect(retainedPanel?.hasAttribute('hidden')).toBe(true)
+    expect(retainedPanel?.getAttribute('data-session-switch-retained')).toBeNull()
 
     rendered.unmount()
   })

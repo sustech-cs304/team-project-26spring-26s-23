@@ -1,5 +1,5 @@
 import { FolderPlus, LoaderCircle, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import type {
   SettingsWorkspaceStateSaveInput,
@@ -38,11 +38,14 @@ import {
 } from './tool-permissions-section'
 
 
+const CAPABILITIES_SECTION_TRANSITION_MS = 180
+
 export function CapabilitiesWorkspace() {
   const [activeSection, setActiveSection] = useState<CapabilitiesSection>('tool-permissions')
   const [visitedSections, setVisitedSections] = useState<Set<CapabilitiesSection>>(
     () => new Set<CapabilitiesSection>(['tool-permissions']),
   )
+  const [exitingSection, setExitingSection] = useState<CapabilitiesSection | null>(null)
   const [toolPermissions, setToolPermissions] = useState<ToolPermissionRecord[]>([])
   const [editorState, setEditorState] = useState<McpServerEditorState | null>(null)
   const [settingsState, setSettingsState] = useState<SettingsWorkspaceStateSaveInput | null>(null)
@@ -57,6 +60,7 @@ export function CapabilitiesWorkspace() {
   const skillRegistry = useSkillRegistry()
   const appliedSnapshotRevisionRef = useRef<number | null>(null)
   const appliedDirectoryVersionRef = useRef<string | null>(null)
+  const sectionTransitionTimerRef = useRef<number | null>(null)
   const [managedRuntimePanelOpen, setManagedRuntimePanelOpen] = useState(false)
 
   const applyToolCatalogResult = (
@@ -87,6 +91,14 @@ export function CapabilitiesWorkspace() {
     return resolvedCatalog.tools
   }
  
+  useEffect(() => {
+    return () => {
+      if (sectionTransitionTimerRef.current !== null) {
+        window.clearTimeout(sectionTransitionTimerRef.current)
+      }
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
  
@@ -262,23 +274,66 @@ export function CapabilitiesWorkspace() {
     })()
   }
 
+  const handleSelectSection = useCallback((section: CapabilitiesSection) => {
+    if (section === activeSection) {
+      return
+    }
+
+    setVisitedSections((prev) => {
+      if (prev.has(section)) {
+        return prev
+      }
+      const next = new Set(prev)
+      next.add(section)
+      return next
+    })
+
+    if (sectionTransitionTimerRef.current !== null) {
+      window.clearTimeout(sectionTransitionTimerRef.current)
+    }
+
+    const previousSection = activeSection
+    setExitingSection(previousSection)
+    setActiveSection(section)
+    sectionTransitionTimerRef.current = window.setTimeout(() => {
+      setExitingSection((current) => (current === previousSection ? null : current))
+      sectionTransitionTimerRef.current = null
+    }, CAPABILITIES_SECTION_TRANSITION_MS)
+  }, [activeSection])
+
+  const renderSectionPanel = (section: CapabilitiesSection, children: ReactNode) => {
+    if (!visitedSections.has(section)) {
+      return null
+    }
+
+    const isActive = section === activeSection
+    const isExiting = section === exitingSection && !isActive
+    const isVisible = isActive || isExiting
+
+    return (
+      <div
+        key={section}
+        className={[
+          'capabilities-section-view',
+          isActive ? 'capabilities-section-view--active' : null,
+          isExiting ? 'capabilities-section-view--exiting' : null,
+        ].filter(Boolean).join(' ')}
+        data-capabilities-section={section}
+        hidden={!isVisible}
+        aria-hidden={!isActive}
+      >
+        {children}
+      </div>
+    )
+  }
+
   return (
     <>
       <section className="workspace-stage capabilities-workspace" aria-label="能力中心工作区">
         <CapabilitiesSecondaryNav
           items={capabilitiesNavItems}
           activeSection={activeSection}
-          onSelect={useCallback((section: CapabilitiesSection) => {
-            setVisitedSections((prev) => {
-              if (prev.has(section)) {
-                return prev
-              }
-              const next = new Set(prev)
-              next.add(section)
-              return next
-            })
-            setActiveSection(section)
-          }, [])}
+          onSelect={handleSelectSection}
         />
 
         <main className="workspace-main capabilities-main" aria-label="能力中心主内容区">
@@ -339,39 +394,33 @@ export function CapabilitiesWorkspace() {
             className="workspace-main__content capabilities-main__content"
             aria-label={`${activeNavItem.label}内容区`}
           >
-            {visitedSections.has('tool-permissions') && (
-              <div hidden={activeSection !== 'tool-permissions'} aria-hidden={activeSection !== 'tool-permissions'}>
-                <ToolPermissionsPanel
-                  tools={toolPermissions}
-                  statusMessage={resolveToolPermissionStatusMessage(toolCatalogLoadState)}
-                  onModeChange={handleModeChange}
-                  onDelayActionChange={handleDelayActionChange}
-                  onDelaySecondsChange={handleDelaySecondsChange}
-                />
-              </div>
-            )}
-            {visitedSections.has('mcp-servers') && (
-              <div hidden={activeSection !== 'mcp-servers'} aria-hidden={activeSection !== 'mcp-servers'}>
-                <McpServersPanel
-                  servers={mcpRegistry.servers}
-                  statusMessage={mcpRegistry.statusMessage}
-                  onToggleEnabled={mcpRegistry.toggleServerEnabled}
-                  onDelete={mcpRegistry.deleteServer}
-                  onTestConnection={mcpRegistry.testServerConnection}
-                />
-              </div>
-            )}
-            {visitedSections.has('skills') && (
-              <div hidden={activeSection !== 'skills'} aria-hidden={activeSection !== 'skills'}>
-                <SkillsPanel
-                  skills={skillRegistry.skills}
-                  importValidationErrors={skillRegistry.importValidationErrors}
-                  onToggleEnabled={skillRegistry.toggleSkillEnabled}
-                  onDelete={skillRegistry.deleteSkill}
-                  onRefresh={skillRegistry.refreshSkill}
-                />
-              </div>
-            )}
+            {renderSectionPanel('tool-permissions', (
+              <ToolPermissionsPanel
+                tools={toolPermissions}
+                statusMessage={resolveToolPermissionStatusMessage(toolCatalogLoadState)}
+                onModeChange={handleModeChange}
+                onDelayActionChange={handleDelayActionChange}
+                onDelaySecondsChange={handleDelaySecondsChange}
+              />
+            ))}
+            {renderSectionPanel('mcp-servers', (
+              <McpServersPanel
+                servers={mcpRegistry.servers}
+                statusMessage={mcpRegistry.statusMessage}
+                onToggleEnabled={mcpRegistry.toggleServerEnabled}
+                onDelete={mcpRegistry.deleteServer}
+                onTestConnection={mcpRegistry.testServerConnection}
+              />
+            ))}
+            {renderSectionPanel('skills', (
+              <SkillsPanel
+                skills={skillRegistry.skills}
+                importValidationErrors={skillRegistry.importValidationErrors}
+                onToggleEnabled={skillRegistry.toggleSkillEnabled}
+                onDelete={skillRegistry.deleteSkill}
+                onRefresh={skillRegistry.refreshSkill}
+              />
+            ))}
           </section>
         </main>
       </section>
