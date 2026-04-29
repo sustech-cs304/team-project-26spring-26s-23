@@ -26,25 +26,11 @@ interface UseSettingsWorkspaceStateResult {
   setPrimaryAssistantModel: (value: string | ((previous: string) => string)) => void
   setFastAssistantModel: (value: string | ((previous: string) => string)) => void
   setLanguage: (value: string) => void
-  setProxyMode: (value: string) => void
   setAssistantNotificationsEnabled: (value: boolean) => void
-  setBackupEnabled: (value: boolean) => void
-  setDataPath: (value: string) => void
-  setBackupCycle: (value: string) => void
-  setLaunchSyncEnabled: (value: boolean) => void
-  setMcpAutoDiscoveryEnabled: (value: boolean) => void
-  setToolPermissionMode: (value: string) => void
-  setSearchEngine: (value: string) => void
-  setSearchResultCount: (value: string) => void
-  setCompressionMode: (value: string) => void
-  setMemoryStrategy: (value: string) => void
-  setMemoryCleanupEnabled: (value: boolean) => void
   setApiReconnectMode: (value: string) => void
   setHealthPollingEnabled: (value: boolean) => void
   setApiBaseUrl: (value: string) => void
   setDocsFormat: (value: string) => void
-  setOutputDirectory: (value: string) => void
-  setAutoFileNameEnabled: (value: boolean) => void
   setWakeupShareLink: (value: string) => void
 }
 
@@ -142,19 +128,7 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
       ))
     },
     setLanguage: (value) => updateField(setFormState, 'language', value),
-    setProxyMode: (value) => updateField(setFormState, 'proxyMode', value),
     setAssistantNotificationsEnabled: (value) => updateField(setFormState, 'assistantNotificationsEnabled', value),
-    setBackupEnabled: (value) => updateField(setFormState, 'backupEnabled', value),
-    setDataPath: (value) => updateField(setFormState, 'dataPath', value),
-    setBackupCycle: (value) => updateField(setFormState, 'backupCycle', value),
-    setLaunchSyncEnabled: (value) => updateField(setFormState, 'launchSyncEnabled', value),
-    setMcpAutoDiscoveryEnabled: (value) => updateField(setFormState, 'mcpAutoDiscoveryEnabled', value),
-    setToolPermissionMode: (value) => updateField(setFormState, 'toolPermissionMode', value),
-    setSearchEngine: (value) => updateField(setFormState, 'searchEngine', value),
-    setSearchResultCount: (value) => updateField(setFormState, 'searchResultCount', value),
-    setCompressionMode: (value) => updateField(setFormState, 'compressionMode', value),
-    setMemoryStrategy: (value) => updateField(setFormState, 'memoryStrategy', value),
-    setMemoryCleanupEnabled: (value) => updateField(setFormState, 'memoryCleanupEnabled', value),
     setApiReconnectMode: (value) => {
       setFormState((previous) => ({
         ...previous,
@@ -169,8 +143,6 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
       }))
     },
     setDocsFormat: (value) => updateField(setFormState, 'docsFormat', value),
-    setOutputDirectory: (value) => updateField(setFormState, 'outputDirectory', value),
-    setAutoFileNameEnabled: (value) => updateField(setFormState, 'autoFileNameEnabled', value),
     setWakeupShareLink: (value) => updateField(setFormState, 'wakeupShareLink', value),
   }
 }

@@ -20,28 +20,16 @@ import {
   createGeneralSettingsSectionDomains,
   type GeneralSettingsSectionDomains,
 } from './sections/GeneralSettingsSectionDomain'
-import { createMcpSettingsSectionDomains, type McpSettingsSectionDomains } from './sections/McpSettingsSectionDomain'
-import {
-  createMemorySettingsSectionDomains,
-  type MemorySettingsSectionDomains,
-} from './sections/MemorySettingsSectionDomain'
 import {
   createMiscSettingsSectionDomains,
   type MiscSettingsSectionDomains,
 } from './sections/MiscSettingsSectionDomain'
-import {
-  createSearchSettingsSectionDomains,
-  type SearchSettingsSectionDomains,
-} from './sections/SearchSettingsSectionDomain'
 import { createSustechInfoSectionDomain } from './sections/SustechInfoSectionDomain'
 import { useSettingsWorkspaceProviderController } from './provider-profiles/useProviderProfilesController'
 
 export type SettingsWorkspaceMiscSectionDomains =
   & GeneralSettingsSectionDomains
   & MiscSettingsSectionDomains
-  & McpSettingsSectionDomains
-  & SearchSettingsSectionDomains
-  & MemorySettingsSectionDomains
 
 export interface SettingsWorkspaceSectionsDomain {
   provider: ProviderProfilesSectionDomain
@@ -82,25 +70,11 @@ export function useSettingsWorkspaceSectionsDomain({
     setPrimaryAssistantModel,
     setFastAssistantModel,
     setLanguage,
-    setProxyMode,
     setAssistantNotificationsEnabled,
-    setBackupEnabled,
-    setDataPath,
-    setBackupCycle,
-    setLaunchSyncEnabled,
-    setMcpAutoDiscoveryEnabled,
-    setToolPermissionMode,
-    setSearchEngine,
-    setSearchResultCount,
-    setCompressionMode,
-    setMemoryStrategy,
-    setMemoryCleanupEnabled,
     setApiReconnectMode,
     setHealthPollingEnabled,
     setApiBaseUrl,
     setDocsFormat,
-    setOutputDirectory,
-    setAutoFileNameEnabled,
     setWakeupShareLink,
   } = workspaceState
 
@@ -272,17 +246,13 @@ export function useSettingsWorkspaceSectionsDomain({
     misc: {
       ...createGeneralSettingsSectionDomains({
         language: formState.language,
-        proxyMode: formState.proxyMode,
         assistantNotificationsEnabled: formState.assistantNotificationsEnabled,
-        backupEnabled: formState.backupEnabled,
         debugModeEnabled,
         onLanguageChange: (value) => {
           setLanguage(value)
           onLanguageChange?.(value)
         },
-        onProxyModeChange: setProxyMode,
         onAssistantNotificationsEnabledChange: setAssistantNotificationsEnabled,
-        onBackupEnabledChange: setBackupEnabled,
         onDebugModeEnabledChange: handleDebugModeEnabledChange,
       }),
       ...createMiscSettingsSectionDomains({
@@ -291,59 +261,11 @@ export function useSettingsWorkspaceSectionsDomain({
           themeMode,
           onThemeModeChange,
         },
-        data: {
-          language: formState.language,
-          dataPath: formState.dataPath,
-          backupCycle: formState.backupCycle,
-          backupEnabled: formState.backupEnabled,
-          launchSyncEnabled: formState.launchSyncEnabled,
-          onDataPathChange: setDataPath,
-          onBackupCycleChange: setBackupCycle,
-          onBackupEnabledChange: setBackupEnabled,
-          onLaunchSyncEnabledChange: setLaunchSyncEnabled,
-        },
-        api: {
-          language: formState.language,
-          bootstrap,
-          apiBaseUrl: formState.apiBaseUrl,
-          apiReconnectMode: formState.apiReconnectMode,
-          healthPollingEnabled: formState.healthPollingEnabled,
-          onApiBaseUrlChange: setApiBaseUrl,
-          onApiReconnectModeChange: setApiReconnectMode,
-          onHealthPollingEnabledChange: setHealthPollingEnabled,
-        },
         docs: {
           language: formState.language,
           docsFormat: formState.docsFormat,
-          outputDirectory: formState.outputDirectory,
-          autoFileNameEnabled: formState.autoFileNameEnabled,
           onDocsFormatChange: setDocsFormat,
-          onOutputDirectoryChange: setOutputDirectory,
-          onAutoFileNameEnabledChange: setAutoFileNameEnabled,
         },
-      }),
-      ...createMcpSettingsSectionDomains({
-        language: formState.language,
-        toolPermissionMode: formState.toolPermissionMode,
-        mcpAutoDiscoveryEnabled: formState.mcpAutoDiscoveryEnabled,
-        onToolPermissionModeChange: setToolPermissionMode,
-        onMcpAutoDiscoveryEnabledChange: setMcpAutoDiscoveryEnabled,
-      }),
-      ...createSearchSettingsSectionDomains({
-        language: formState.language,
-        searchEngine: formState.searchEngine,
-        searchResultCount: formState.searchResultCount,
-        compressionMode: formState.compressionMode,
-        onSearchEngineChange: setSearchEngine,
-        onSearchResultCountChange: setSearchResultCount,
-        onCompressionModeChange: setCompressionMode,
-      }),
-      ...createMemorySettingsSectionDomains({
-        language: formState.language,
-        memoryStrategy: formState.memoryStrategy,
-        memoryCleanupEnabled: formState.memoryCleanupEnabled,
-        onMemoryStrategyChange: setMemoryStrategy,
-        onMemoryCleanupEnabledChange: setMemoryCleanupEnabled,
       }),
     },
   }

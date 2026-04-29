@@ -12,7 +12,7 @@ import {
 } from './provider-schema'
 import { asRecord, normalizeBooleanStringGroup, normalizeNonEmptyString, normalizeStringGroup } from './normalize'
 
-export const SETTINGS_WORKSPACE_STATE_DOCUMENT_VERSION = 2 as const
+export const SETTINGS_WORKSPACE_STATE_DOCUMENT_VERSION = 3 as const
 
 export type LegacyToolPermissionMode = 'manual' | 'trusted' | 'strict'
 export type ToolPermissionPolicyMode = 'allow' | 'ask' | 'deny' | 'delay'
@@ -58,28 +58,10 @@ export interface SettingsWorkspaceStateValues {
   defaultModelRouting: SettingsWorkspaceStoredDefaultModelRouting
   general: {
     language: string
-    proxyMode: string
     assistantNotificationsEnabled: boolean
-    backupEnabled: boolean
-  }
-  data: {
-    dataPath: string
-    backupCycle: string
-    launchSyncEnabled: boolean
   }
   mcp: {
-    mcpAutoDiscoveryEnabled: boolean
-    toolPermissionMode: string
     toolPermissionPolicy: SettingsWorkspaceToolPermissionPolicyState
-  }
-  search: {
-    searchEngine: string
-    searchResultCount: string
-    compressionMode: string
-  }
-  memory: {
-    memoryStrategy: string
-    memoryCleanupEnabled: boolean
   }
   api: {
     apiReconnectMode: string
@@ -88,8 +70,6 @@ export interface SettingsWorkspaceStateValues {
   }
   docs: {
     docsFormat: string
-    outputDirectory: string
-    autoFileNameEnabled: boolean
   }
   externalSource: {
     wakeupShareLink: string
@@ -123,28 +103,10 @@ const DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES: SettingsWorkspaceStateValues = {
   },
   general: {
     language: 'zh-CN',
-    proxyMode: 'system',
     assistantNotificationsEnabled: false,
-    backupEnabled: true,
-  },
-  data: {
-    dataPath: 'D:/workspace/copilot-data',
-    backupCycle: 'daily',
-    launchSyncEnabled: true,
   },
   mcp: {
-    mcpAutoDiscoveryEnabled: true,
-    toolPermissionMode: 'manual',
     toolPermissionPolicy: createDefaultToolPermissionPolicyState('ask'),
-  },
-  search: {
-    searchEngine: 'google',
-    searchResultCount: '8',
-    compressionMode: 'summary',
-  },
-  memory: {
-    memoryStrategy: 'session-longterm',
-    memoryCleanupEnabled: true,
   },
   api: {
     apiReconnectMode: 'exponential',
@@ -153,8 +115,6 @@ const DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES: SettingsWorkspaceStateValues = {
   },
   docs: {
     docsFormat: 'markdown',
-    outputDirectory: 'D:/workspace/exports',
-    autoFileNameEnabled: true,
   },
   externalSource: {
     wakeupShareLink: '',
@@ -191,12 +151,9 @@ export function normalizeSettingsWorkspaceStateValues(input: unknown): SettingsW
     providerProfiles,
     defaultModelRouting: normalizeStoredDefaultModelRouting(record.defaultModelRouting, providerProfiles),
     general: normalizeBooleanStringGroup(record.general, defaults.general),
-    data: normalizeBooleanStringGroup(record.data, defaults.data),
     mcp: normalizedMcp,
-    search: normalizeStringGroup(record.search, defaults.search),
-    memory: normalizeBooleanStringGroup(record.memory, defaults.memory),
     api: normalizeBooleanStringGroup(record.api, defaults.api),
-    docs: normalizeBooleanStringGroup(record.docs, defaults.docs),
+    docs: normalizeStringGroup(record.docs, defaults.docs),
     externalSource: normalizeStringGroup(record.externalSource, defaults.externalSource),
   }
 }
@@ -220,10 +177,7 @@ export function projectSettingsWorkspaceEditableState(
     }),
     defaultModelRouting: projectEditableDefaultModelRouting(clonedValues.defaultModelRouting),
     general: clonedValues.general,
-    data: clonedValues.data,
     mcp: clonedValues.mcp,
-    search: clonedValues.search,
-    memory: clonedValues.memory,
     api: clonedValues.api,
     docs: clonedValues.docs,
     externalSource: clonedValues.externalSource,
@@ -236,13 +190,9 @@ function cloneSettingsWorkspaceStateValues(values: SettingsWorkspaceStateValues)
     providerProfiles: values.providerProfiles.map(cloneStoredProviderProfile),
     defaultModelRouting: cloneStoredDefaultModelRouting(values.defaultModelRouting),
     general: { ...values.general },
-    data: { ...values.data },
     mcp: {
-      ...values.mcp,
       toolPermissionPolicy: cloneToolPermissionPolicyState(values.mcp.toolPermissionPolicy),
     },
-    search: { ...values.search },
-    memory: { ...values.memory },
     api: { ...values.api },
     docs: { ...values.docs },
     externalSource: { ...values.externalSource },
@@ -364,10 +314,6 @@ function normalizeMcpState(
   const toolPermissionPolicy = normalizeToolPermissionPolicyState(record.toolPermissionPolicy, legacyMode)
 
   return {
-    mcpAutoDiscoveryEnabled: typeof record.mcpAutoDiscoveryEnabled === 'boolean'
-      ? record.mcpAutoDiscoveryEnabled
-      : defaults.mcpAutoDiscoveryEnabled,
-    toolPermissionMode: legacyModeToStoredValue(toolPermissionPolicy.defaultMode),
     toolPermissionPolicy,
   }
 }

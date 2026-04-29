@@ -10,14 +10,9 @@ import {
   type ExternalSourcesSectionDomain,
 } from './ExternalSourcesSection'
 import {
-  ApiSettingsSection,
-  DataSettingsSection,
   DisplaySettingsSection,
   DocsSettingsSection,
   GeneralSettingsSection,
-  McpSettingsSection,
-  MemorySettingsSection,
-  SearchSettingsSection,
 } from './MiscSettingsSections'
 import { ProviderProfilesSection } from './ProviderProfilesSection'
 import type { ProviderProfilesSectionDomain } from './ProviderProfilesSectionDomain'
@@ -26,11 +21,6 @@ import { SustechInfoSection, type SustechInfoSectionDomain } from './SustechInfo
 interface SettingsWorkspaceMiscSectionDomains {
   general: ComponentProps<typeof GeneralSettingsSection>
   display: ComponentProps<typeof DisplaySettingsSection>
-  data: ComponentProps<typeof DataSettingsSection>
-  mcp: ComponentProps<typeof McpSettingsSection>
-  search: ComponentProps<typeof SearchSettingsSection>
-  memory: ComponentProps<typeof MemorySettingsSection>
-  api: ComponentProps<typeof ApiSettingsSection>
   docs: ComponentProps<typeof DocsSettingsSection>
 }
 
@@ -55,11 +45,6 @@ const sectionRenderers: Record<SettingsSection, SectionRenderer> = {
   ),
   general: ({ misc }) => <GeneralSettingsSection {...misc.general} />,
   display: ({ misc }) => <DisplaySettingsSection {...misc.display} />,
-  data: ({ misc }) => <DataSettingsSection {...misc.data} language={misc.general.language} />,
-  mcp: ({ misc }) => <McpSettingsSection {...misc.mcp} language={misc.general.language} />,
-  search: ({ misc }) => <SearchSettingsSection {...misc.search} language={misc.general.language} />,
-  memory: ({ misc }) => <MemorySettingsSection {...misc.memory} language={misc.general.language} />,
-  api: ({ misc }) => <ApiSettingsSection {...misc.api} language={misc.general.language} />,
   docs: ({ misc }) => <DocsSettingsSection {...misc.docs} language={misc.general.language} />,
   'external-source': ({ externalSources, misc }) => (
     <ExternalSourcesSection externalSources={externalSources} language={misc.general.language} />

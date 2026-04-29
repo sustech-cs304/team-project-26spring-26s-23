@@ -5,11 +5,8 @@ import {
   FileText,
   FolderOpen,
   Link2,
-  MemoryStick,
   MessageSquare,
   Monitor,
-  PlugZap,
-  Search,
   School,
   ServerCog,
   Settings,
@@ -173,16 +170,11 @@ function buildAgentShortLabel(agent: RuntimeAgentDirectoryEntry): string {
 }
 
 export const settingsItems: SettingsNavItem[] = [
-  { id: 'sustech-info', label: 'SUSTech 信息', icon: School },
+  { id: 'general', label: '常规设置', icon: SlidersHorizontal },
   { id: 'model-service', label: '模型服务', icon: ServerCog },
   { id: 'default-model', label: '默认模型', icon: Brain },
-  { id: 'general', label: '常规设置', icon: SlidersHorizontal },
   { id: 'display', label: '显示设置', icon: Monitor },
-  { id: 'data', label: '数据设置', icon: Database },
-  { id: 'mcp', label: 'MCP 服务器', icon: PlugZap },
-  { id: 'search', label: '网络搜索', icon: Search },
-  { id: 'memory', label: '全局记忆', icon: MemoryStick },
-  { id: 'api', label: 'API 服务器', icon: Workflow },
+  { id: 'sustech-info', label: 'SUSTech 信息', icon: School },
   { id: 'docs', label: '文档处理', icon: FileText },
   { id: 'external-source', label: '外部源', icon: Link2 },
 ]

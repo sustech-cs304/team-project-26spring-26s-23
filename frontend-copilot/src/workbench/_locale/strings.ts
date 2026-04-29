@@ -32,11 +32,6 @@ const settingsSectionLabels: Record<WorkbenchLanguage, Record<SettingsSection, s
     'default-model': '默认模型',
     general: '常规设置',
     display: '显示设置',
-    data: '数据设置',
-    mcp: 'MCP 服务器',
-    search: '网络搜索',
-    memory: '全局记忆',
-    api: 'API 服务器',
     docs: '文档处理',
     'external-source': '外部源',
   },
@@ -46,11 +41,6 @@ const settingsSectionLabels: Record<WorkbenchLanguage, Record<SettingsSection, s
     'default-model': 'Default Models',
     general: 'General',
     display: 'Display',
-    data: 'Data',
-    mcp: 'MCP Servers',
-    search: 'Web Search',
-    memory: 'Memory',
-    api: 'API Server',
     docs: 'Document Processing',
     'external-source': 'External Sources',
   },
@@ -82,27 +72,21 @@ const settingsShellCopy: Record<WorkbenchLanguage, {
 const generalSettingsCopy: Record<WorkbenchLanguage, {
   title: string
   languageLabel: string
-  proxyModeLabel: string
   notificationsLabel: string
-  backupLabel: string
   debugModeLabel: string
   debugModeDescription: string
 }> = {
   'zh-CN': {
     title: '常规设置',
     languageLabel: '界面语言',
-    proxyModeLabel: '代理模式',
     notificationsLabel: '助手消息通知',
-    backupLabel: '自动备份',
     debugModeLabel: '启用调试模式',
     debugModeDescription: '开启后会显示更多问题排查信息。',
   },
   'en-US': {
     title: 'General Settings',
     languageLabel: 'Interface Language',
-    proxyModeLabel: 'Proxy Mode',
     notificationsLabel: 'Assistant Notifications',
-    backupLabel: 'Automatic Backup',
     debugModeLabel: 'Enable Debug Mode',
     debugModeDescription: 'Show more diagnostics and troubleshooting details.',
   },
@@ -169,32 +153,6 @@ const sustechInfoCopy: Record<WorkbenchLanguage, {
   },
 }
 
-const dataSettingsCopy: Record<WorkbenchLanguage, {
-  title: string
-  dataPathLabel: string
-  dataPathPlaceholder: string
-  backupCycleLabel: string
-  backupEnabledLabel: string
-  launchSyncLabel: string
-}> = {
-  'zh-CN': {
-    title: '数据设置',
-    dataPathLabel: '数据目录',
-    dataPathPlaceholder: '输入本地目录',
-    backupCycleLabel: '备份周期',
-    backupEnabledLabel: '启用自动备份',
-    launchSyncLabel: '启动时同步',
-  },
-  'en-US': {
-    title: 'Data Settings',
-    dataPathLabel: 'Data Directory',
-    dataPathPlaceholder: 'Enter local directory',
-    backupCycleLabel: 'Backup Cycle',
-    backupEnabledLabel: 'Enable Automatic Backup',
-    launchSyncLabel: 'Sync on Launch',
-  },
-}
-
 const defaultModelRoutesCopy: Record<WorkbenchLanguage, {
   title: string
   subtitle: string
@@ -224,154 +182,17 @@ const defaultModelRoutesCopy: Record<WorkbenchLanguage, {
   },
 }
 
-const mcpSettingsCopy: Record<WorkbenchLanguage, {
-  title: string
-  permissionStrategyLabel: string
-  autoDiscoveryLabel: string
-}> = {
-  'zh-CN': {
-    title: 'MCP 服务器',
-    permissionStrategyLabel: '工具权限策略',
-    autoDiscoveryLabel: '自动发现 MCP 服务',
-  },
-  'en-US': {
-    title: 'MCP Servers',
-    permissionStrategyLabel: 'Tool Permission Policy',
-    autoDiscoveryLabel: 'Auto-discover MCP services',
-  },
-}
-
-const searchSettingsCopy: Record<WorkbenchLanguage, {
-  providerTitle: string
-  defaultEngineLabel: string
-  resultCountLabel: string
-  configTitle: string
-  compressionLabel: string
-}> = {
-  'zh-CN': {
-    providerTitle: '搜索服务商',
-    defaultEngineLabel: '默认搜索引擎',
-    resultCountLabel: '结果数量',
-    configTitle: '网络搜索配置',
-    compressionLabel: '压缩方式',
-  },
-  'en-US': {
-    providerTitle: 'Search Provider',
-    defaultEngineLabel: 'Default Search Engine',
-    resultCountLabel: 'Result Count',
-    configTitle: 'Web Search Configuration',
-    compressionLabel: 'Compression Mode',
-  },
-}
-
-const memorySettingsCopy: Record<WorkbenchLanguage, {
-  title: string
-  strategyLabel: string
-  cleanupLabel: string
-}> = {
-  'zh-CN': {
-    title: '全局记忆',
-    strategyLabel: '记忆策略',
-    cleanupLabel: '自动清理陈旧记忆',
-  },
-  'en-US': {
-    title: 'Memory',
-    strategyLabel: 'Memory Strategy',
-    cleanupLabel: 'Automatically clean stale memory',
-  },
-}
-
-const apiSettingsCopy: Record<WorkbenchLanguage, {
-  title: string
-  summaryTitle: string
-  currentStatusLabel: string
-  retryActionLabel: string
-  retryingText: string
-  retryIdleText: string
-  apiBaseUrlLabel: string
-  reconnectPolicyLabel: string
-  healthPollingLabel: string
-  bootstrapStatusLabels: Record<
-    'loading' | 'empty' | 'incomplete' | 'starting' | 'ready' | 'failed' | 'degraded' | 'error',
-    string
-  >
-  bootstrapRetryLabels: {
-    retrying: string
-    idle: string
-  }
-}> = {
-  'zh-CN': {
-    title: 'API 服务器',
-    summaryTitle: '根层启动摘要',
-    currentStatusLabel: '当前状态',
-    retryActionLabel: '重试动作',
-    retryingText: '正在重试…',
-    retryIdleText: '重试读取运行态',
-    apiBaseUrlLabel: '后端地址',
-    reconnectPolicyLabel: '重连策略',
-    healthPollingLabel: '启用健康检查轮询',
-    bootstrapStatusLabels: {
-      loading: '根层读取中',
-      empty: '尚未配置',
-      incomplete: '配置缺失',
-      starting: '宿主启动中',
-      ready: '运行态已就绪',
-      failed: '宿主启动失败',
-      degraded: '运行态降级',
-      error: '读取失败',
-    },
-    bootstrapRetryLabels: {
-      retrying: '根层重试中',
-      idle: '由根层统一持有',
-    },
-  },
-  'en-US': {
-    title: 'API Server',
-    summaryTitle: 'Root Bootstrap Summary',
-    currentStatusLabel: 'Current Status',
-    retryActionLabel: 'Retry Action',
-    retryingText: 'Retrying…',
-    retryIdleText: 'Retry runtime bootstrap',
-    apiBaseUrlLabel: 'Backend URL',
-    reconnectPolicyLabel: 'Reconnect Policy',
-    healthPollingLabel: 'Enable health polling',
-    bootstrapStatusLabels: {
-      loading: 'Root loading',
-      empty: 'Not configured',
-      incomplete: 'Configuration missing',
-      starting: 'Host starting',
-      ready: 'Runtime ready',
-      failed: 'Host startup failed',
-      degraded: 'Runtime degraded',
-      error: 'Load failed',
-    },
-    bootstrapRetryLabels: {
-      retrying: 'Root retry in progress',
-      idle: 'Managed by the root shell',
-    },
-  },
-}
-
 const docsSettingsCopy: Record<WorkbenchLanguage, {
   title: string
   formatLabel: string
-  outputDirectoryLabel: string
-  outputDirectoryPlaceholder: string
-  autoFileNameLabel: string
 }> = {
   'zh-CN': {
     title: '文档处理',
     formatLabel: '默认导出格式',
-    outputDirectoryLabel: '输出目录',
-    outputDirectoryPlaceholder: '输入导出目录',
-    autoFileNameLabel: '自动生成文件名',
   },
   'en-US': {
     title: 'Document Processing',
     formatLabel: 'Default Export Format',
-    outputDirectoryLabel: 'Output Directory',
-    outputDirectoryPlaceholder: 'Enter export directory',
-    autoFileNameLabel: 'Generate file names automatically',
   },
 }
 
@@ -1159,20 +980,16 @@ const hubWorkspaceContentByLanguage: Record<WorkbenchLanguage, Record<HubWorkspa
 
 export {
   DEFAULT_WORKBENCH_LANGUAGE,
-  apiSettingsCopy,
   assistantDirectoryCopy,
   assistantSessionCopy,
   configCenterPublicFieldCopy,
   copilotChatCopy,
-  dataSettingsCopy,
   defaultModelRoutesCopy,
   displaySettingsCopy,
   docsSettingsCopy,
   externalSourcesCopy,
   generalSettingsCopy,
   hubWorkspaceContentByLanguage,
-  mcpSettingsCopy,
-  memorySettingsCopy,
   providerContextMenuCopy,
   providerDetailsCopy,
   providerListCopy,
@@ -1180,7 +997,6 @@ export {
   providerModelListCopy,
   providerSecretCopy,
   providerSecretsFeedbackCopy,
-  searchSettingsCopy,
   settingsSectionLabels,
   settingsShellCopy,
   sustechInfoCopy,

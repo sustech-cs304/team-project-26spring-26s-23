@@ -191,8 +191,6 @@ export function CapabilitiesWorkspace() {
     const nextState: SettingsWorkspaceStateSaveInput = {
       ...settingsState,
       mcp: {
-        ...settingsState.mcp,
-        toolPermissionMode: mapDefaultModeToLegacyMode(nextPolicy.defaultMode),
         toolPermissionPolicy: nextPolicy,
       },
     }

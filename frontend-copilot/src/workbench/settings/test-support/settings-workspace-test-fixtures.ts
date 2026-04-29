@@ -12,10 +12,7 @@ export interface WorkspaceStateOverrides {
   providerProfiles?: ProviderProfile[]
   defaultModelRouting?: Partial<SettingsWorkspaceEditableState['defaultModelRouting']>
   general?: Partial<SettingsWorkspaceEditableState['general']>
-  data?: Partial<SettingsWorkspaceEditableState['data']>
   mcp?: Partial<SettingsWorkspaceEditableState['mcp']>
-  search?: Partial<SettingsWorkspaceEditableState['search']>
-  memory?: Partial<SettingsWorkspaceEditableState['memory']>
   api?: Partial<SettingsWorkspaceEditableState['api']>
   docs?: Partial<SettingsWorkspaceEditableState['docs']>
   externalSource?: Partial<SettingsWorkspaceEditableState['externalSource']>
@@ -124,32 +121,14 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
     },
     general: {
       language: 'zh-CN',
-      proxyMode: 'system',
       assistantNotificationsEnabled: true,
-      backupEnabled: false,
-    },
-    data: {
-      dataPath: 'D:/workspace/persisted-data',
-      backupCycle: 'daily',
-      launchSyncEnabled: true,
     },
     mcp: {
-      mcpAutoDiscoveryEnabled: true,
-      toolPermissionMode: 'manual',
       toolPermissionPolicy: {
         version: 1,
         defaultMode: 'ask',
         toolPermissions: {},
       },
-    },
-    search: {
-      searchEngine: 'google',
-      searchResultCount: '8',
-      compressionMode: 'summary',
-    },
-    memory: {
-      memoryStrategy: 'session-longterm',
-      memoryCleanupEnabled: true,
     },
     api: {
       apiReconnectMode: 'exponential',
@@ -158,8 +137,6 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
     },
     docs: {
       docsFormat: 'markdown',
-      outputDirectory: 'D:/workspace/exports',
-      autoFileNameEnabled: true,
     },
     externalSource: {
       wakeupShareLink: '',
@@ -184,7 +161,6 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
         : resolveModelRouteRef(providerProfiles, mergedDefaultModelRouting.fastAssistantModel),
     },
     general: { ...baseState.general, ...overrides.general },
-    data: { ...baseState.data, ...overrides.data },
     mcp: {
       ...baseState.mcp,
       ...overrides.mcp,
@@ -197,8 +173,6 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
         },
       },
     },
-    search: { ...baseState.search, ...overrides.search },
-    memory: { ...baseState.memory, ...overrides.memory },
     api: { ...baseState.api, ...overrides.api },
     docs: { ...baseState.docs, ...overrides.docs },
     externalSource: { ...baseState.externalSource, ...overrides.externalSource },

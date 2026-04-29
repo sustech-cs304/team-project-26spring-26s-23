@@ -21,26 +21,12 @@ export interface SettingsWorkspaceFormState {
   primaryAssistantModelRoute: ModelRouteRef | null
   fastAssistantModelRoute: ModelRouteRef | null
   language: string
-  proxyMode: string
   assistantNotificationsEnabled: boolean
-  backupEnabled: boolean
-  dataPath: string
-  backupCycle: string
-  launchSyncEnabled: boolean
-  mcpAutoDiscoveryEnabled: boolean
-  toolPermissionMode: string
   toolPermissionPolicy: SettingsWorkspaceToolPermissionPolicyState
-  searchEngine: string
-  searchResultCount: string
-  compressionMode: string
-  memoryStrategy: string
-  memoryCleanupEnabled: boolean
   apiReconnectMode: string
   healthPollingEnabled: boolean
   apiBaseUrl: string
   docsFormat: string
-  outputDirectory: string
-  autoFileNameEnabled: boolean
   wakeupShareLink: string
 }
 
@@ -57,30 +43,16 @@ const INITIAL_SETTINGS_WORKSPACE_FORM_STATE: SettingsWorkspaceFormState = {
   primaryAssistantModelRoute: null,
   fastAssistantModelRoute: null,
   language: 'zh-CN',
-  proxyMode: 'system',
   assistantNotificationsEnabled: false,
-  backupEnabled: true,
-  dataPath: 'D:/workspace/copilot-data',
-  backupCycle: 'daily',
-  launchSyncEnabled: true,
-  mcpAutoDiscoveryEnabled: true,
-  toolPermissionMode: 'manual',
   toolPermissionPolicy: {
     version: 1,
     defaultMode: 'ask',
     toolPermissions: {},
   },
-  searchEngine: 'google',
-  searchResultCount: '8',
-  compressionMode: 'summary',
-  memoryStrategy: 'session-longterm',
-  memoryCleanupEnabled: true,
   apiReconnectMode: 'exponential',
   healthPollingEnabled: true,
   apiBaseUrl: 'http://127.0.0.1:8000',
   docsFormat: 'markdown',
-  outputDirectory: 'D:/workspace/exports',
-  autoFileNameEnabled: true,
   wakeupShareLink: '',
 }
 
@@ -102,26 +74,12 @@ export function createSettingsWorkspaceFormStateFromEditableState(
     primaryAssistantModelRoute: cloneModelRouteRef(state.defaultModelRouting.primaryAssistantModelRoute ?? null),
     fastAssistantModelRoute: cloneModelRouteRef(state.defaultModelRouting.fastAssistantModelRoute ?? null),
     language: state.general.language,
-    proxyMode: state.general.proxyMode,
     assistantNotificationsEnabled: state.general.assistantNotificationsEnabled,
-    backupEnabled: state.general.backupEnabled,
-    dataPath: state.data.dataPath,
-    backupCycle: state.data.backupCycle,
-    launchSyncEnabled: state.data.launchSyncEnabled,
-    mcpAutoDiscoveryEnabled: state.mcp.mcpAutoDiscoveryEnabled,
-    toolPermissionMode: state.mcp.toolPermissionMode,
     toolPermissionPolicy: state.mcp.toolPermissionPolicy,
-    searchEngine: state.search.searchEngine,
-    searchResultCount: state.search.searchResultCount,
-    compressionMode: state.search.compressionMode,
-    memoryStrategy: state.memory.memoryStrategy,
-    memoryCleanupEnabled: state.memory.memoryCleanupEnabled,
     apiReconnectMode: state.api.apiReconnectMode,
     healthPollingEnabled: state.api.healthPollingEnabled,
     apiBaseUrl: state.api.apiBaseUrl,
     docsFormat: state.docs.docsFormat,
-    outputDirectory: state.docs.outputDirectory,
-    autoFileNameEnabled: state.docs.autoFileNameEnabled,
     wakeupShareLink: state.externalSource.wakeupShareLink,
   }
 }
