@@ -43,6 +43,15 @@ import {
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from '../bootstrap-window'
 import {
+  DESKTOP_WINDOW_CLOSE_CHANNEL,
+  DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+  DESKTOP_WINDOW_STATE_CHANGED_CHANNEL,
+  DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+  DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+  type DesktopWindowControlsApi,
+  type DesktopWindowState,
+} from '../window-controls'
+import {
   MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
   MANAGED_RUNTIME_LOAD_CHANNEL,
   type ManagedRuntimeApi,
@@ -108,6 +117,7 @@ export interface PreloadBridgeApis {
   skillRegistrySubscription: SkillRegistrySubscriptionApi
   toolCatalog: ToolCatalogApi
   desktopNotification: DesktopNotificationApi
+  windowControls: DesktopWindowControlsApi
   bootstrapWindow: BootstrapWindowApi
   fileManager: FileManagerApi
 }
@@ -247,6 +257,29 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
     desktopNotification: {
       show(request) {
         return ipcRenderer.invoke(DESKTOP_NOTIFICATION_SHOW_CHANNEL, request)
+      },
+    },
+    windowControls: {
+      loadState() {
+        return ipcRenderer.invoke(DESKTOP_WINDOW_STATE_LOAD_CHANNEL)
+      },
+      minimize() {
+        return ipcRenderer.invoke(DESKTOP_WINDOW_MINIMIZE_CHANNEL)
+      },
+      toggleMaximize() {
+        return ipcRenderer.invoke(DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL)
+      },
+      close() {
+        return ipcRenderer.invoke(DESKTOP_WINDOW_CLOSE_CHANNEL)
+      },
+      onStateChanged(listener: (state: DesktopWindowState) => void): () => void {
+        const handler = (_event: unknown, state: DesktopWindowState) => {
+          listener(state)
+        }
+        ipcRenderer.on(DESKTOP_WINDOW_STATE_CHANGED_CHANNEL, handler)
+        return () => {
+          ipcRenderer.off(DESKTOP_WINDOW_STATE_CHANGED_CHANNEL, handler)
+        }
       },
     },
     bootstrapWindow: {

@@ -287,6 +287,13 @@ function getDialog(container: ParentNode): HTMLElement {
   return dialog
 }
 
+async function advanceTimersByTime(ms: number) {
+  await act(async () => {
+    vi.advanceTimersByTime(ms)
+    await Promise.resolve()
+  })
+}
+
 function createSavedMcpServerState(
   server: McpServerRecord,
   overrides: Partial<McpServerStateSummary> = {},
@@ -674,6 +681,11 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.textContent).toContain('写入文件')
     expect(rendered.container.textContent).toContain('浏览器自动化')
     expect(getToolRow(rendered.container, '读取文件').textContent).toContain('tool.fs.read')
+    expect(
+      Array.from(rendered.container.querySelectorAll<HTMLElement>('.tool-permission-row'))
+        .slice(0, 3)
+        .map((row) => row.style.animationDelay),
+    ).toEqual(['0ms', '28ms', '56ms'])
     expect(getExactButton(getToolRow(rendered.container, '读取文件'), '自动批准').className).toContain(
       'tool-permission-segmented__item--active',
     )
@@ -682,9 +694,23 @@ describe('CapabilitiesWorkspace', () => {
     )
 
     await clickElement(getNavButton(rendered.container, 'mcp-servers'))
+    await waitForNextFrame()
 
-    expect(rendered.container.querySelector('[aria-label="工具权限列表"]')).toBeNull()
+    const toolPermissionsList = rendered.container.querySelector('[aria-label="工具权限列表"]')
+    expect(toolPermissionsList).toBeTruthy()
+    const toolPermissionsSection = toolPermissionsList!.closest('[data-capabilities-section="tool-permissions"]')
+    expect(toolPermissionsSection).toBeTruthy()
+    expect(toolPermissionsSection!.className).toContain('capabilities-section-view--exiting')
+    expect(toolPermissionsSection!.getAttribute('aria-hidden')).toBe('true')
+    expect(rendered.container.querySelector('[data-capabilities-section="mcp-servers"]')?.className).toContain(
+      'capabilities-section-view--active',
+    )
     expect(rendered.container.querySelector('.mcp-server-row')).toBeTruthy()
+    expect(
+      Array.from(rendered.container.querySelectorAll<HTMLElement>('[data-capabilities-section="mcp-servers"] .mcp-server-row'))
+        .slice(0, 2)
+        .map((row) => row.style.animationDelay),
+    ).toEqual(['0ms', '28ms'])
     expect(rendered.container.textContent).toContain('MCP 服务器')
     expect(rendered.container.textContent).toContain('stdio stub server')
     expect(rendered.container.textContent).toContain('http sse stub server')
@@ -695,6 +721,47 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.textContent).not.toContain('录入新的 MCP registry 草稿')
 
     rendered.unmount()
+  })
+
+  it('keeps visited capability sections mounted and preserves internal state after transition exit', async () => {
+    mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+    mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+
+    const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+    await waitForNextFrame()
+    await clickElement(getNavButton(rendered.container, 'skills'))
+    await waitForNextFrame()
+
+    await clickElement(
+      getSkillRow(rendered.container, '清晰文档写作')
+        .querySelector('button[aria-label="查看 清晰文档写作 详情"]') as HTMLButtonElement,
+    )
+    expect(getSkillRow(rendered.container, '清晰文档写作').querySelector('.skill-row__details-panel')).toBeTruthy()
+
+    vi.useFakeTimers()
+    try {
+      await clickElement(getNavButton(rendered.container, 'mcp-servers'))
+
+      const exitingSkillsSection = rendered.container.querySelector('[data-capabilities-section="skills"]') as HTMLElement
+      expect(exitingSkillsSection.className).toContain('capabilities-section-view--exiting')
+      expect(exitingSkillsSection.hidden).toBe(false)
+
+      await advanceTimersByTime(200)
+
+      expect(exitingSkillsSection.hidden).toBe(true)
+      expect(exitingSkillsSection.getAttribute('aria-hidden')).toBe('true')
+      expect(getSkillRow(rendered.container, '清晰文档写作').querySelector('.skill-row__details-panel')).toBeTruthy()
+
+      await clickElement(getNavButton(rendered.container, 'skills'))
+
+      const activeSkillsSection = rendered.container.querySelector('[data-capabilities-section="skills"]') as HTMLElement
+      expect(activeSkillsSection.hidden).toBe(false)
+      expect(activeSkillsSection.className).toContain('capabilities-section-view--active')
+      expect(getSkillRow(rendered.container, '清晰文档写作').querySelector('.skill-row__details-panel')).toBeTruthy()
+    } finally {
+      rendered.unmount()
+      vi.useRealTimers()
+    }
   })
 
   it('applies registry snapshot subscriptions and reloads the tool catalog when snapshotRevision changes', async () => {
@@ -841,8 +908,11 @@ describe('CapabilitiesWorkspace', () => {
     await clickElement(getNavButton(document.body, 'tool-permissions'))
     await waitForNextFrame()
 
-    expect(rendered.container.textContent).toContain('Filesystem MCP')
-    expect(rendered.container.textContent).toContain('读取文本文件')
+    const tpContainer = rendered.container.querySelector('[aria-label="工具权限列表"]')
+    expect(tpContainer).toBeTruthy()
+    expect(tpContainer!.closest('[hidden]')).toBeNull()
+    expect(tpContainer!.textContent).toContain('Filesystem MCP')
+    expect(tpContainer!.textContent).toContain('读取文本文件')
 
     rendered.unmount()
   })
@@ -1387,10 +1457,13 @@ describe('CapabilitiesWorkspace', () => {
     expect(mockedRefreshMcpCatalog).not.toHaveBeenCalled()
 
     await clickElement(document.body.querySelector('button[aria-label="删除 stdio stub server"]') as HTMLButtonElement)
+    await waitForNextFrame()
 
     expect(queryServerRow(document.body, 'stdio stub server')).toBeNull()
-    expect(document.body.textContent).toContain('还没有可用的服务器')
-    expect(document.body.textContent?.match(/还没有可用的服务器/g)?.length).toBe(1)
+    const mcpContent = document.body.querySelector('.capabilities-main__content')
+    expect(mcpContent).toBeTruthy()
+    expect(mcpContent!.textContent).toContain('还没有可用的服务器')
+    expect(mcpContent!.textContent?.match(/还没有可用的服务器/g)?.length).toBe(1)
 
     rendered.unmount()
   })
@@ -1742,6 +1815,11 @@ describe('CapabilitiesWorkspace', () => {
     expect(rendered.container.textContent).not.toContain('Snapshot rev')
     expect(rendered.container.textContent).not.toContain('Skills 管理')
     expect(rendered.container.querySelector('.skills-header')).toBeNull()
+    expect(
+      Array.from(rendered.container.querySelectorAll<HTMLElement>('[data-capabilities-section="skills"] .skill-row'))
+        .slice(0, 3)
+        .map((row) => row.style.animationDelay),
+    ).toEqual(['0ms', '28ms', '56ms'])
     expect(getSkillRow(rendered.container, '清晰文档写作').textContent).not.toContain('校验通过')
     expect(getSkillRow(rendered.container, '清晰文档写作').textContent).not.toContain('已开启')
     expect(getSkillRow(rendered.container, '清晰文档写作').textContent).toContain('documentation')

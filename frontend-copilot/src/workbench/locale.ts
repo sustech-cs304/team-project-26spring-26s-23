@@ -17,13 +17,13 @@ import {
   settingsShellCopy,
   generalSettingsCopy,
   displaySettingsCopy,
-  sustechInfoCopy,
   dataSettingsCopy,
-  defaultModelRoutesCopy,
-  mcpSettingsCopy,
-  searchSettingsCopy,
   memorySettingsCopy,
   apiSettingsCopy,
+  searchSettingsCopy,
+  mcpSettingsCopy,
+  sustechInfoCopy,
+  defaultModelRoutesCopy,
   docsSettingsCopy,
   externalSourcesCopy,
   providerListCopy,
@@ -73,24 +73,8 @@ export function getDisplaySettingsCopy(language: string) {
   return displaySettingsCopy[normalizeWorkbenchLanguage(language)]
 }
 
-export function getSustechInfoCopy(language: string) {
-  return sustechInfoCopy[normalizeWorkbenchLanguage(language)]
-}
-
 export function getDataSettingsCopy(language: string) {
   return dataSettingsCopy[normalizeWorkbenchLanguage(language)]
-}
-
-export function getDefaultModelRoutesCopy(language: string) {
-  return defaultModelRoutesCopy[normalizeWorkbenchLanguage(language)]
-}
-
-export function getMcpSettingsCopy(language: string) {
-  return mcpSettingsCopy[normalizeWorkbenchLanguage(language)]
-}
-
-export function getSearchSettingsCopy(language: string) {
-  return searchSettingsCopy[normalizeWorkbenchLanguage(language)]
 }
 
 export function getMemorySettingsCopy(language: string) {
@@ -99,6 +83,22 @@ export function getMemorySettingsCopy(language: string) {
 
 export function getApiSettingsCopy(language: string) {
   return apiSettingsCopy[normalizeWorkbenchLanguage(language)]
+}
+
+export function getSearchSettingsCopy(language: string) {
+  return searchSettingsCopy[normalizeWorkbenchLanguage(language)]
+}
+
+export function getMcpSettingsCopy(language: string) {
+  return mcpSettingsCopy[normalizeWorkbenchLanguage(language)]
+}
+
+export function getSustechInfoCopy(language: string) {
+  return sustechInfoCopy[normalizeWorkbenchLanguage(language)]
+}
+
+export function getDefaultModelRoutesCopy(language: string) {
+  return defaultModelRoutesCopy[normalizeWorkbenchLanguage(language)]
 }
 
 export function getDocsSettingsCopy(language: string) {
@@ -190,24 +190,6 @@ export function getLanguageOptions(language: string): SelectOption[] {
   ]
 }
 
-export function getProxyModeOptions(language: string): SelectOption[] {
-  const locale = normalizeWorkbenchLanguage(language)
-
-  if (locale === 'en-US') {
-    return [
-      { value: 'system', label: 'System Proxy' },
-      { value: 'direct', label: 'Direct Connection' },
-      { value: 'manual', label: 'Manual Configuration' },
-    ]
-  }
-
-  return [
-    { value: 'system', label: '系统代理' },
-    { value: 'direct', label: '直连' },
-    { value: 'manual', label: '手动配置' },
-  ]
-}
-
 export function getThemeOptions(language: string): SelectOption[] {
   const locale = normalizeWorkbenchLanguage(language)
 
@@ -229,7 +211,7 @@ export function getBackupCycleOptions(language: string): SelectOption[] {
 
   if (locale === 'en-US') {
     return [
-      { value: 'every-launch', label: 'Every Launch' },
+      { value: 'every-launch', label: 'Every launch' },
       { value: 'daily', label: 'Daily' },
       { value: 'weekly', label: 'Weekly' },
     ]
@@ -242,21 +224,39 @@ export function getBackupCycleOptions(language: string): SelectOption[] {
   ]
 }
 
-export function getToolPermissionOptions(language: string): SelectOption[] {
+export function getMemoryStrategyOptions(language: string): SelectOption[] {
   const locale = normalizeWorkbenchLanguage(language)
 
   if (locale === 'en-US') {
     return [
-      { value: 'manual', label: 'Ask Every Time' },
-      { value: 'trusted', label: 'Auto Allow Trusted Capabilities' },
-      { value: 'strict', label: 'Strict Manual Mode' },
+      { value: 'session-only', label: 'Session only' },
+      { value: 'session-longterm', label: 'Session + long-term memory' },
+      { value: 'project-centric', label: 'Project-centric' },
     ]
   }
 
   return [
-    { value: 'manual', label: '逐次确认' },
-    { value: 'trusted', label: '受信能力自动允许' },
-    { value: 'strict', label: '严格手动' },
+    { value: 'session-only', label: '仅会话内' },
+    { value: 'session-longterm', label: '会话 + 长期记忆' },
+    { value: 'project-centric', label: '项目优先' },
+  ]
+}
+
+export function getApiReconnectOptions(language: string): SelectOption[] {
+  const locale = normalizeWorkbenchLanguage(language)
+
+  if (locale === 'en-US') {
+    return [
+      { value: 'exponential', label: 'Exponential backoff' },
+      { value: 'fixed', label: 'Fixed interval' },
+      { value: 'manual', label: 'Manual reconnect' },
+    ]
+  }
+
+  return [
+    { value: 'exponential', label: '指数退避' },
+    { value: 'fixed', label: '固定间隔' },
+    { value: 'manual', label: '手动重连' },
   ]
 }
 
@@ -283,9 +283,9 @@ export function getCompressionOptions(language: string): SelectOption[] {
 
   if (locale === 'en-US') {
     return [
-      { value: 'summary', label: 'Summary Compression' },
-      { value: 'balanced', label: 'Balanced Mode' },
-      { value: 'none', label: 'No Compression' },
+      { value: 'summary', label: 'Summary compression' },
+      { value: 'balanced', label: 'Balanced' },
+      { value: 'none', label: 'No compression' },
     ]
   }
 
@@ -296,39 +296,21 @@ export function getCompressionOptions(language: string): SelectOption[] {
   ]
 }
 
-export function getMemoryStrategyOptions(language: string): SelectOption[] {
+export function getToolPermissionOptions(language: string): SelectOption[] {
   const locale = normalizeWorkbenchLanguage(language)
 
   if (locale === 'en-US') {
     return [
-      { value: 'session-only', label: 'Session Only' },
-      { value: 'session-longterm', label: 'Session + Long-term Memory' },
-      { value: 'project-centric', label: 'Project First' },
+      { value: 'manual', label: 'Ask every time' },
+      { value: 'trusted', label: 'Auto-allow trusted tools' },
+      { value: 'strict', label: 'Strict manual approval' },
     ]
   }
 
   return [
-    { value: 'session-only', label: '仅会话内' },
-    { value: 'session-longterm', label: '会话 + 长期记忆' },
-    { value: 'project-centric', label: '项目优先' },
-  ]
-}
-
-export function getApiReconnectOptions(language: string): SelectOption[] {
-  const locale = normalizeWorkbenchLanguage(language)
-
-  if (locale === 'en-US') {
-    return [
-      { value: 'exponential', label: 'Exponential Backoff' },
-      { value: 'fixed', label: 'Fixed Interval' },
-      { value: 'manual', label: 'Manual Reconnect' },
-    ]
-  }
-
-  return [
-    { value: 'exponential', label: '指数退避' },
-    { value: 'fixed', label: '固定间隔' },
-    { value: 'manual', label: '手动重连' },
+    { value: 'manual', label: '逐次确认' },
+    { value: 'trusted', label: '受信能力自动允许' },
+    { value: 'strict', label: '严格手动' },
   ]
 }
 

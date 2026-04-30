@@ -14,21 +14,24 @@ import { useSettingsWorkspaceState } from '../state/useSettingsWorkspaceState'
 import { useConfigCenterDebugModeState } from './config-center/useConfigCenterDebugModeState'
 import type { ProviderProfilesSectionDomain } from './provider-profiles/ProviderProfilesSectionDomain'
 import { createProviderProfilesSectionDomain } from './provider-profiles/ProviderProfilesViewModel'
+import {
+  createApiSettingsSectionDomains,
+  type ApiSettingsSectionDomains,
+} from './sections/ApiSettingsSectionDomain'
 import { createDefaultModelRoutesSectionDomain } from './sections/DefaultModelRoutesSectionDomain'
 import { createExternalSourcesSectionDomain } from './sections/ExternalSourcesSectionDomain'
 import {
   createGeneralSettingsSectionDomains,
   type GeneralSettingsSectionDomains,
 } from './sections/GeneralSettingsSectionDomain'
-import { createMcpSettingsSectionDomains, type McpSettingsSectionDomains } from './sections/McpSettingsSectionDomain'
-import {
-  createMemorySettingsSectionDomains,
-  type MemorySettingsSectionDomains,
-} from './sections/MemorySettingsSectionDomain'
 import {
   createMiscSettingsSectionDomains,
   type MiscSettingsSectionDomains,
 } from './sections/MiscSettingsSectionDomain'
+import {
+  createMcpSettingsSectionDomains,
+  type McpSettingsSectionDomains,
+} from './sections/McpSettingsSectionDomain'
 import {
   createSearchSettingsSectionDomains,
   type SearchSettingsSectionDomains,
@@ -39,9 +42,9 @@ import { useSettingsWorkspaceProviderController } from './provider-profiles/useP
 export type SettingsWorkspaceMiscSectionDomains =
   & GeneralSettingsSectionDomains
   & MiscSettingsSectionDomains
-  & McpSettingsSectionDomains
+  & ApiSettingsSectionDomains
   & SearchSettingsSectionDomains
-  & MemorySettingsSectionDomains
+  & McpSettingsSectionDomains
 
 export interface SettingsWorkspaceSectionsDomain {
   provider: ProviderProfilesSectionDomain
@@ -82,25 +85,16 @@ export function useSettingsWorkspaceSectionsDomain({
     setPrimaryAssistantModel,
     setFastAssistantModel,
     setLanguage,
-    setProxyMode,
     setAssistantNotificationsEnabled,
-    setBackupEnabled,
-    setDataPath,
-    setBackupCycle,
-    setLaunchSyncEnabled,
-    setMcpAutoDiscoveryEnabled,
-    setToolPermissionMode,
-    setSearchEngine,
-    setSearchResultCount,
-    setCompressionMode,
-    setMemoryStrategy,
-    setMemoryCleanupEnabled,
     setApiReconnectMode,
     setHealthPollingEnabled,
     setApiBaseUrl,
+    setSearchEngine,
+    setSearchResultCount,
+    setCompressionMode,
+    setToolPermissionMode,
+    setMcpAutoDiscoveryEnabled,
     setDocsFormat,
-    setOutputDirectory,
-    setAutoFileNameEnabled,
     setWakeupShareLink,
   } = workspaceState
 
@@ -272,17 +266,13 @@ export function useSettingsWorkspaceSectionsDomain({
     misc: {
       ...createGeneralSettingsSectionDomains({
         language: formState.language,
-        proxyMode: formState.proxyMode,
         assistantNotificationsEnabled: formState.assistantNotificationsEnabled,
-        backupEnabled: formState.backupEnabled,
         debugModeEnabled,
         onLanguageChange: (value) => {
           setLanguage(value)
           onLanguageChange?.(value)
         },
-        onProxyModeChange: setProxyMode,
         onAssistantNotificationsEnabledChange: setAssistantNotificationsEnabled,
-        onBackupEnabledChange: setBackupEnabled,
         onDebugModeEnabledChange: handleDebugModeEnabledChange,
       }),
       ...createMiscSettingsSectionDomains({
@@ -291,43 +281,21 @@ export function useSettingsWorkspaceSectionsDomain({
           themeMode,
           onThemeModeChange,
         },
-        data: {
-          language: formState.language,
-          dataPath: formState.dataPath,
-          backupCycle: formState.backupCycle,
-          backupEnabled: formState.backupEnabled,
-          launchSyncEnabled: formState.launchSyncEnabled,
-          onDataPathChange: setDataPath,
-          onBackupCycleChange: setBackupCycle,
-          onBackupEnabledChange: setBackupEnabled,
-          onLaunchSyncEnabledChange: setLaunchSyncEnabled,
-        },
-        api: {
-          language: formState.language,
-          bootstrap,
-          apiBaseUrl: formState.apiBaseUrl,
-          apiReconnectMode: formState.apiReconnectMode,
-          healthPollingEnabled: formState.healthPollingEnabled,
-          onApiBaseUrlChange: setApiBaseUrl,
-          onApiReconnectModeChange: setApiReconnectMode,
-          onHealthPollingEnabledChange: setHealthPollingEnabled,
-        },
         docs: {
           language: formState.language,
           docsFormat: formState.docsFormat,
-          outputDirectory: formState.outputDirectory,
-          autoFileNameEnabled: formState.autoFileNameEnabled,
           onDocsFormatChange: setDocsFormat,
-          onOutputDirectoryChange: setOutputDirectory,
-          onAutoFileNameEnabledChange: setAutoFileNameEnabled,
         },
       }),
-      ...createMcpSettingsSectionDomains({
+      ...createApiSettingsSectionDomains({
         language: formState.language,
-        toolPermissionMode: formState.toolPermissionMode,
-        mcpAutoDiscoveryEnabled: formState.mcpAutoDiscoveryEnabled,
-        onToolPermissionModeChange: setToolPermissionMode,
-        onMcpAutoDiscoveryEnabledChange: setMcpAutoDiscoveryEnabled,
+        bootstrap,
+        apiBaseUrl: formState.apiBaseUrl,
+        apiReconnectMode: formState.apiReconnectMode,
+        healthPollingEnabled: formState.healthPollingEnabled,
+        onApiBaseUrlChange: setApiBaseUrl,
+        onApiReconnectModeChange: setApiReconnectMode,
+        onHealthPollingEnabledChange: setHealthPollingEnabled,
       }),
       ...createSearchSettingsSectionDomains({
         language: formState.language,
@@ -338,12 +306,12 @@ export function useSettingsWorkspaceSectionsDomain({
         onSearchResultCountChange: setSearchResultCount,
         onCompressionModeChange: setCompressionMode,
       }),
-      ...createMemorySettingsSectionDomains({
+      ...createMcpSettingsSectionDomains({
         language: formState.language,
-        memoryStrategy: formState.memoryStrategy,
-        memoryCleanupEnabled: formState.memoryCleanupEnabled,
-        onMemoryStrategyChange: setMemoryStrategy,
-        onMemoryCleanupEnabledChange: setMemoryCleanupEnabled,
+        toolPermissionMode: formState.toolPermissionMode,
+        mcpAutoDiscoveryEnabled: formState.mcpAutoDiscoveryEnabled,
+        onToolPermissionModeChange: setToolPermissionMode,
+        onMcpAutoDiscoveryEnabledChange: setMcpAutoDiscoveryEnabled,
       }),
     },
   }

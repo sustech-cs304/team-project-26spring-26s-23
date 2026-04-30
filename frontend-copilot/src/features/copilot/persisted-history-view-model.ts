@@ -744,11 +744,12 @@ function mapToolMessageItem(
     : []
   const status = resolveToolMessageStatus(phases)
   const title = normalizeOptionalString(readString(timelineItem.title)) ?? '工具调用'
-  const content = normalizeOptionalString(
-    readString(timelineItem.resultSummary)
-      ?? readString(timelineItem.errorSummary)
-      ?? readString(timelineItem.summary),
-  ) ?? title
+  const summary = normalizeOptionalString(readString(timelineItem.summary))
+  const resultSummary = normalizeOptionalString(readString(timelineItem.resultSummary))
+  const errorSummary = normalizeOptionalString(readString(timelineItem.errorSummary))
+  const content = summary
+    ?? (status === 'failed' ? errorSummary ?? resultSummary : resultSummary ?? errorSummary)
+    ?? title
 
   const item: CopilotToolMessageItem = {
     id: buildHistoryItemId('tool', timelineItem, index),
@@ -762,8 +763,8 @@ function mapToolMessageItem(
     title,
     content,
     inputSummary: normalizeOptionalString(readString(timelineItem.inputSummary)),
-    resultSummary: normalizeOptionalString(readString(timelineItem.resultSummary)),
-    errorSummary: normalizeOptionalString(readString(timelineItem.errorSummary)),
+    resultSummary,
+    errorSummary,
   }
 
   return [item]

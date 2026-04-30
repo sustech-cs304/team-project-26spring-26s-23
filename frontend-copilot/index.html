@@ -30,12 +30,60 @@
   </head>
   <body>
     <div id="root">
-      <main class="startup-shell" data-startup-shell="static" aria-live="polite">
-        <div class="startup-loading" role="status" aria-label="正在准备桌面界面…">
-          <span class="startup-loading__spinner" aria-hidden="true"></span>
-          <p class="startup-loading__message">正在准备桌面界面…</p>
+      <div class="desktop-chrome" data-startup-chrome="static">
+        <header
+          class="window-titlebar"
+          data-window-maximized="false"
+          data-window-fullscreen="false"
+          aria-label="窗口标题栏"
+        >
+          <div class="window-titlebar__drag-region" aria-hidden="true"></div>
+          <div class="window-titlebar__controls" aria-label="窗口控制">
+            <button
+              type="button"
+              class="window-titlebar__control"
+              data-window-control="minimize"
+              aria-label="最小化窗口"
+              title="最小化"
+            >
+              <svg class="window-titlebar__control-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                <path d="M2.5 6.5h7"></path>
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="window-titlebar__control"
+              data-window-control="toggle-maximize"
+              aria-label="最大化窗口"
+              title="最大化窗口"
+            >
+              <svg class="window-titlebar__control-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                <path d="M3 3h6v6H3z"></path>
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="window-titlebar__control window-titlebar__control--close"
+              data-window-control="close"
+              aria-label="关闭窗口"
+              title="关闭"
+            >
+              <svg class="window-titlebar__control-icon" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                <path d="m3 3 6 6"></path>
+                <path d="m9 3-6 6"></path>
+              </svg>
+            </button>
+          </div>
+        </header>
+        <div class="desktop-chrome__content">
+          <main class="startup-shell" data-startup-shell="static" aria-live="polite">
+            <div class="startup-loading" role="status" aria-label="正在准备桌面界面…">
+              <span class="startup-loading__spinner" aria-hidden="true"></span>
+              <p class="startup-loading__message">正在准备桌面界面…</p>
+            </div>
+          </main>
         </div>
-      </main>
+      </div>
     </div>
     <script>
       console.info('[startup]', JSON.stringify({

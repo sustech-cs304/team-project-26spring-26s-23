@@ -23,6 +23,7 @@ describe('preload renderer bridge', () => {
       'skillRegistrySubscription',
       'toolCatalog',
       'desktopNotification',
+      'windowControls',
       'bootstrapWindow',
       'fileManager',
     ])

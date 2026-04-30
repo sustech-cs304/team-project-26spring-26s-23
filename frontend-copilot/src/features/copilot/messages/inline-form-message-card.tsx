@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ClipboardList } from 'lucide-react'
 
 import {
   buildInlineFormSubmissionPayload,
@@ -96,8 +97,13 @@ export function InlineFormMessageCard({
     <div className="copilot-chat__inline-form-card" data-testid={`chat-message-inline-form-card-${index}`}>
       <div className="copilot-chat__inline-form-header">
         <div className="copilot-chat__inline-form-header-copy">
-          <p className="copilot-chat__inline-form-eyebrow">需要你补充信息</p>
-          <p className="copilot-chat__inline-form-title">{turn.title}</p>
+          <span className="copilot-chat__step-icon copilot-chat__step-icon--form" aria-hidden="true">
+            <ClipboardList size={14} strokeWidth={2.2} />
+          </span>
+          <div className="copilot-chat__inline-form-heading-copy">
+            <p className="copilot-chat__inline-form-eyebrow">需要你补充信息</p>
+            <p className="copilot-chat__inline-form-title">{turn.title}</p>
+          </div>
         </div>
         <span className={`copilot-chat__inline-form-status copilot-chat__inline-form-status--${turn.formState}`}>{statusText}</span>
       </div>

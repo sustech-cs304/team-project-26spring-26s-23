@@ -32,11 +32,9 @@ const settingsSectionLabels: Record<WorkbenchLanguage, Record<SettingsSection, s
     'default-model': '默认模型',
     general: '常规设置',
     display: '显示设置',
-    data: '数据设置',
-    mcp: 'MCP 服务器',
-    search: '网络搜索',
-    memory: '全局记忆',
     api: 'API 服务器',
+    search: '搜索设置',
+    mcp: 'MCP 设置',
     docs: '文档处理',
     'external-source': '外部源',
   },
@@ -46,11 +44,9 @@ const settingsSectionLabels: Record<WorkbenchLanguage, Record<SettingsSection, s
     'default-model': 'Default Models',
     general: 'General',
     display: 'Display',
-    data: 'Data',
-    mcp: 'MCP Servers',
-    search: 'Web Search',
-    memory: 'Memory',
     api: 'API Server',
+    search: 'Search Settings',
+    mcp: 'MCP Settings',
     docs: 'Document Processing',
     'external-source': 'External Sources',
   },
@@ -82,27 +78,21 @@ const settingsShellCopy: Record<WorkbenchLanguage, {
 const generalSettingsCopy: Record<WorkbenchLanguage, {
   title: string
   languageLabel: string
-  proxyModeLabel: string
   notificationsLabel: string
-  backupLabel: string
   debugModeLabel: string
   debugModeDescription: string
 }> = {
   'zh-CN': {
     title: '常规设置',
     languageLabel: '界面语言',
-    proxyModeLabel: '代理模式',
     notificationsLabel: '助手消息通知',
-    backupLabel: '自动备份',
     debugModeLabel: '启用调试模式',
     debugModeDescription: '开启后会显示更多问题排查信息。',
   },
   'en-US': {
     title: 'General Settings',
     languageLabel: 'Interface Language',
-    proxyModeLabel: 'Proxy Mode',
     notificationsLabel: 'Assistant Notifications',
-    backupLabel: 'Automatic Backup',
     debugModeLabel: 'Enable Debug Mode',
     debugModeDescription: 'Show more diagnostics and troubleshooting details.',
   },
@@ -169,32 +159,6 @@ const sustechInfoCopy: Record<WorkbenchLanguage, {
   },
 }
 
-const dataSettingsCopy: Record<WorkbenchLanguage, {
-  title: string
-  dataPathLabel: string
-  dataPathPlaceholder: string
-  backupCycleLabel: string
-  backupEnabledLabel: string
-  launchSyncLabel: string
-}> = {
-  'zh-CN': {
-    title: '数据设置',
-    dataPathLabel: '数据目录',
-    dataPathPlaceholder: '输入本地目录',
-    backupCycleLabel: '备份周期',
-    backupEnabledLabel: '启用自动备份',
-    launchSyncLabel: '启动时同步',
-  },
-  'en-US': {
-    title: 'Data Settings',
-    dataPathLabel: 'Data Directory',
-    dataPathPlaceholder: 'Enter local directory',
-    backupCycleLabel: 'Backup Cycle',
-    backupEnabledLabel: 'Enable Automatic Backup',
-    launchSyncLabel: 'Sync on Launch',
-  },
-}
-
 const defaultModelRoutesCopy: Record<WorkbenchLanguage, {
   title: string
   subtitle: string
@@ -224,43 +188,29 @@ const defaultModelRoutesCopy: Record<WorkbenchLanguage, {
   },
 }
 
-const mcpSettingsCopy: Record<WorkbenchLanguage, {
+const dataSettingsCopy: Record<WorkbenchLanguage, {
   title: string
-  permissionStrategyLabel: string
-  autoDiscoveryLabel: string
+  dataPathLabel: string
+  dataPathPlaceholder: string
+  backupCycleLabel: string
+  backupEnabledLabel: string
+  launchSyncLabel: string
 }> = {
   'zh-CN': {
-    title: 'MCP 服务器',
-    permissionStrategyLabel: '工具权限策略',
-    autoDiscoveryLabel: '自动发现 MCP 服务',
+    title: '数据设置',
+    dataPathLabel: '数据目录',
+    dataPathPlaceholder: '选择或输入本地数据目录',
+    backupCycleLabel: '备份周期',
+    backupEnabledLabel: '启用自动备份',
+    launchSyncLabel: '启动时同步数据',
   },
   'en-US': {
-    title: 'MCP Servers',
-    permissionStrategyLabel: 'Tool Permission Policy',
-    autoDiscoveryLabel: 'Auto-discover MCP services',
-  },
-}
-
-const searchSettingsCopy: Record<WorkbenchLanguage, {
-  providerTitle: string
-  defaultEngineLabel: string
-  resultCountLabel: string
-  configTitle: string
-  compressionLabel: string
-}> = {
-  'zh-CN': {
-    providerTitle: '搜索服务商',
-    defaultEngineLabel: '默认搜索引擎',
-    resultCountLabel: '结果数量',
-    configTitle: '网络搜索配置',
-    compressionLabel: '压缩方式',
-  },
-  'en-US': {
-    providerTitle: 'Search Provider',
-    defaultEngineLabel: 'Default Search Engine',
-    resultCountLabel: 'Result Count',
-    configTitle: 'Web Search Configuration',
-    compressionLabel: 'Compression Mode',
+    title: 'Data Settings',
+    dataPathLabel: 'Data directory',
+    dataPathPlaceholder: 'Choose or enter local data directory',
+    backupCycleLabel: 'Backup cycle',
+    backupEnabledLabel: 'Enable automatic backup',
+    launchSyncLabel: 'Sync data on launch',
   },
 }
 
@@ -270,14 +220,14 @@ const memorySettingsCopy: Record<WorkbenchLanguage, {
   cleanupLabel: string
 }> = {
   'zh-CN': {
-    title: '全局记忆',
+    title: '记忆设置',
     strategyLabel: '记忆策略',
-    cleanupLabel: '自动清理陈旧记忆',
+    cleanupLabel: '自动清理过期记忆',
   },
   'en-US': {
-    title: 'Memory',
-    strategyLabel: 'Memory Strategy',
-    cleanupLabel: 'Automatically clean stale memory',
+    title: 'Memory Settings',
+    strategyLabel: 'Memory strategy',
+    cleanupLabel: 'Clean up stale memory automatically',
   },
 }
 
@@ -291,87 +241,124 @@ const apiSettingsCopy: Record<WorkbenchLanguage, {
   apiBaseUrlLabel: string
   reconnectPolicyLabel: string
   healthPollingLabel: string
-  bootstrapStatusLabels: Record<
-    'loading' | 'empty' | 'incomplete' | 'starting' | 'ready' | 'failed' | 'degraded' | 'error',
-    string
-  >
   bootstrapRetryLabels: {
     retrying: string
     idle: string
+  }
+  bootstrapStatusLabels: {
+    loading: string
+    empty: string
+    incomplete: string
+    starting: string
+    ready: string
+    failed: string
+    degraded: string
+    error: string
   }
 }> = {
   'zh-CN': {
     title: 'API 服务器',
     summaryTitle: '根层启动摘要',
     currentStatusLabel: '当前状态',
-    retryActionLabel: '重试动作',
-    retryingText: '正在重试…',
-    retryIdleText: '重试读取运行态',
-    apiBaseUrlLabel: '后端地址',
+    retryActionLabel: '重连状态',
+    retryingText: '正在重新连接…',
+    retryIdleText: '重新连接服务',
+    apiBaseUrlLabel: '运行时覆盖地址',
     reconnectPolicyLabel: '重连策略',
     healthPollingLabel: '启用健康检查轮询',
-    bootstrapStatusLabels: {
-      loading: '根层读取中',
-      empty: '尚未配置',
-      incomplete: '配置缺失',
-      starting: '宿主启动中',
-      ready: '运行态已就绪',
-      failed: '宿主启动失败',
-      degraded: '运行态降级',
-      error: '读取失败',
-    },
     bootstrapRetryLabels: {
-      retrying: '根层重试中',
-      idle: '由根层统一持有',
+      retrying: '重试中',
+      idle: '空闲',
+    },
+    bootstrapStatusLabels: {
+      loading: '加载中',
+      empty: '未配置',
+      incomplete: '配置不完整',
+      starting: '启动中',
+      ready: '就绪',
+      failed: '启动失败',
+      degraded: '降级运行',
+      error: '错误',
     },
   },
   'en-US': {
     title: 'API Server',
-    summaryTitle: 'Root Bootstrap Summary',
-    currentStatusLabel: 'Current Status',
-    retryActionLabel: 'Retry Action',
-    retryingText: 'Retrying…',
-    retryIdleText: 'Retry runtime bootstrap',
-    apiBaseUrlLabel: 'Backend URL',
-    reconnectPolicyLabel: 'Reconnect Policy',
+    summaryTitle: 'Root startup summary',
+    currentStatusLabel: 'Current status',
+    retryActionLabel: 'Reconnect state',
+    retryingText: 'Reconnecting…',
+    retryIdleText: 'Reconnect service',
+    apiBaseUrlLabel: 'Runtime override URL',
+    reconnectPolicyLabel: 'Reconnect policy',
     healthPollingLabel: 'Enable health polling',
-    bootstrapStatusLabels: {
-      loading: 'Root loading',
-      empty: 'Not configured',
-      incomplete: 'Configuration missing',
-      starting: 'Host starting',
-      ready: 'Runtime ready',
-      failed: 'Host startup failed',
-      degraded: 'Runtime degraded',
-      error: 'Load failed',
-    },
     bootstrapRetryLabels: {
-      retrying: 'Root retry in progress',
-      idle: 'Managed by the root shell',
+      retrying: 'Retrying',
+      idle: 'Idle',
     },
+    bootstrapStatusLabels: {
+      loading: 'Loading',
+      empty: 'Not configured',
+      incomplete: 'Incomplete',
+      starting: 'Starting',
+      ready: 'Ready',
+      failed: 'Failed',
+      degraded: 'Degraded',
+      error: 'Error',
+    },
+  },
+}
+
+const searchSettingsCopy: Record<WorkbenchLanguage, {
+  providerTitle: string
+  defaultEngineLabel: string
+  resultCountLabel: string
+  configTitle: string
+  compressionLabel: string
+}> = {
+  'zh-CN': {
+    providerTitle: '搜索设置',
+    defaultEngineLabel: '默认搜索引擎',
+    resultCountLabel: '默认结果数量',
+    configTitle: '结果处理',
+    compressionLabel: '压缩策略',
+  },
+  'en-US': {
+    providerTitle: 'Search Settings',
+    defaultEngineLabel: 'Default search engine',
+    resultCountLabel: 'Default result count',
+    configTitle: 'Result processing',
+    compressionLabel: 'Compression strategy',
+  },
+}
+
+const mcpSettingsCopy: Record<WorkbenchLanguage, {
+  title: string
+  permissionStrategyLabel: string
+  autoDiscoveryLabel: string
+}> = {
+  'zh-CN': {
+    title: 'MCP 设置',
+    permissionStrategyLabel: '工具权限策略',
+    autoDiscoveryLabel: '自动发现 MCP 服务',
+  },
+  'en-US': {
+    title: 'MCP Settings',
+    permissionStrategyLabel: 'Tool permission strategy',
+    autoDiscoveryLabel: 'Auto-discover MCP servers',
   },
 }
 
 const docsSettingsCopy: Record<WorkbenchLanguage, {
   title: string
   formatLabel: string
-  outputDirectoryLabel: string
-  outputDirectoryPlaceholder: string
-  autoFileNameLabel: string
 }> = {
   'zh-CN': {
     title: '文档处理',
     formatLabel: '默认导出格式',
-    outputDirectoryLabel: '输出目录',
-    outputDirectoryPlaceholder: '输入导出目录',
-    autoFileNameLabel: '自动生成文件名',
   },
   'en-US': {
     title: 'Document Processing',
     formatLabel: 'Default Export Format',
-    outputDirectoryLabel: 'Output Directory',
-    outputDirectoryPlaceholder: 'Enter export directory',
-    autoFileNameLabel: 'Generate file names automatically',
   },
 }
 
@@ -1064,16 +1051,16 @@ const workbenchShellCopy: Record<WorkbenchLanguage, {
   reloadPage: string
 }> = {
   'zh-CN': {
-    railAriaLabel: '主图标栏',
-    workspaceLoadFailureDescription: '当前工作区模块未能完成懒加载或渲染，但工作台外壳仍保持可解释失败态，不会退化为纯白屏。',
-    retryCurrentWorkspace: '重试当前工作区',
-    switchBackToAssistant: '切换回助手工作区',
+    railAriaLabel: '导航栏',
+    workspaceLoadFailureDescription: '当前页面加载失败，请尝试切换到其他页面或重试。',
+    retryCurrentWorkspace: '重试当前页面',
+    switchBackToAssistant: '切换回助手页面',
     reloadPage: '重新加载页面',
   },
   'en-US': {
-    railAriaLabel: 'Primary workspace rail',
-    workspaceLoadFailureDescription: 'The current workspace module failed to lazy-load or render, but the workbench shell stays visible with an explainable failure state instead of a blank screen.',
-    retryCurrentWorkspace: 'Retry current workspace',
+    railAriaLabel: 'Navigation bar',
+    workspaceLoadFailureDescription: 'The current page failed to load. Please try switching to another page or retry.',
+    retryCurrentWorkspace: 'Retry current page',
     switchBackToAssistant: 'Switch back to Assistant',
     reloadPage: 'Reload page',
   },
@@ -1083,45 +1070,45 @@ const workspaceMetaByLanguage: Record<WorkbenchLanguage, Record<WorkspaceView, {
   'zh-CN': {
     assistant: {
       label: '助手',
-      loadingDescription: '助手工作区已从工作台壳拆分为独立懒加载模块；当前仅加载默认首屏所需代码。',
+      loadingDescription: '正在加载助手页面…',
     },
     settings: {
       label: '设置',
-      loadingDescription: '设置工作区已从入口壳层剥离，仅在切换到设置时再按需加载。',
+      loadingDescription: '正在加载设置页面…',
     },
     capabilities: {
       label: '能力',
-      loadingDescription: '能力工作区模块正在按需加载，不再与默认助手首屏共同打包在一个超级入口文件中。',
+      loadingDescription: '正在加载能力页面…',
     },
     files: {
       label: '文件',
-      loadingDescription: '文件工作区模块正在按需加载，以缩短默认首屏装配链。',
+      loadingDescription: '正在加载文件管理页面…',
     },
     developer: {
       label: '开发',
-      loadingDescription: '开发工作区模块正在按需加载，避免与默认助手首屏形成死耦合。',
+      loadingDescription: '正在加载开发页面…',
     },
   },
   'en-US': {
     assistant: {
       label: 'Assistant',
-      loadingDescription: 'The assistant workspace is split into a standalone lazy-loaded module so the default first screen only loads what it immediately needs.',
+      loadingDescription: 'Loading assistant page…',
     },
     settings: {
       label: 'Settings',
-      loadingDescription: 'The settings workspace is split out of the entry shell and is loaded on demand only when the user switches to it.',
+      loadingDescription: 'Loading settings page…',
     },
     capabilities: {
       label: 'Capabilities',
-      loadingDescription: 'The capabilities workspace is loaded on demand instead of being bundled together with the default assistant first screen in one oversized entry module.',
+      loadingDescription: 'Loading capabilities page…',
     },
     files: {
       label: 'Files',
-      loadingDescription: 'The files workspace is loaded on demand to shorten the default first-screen bootstrap chain.',
+      loadingDescription: 'Loading file management page…',
     },
     developer: {
       label: 'Developer',
-      loadingDescription: 'The developer workspace is loaded on demand to avoid hard-coupling it with the default assistant first screen.',
+      loadingDescription: 'Loading developer page…',
     },
   },
 }
@@ -1171,8 +1158,6 @@ export {
   externalSourcesCopy,
   generalSettingsCopy,
   hubWorkspaceContentByLanguage,
-  mcpSettingsCopy,
-  memorySettingsCopy,
   providerContextMenuCopy,
   providerDetailsCopy,
   providerListCopy,
@@ -1180,6 +1165,8 @@ export {
   providerModelListCopy,
   providerSecretCopy,
   providerSecretsFeedbackCopy,
+  mcpSettingsCopy,
+  memorySettingsCopy,
   searchSettingsCopy,
   settingsSectionLabels,
   settingsShellCopy,

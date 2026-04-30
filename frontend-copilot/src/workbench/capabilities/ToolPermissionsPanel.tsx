@@ -7,6 +7,7 @@ import {
   type ToolPermissionMode,
   type ToolPermissionRecord,
 } from './capabilities-demo'
+import { resolveCapabilitiesListItemEnterDelayMs } from './capabilities-list-animation'
 import { ToolPermissionRow } from './ToolPermissionRow'
 
 interface ToolPermissionsPanelProps {
@@ -69,6 +70,20 @@ export function ToolPermissionsPanel({
       })
   }, [tools])
 
+  const toolEnterDelayById = useMemo(() => {
+    const delays = new Map<string, number>()
+    let rowIndex = 0
+
+    groupedTools.forEach((group) => {
+      group.tools.forEach((tool) => {
+        delays.set(tool.id, resolveCapabilitiesListItemEnterDelayMs(rowIndex))
+        rowIndex += 1
+      })
+    })
+
+    return delays
+  }, [groupedTools])
+
   const handleToggleGroup = (groupId: ToolPermissionGroupId) => {
     setCollapsedGroups((previous) => ({
       ...previous,
@@ -121,6 +136,7 @@ export function ToolPermissionsPanel({
                   <ToolPermissionRow
                     key={tool.id}
                     tool={tool}
+                    enterDelayMs={toolEnterDelayById.get(tool.id) ?? 0}
                     onModeChange={onModeChange}
                     onDelayActionChange={onDelayActionChange}
                     onDelaySecondsChange={onDelaySecondsChange}

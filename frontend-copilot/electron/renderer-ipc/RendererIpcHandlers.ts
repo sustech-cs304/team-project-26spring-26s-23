@@ -32,6 +32,7 @@ import type {
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import type { CopilotRuntimeLoadResult } from '../copilot-runtime'
 import type { DesktopNotificationRequest } from '../desktop-notification'
+import type { DesktopWindowState } from '../window-controls'
 import type { ManagedRuntimeLoadResponse } from '../managed-runtime/ipc'
 import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import type {
@@ -137,6 +138,10 @@ export interface RendererIpcHandlers {
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   notifyDesktopNotification: (request: DesktopNotificationRequest) => Promise<void>
+  loadDesktopWindowState: () => Promise<DesktopWindowState>
+  minimizeDesktopWindow: () => Promise<void>
+  toggleMaximizeDesktopWindow: () => Promise<DesktopWindowState>
+  closeDesktopWindow: () => Promise<void>
   notifyBootstrapWindowReady: () => Promise<void>
   selectRootDirectory: () => Promise<SelectDirectoryResult>
   listDirectory: (request: ListDirectoryRequest) => Promise<ListDirectoryResult>

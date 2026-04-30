@@ -146,7 +146,7 @@ export function CopilotMessagesShell({
       {visibleConversation.length === 0 && !renderedAssistantPlaceholder.visible
         ? (
             <div
-              className="copilot-chat__empty"
+              className="copilot-chat__empty copilot-panel__enter"
               data-testid={emptyState === null ? 'chat-empty-state' : 'chat-no-model-empty-state'}
             >
               <p className="copilot-chat__empty-title">{emptyState?.title ?? copy.messages.emptyStateTitle}</p>
@@ -157,6 +157,7 @@ export function CopilotMessagesShell({
           )
         : visibleConversation.map((turn, index) => {
             const detailRows = buildDetailRows()
+            const enterDelay = Math.min(index * 35, 300)
             return (
               <article
                 key={turn.id}
@@ -166,6 +167,7 @@ export function CopilotMessagesShell({
                   turn.status ? `copilot-chat__message--${turn.status}` : '',
                 ].filter((className) => className !== '').join(' ')}
                 data-testid={`chat-message-${turn.kind}-${index}`}
+                style={{ animationDelay: `${enterDelay}ms` }}
               >
                 {turn.kind === 'inline-form'
                   ? (

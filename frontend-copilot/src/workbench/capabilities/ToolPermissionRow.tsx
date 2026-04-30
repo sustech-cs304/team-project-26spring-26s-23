@@ -8,6 +8,7 @@ import { ToolPermissionDelayPanel } from './ToolPermissionDelayPanel'
 
 interface ToolPermissionRowProps {
   tool: ToolPermissionRecord
+  enterDelayMs?: number
   onModeChange: (toolId: string, mode: ToolPermissionMode) => void
   onDelayActionChange: (toolId: string, action: ToolPermissionDelayAction) => void
   onDelaySecondsChange: (toolId: string, seconds: number) => void
@@ -15,6 +16,7 @@ interface ToolPermissionRowProps {
 
 export function ToolPermissionRow({
   tool,
+  enterDelayMs,
   onModeChange,
   onDelayActionChange,
   onDelaySecondsChange,
@@ -23,7 +25,10 @@ export function ToolPermissionRow({
   const delayPanelOpen = tool.mode === 'delay'
 
   return (
-    <article className={`tool-permission-row${delayPanelOpen ? ' tool-permission-row--expanded' : ''}`}>
+    <article
+      className={`tool-permission-row${delayPanelOpen ? ' tool-permission-row--expanded' : ''}`}
+      style={enterDelayMs === undefined ? undefined : { animationDelay: `${enterDelayMs}ms` }}
+    >
       <div className="tool-permission-row__meta">
         <div className="tool-permission-row__title-line">
           <h4 className="tool-permission-row__name">{tool.name}</h4>

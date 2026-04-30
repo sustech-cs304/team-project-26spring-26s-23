@@ -329,6 +329,16 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
       void request
       return undefined
     }),
+    loadDesktopWindowState: vi.fn(async () => ({
+      isMaximized: false,
+      isFullScreen: false,
+    })),
+    minimizeDesktopWindow: vi.fn(async () => undefined),
+    toggleMaximizeDesktopWindow: vi.fn(async () => ({
+      isMaximized: true,
+      isFullScreen: false,
+    })),
+    closeDesktopWindow: vi.fn(async () => undefined),
     notifyBootstrapWindowReady: vi.fn(async () => undefined),
     selectRootDirectory: vi.fn(async (): Promise<SelectDirectoryResult> => ({
       ok: true,

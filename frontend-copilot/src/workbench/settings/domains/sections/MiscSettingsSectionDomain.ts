@@ -1,5 +1,3 @@
-import { createApiSettingsSectionDomains, type ApiSettingsSectionDomains } from './ApiSettingsSectionDomain'
-import { createDataSettingsSectionDomains, type DataSettingsSectionDomains } from './DataSettingsSectionDomain'
 import {
   createDisplaySettingsSectionDomains,
   type DisplaySettingsSectionDomains,
@@ -8,8 +6,6 @@ import { createDocsSettingsSectionDomains, type DocsSettingsSectionDomains } fro
 
 export type MiscSettingsSectionDomains =
   & DisplaySettingsSectionDomains
-  & DataSettingsSectionDomains
-  & ApiSettingsSectionDomains
   & DocsSettingsSectionDomains
 
 export function createMiscSettingsSectionDomains(
@@ -17,8 +13,6 @@ export function createMiscSettingsSectionDomains(
 ): MiscSettingsSectionDomains {
   return {
     ...createDisplaySettingsSectionDomains(domains.display),
-    ...createDataSettingsSectionDomains(domains.data),
-    ...createApiSettingsSectionDomains(domains.api),
     ...createDocsSettingsSectionDomains(domains.docs),
   }
 }

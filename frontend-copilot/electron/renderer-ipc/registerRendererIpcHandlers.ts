@@ -62,6 +62,13 @@ import {
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL } from '../bootstrap-window'
 import {
+  DESKTOP_WINDOW_CLOSE_CHANNEL,
+  DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+  DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+  DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+  type DesktopWindowState,
+} from '../window-controls'
+import {
   MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
   MANAGED_RUNTIME_LOAD_CHANNEL,
   type ManagedRuntimeLoadResponse,
@@ -189,6 +196,10 @@ const RENDERER_IPC_CHANNELS = [
   COPILOT_RUNTIME_RETRY_CHANNEL,
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
   BOOTSTRAP_WINDOW_READY_CHANNEL,
+  DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+  DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+  DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+  DESKTOP_WINDOW_CLOSE_CHANNEL,
   FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
   FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
   FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
@@ -472,6 +483,22 @@ export function registerRendererIpcHandlers(
 
   ipcMain.handle(BOOTSTRAP_WINDOW_READY_CHANNEL, async (): Promise<void> => {
     await handlers.notifyBootstrapWindowReady()
+  })
+
+  ipcMain.handle(DESKTOP_WINDOW_STATE_LOAD_CHANNEL, async (): Promise<DesktopWindowState> => {
+    return await handlers.loadDesktopWindowState()
+  })
+
+  ipcMain.handle(DESKTOP_WINDOW_MINIMIZE_CHANNEL, async (): Promise<void> => {
+    await handlers.minimizeDesktopWindow()
+  })
+
+  ipcMain.handle(DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL, async (): Promise<DesktopWindowState> => {
+    return await handlers.toggleMaximizeDesktopWindow()
+  })
+
+  ipcMain.handle(DESKTOP_WINDOW_CLOSE_CHANNEL, async (): Promise<void> => {
+    await handlers.closeDesktopWindow()
   })
 
   ipcMain.handle(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, async (): Promise<SelectDirectoryResult> => {
