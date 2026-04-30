@@ -17,6 +17,8 @@ import {
   settingsShellCopy,
   generalSettingsCopy,
   displaySettingsCopy,
+  dataSettingsCopy,
+  memorySettingsCopy,
   apiSettingsCopy,
   searchSettingsCopy,
   mcpSettingsCopy,
@@ -69,6 +71,14 @@ export function getGeneralSettingsCopy(language: string) {
 
 export function getDisplaySettingsCopy(language: string) {
   return displaySettingsCopy[normalizeWorkbenchLanguage(language)]
+}
+
+export function getDataSettingsCopy(language: string) {
+  return dataSettingsCopy[normalizeWorkbenchLanguage(language)]
+}
+
+export function getMemorySettingsCopy(language: string) {
+  return memorySettingsCopy[normalizeWorkbenchLanguage(language)]
 }
 
 export function getApiSettingsCopy(language: string) {
@@ -193,6 +203,42 @@ export function getThemeOptions(language: string): SelectOption[] {
   return [
     { value: 'light', label: '浅色' },
     { value: 'dark', label: '深色' },
+  ]
+}
+
+export function getBackupCycleOptions(language: string): SelectOption[] {
+  const locale = normalizeWorkbenchLanguage(language)
+
+  if (locale === 'en-US') {
+    return [
+      { value: 'every-launch', label: 'Every launch' },
+      { value: 'daily', label: 'Daily' },
+      { value: 'weekly', label: 'Weekly' },
+    ]
+  }
+
+  return [
+    { value: 'every-launch', label: '每次启动' },
+    { value: 'daily', label: '每天' },
+    { value: 'weekly', label: '每周' },
+  ]
+}
+
+export function getMemoryStrategyOptions(language: string): SelectOption[] {
+  const locale = normalizeWorkbenchLanguage(language)
+
+  if (locale === 'en-US') {
+    return [
+      { value: 'session-only', label: 'Session only' },
+      { value: 'session-longterm', label: 'Session + long-term memory' },
+      { value: 'project-centric', label: 'Project-centric' },
+    ]
+  }
+
+  return [
+    { value: 'session-only', label: '仅会话内' },
+    { value: 'session-longterm', label: '会话 + 长期记忆' },
+    { value: 'project-centric', label: '项目优先' },
   ]
 }
 

@@ -188,6 +188,49 @@ const defaultModelRoutesCopy: Record<WorkbenchLanguage, {
   },
 }
 
+const dataSettingsCopy: Record<WorkbenchLanguage, {
+  title: string
+  dataPathLabel: string
+  dataPathPlaceholder: string
+  backupCycleLabel: string
+  backupEnabledLabel: string
+  launchSyncLabel: string
+}> = {
+  'zh-CN': {
+    title: '数据设置',
+    dataPathLabel: '数据目录',
+    dataPathPlaceholder: '选择或输入本地数据目录',
+    backupCycleLabel: '备份周期',
+    backupEnabledLabel: '启用自动备份',
+    launchSyncLabel: '启动时同步数据',
+  },
+  'en-US': {
+    title: 'Data Settings',
+    dataPathLabel: 'Data directory',
+    dataPathPlaceholder: 'Choose or enter local data directory',
+    backupCycleLabel: 'Backup cycle',
+    backupEnabledLabel: 'Enable automatic backup',
+    launchSyncLabel: 'Sync data on launch',
+  },
+}
+
+const memorySettingsCopy: Record<WorkbenchLanguage, {
+  title: string
+  strategyLabel: string
+  cleanupLabel: string
+}> = {
+  'zh-CN': {
+    title: '记忆设置',
+    strategyLabel: '记忆策略',
+    cleanupLabel: '自动清理过期记忆',
+  },
+  'en-US': {
+    title: 'Memory Settings',
+    strategyLabel: 'Memory strategy',
+    cleanupLabel: 'Clean up stale memory automatically',
+  },
+}
+
 const apiSettingsCopy: Record<WorkbenchLanguage, {
   title: string
   summaryTitle: string
@@ -1108,6 +1151,7 @@ export {
   assistantSessionCopy,
   configCenterPublicFieldCopy,
   copilotChatCopy,
+  dataSettingsCopy,
   defaultModelRoutesCopy,
   displaySettingsCopy,
   docsSettingsCopy,
@@ -1122,6 +1166,7 @@ export {
   providerSecretCopy,
   providerSecretsFeedbackCopy,
   mcpSettingsCopy,
+  memorySettingsCopy,
   searchSettingsCopy,
   settingsSectionLabels,
   settingsShellCopy,

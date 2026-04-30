@@ -114,8 +114,11 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
       assistantNotificationsEnabled: false,
     },
     mcp: {
+      mcpAutoDiscoveryEnabled: true,
+      toolPermissionMode: 'manual',
       toolPermissionPolicy: {
         version: 1,
+        migrationSourceMode: 'manual',
         defaultMode: 'ask',
         toolPermissions: {},
       },
