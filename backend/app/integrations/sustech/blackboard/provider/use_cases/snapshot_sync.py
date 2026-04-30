@@ -1152,6 +1152,7 @@ def run_blackboard_snapshot_sync(
 
     second_sync_stats: dict[str, dict[str, int]] | None = None
     if verify_second_sync:
+        _emit(progress, "▶ 开始执行第二次同步验证")
         logger.info("▶ 开始执行第二次同步验证")
         second_sync_stats = sync_blackboard_payloads(
             db_manager,
@@ -1159,6 +1160,7 @@ def run_blackboard_snapshot_sync(
             allow_assignment_attachment_resource_upsert=False,
             logger=logger.child("provider.use_cases.snapshot_sync.second_sync"),
         )
+        _emit(progress, "💾 第二次同步验证完成")
         logger.info(
             "💾 第二次同步验证完成", payload={"second_sync_stats": second_sync_stats}
         )

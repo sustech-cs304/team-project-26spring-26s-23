@@ -101,6 +101,9 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
       email: '',
       blackboardAutoDownloadEnabled: false,
       blackboardDownloadLimitMb: '0',
+      blackboardSyncInterval: 'off' as const,
+      blackboardLastAutoSyncAt: null,
+      blackboardNextAutoSyncAt: null,
     },
     providerProfiles: [],
     defaultModelRouting: {

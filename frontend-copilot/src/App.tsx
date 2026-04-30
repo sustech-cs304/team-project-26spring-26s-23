@@ -36,7 +36,7 @@ function logStartupTrace(stage: string, data: Record<string, unknown> = {}) {
 
 logStartupTrace('module-evaluated')
 
-const ALL_WORKSPACE_VIEWS: WorkspaceView[] = ['assistant', 'capabilities', 'files', 'developer', 'settings']
+const ALL_WORKSPACE_VIEWS: WorkspaceView[] = ['assistant', 'capabilities', 'files', 'sustech', 'developer', 'settings']
 const WORKBENCH_WORKSPACE_TRANSITION_MS = 180
 
 const AssistantWorkspace = lazy(async () => {
@@ -96,6 +96,21 @@ const FilesWorkspace = lazy(async () => {
 
   return {
     default: module.FilesWorkspace,
+  }
+})
+
+const SustechWorkspace = lazy(async () => {
+  const startedAt = performance.now()
+  logStartupTrace('sustech-workspace-import:start')
+
+  const module = await import('./workbench/sustech/SustechWorkspace')
+
+  logStartupTrace('sustech-workspace-import:resolved', {
+    durationMs: Math.round(performance.now() - startedAt),
+  })
+
+  return {
+    default: module.SustechWorkspace,
   }
 })
 
@@ -417,6 +432,10 @@ function renderWorkspace(
         onLanguageChange={onWorkbenchLanguageChange}
       />
     )
+  }
+
+  if (view === 'sustech') {
+    return <SustechWorkspace bootstrap={bootstrap} language={workbenchLanguage} />
   }
 
   if (view === 'capabilities') {

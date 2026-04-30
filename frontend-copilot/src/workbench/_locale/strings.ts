@@ -13,6 +13,7 @@ const workspaceLabels: Record<WorkbenchLanguage, Record<WorkspaceView, string>> 
     assistant: '助手',
     capabilities: '能力',
     files: '文件',
+    sustech: 'SUSTech',
     developer: '开发',
     settings: '设置',
   },
@@ -20,6 +21,7 @@ const workspaceLabels: Record<WorkbenchLanguage, Record<WorkspaceView, string>> 
     assistant: 'Assistant',
     capabilities: 'Capabilities',
     files: 'Files',
+    sustech: 'SUSTech',
     developer: 'Developer',
     settings: 'Settings',
   },
@@ -1084,6 +1086,10 @@ const workspaceMetaByLanguage: Record<WorkbenchLanguage, Record<WorkspaceView, {
       label: '文件',
       loadingDescription: '正在加载文件管理页面…',
     },
+    sustech: {
+      label: 'SUSTech',
+      loadingDescription: '正在加载 SUSTech 页面…',
+    },
     developer: {
       label: '开发',
       loadingDescription: '正在加载开发页面…',
@@ -1105,6 +1111,10 @@ const workspaceMetaByLanguage: Record<WorkbenchLanguage, Record<WorkspaceView, {
     files: {
       label: 'Files',
       loadingDescription: 'Loading file management page…',
+    },
+    sustech: {
+      label: 'SUSTech',
+      loadingDescription: 'Loading SUSTech page…',
     },
     developer: {
       label: 'Developer',

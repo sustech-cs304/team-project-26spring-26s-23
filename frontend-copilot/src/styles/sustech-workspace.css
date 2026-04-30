@@ -1,0 +1,1033 @@
+/* SUSTech workspace — follows hub/settings panel + main pattern. */
+.sustech-workspace {
+  grid-template-columns: 300px minmax(0, 1fr);
+  background: var(--app-bg);
+}
+
+.sustech-workspace__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+.sustech-workspace .settings-card {
+  flex: 0 0 auto;
+}
+
+.sustech-workspace .settings-card,
+.sustech-course-browser__list-pane,
+.sustech-course-browser__detail-pane,
+.sustech-course-detail__summary {
+  transition:
+    background-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.sustech-workspace .settings-card:hover,
+.sustech-course-browser__list-pane:hover,
+.sustech-course-browser__detail-pane:hover {
+  background: var(--surface-bg);
+  transform: translateY(-1px);
+}
+
+.sustech-workspace__main {
+  position: relative;
+}
+
+.sustech-module-keepalive-panel {
+  min-height: 0;
+}
+
+.sustech-module-keepalive-panel:not([hidden]) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.sustech-module-keepalive-panel--active {
+  z-index: 2;
+  animation: sustech-module-fade-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sustech-module-keepalive-panel--exiting {
+  z-index: 1;
+  pointer-events: none;
+  animation: sustech-module-fade-out 120ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.sustech-module-keepalive-panel--exiting .sustech-course-item,
+.sustech-module-keepalive-panel--exiting .sustech-detail-item,
+.sustech-module-keepalive-panel--exiting .sustech-detail-tab,
+.sustech-module-keepalive-panel--exiting .sustech-course-detail__summary,
+.sustech-module-keepalive-panel--exiting .sustech-course-browser__list-pane,
+.sustech-module-keepalive-panel--exiting .sustech-course-browser__detail-pane {
+  animation: none !important;
+}
+
+.sustech-workspace .hub-list {
+  gap: 0.35rem;
+}
+
+.sustech-workspace .hub-list__item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.7rem;
+  min-height: 58px;
+  padding: 0.95rem 1rem;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sustech-workspace .hub-list__item--active {
+  background: var(--interactive-active-bg);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.sustech-workspace .hub-list__item[disabled] {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
+.sustech-workspace .hub-list__item--active .sustech-module-icon {
+  color: var(--accent-strong);
+}
+
+/* Module icon in sidebar */
+.sustech-module-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.sustech-home-card__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.sustech-home-card__desc {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.sustech-home-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.sustech-home-card__time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Sidebar list item icons */
+.sustech-module-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+/* Back link in management header */
+.sustech-back-link {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0.34rem 0.55rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font: inherit;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.sustech-back-link:hover {
+  color: var(--accent-strong);
+}
+
+/* Management view: stacked cards */
+.sustech-mgmt-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Status pill */
+.sustech-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.52rem;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+
+.sustech-pill--idle {
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+}
+
+.sustech-pill--running {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 12%, transparent);
+}
+
+.sustech-pill--completed {
+  color: #16a34a;
+  background: color-mix(in srgb, #16a34a 10%, transparent);
+}
+
+.sustech-pill--failed {
+  color: #dc2626;
+  background: color-mix(in srgb, #dc2626 10%, transparent);
+}
+
+/* Sync progress box */
+.sustech-progress-box {
+  margin-top: 0.5rem;
+  padding: 0.8rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  border: 1px solid var(--border-muted);
+}
+
+.sustech-progress-bar {
+  height: 4px;
+  background: var(--border-muted);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 0.6rem;
+}
+
+.sustech-progress-bar__fill--active {
+  height: 100%;
+  width: 100%;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--accent-strong) 0%,
+    var(--accent-strong) 30%,
+    color-mix(in srgb, var(--accent-strong) 60%, transparent) 50%,
+    var(--accent-strong) 70%,
+    var(--accent-strong) 100%
+  );
+  background-size: 200% 100%;
+  animation: sustech-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes sustech-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes sustech-module-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sustech-module-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sustech-detail-tab-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sustech-detail-tab-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sustech-list-item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sustech-progress-stages {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.sustech-progress-stage {
+  font-size: 0.7rem;
+  padding: 0.14rem 0.5rem;
+  border-radius: 99px;
+  background: var(--surface-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border-muted);
+  opacity: 0.55;
+  transition: opacity 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.sustech-progress-stage--active {
+  opacity: 1;
+  color: var(--accent-strong);
+  border-color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 8%, transparent);
+}
+
+.sustech-progress-stage--done {
+  opacity: 1;
+  color: #16a34a;
+  border-color: #16a34a;
+  background: color-mix(in srgb, #16a34a 8%, transparent);
+}
+
+.sustech-progress-msg {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.sustech-sync-spin {
+  animation: sustech-spin 1s linear infinite;
+}
+
+@keyframes sustech-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sustech-log-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  font: inherit;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.sustech-log-toggle:hover {
+  color: var(--text-primary);
+}
+
+.sustech-log-drawer {
+  margin-top: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-bg);
+  border: 1px solid var(--border-muted);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.sustech-log-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.sustech-log-list li::marker {
+  color: var(--text-muted);
+}
+
+/* Error */
+.sustech-sync-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #dc2626 8%, transparent);
+  color: #dc2626;
+  font-size: 0.8rem;
+  border: 1px solid color-mix(in srgb, #dc2626 20%, transparent);
+}
+
+/* Hint text */
+.sustech-empty-hint {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+/* Split course browser */
+.sustech-course-browser {
+  display: grid;
+  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
+  gap: 0.85rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: transparent;
+}
+
+.sustech-course-browser__list-pane,
+.sustech-course-browser__detail-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-bg);
+  overflow: hidden;
+}
+
+.sustech-course-browser__list-pane {
+  border-right: 1px solid var(--border-muted);
+}
+
+.sustech-course-browser__pane-header,
+.sustech-course-detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.sustech-course-browser__eyebrow {
+  margin: 0 0 0.28rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.sustech-course-browser__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.sustech-course-browser__count,
+.sustech-course-detail__status {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0.16rem 0.52rem;
+  border-radius: 99px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.sustech-course-detail__status {
+  background: color-mix(in srgb, #16a34a 10%, transparent);
+  color: #16a34a;
+}
+
+.sustech-course-detail__meta {
+  overflow: hidden;
+  margin: 0.32rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sustech-course-search {
+  padding: 0.85rem 0.85rem 0;
+}
+
+.sustech-course-search__input {
+  width: 100%;
+  height: 40px;
+  padding: 0 0.8rem;
+  border: 1px solid var(--border-muted);
+  border-radius: 0;
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.86rem;
+  outline: none;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.sustech-course-search__input::placeholder {
+  color: var(--text-muted);
+}
+
+.sustech-course-search__input:focus {
+  border-color: var(--accent-strong);
+  background: var(--surface-bg);
+}
+
+.sustech-course-list {
+  display: grid;
+  align-content: start;
+  gap: 0.65rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0.85rem;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sustech-course-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.sustech-course-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  min-height: 152px;
+  padding: 1.05rem 1rem 1.1rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text-primary);
+  animation: sustech-list-item-enter 165ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  transition: background-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.sustech-course-item:hover,
+.sustech-course-item:focus-visible {
+  background: transparent;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.sustech-course-item--active {
+  background: transparent;
+}
+
+.sustech-course-item--active .sustech-course-item__chevron {
+  color: var(--accent-strong);
+}
+
+.sustech-course-item__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.46rem;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.sustech-course-item__code {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sustech-course-item__name {
+  color: var(--text-primary);
+  font-size: 1.02rem;
+  font-weight: 750;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+}
+
+.sustech-course-item__meta {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sustech-course-item__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  margin-top: auto;
+  padding-top: 0.18rem;
+}
+
+.sustech-course-item__badges span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.52rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.sustech-course-item__chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.sustech-course-detail__empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 2rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.sustech-course-detail__empty p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.sustech-course-detail__summary {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border-muted);
+  background: transparent;
+}
+
+.sustech-course-detail__code {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sustech-course-detail__summary strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sustech-course-detail__summary-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.sustech-course-detail__summary-badges span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.14rem 0.48rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* Detail tabs */
+.sustech-detail-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem 0.55rem;
+}
+
+.sustech-detail-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  cursor: pointer;
+  font: inherit;
+  -webkit-user-select: none;
+  user-select: none;
+  animation: sustech-list-item-enter 165ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  transition: color 0.18s ease, transform 0.18s ease;
+}
+
+.sustech-detail-tab::after {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.12rem;
+  left: 0.55rem;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  opacity: 0;
+  transform: scaleX(0.5);
+  transform-origin: center;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  content: '';
+}
+
+.sustech-detail-tab:hover {
+  background: transparent;
+  transform: translateY(-1px);
+}
+
+.sustech-detail-tab--active {
+  background: transparent;
+  color: var(--accent-strong);
+  border-color: transparent;
+}
+
+.sustech-detail-tab--active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.sustech-detail-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sustech-detail-keepalive-panel {
+  min-height: 0;
+}
+
+.sustech-detail-keepalive-panel:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-height: 0;
+}
+
+.sustech-detail-keepalive-panel--active {
+  z-index: 2;
+  animation: sustech-detail-tab-fade-in 130ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sustech-detail-keepalive-panel--exiting {
+  z-index: 1;
+  pointer-events: none;
+  animation: sustech-detail-tab-fade-out 110ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.sustech-detail-keepalive-panel--exiting .sustech-detail-item {
+  animation: none !important;
+}
+
+.sustech-detail-list {
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 1rem 1rem;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sustech-detail-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.sustech-detail-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.82rem 0.85rem;
+  border-radius: 0;
+  background: transparent;
+  font-size: 0.86rem;
+  animation: sustech-list-item-enter 165ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  transition: background-color 0.16s ease, color 0.16s ease, transform 0.16s ease, border-color 0.16s ease;
+}
+
+.sustech-detail-item:hover {
+  background: transparent;
+  transform: translateY(-1px);
+}
+
+.sustech-detail-item--announcements {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: flex-start;
+  padding: 1.05rem 1rem 1.1rem;
+  background: transparent;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.sustech-detail-item--resources {
+  position: relative;
+  border-left: 2px solid transparent;
+}
+
+.sustech-detail-item--resource-parent {
+  border-left-color: var(--accent-strong);
+}
+
+.sustech-detail-item--depth-1 { margin-left: 1.35rem; }
+.sustech-detail-item--depth-2 { margin-left: 2.7rem; }
+.sustech-detail-item--depth-3 { margin-left: 4.05rem; }
+.sustech-detail-item--depth-4 { margin-left: 5.4rem; }
+
+.sustech-course-list .sustech-course-item:nth-of-type(1),
+.sustech-detail-list .sustech-detail-item:nth-of-type(1),
+.sustech-detail-tabs .sustech-detail-tab:nth-of-type(1) {
+  animation-delay: 0ms;
+}
+
+.sustech-course-list .sustech-course-item:nth-of-type(2),
+.sustech-detail-list .sustech-detail-item:nth-of-type(2),
+.sustech-detail-tabs .sustech-detail-tab:nth-of-type(2) {
+  animation-delay: 24ms;
+}
+
+.sustech-course-list .sustech-course-item:nth-of-type(3),
+.sustech-detail-list .sustech-detail-item:nth-of-type(3),
+.sustech-detail-tabs .sustech-detail-tab:nth-of-type(3) {
+  animation-delay: 48ms;
+}
+
+.sustech-course-list .sustech-course-item:nth-of-type(4),
+.sustech-detail-list .sustech-detail-item:nth-of-type(4),
+.sustech-detail-tabs .sustech-detail-tab:nth-of-type(4) {
+  animation-delay: 72ms;
+}
+
+.sustech-course-list .sustech-course-item:nth-of-type(n+5),
+.sustech-detail-list .sustech-detail-item:nth-of-type(n+5),
+.sustech-detail-tabs .sustech-detail-tab:nth-of-type(n+5) {
+  animation-delay: 96ms;
+}
+
+.sustech-detail-item--resources[class*="sustech-detail-item--depth-"]::before {
+  position: absolute;
+  top: -0.35rem;
+  bottom: -0.35rem;
+  left: -0.72rem;
+  width: 1px;
+  background: var(--border-muted);
+  content: '';
+}
+
+.sustech-detail-item__body {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.sustech-detail-item__title {
+  min-width: 0;
+  color: var(--text-primary);
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.sustech-detail-item--announcements .sustech-detail-item__title {
+  color: var(--text-primary);
+  font-size: 1.08rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.sustech-detail-item--resources .sustech-detail-item__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.sustech-detail-item--resource-parent .sustech-detail-item__title {
+  font-weight: 740;
+}
+
+.sustech-resource-tree-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.sustech-detail-item--resource-parent .sustech-resource-tree-marker {
+  color: var(--accent-strong);
+}
+
+.sustech-detail-item__desc,
+.sustech-detail-item__meta-row {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.sustech-detail-item--announcements .sustech-detail-item__desc {
+  color: var(--text-primary);
+  font-size: 0.96rem;
+  font-weight: 500;
+  line-height: 1.68;
+  white-space: pre-wrap;
+}
+
+.sustech-detail-item__meta-row {
+  color: var(--text-muted);
+}
+
+.sustech-detail-item__score {
+  font-size: 0.8rem;
+  color: var(--accent-strong);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.sustech-detail-item__meta {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.sustech-detail-item__date {
+  white-space: nowrap;
+}
+
+.sustech-detail-item--announcements .sustech-detail-item__meta,
+.sustech-detail-item--announcements .sustech-detail-item__date,
+.sustech-detail-item--announcements .sustech-detail-item__meta-row {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.sustech-download-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: not-allowed;
+  flex-shrink: 0;
+  opacity: 0.4;
+}
+
+:root[data-animations='disabled'] .sustech-module-keepalive-panel,
+:root[data-animations='disabled'] .sustech-detail-keepalive-panel,
+:root[data-animations='disabled'] .sustech-course-item,
+:root[data-animations='disabled'] .sustech-detail-item,
+:root[data-animations='disabled'] .sustech-detail-tab {
+  animation-delay: 0ms !important;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .sustech-course-browser {
+    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  }
+
+  .sustech-detail-item {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .sustech-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .sustech-workspace .workspace-panel {
+    order: 1;
+    border-right: none;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .sustech-workspace__content {
+    overflow: auto;
+  }
+
+  .sustech-course-browser {
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .sustech-course-browser__list-pane,
+  .sustech-course-browser__detail-pane {
+    min-height: 320px;
+  }
+
+  .sustech-course-browser__list-pane {
+    border-right: none;
+    border-bottom: 1px solid var(--border-muted);
+  }
+
+  .sustech-course-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

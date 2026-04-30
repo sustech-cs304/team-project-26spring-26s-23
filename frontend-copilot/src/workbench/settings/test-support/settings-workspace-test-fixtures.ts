@@ -103,6 +103,9 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
       email: '',
       blackboardAutoDownloadEnabled: false,
       blackboardDownloadLimitMb: '0',
+      blackboardSyncInterval: 'off',
+      blackboardLastAutoSyncAt: null,
+      blackboardNextAutoSyncAt: null,
     },
     providerProfiles: [createProviderProfile()],
     defaultModelRouting: {

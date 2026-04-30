@@ -16,6 +16,9 @@ export interface SettingsWorkspaceFormState {
   sustechEmail: string
   blackboardAutoDownloadEnabled: boolean
   blackboardDownloadLimitMb: string
+  blackboardSyncInterval: 'off' | 'two_hours' | 'daily'
+  blackboardLastAutoSyncAt: string | null
+  blackboardNextAutoSyncAt: string | null
   providerProfiles: ProviderProfile[]
   primaryAssistantModel: string
   fastAssistantModel: string
@@ -43,6 +46,9 @@ const INITIAL_SETTINGS_WORKSPACE_FORM_STATE: SettingsWorkspaceFormState = {
   sustechEmail: '',
   blackboardAutoDownloadEnabled: false,
   blackboardDownloadLimitMb: '0',
+  blackboardSyncInterval: 'off' as const,
+  blackboardLastAutoSyncAt: null,
+  blackboardNextAutoSyncAt: null,
   providerProfiles: cloneProviderProfiles(initialProviderProfiles),
   primaryAssistantModel: '',
   fastAssistantModel: initialProviderProfiles[0]?.fastModel ?? '',
@@ -80,6 +86,9 @@ export function createSettingsWorkspaceFormStateFromEditableState(
     sustechEmail: state.sustech.email,
     blackboardAutoDownloadEnabled: state.sustech.blackboardAutoDownloadEnabled,
     blackboardDownloadLimitMb: state.sustech.blackboardDownloadLimitMb,
+    blackboardSyncInterval: state.sustech.blackboardSyncInterval,
+    blackboardLastAutoSyncAt: state.sustech.blackboardLastAutoSyncAt ?? null,
+    blackboardNextAutoSyncAt: state.sustech.blackboardNextAutoSyncAt ?? null,
     providerProfiles: cloneProviderProfiles(state.providerProfiles),
     primaryAssistantModel: state.defaultModelRouting.primaryAssistantModel,
     fastAssistantModel: state.defaultModelRouting.fastAssistantModel,

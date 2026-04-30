@@ -53,6 +53,9 @@ export interface SettingsWorkspaceStateValues {
     email: string
     blackboardAutoDownloadEnabled: boolean
     blackboardDownloadLimitMb: string
+    blackboardSyncInterval: 'off' | 'two_hours' | 'daily'
+    blackboardLastAutoSyncAt: string | null
+    blackboardNextAutoSyncAt: string | null
   }
   providerProfiles: SettingsWorkspaceStoredProviderProfile[]
   defaultModelRouting: SettingsWorkspaceStoredDefaultModelRouting
@@ -97,6 +100,9 @@ const DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES: SettingsWorkspaceStateValues = {
     email: '',
     blackboardAutoDownloadEnabled: false,
     blackboardDownloadLimitMb: '0',
+    blackboardSyncInterval: 'off' as const,
+    blackboardLastAutoSyncAt: null,
+    blackboardNextAutoSyncAt: null,
   },
   providerProfiles: createDefaultStoredProviderProfiles(),
   defaultModelRouting: {
@@ -154,7 +160,7 @@ export function normalizeSettingsWorkspaceStateValues(input: unknown): SettingsW
   const normalizedMcp = normalizeMcpState(record.mcp, defaults.mcp)
 
   return {
-    sustech: normalizeBooleanStringGroup(record.sustech, defaults.sustech),
+    sustech: normalizeSustechState(record.sustech, defaults.sustech),
     providerProfiles,
     defaultModelRouting: normalizeStoredDefaultModelRouting(record.defaultModelRouting, providerProfiles),
     general: normalizeBooleanStringGroup(record.general, defaults.general),
@@ -189,6 +195,50 @@ export function projectSettingsWorkspaceEditableState(
     docs: clonedValues.docs,
     externalSource: clonedValues.externalSource,
   }
+}
+
+function normalizeSustechState(
+  input: unknown,
+  defaults: SettingsWorkspaceStateValues['sustech'],
+): SettingsWorkspaceStateValues['sustech'] {
+  const record = asRecord(input)
+
+  return {
+    studentId: normalizeNonEmptyString(record.studentId, defaults.studentId),
+    email: normalizeNonEmptyString(record.email, defaults.email),
+    blackboardAutoDownloadEnabled: typeof record.blackboardAutoDownloadEnabled === 'boolean'
+      ? record.blackboardAutoDownloadEnabled
+      : defaults.blackboardAutoDownloadEnabled,
+    blackboardDownloadLimitMb: normalizeNonEmptyString(record.blackboardDownloadLimitMb, defaults.blackboardDownloadLimitMb),
+    blackboardSyncInterval: normalizeBlackboardSyncInterval(
+      record.blackboardSyncInterval,
+      defaults.blackboardSyncInterval,
+    ),
+    blackboardLastAutoSyncAt: normalizeNullableString(record.blackboardLastAutoSyncAt, defaults.blackboardLastAutoSyncAt),
+    blackboardNextAutoSyncAt: normalizeNullableString(record.blackboardNextAutoSyncAt, defaults.blackboardNextAutoSyncAt),
+  }
+}
+
+function normalizeBlackboardSyncInterval(
+  input: unknown,
+  fallback: SettingsWorkspaceStateValues['sustech']['blackboardSyncInterval'],
+): SettingsWorkspaceStateValues['sustech']['blackboardSyncInterval'] {
+  switch (normalizeNonEmptyString(input, '')) {
+    case 'off':
+    case 'two_hours':
+    case 'daily':
+      return input as SettingsWorkspaceStateValues['sustech']['blackboardSyncInterval']
+    default:
+      return fallback
+  }
+}
+
+function normalizeNullableString(input: unknown, fallback: string | null): string | null {
+  if (typeof input !== 'string') {
+    return fallback
+  }
+  const normalized = input.trim()
+  return normalized === '' ? null : normalized
 }
 
 function cloneSettingsWorkspaceStateValues(values: SettingsWorkspaceStateValues): SettingsWorkspaceStateValues {

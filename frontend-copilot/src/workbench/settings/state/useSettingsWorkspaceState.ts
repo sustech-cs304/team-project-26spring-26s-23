@@ -22,6 +22,7 @@ interface UseSettingsWorkspaceStateResult {
   setSustechEmail: (value: string) => void
   setBlackboardAutoDownloadEnabled: (value: boolean) => void
   setBlackboardDownloadLimitMb: (value: string) => void
+  setBlackboardSyncInterval: (value: SettingsWorkspaceFormState['blackboardSyncInterval']) => void
   setProviderProfiles: (value: ProviderProfile[] | ((previous: ProviderProfile[]) => ProviderProfile[])) => void
   setPrimaryAssistantModel: (value: string | ((previous: string) => string)) => void
   setFastAssistantModel: (value: string | ((previous: string) => string)) => void
@@ -110,6 +111,7 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
     setSustechEmail: (value) => updateField(setFormState, 'sustechEmail', value),
     setBlackboardAutoDownloadEnabled: (value) => updateField(setFormState, 'blackboardAutoDownloadEnabled', value),
     setBlackboardDownloadLimitMb: (value) => updateField(setFormState, 'blackboardDownloadLimitMb', value),
+    setBlackboardSyncInterval: (value) => updateField(setFormState, 'blackboardSyncInterval', value),
     setProviderProfiles: (value) => {
       setFormState((previous) => ({
         ...previous,
