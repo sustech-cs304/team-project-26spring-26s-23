@@ -38,6 +38,8 @@ export function createSettingsWorkspaceStateSaveInput(
       assistantNotificationsEnabled: state.assistantNotificationsEnabled,
     },
     mcp: {
+      mcpAutoDiscoveryEnabled: state.mcpAutoDiscoveryEnabled,
+      toolPermissionMode: state.toolPermissionMode,
       toolPermissionPolicy: state.toolPermissionPolicy,
     },
     api: {

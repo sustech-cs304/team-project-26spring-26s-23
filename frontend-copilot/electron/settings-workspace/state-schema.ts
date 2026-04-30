@@ -61,6 +61,8 @@ export interface SettingsWorkspaceStateValues {
     assistantNotificationsEnabled: boolean
   }
   mcp: {
+    mcpAutoDiscoveryEnabled: boolean
+    toolPermissionMode: LegacyToolPermissionMode
     toolPermissionPolicy: SettingsWorkspaceToolPermissionPolicyState
   }
   api: {
@@ -106,7 +108,12 @@ const DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES: SettingsWorkspaceStateValues = {
     assistantNotificationsEnabled: false,
   },
   mcp: {
-    toolPermissionPolicy: createDefaultToolPermissionPolicyState('ask'),
+    mcpAutoDiscoveryEnabled: true,
+    toolPermissionMode: 'manual',
+    toolPermissionPolicy: {
+      ...createDefaultToolPermissionPolicyState('ask'),
+      migrationSourceMode: 'manual',
+    },
   },
   api: {
     apiReconnectMode: 'exponential',
@@ -191,6 +198,8 @@ function cloneSettingsWorkspaceStateValues(values: SettingsWorkspaceStateValues)
     defaultModelRouting: cloneStoredDefaultModelRouting(values.defaultModelRouting),
     general: { ...values.general },
     mcp: {
+      mcpAutoDiscoveryEnabled: values.mcp.mcpAutoDiscoveryEnabled,
+      toolPermissionMode: values.mcp.toolPermissionMode,
       toolPermissionPolicy: cloneToolPermissionPolicyState(values.mcp.toolPermissionPolicy),
     },
     api: { ...values.api },
@@ -314,6 +323,10 @@ function normalizeMcpState(
   const toolPermissionPolicy = normalizeToolPermissionPolicyState(record.toolPermissionPolicy, legacyMode)
 
   return {
+    mcpAutoDiscoveryEnabled: typeof record.mcpAutoDiscoveryEnabled === 'boolean'
+      ? record.mcpAutoDiscoveryEnabled
+      : defaults.mcpAutoDiscoveryEnabled,
+    toolPermissionMode: legacyModeToStoredValue(toolPermissionPolicy.defaultMode),
     toolPermissionPolicy,
   }
 }

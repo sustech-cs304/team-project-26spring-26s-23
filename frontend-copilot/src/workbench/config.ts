@@ -170,11 +170,14 @@ function buildAgentShortLabel(agent: RuntimeAgentDirectoryEntry): string {
 }
 
 export const settingsItems: SettingsNavItem[] = [
-  { id: 'general', label: '常规设置', icon: SlidersHorizontal },
+  { id: 'sustech-info', label: 'SUSTech 信息', icon: School },
   { id: 'model-service', label: '模型服务', icon: ServerCog },
   { id: 'default-model', label: '默认模型', icon: Brain },
+  { id: 'general', label: '常规设置', icon: SlidersHorizontal },
   { id: 'display', label: '显示设置', icon: Monitor },
-  { id: 'sustech-info', label: 'SUSTech 信息', icon: School },
+  { id: 'api', label: 'API 服务器', icon: ServerCog },
+  { id: 'search', label: '搜索设置', icon: Database },
+  { id: 'mcp', label: 'MCP 设置', icon: Workflow },
   { id: 'docs', label: '文档处理', icon: FileText },
   { id: 'external-source', label: '外部源', icon: Link2 },
 ]

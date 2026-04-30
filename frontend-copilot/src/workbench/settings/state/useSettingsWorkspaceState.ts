@@ -30,6 +30,11 @@ interface UseSettingsWorkspaceStateResult {
   setApiReconnectMode: (value: string) => void
   setHealthPollingEnabled: (value: boolean) => void
   setApiBaseUrl: (value: string) => void
+  setSearchEngine: (value: string) => void
+  setSearchResultCount: (value: string) => void
+  setCompressionMode: (value: string) => void
+  setToolPermissionMode: (value: string) => void
+  setMcpAutoDiscoveryEnabled: (value: boolean) => void
   setDocsFormat: (value: string) => void
   setWakeupShareLink: (value: string) => void
 }
@@ -142,6 +147,22 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
         apiBaseUrl: value,
       }))
     },
+    setSearchEngine: (value) => updateField(setFormState, 'searchEngine', value),
+    setSearchResultCount: (value) => updateField(setFormState, 'searchResultCount', value),
+    setCompressionMode: (value) => updateField(setFormState, 'compressionMode', value),
+    setToolPermissionMode: (value) => {
+      const toolPermissionMode = normalizeLegacyToolPermissionMode(value)
+      setFormState((previous) => ({
+        ...previous,
+        toolPermissionMode,
+        toolPermissionPolicy: {
+          ...previous.toolPermissionPolicy,
+          migrationSourceMode: toolPermissionMode,
+          defaultMode: mapLegacyToolPermissionModeToPolicyDefaultMode(toolPermissionMode),
+        },
+      }))
+    },
+    setMcpAutoDiscoveryEnabled: (value) => updateField(setFormState, 'mcpAutoDiscoveryEnabled', value),
     setDocsFormat: (value) => updateField(setFormState, 'docsFormat', value),
     setWakeupShareLink: (value) => updateField(setFormState, 'wakeupShareLink', value),
   }
@@ -208,4 +229,29 @@ function cloneModelRouteRef(route: SettingsWorkspaceFormState['primaryAssistantM
         profileId: route.profileId,
         modelId: route.modelId,
       }
+}
+
+function normalizeLegacyToolPermissionMode(value: string): SettingsWorkspaceFormState['toolPermissionMode'] {
+  switch (value) {
+    case 'trusted':
+    case 'strict':
+    case 'manual':
+      return value
+    default:
+      return 'manual'
+  }
+}
+
+function mapLegacyToolPermissionModeToPolicyDefaultMode(
+  mode: SettingsWorkspaceFormState['toolPermissionMode'],
+): SettingsWorkspaceFormState['toolPermissionPolicy']['defaultMode'] {
+  switch (mode) {
+    case 'trusted':
+      return 'allow'
+    case 'strict':
+      return 'deny'
+    case 'manual':
+    default:
+      return 'ask'
+  }
 }

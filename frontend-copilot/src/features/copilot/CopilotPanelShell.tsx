@@ -257,8 +257,8 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
     const shouldRenderMessageSurface = props.persistedHistoryViewState === 'none'
       || props.persistedHistoryViewState === 'ready'
       || shouldRenderSuppressedLoadingAsMessageSurface
-    const persistedHistoryTransitionKey = shouldRenderSuppressedLoadingAsMessageSurface
-      ? 'ready'
+    const persistedHistoryTransitionKey = shouldRenderMessageSurface
+      ? 'messages'
       : props.persistedHistoryViewState
     const persistedConversationSource = props.persistedSelectedRunConversationSource ?? 'none'
 

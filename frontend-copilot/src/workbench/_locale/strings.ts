@@ -32,6 +32,9 @@ const settingsSectionLabels: Record<WorkbenchLanguage, Record<SettingsSection, s
     'default-model': '默认模型',
     general: '常规设置',
     display: '显示设置',
+    api: 'API 服务器',
+    search: '搜索设置',
+    mcp: 'MCP 设置',
     docs: '文档处理',
     'external-source': '外部源',
   },
@@ -41,6 +44,9 @@ const settingsSectionLabels: Record<WorkbenchLanguage, Record<SettingsSection, s
     'default-model': 'Default Models',
     general: 'General',
     display: 'Display',
+    api: 'API Server',
+    search: 'Search Settings',
+    mcp: 'MCP Settings',
     docs: 'Document Processing',
     'external-source': 'External Sources',
   },
@@ -179,6 +185,123 @@ const defaultModelRoutesCopy: Record<WorkbenchLanguage, {
     fastLabel: 'Quick Action Model',
     fastDescription: 'Select the default model used for quick actions.',
     placeholder: 'Select a default model',
+  },
+}
+
+const apiSettingsCopy: Record<WorkbenchLanguage, {
+  title: string
+  summaryTitle: string
+  currentStatusLabel: string
+  retryActionLabel: string
+  retryingText: string
+  retryIdleText: string
+  apiBaseUrlLabel: string
+  reconnectPolicyLabel: string
+  healthPollingLabel: string
+  bootstrapRetryLabels: {
+    retrying: string
+    idle: string
+  }
+  bootstrapStatusLabels: {
+    loading: string
+    empty: string
+    incomplete: string
+    starting: string
+    ready: string
+    failed: string
+    degraded: string
+    error: string
+  }
+}> = {
+  'zh-CN': {
+    title: 'API 服务器',
+    summaryTitle: '根层启动摘要',
+    currentStatusLabel: '当前状态',
+    retryActionLabel: '重连状态',
+    retryingText: '正在重新连接…',
+    retryIdleText: '重新连接服务',
+    apiBaseUrlLabel: '运行时覆盖地址',
+    reconnectPolicyLabel: '重连策略',
+    healthPollingLabel: '启用健康检查轮询',
+    bootstrapRetryLabels: {
+      retrying: '重试中',
+      idle: '空闲',
+    },
+    bootstrapStatusLabels: {
+      loading: '加载中',
+      empty: '未配置',
+      incomplete: '配置不完整',
+      starting: '启动中',
+      ready: '就绪',
+      failed: '启动失败',
+      degraded: '降级运行',
+      error: '错误',
+    },
+  },
+  'en-US': {
+    title: 'API Server',
+    summaryTitle: 'Root startup summary',
+    currentStatusLabel: 'Current status',
+    retryActionLabel: 'Reconnect state',
+    retryingText: 'Reconnecting…',
+    retryIdleText: 'Reconnect service',
+    apiBaseUrlLabel: 'Runtime override URL',
+    reconnectPolicyLabel: 'Reconnect policy',
+    healthPollingLabel: 'Enable health polling',
+    bootstrapRetryLabels: {
+      retrying: 'Retrying',
+      idle: 'Idle',
+    },
+    bootstrapStatusLabels: {
+      loading: 'Loading',
+      empty: 'Not configured',
+      incomplete: 'Incomplete',
+      starting: 'Starting',
+      ready: 'Ready',
+      failed: 'Failed',
+      degraded: 'Degraded',
+      error: 'Error',
+    },
+  },
+}
+
+const searchSettingsCopy: Record<WorkbenchLanguage, {
+  providerTitle: string
+  defaultEngineLabel: string
+  resultCountLabel: string
+  configTitle: string
+  compressionLabel: string
+}> = {
+  'zh-CN': {
+    providerTitle: '搜索设置',
+    defaultEngineLabel: '默认搜索引擎',
+    resultCountLabel: '默认结果数量',
+    configTitle: '结果处理',
+    compressionLabel: '压缩策略',
+  },
+  'en-US': {
+    providerTitle: 'Search Settings',
+    defaultEngineLabel: 'Default search engine',
+    resultCountLabel: 'Default result count',
+    configTitle: 'Result processing',
+    compressionLabel: 'Compression strategy',
+  },
+}
+
+const mcpSettingsCopy: Record<WorkbenchLanguage, {
+  title: string
+  permissionStrategyLabel: string
+  autoDiscoveryLabel: string
+}> = {
+  'zh-CN': {
+    title: 'MCP 设置',
+    permissionStrategyLabel: '工具权限策略',
+    autoDiscoveryLabel: '自动发现 MCP 服务',
+  },
+  'en-US': {
+    title: 'MCP Settings',
+    permissionStrategyLabel: 'Tool permission strategy',
+    autoDiscoveryLabel: 'Auto-discover MCP servers',
   },
 }
 
@@ -980,6 +1103,7 @@ const hubWorkspaceContentByLanguage: Record<WorkbenchLanguage, Record<HubWorkspa
 
 export {
   DEFAULT_WORKBENCH_LANGUAGE,
+  apiSettingsCopy,
   assistantDirectoryCopy,
   assistantSessionCopy,
   configCenterPublicFieldCopy,
@@ -997,6 +1121,8 @@ export {
   providerModelListCopy,
   providerSecretCopy,
   providerSecretsFeedbackCopy,
+  mcpSettingsCopy,
+  searchSettingsCopy,
   settingsSectionLabels,
   settingsShellCopy,
   sustechInfoCopy,

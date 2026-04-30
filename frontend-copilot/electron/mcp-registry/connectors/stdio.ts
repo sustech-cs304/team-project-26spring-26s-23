@@ -129,7 +129,8 @@ export function createStdioMcpServerConnector(
         windowsHide: true,
       })
       child = spawned
-      bindChild(spawned)
+      const spawnReady = bindChild(spawned)
+      await spawnReady
       state = createConnectorState(server, 'connecting', tools.length, context.now, {
         transportState: {
           kind: 'stdio',
@@ -218,7 +219,25 @@ export function createStdioMcpServerConnector(
     await emitState()
   }
 
-  function bindChild(spawned: ChildProcessWithoutNullStreams): void {
+  function bindChild(spawned: ChildProcessWithoutNullStreams): Promise<void> {
+    const spawnReady = new Promise<void>((resolve, reject) => {
+      spawned.once('spawn', () => {
+        if (spawned !== child) {
+          return
+        }
+
+        resolve()
+      })
+
+      spawned.once('error', (error) => {
+        if (spawned !== child) {
+          return
+        }
+
+        reject(error)
+      })
+    })
+
     spawned.stdout.on('data', (chunk: Buffer | string) => {
       if (spawned !== child) {
         return
@@ -281,6 +300,8 @@ export function createStdioMcpServerConnector(
         void applyUnexpectedDisconnect(error)
       }
     })
+
+    return spawnReady
   }
 
   async function performHandshake(): Promise<void> {

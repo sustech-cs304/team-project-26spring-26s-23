@@ -1,4 +1,5 @@
 import type {
+  LegacyToolPermissionMode,
   SettingsWorkspaceEditableState,
   SettingsWorkspaceToolPermissionPolicyState,
 } from '../../../electron/settings-workspace/schema'
@@ -22,10 +23,15 @@ export interface SettingsWorkspaceFormState {
   fastAssistantModelRoute: ModelRouteRef | null
   language: string
   assistantNotificationsEnabled: boolean
+  toolPermissionMode: LegacyToolPermissionMode
+  mcpAutoDiscoveryEnabled: boolean
   toolPermissionPolicy: SettingsWorkspaceToolPermissionPolicyState
   apiReconnectMode: string
   healthPollingEnabled: boolean
   apiBaseUrl: string
+  searchEngine: string
+  searchResultCount: string
+  compressionMode: string
   docsFormat: string
   wakeupShareLink: string
 }
@@ -44,14 +50,20 @@ const INITIAL_SETTINGS_WORKSPACE_FORM_STATE: SettingsWorkspaceFormState = {
   fastAssistantModelRoute: null,
   language: 'zh-CN',
   assistantNotificationsEnabled: false,
+  toolPermissionMode: 'manual',
+  mcpAutoDiscoveryEnabled: true,
   toolPermissionPolicy: {
     version: 1,
+    migrationSourceMode: 'manual',
     defaultMode: 'ask',
     toolPermissions: {},
   },
   apiReconnectMode: 'exponential',
   healthPollingEnabled: true,
   apiBaseUrl: 'http://127.0.0.1:8000',
+  searchEngine: 'google',
+  searchResultCount: '8',
+  compressionMode: 'balanced',
   docsFormat: 'markdown',
   wakeupShareLink: '',
 }
@@ -75,10 +87,15 @@ export function createSettingsWorkspaceFormStateFromEditableState(
     fastAssistantModelRoute: cloneModelRouteRef(state.defaultModelRouting.fastAssistantModelRoute ?? null),
     language: state.general.language,
     assistantNotificationsEnabled: state.general.assistantNotificationsEnabled,
+    toolPermissionMode: state.mcp.toolPermissionMode,
+    mcpAutoDiscoveryEnabled: state.mcp.mcpAutoDiscoveryEnabled,
     toolPermissionPolicy: state.mcp.toolPermissionPolicy,
     apiReconnectMode: state.api.apiReconnectMode,
     healthPollingEnabled: state.api.healthPollingEnabled,
     apiBaseUrl: state.api.apiBaseUrl,
+    searchEngine: 'google',
+    searchResultCount: '8',
+    compressionMode: 'balanced',
     docsFormat: state.docs.docsFormat,
     wakeupShareLink: state.externalSource.wakeupShareLink,
   }

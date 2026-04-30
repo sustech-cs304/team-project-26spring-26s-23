@@ -14,6 +14,10 @@ import { useSettingsWorkspaceState } from '../state/useSettingsWorkspaceState'
 import { useConfigCenterDebugModeState } from './config-center/useConfigCenterDebugModeState'
 import type { ProviderProfilesSectionDomain } from './provider-profiles/ProviderProfilesSectionDomain'
 import { createProviderProfilesSectionDomain } from './provider-profiles/ProviderProfilesViewModel'
+import {
+  createApiSettingsSectionDomains,
+  type ApiSettingsSectionDomains,
+} from './sections/ApiSettingsSectionDomain'
 import { createDefaultModelRoutesSectionDomain } from './sections/DefaultModelRoutesSectionDomain'
 import { createExternalSourcesSectionDomain } from './sections/ExternalSourcesSectionDomain'
 import {
@@ -24,12 +28,23 @@ import {
   createMiscSettingsSectionDomains,
   type MiscSettingsSectionDomains,
 } from './sections/MiscSettingsSectionDomain'
+import {
+  createMcpSettingsSectionDomains,
+  type McpSettingsSectionDomains,
+} from './sections/McpSettingsSectionDomain'
+import {
+  createSearchSettingsSectionDomains,
+  type SearchSettingsSectionDomains,
+} from './sections/SearchSettingsSectionDomain'
 import { createSustechInfoSectionDomain } from './sections/SustechInfoSectionDomain'
 import { useSettingsWorkspaceProviderController } from './provider-profiles/useProviderProfilesController'
 
 export type SettingsWorkspaceMiscSectionDomains =
   & GeneralSettingsSectionDomains
   & MiscSettingsSectionDomains
+  & ApiSettingsSectionDomains
+  & SearchSettingsSectionDomains
+  & McpSettingsSectionDomains
 
 export interface SettingsWorkspaceSectionsDomain {
   provider: ProviderProfilesSectionDomain
@@ -74,6 +89,11 @@ export function useSettingsWorkspaceSectionsDomain({
     setApiReconnectMode,
     setHealthPollingEnabled,
     setApiBaseUrl,
+    setSearchEngine,
+    setSearchResultCount,
+    setCompressionMode,
+    setToolPermissionMode,
+    setMcpAutoDiscoveryEnabled,
     setDocsFormat,
     setWakeupShareLink,
   } = workspaceState
@@ -266,6 +286,32 @@ export function useSettingsWorkspaceSectionsDomain({
           docsFormat: formState.docsFormat,
           onDocsFormatChange: setDocsFormat,
         },
+      }),
+      ...createApiSettingsSectionDomains({
+        language: formState.language,
+        bootstrap,
+        apiBaseUrl: formState.apiBaseUrl,
+        apiReconnectMode: formState.apiReconnectMode,
+        healthPollingEnabled: formState.healthPollingEnabled,
+        onApiBaseUrlChange: setApiBaseUrl,
+        onApiReconnectModeChange: setApiReconnectMode,
+        onHealthPollingEnabledChange: setHealthPollingEnabled,
+      }),
+      ...createSearchSettingsSectionDomains({
+        language: formState.language,
+        searchEngine: formState.searchEngine,
+        searchResultCount: formState.searchResultCount,
+        compressionMode: formState.compressionMode,
+        onSearchEngineChange: setSearchEngine,
+        onSearchResultCountChange: setSearchResultCount,
+        onCompressionModeChange: setCompressionMode,
+      }),
+      ...createMcpSettingsSectionDomains({
+        language: formState.language,
+        toolPermissionMode: formState.toolPermissionMode,
+        mcpAutoDiscoveryEnabled: formState.mcpAutoDiscoveryEnabled,
+        onToolPermissionModeChange: setToolPermissionMode,
+        onMcpAutoDiscoveryEnabledChange: setMcpAutoDiscoveryEnabled,
       }),
     },
   }

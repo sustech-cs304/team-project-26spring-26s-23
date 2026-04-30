@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ComponentProps, type ReactElement } from 'react'
 
 import type { SettingsSection } from '../types'
+import { ApiSettingsSection } from './ApiSettingsSection'
 import {
   DefaultModelRoutesSection,
   type DefaultModelRoutesSectionDomain,
@@ -9,18 +10,23 @@ import {
   ExternalSourcesSection,
   type ExternalSourcesSectionDomain,
 } from './ExternalSourcesSection'
+import { McpSettingsSection } from './McpSettingsSection'
 import {
   DisplaySettingsSection,
   DocsSettingsSection,
   GeneralSettingsSection,
 } from './MiscSettingsSections'
 import { ProviderProfilesSection } from './ProviderProfilesSection'
+import { SearchSettingsSection } from './SearchSettingsSection'
 import type { ProviderProfilesSectionDomain } from './ProviderProfilesSectionDomain'
 import { SustechInfoSection, type SustechInfoSectionDomain } from './SustechInfoSection'
 
 interface SettingsWorkspaceMiscSectionDomains {
   general: ComponentProps<typeof GeneralSettingsSection>
   display: ComponentProps<typeof DisplaySettingsSection>
+  api: ComponentProps<typeof ApiSettingsSection>
+  search: ComponentProps<typeof SearchSettingsSection>
+  mcp: ComponentProps<typeof McpSettingsSection>
   docs: ComponentProps<typeof DocsSettingsSection>
 }
 
@@ -45,6 +51,9 @@ const sectionRenderers: Record<SettingsSection, SectionRenderer> = {
   ),
   general: ({ misc }) => <GeneralSettingsSection {...misc.general} />,
   display: ({ misc }) => <DisplaySettingsSection {...misc.display} />,
+  api: ({ misc }) => <ApiSettingsSection {...misc.api} language={misc.general.language} />,
+  search: ({ misc }) => <SearchSettingsSection {...misc.search} language={misc.general.language} />,
+  mcp: ({ misc }) => <McpSettingsSection {...misc.mcp} language={misc.general.language} />,
   docs: ({ misc }) => <DocsSettingsSection {...misc.docs} language={misc.general.language} />,
   'external-source': ({ externalSources, misc }) => (
     <ExternalSourcesSection externalSources={externalSources} language={misc.general.language} />

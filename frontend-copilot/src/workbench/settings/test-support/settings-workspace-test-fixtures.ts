@@ -124,8 +124,11 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
       assistantNotificationsEnabled: true,
     },
     mcp: {
+      mcpAutoDiscoveryEnabled: true,
+      toolPermissionMode: 'manual',
       toolPermissionPolicy: {
         version: 1,
+        migrationSourceMode: 'manual',
         defaultMode: 'ask',
         toolPermissions: {},
       },

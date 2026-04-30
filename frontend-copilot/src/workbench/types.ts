@@ -11,6 +11,9 @@ export type SettingsSection =
   | 'default-model'
   | 'general'
   | 'display'
+  | 'api'
+  | 'search'
+  | 'mcp'
   | 'docs'
   | 'external-source'
 

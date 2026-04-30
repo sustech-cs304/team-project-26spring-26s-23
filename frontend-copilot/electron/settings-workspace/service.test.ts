@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createProviderProfile } from '../../src/workbench/settings/settings-workspace-test-fixtures'
-import { normalizeSettingsWorkspaceStateValues } from './state-schema'
+import {
+  SETTINGS_WORKSPACE_STATE_DOCUMENT_VERSION,
+  normalizeSettingsWorkspaceStateValues,
+} from './state-schema'
 import { createElectronUnifiedConfigService } from '../config-center/main-process'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../runtime/runtime-paths'
 import { createSettingsWorkspacePaths } from './paths'
@@ -53,7 +56,7 @@ describe('createSettingsWorkspaceStorage', () => {
       expect(result.state.providerProfiles.every((profile) => profile.hasApiKey === false)).toBe(true)
 
       expect(await readJsonFile(fixture.paths.stateDocument)).toMatchObject({
-        version: 2,
+        version: SETTINGS_WORKSPACE_STATE_DOCUMENT_VERSION,
         kind: 'settings-workspace-state',
       })
       expect(await readJsonFile(fixture.paths.secretsDocument)).toEqual({

@@ -17,6 +17,9 @@ import {
   settingsShellCopy,
   generalSettingsCopy,
   displaySettingsCopy,
+  apiSettingsCopy,
+  searchSettingsCopy,
+  mcpSettingsCopy,
   sustechInfoCopy,
   defaultModelRoutesCopy,
   docsSettingsCopy,
@@ -66,6 +69,18 @@ export function getGeneralSettingsCopy(language: string) {
 
 export function getDisplaySettingsCopy(language: string) {
   return displaySettingsCopy[normalizeWorkbenchLanguage(language)]
+}
+
+export function getApiSettingsCopy(language: string) {
+  return apiSettingsCopy[normalizeWorkbenchLanguage(language)]
+}
+
+export function getSearchSettingsCopy(language: string) {
+  return searchSettingsCopy[normalizeWorkbenchLanguage(language)]
+}
+
+export function getMcpSettingsCopy(language: string) {
+  return mcpSettingsCopy[normalizeWorkbenchLanguage(language)]
 }
 
 export function getSustechInfoCopy(language: string) {
@@ -178,6 +193,78 @@ export function getThemeOptions(language: string): SelectOption[] {
   return [
     { value: 'light', label: '浅色' },
     { value: 'dark', label: '深色' },
+  ]
+}
+
+export function getApiReconnectOptions(language: string): SelectOption[] {
+  const locale = normalizeWorkbenchLanguage(language)
+
+  if (locale === 'en-US') {
+    return [
+      { value: 'exponential', label: 'Exponential backoff' },
+      { value: 'fixed', label: 'Fixed interval' },
+      { value: 'manual', label: 'Manual reconnect' },
+    ]
+  }
+
+  return [
+    { value: 'exponential', label: '指数退避' },
+    { value: 'fixed', label: '固定间隔' },
+    { value: 'manual', label: '手动重连' },
+  ]
+}
+
+export function getResultCountOptions(language: string): SelectOption[] {
+  const locale = normalizeWorkbenchLanguage(language)
+
+  if (locale === 'en-US') {
+    return [
+      { value: '5', label: '5 results' },
+      { value: '8', label: '8 results' },
+      { value: '12', label: '12 results' },
+    ]
+  }
+
+  return [
+    { value: '5', label: '5 条' },
+    { value: '8', label: '8 条' },
+    { value: '12', label: '12 条' },
+  ]
+}
+
+export function getCompressionOptions(language: string): SelectOption[] {
+  const locale = normalizeWorkbenchLanguage(language)
+
+  if (locale === 'en-US') {
+    return [
+      { value: 'summary', label: 'Summary compression' },
+      { value: 'balanced', label: 'Balanced' },
+      { value: 'none', label: 'No compression' },
+    ]
+  }
+
+  return [
+    { value: 'summary', label: '摘要压缩' },
+    { value: 'balanced', label: '平衡模式' },
+    { value: 'none', label: '不压缩' },
+  ]
+}
+
+export function getToolPermissionOptions(language: string): SelectOption[] {
+  const locale = normalizeWorkbenchLanguage(language)
+
+  if (locale === 'en-US') {
+    return [
+      { value: 'manual', label: 'Ask every time' },
+      { value: 'trusted', label: 'Auto-allow trusted tools' },
+      { value: 'strict', label: 'Strict manual approval' },
+    ]
+  }
+
+  return [
+    { value: 'manual', label: '逐次确认' },
+    { value: 'trusted', label: '受信能力自动允许' },
+    { value: 'strict', label: '严格手动' },
   ]
 }
 
