@@ -248,6 +248,7 @@ def create_app(
     app.include_router(build_debug_log_router())
     app.include_router(build_history_router())
     from app.desktop_runtime.routes.blackboard_ui import build_blackboard_ui_router
+
     app.include_router(build_blackboard_ui_router())
     return app
 

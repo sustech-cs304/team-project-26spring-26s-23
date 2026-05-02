@@ -9,7 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 from typing import Any, Iterator
-from urllib.parse import urlparse
 
 from app.desktop_runtime.config import ENV_DATABASE_DIR
 from app.integrations.sustech.blackboard.shared.logging import BlackboardLogger
@@ -127,8 +126,7 @@ class DatabaseManager:
                     continue
 
                 existing_columns = {
-                    str(column["name"])
-                    for column in inspector.get_columns(table_name)
+                    str(column["name"]) for column in inspector.get_columns(table_name)
                 }
                 for column_name, column_sql_type in required_columns:
                     if column_name in existing_columns:
@@ -143,18 +141,12 @@ class DatabaseManager:
                     for index in inspector.get_indexes("announcement_assignment_links")
                 }
                 required_indexes = {
-                    "idx_announcement_assignment_links_course": (
-                        "course_id",
-                    ),
-                    "idx_announcement_assignment_links_confidence": (
-                        "confidence",
-                    ),
+                    "idx_announcement_assignment_links_course": ("course_id",),
+                    "idx_announcement_assignment_links_confidence": ("confidence",),
                     "idx_announcement_assignment_links_announcement": (
                         "announcement_id",
                     ),
-                    "idx_announcement_assignment_links_assignment": (
-                        "assignment_id",
-                    ),
+                    "idx_announcement_assignment_links_assignment": ("assignment_id",),
                 }
                 for index_name, columns in required_indexes.items():
                     if index_name in existing_indexes:

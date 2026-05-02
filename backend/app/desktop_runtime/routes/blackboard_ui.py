@@ -105,8 +105,8 @@ async def _resolve_credentials(
     request_body: dict[str, Any] | None,
 ) -> tuple[str, str]:
     """Resolve credentials: POST body > Capability Bridge > env vars."""
-    username = ""
-    password = ""
+    username = ""  # nosec B105 -- default empty credential placeholder
+    password = ""  # nosec B105 -- default empty credential placeholder
     if request_body:
         username = str(request_body.get("username", "")).strip()
         password = str(request_body.get("password", "")).strip()
@@ -160,7 +160,9 @@ def _task_to_dict(task: _ResourceDownloadTask) -> dict[str, Any]:
     total_bytes = task.total_bytes
     progress_percent: float | None = None
     if isinstance(total_bytes, int) and total_bytes > 0:
-        progress_percent = round(min(100.0, (task.downloaded_bytes / total_bytes) * 100.0), 2)
+        progress_percent = round(
+            min(100.0, (task.downloaded_bytes / total_bytes) * 100.0), 2
+        )
     return {
         "task_id": task.task_id,
         "course_id": task.course_id,
@@ -211,7 +213,10 @@ def _upsert_download_directory_preferences(
         ResourceDownloadDirectoryPreference,
     )
 
-    for scope_type, scope_key in (("resource", resource_url_key), ("course", course_id)):
+    for scope_type, scope_key in (
+        ("resource", resource_url_key),
+        ("course", course_id),
+    ):
         row = (
             session.query(ResourceDownloadDirectoryPreference)
             .filter(
@@ -381,6 +386,68 @@ def _deactivate_download_binding(
         binding.verified_at = _utc_now_naive()
 
 
+def _build_binding_download_payload(
+    binding: Any,
+    task: Any,
+    resources: list[Any],
+    course_id: str,
+    resource_url_key: str,
+    preferred_directory: str | None,
+) -> dict[str, Any]:
+    """Build download status payload from a persistent binding record."""
+    return {
+        "task_id": task.task_id if task is not None else None,
+        "course_id": course_id,
+        "resource_url": resource_url_key,
+        "resource_title": str(resources[0].title or "").strip() if resources else None,
+        "directory_path": str(binding.directory_path or "").strip()
+        or preferred_directory,
+        "file_name": str(binding.file_name or "").strip() or None,
+        "state": "downloaded",
+        "downloaded_bytes": int(binding.file_size_bytes or 0),
+        "total_bytes": binding.file_size_bytes,
+        "progress_percent": 100.0,
+        "local_path": str(binding.local_path or "").strip(),
+        "error_message": task.error_message if task is not None else None,
+        "cancel_requested": False,
+        "preferred_directory": preferred_directory,
+        "resource_id": str(resources[0].resource_id or "").strip()
+        if resources
+        else None,
+    }
+
+
+def _build_default_download_payload(
+    task: Any,
+    resources: list[Any],
+    course_id: str,
+    resource_url_key: str,
+    preferred_directory: str | None,
+    *,
+    failed: bool = False,
+) -> dict[str, Any]:
+    """Build the default/idle download status payload."""
+    return {
+        "task_id": task.task_id if task is not None else None,
+        "course_id": course_id,
+        "resource_url": resource_url_key,
+        "resource_title": str(resources[0].title or "").strip() if resources else None,
+        "directory_path": preferred_directory,
+        "file_name": task.file_name if task is not None else None,
+        "state": "failed" if failed else "idle",
+        "downloaded_bytes": 0,
+        "total_bytes": None,
+        "progress_percent": None,
+        "local_path": None,
+        "error_message": task.error_message if task is not None else None,
+        "cancel_requested": bool(task.cancel_requested) if task is not None else False,
+        "preferred_directory": preferred_directory,
+        "resource_id": str(resources[0].resource_id or "").strip()
+        if resources
+        else None,
+    }
+
+
 def _build_download_status(
     session: Any,
     *,
@@ -411,7 +478,9 @@ def _build_download_status(
     if task is not None and task.state == "downloading":
         payload = _task_to_dict(task)
         payload["preferred_directory"] = preferred_directory
-        payload["resource_id"] = str(resources[0].resource_id or "").strip() if resources else None
+        payload["resource_id"] = (
+            str(resources[0].resource_id or "").strip() if resources else None
+        )
         return payload
 
     binding = (
@@ -425,23 +494,14 @@ def _build_download_status(
     if binding is not None:
         binding_path = str(binding.local_path or "").strip()
         if binding_path and Path(binding_path).exists():
-            return {
-                "task_id": task.task_id if task is not None else None,
-                "course_id": course_id,
-                "resource_url": resource_url_key,
-                "resource_title": str(resources[0].title or "").strip() if resources else None,
-                "directory_path": str(binding.directory_path or "").strip() or preferred_directory,
-                "file_name": str(binding.file_name or "").strip() or None,
-                "state": "downloaded",
-                "downloaded_bytes": int(binding.file_size_bytes or 0),
-                "total_bytes": binding.file_size_bytes,
-                "progress_percent": 100.0,
-                "local_path": binding_path,
-                "error_message": task.error_message if task is not None else None,
-                "cancel_requested": False,
-                "preferred_directory": preferred_directory,
-                "resource_id": str(resources[0].resource_id or "").strip() if resources else None,
-            }
+            return _build_binding_download_payload(
+                binding,
+                task,
+                resources,
+                course_id,
+                resource_url_key,
+                preferred_directory,
+            )
         _deactivate_download_binding(
             session,
             course_id=course_id,
@@ -450,23 +510,14 @@ def _build_download_status(
         )
 
     failed = any(bool(item.download_failed) for item in resources)
-    return {
-        "task_id": task.task_id if task is not None else None,
-        "course_id": course_id,
-        "resource_url": resource_url_key,
-        "resource_title": str(resources[0].title or "").strip() if resources else None,
-        "directory_path": preferred_directory,
-        "file_name": task.file_name if task is not None else None,
-        "state": "failed" if failed else "idle",
-        "downloaded_bytes": 0,
-        "total_bytes": None,
-        "progress_percent": None,
-        "local_path": None,
-        "error_message": task.error_message if task is not None else None,
-        "cancel_requested": bool(task.cancel_requested) if task is not None else False,
-        "preferred_directory": preferred_directory,
-        "resource_id": str(resources[0].resource_id or "").strip() if resources else None,
-    }
+    return _build_default_download_payload(
+        task,
+        resources,
+        course_id,
+        resource_url_key,
+        preferred_directory,
+        failed=failed,
+    )
 
 
 def _reconcile_download_bindings_for_course(session: Any, *, course_id: str) -> None:
@@ -520,7 +571,8 @@ def _reconcile_download_bindings_for_course(session: Any, *, course_id: str) -> 
         binding.verified_at = _utc_now_naive()
         if matched_resources:
             binding.resource_id = (
-                str(getattr(matched_resources[0], "resource_id", "") or "").strip() or None
+                str(getattr(matched_resources[0], "resource_id", "") or "").strip()
+                or None
             )
         for resource in matched_resources:
             resource.local_path = local_path
@@ -531,7 +583,9 @@ def _reconcile_download_bindings_for_course(session: Any, *, course_id: str) -> 
 def _reconcile_download_bindings_for_database(db_path: Path) -> None:
     manager = DatabaseManager(db_path)
     with manager._session_scope() as session:
-        from app.integrations.sustech.blackboard.data.models import ResourceDownloadBinding
+        from app.integrations.sustech.blackboard.data.models import (
+            ResourceDownloadBinding,
+        )
 
         course_ids = {
             str(row.course_id or "").strip()
@@ -625,7 +679,7 @@ def _run_resource_download_task(
             if temp_path.exists():
                 temp_path.unlink()
         except Exception:
-            pass
+            pass  # nosec B110 -- best-effort cleanup, safe to ignore
         cas_client.close()
 
 
@@ -680,7 +734,7 @@ def _normalized_blackboard_url(value: str | None) -> str | None:
     return text
 
 
-def _assignment_dedupe_rank(row: Any) -> tuple[int, int, int, int, int, int]:
+def _assignment_dedupe_rank(row: Any) -> tuple[int, int, int, int, int, int, int, int]:
     assignment_id = str(getattr(row, "assignment_id", "") or "").strip()
     url = _normalized_blackboard_url(getattr(row, "url", None)) or ""
     source_page = _normalized_blackboard_url(getattr(row, "source_page", None)) or ""
@@ -741,11 +795,14 @@ def _infer_progress_stage(message: str) -> str | None:
 
     if "CASClient" in normalized or "认证" in normalized:
         return "authenticating"
-    if "基础实时数据" in normalized or "课程列表" in normalized or "当前学期" in normalized:
+    if (
+        "基础实时数据" in normalized
+        or "课程列表" in normalized
+        or "当前学期" in normalized
+    ):
         return "fetching_courses"
     if any(
-        token in normalized
-        for token in ("处理课程", "作业", "成绩", "公告", "资源")
+        token in normalized for token in ("处理课程", "作业", "成绩", "公告", "资源")
     ):
         return "fetching_details"
     if any(token in normalized for token in ("构建", "同步数据库", "首次同步")):
@@ -817,7 +874,9 @@ def _run_blackboard_sync_job(
         _reconcile_download_bindings_for_database(db_path)
         _sync_status.update(
             status="completed",
-            lastSyncAt=report.snapshot.logs[-1].timestamp if report.snapshot.logs else None,
+            lastSyncAt=report.snapshot.logs[-1].timestamp
+            if report.snapshot.logs
+            else None,
             lastSyncError=None,
             progressStage=None,
             progressMessage=None,
@@ -861,9 +920,17 @@ def build_blackboard_ui_router() -> APIRouter:
         body: dict[str, Any] = Body(default={}),
     ) -> dict[str, Any]:
         if _sync_status["status"] == "running":
-            return {"ok": True, "message": "sync already in progress", **_sync_status_snapshot()}
+            return {
+                "ok": True,
+                "message": "sync already in progress",
+                **_sync_status_snapshot(),
+            }
         if not _SYNC_LOCK.acquire(blocking=False):
-            return {"ok": True, "message": "sync already in progress", **_sync_status_snapshot()}
+            return {
+                "ok": True,
+                "message": "sync already in progress",
+                **_sync_status_snapshot(),
+            }
 
         lock_owned_by_worker = False
         try:
@@ -902,7 +969,13 @@ def build_blackboard_ui_router() -> APIRouter:
             db_manager = _get_db_manager(request)
             worker = threading.Thread(
                 target=_run_blackboard_sync_job,
-                args=(username, password, db_manager.db_path, current_term_only, parallel_workers),
+                args=(
+                    username,
+                    password,
+                    db_manager.db_path,
+                    current_term_only,
+                    parallel_workers,
+                ),
                 name="blackboard-ui-sync",
                 daemon=True,
             )
@@ -927,14 +1000,22 @@ def build_blackboard_ui_router() -> APIRouter:
     @router.post("/sync/cancel")
     def cancel_sync() -> dict[str, Any]:
         if _sync_status.get("status") != "running":
-            return {"ok": True, "message": "sync not running", **_sync_status_snapshot()}
+            return {
+                "ok": True,
+                "message": "sync not running",
+                **_sync_status_snapshot(),
+            }
         _sync_cancel_event.set()
         _sync_status.update(
             progressMessage="正在取消同步...",
             canCancel=False,
         )
         _update_sync_progress(_sync_status, "正在取消同步...")
-        return {"ok": True, "message": "sync cancellation requested", **_sync_status_snapshot()}
+        return {
+            "ok": True,
+            "message": "sync cancellation requested",
+            **_sync_status_snapshot(),
+        }
 
     @router.post("/sync/rebuild-announcement-links")
     def rebuild_announcement_links(
@@ -1004,7 +1085,9 @@ def build_blackboard_ui_router() -> APIRouter:
                 file_name=_resolve_download_file_name(resource_title, resource_url_key),
             )
             _register_download_task(task)
-            _start_resource_download_worker(task.task_id, username, password, db.db_path)
+            _start_resource_download_worker(
+                task.task_id, username, password, db.db_path
+            )
             payload = _task_to_dict(task)
             payload["preferred_directory"] = str(directory)
             return {"ok": True, "task": payload}
@@ -1012,7 +1095,9 @@ def build_blackboard_ui_router() -> APIRouter:
             return {"ok": False, "error": str(exc)}
 
     @router.post("/resources/downloads/cancel")
-    def cancel_resource_download(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    def cancel_resource_download(
+        body: dict[str, Any] = Body(default={}),
+    ) -> dict[str, Any]:
         try:
             task_id = str(body.get("task_id") or "").strip()
             resource_url_key = _normalized_blackboard_url(body.get("resource_url"))
@@ -1097,7 +1182,9 @@ def build_blackboard_ui_router() -> APIRouter:
                 courses = (
                     session.query(Course)
                     .filter(Course.is_deleted.is_(False))
-                    .order_by(Course.is_active.desc(), Course.term.desc(), Course.name.asc())
+                    .order_by(
+                        Course.is_active.desc(), Course.term.desc(), Course.name.asc()
+                    )
                     .all()
                 )
                 result = [
@@ -1159,7 +1246,9 @@ def build_blackboard_ui_router() -> APIRouter:
                         "body_html": a.content_html,
                         "content_html": a.content_html,
                         "body_markdown": _announcement_html_to_markdown(a.content_html),
-                        "content_markdown": _announcement_html_to_markdown(a.content_html),
+                        "content_markdown": _announcement_html_to_markdown(
+                            a.content_html
+                        ),
                         "author": a.author,
                         "publish_time": _serialize_datetime(a.posted_at),
                         "posted_at": _serialize_datetime(a.posted_at),
@@ -1243,7 +1332,11 @@ def build_blackboard_ui_router() -> APIRouter:
                         "total_score": a.total_score,
                         "course_id": a.course_id,
                         "linked_announcements_count": len(
-                            [link for link in a.announcement_links if not link.is_deleted]
+                            [
+                                link
+                                for link in a.announcement_links
+                                if not link.is_deleted
+                            ]
                         ),
                         "linked_announcements": [
                             {

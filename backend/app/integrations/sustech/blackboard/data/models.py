@@ -80,10 +80,12 @@ class Course(TimestampSoftDeleteMixin, Base):
     announcements: Mapped[list[Announcement]] = relationship(
         back_populates="course", cascade="all, delete-orphan"
     )
-    announcement_assignment_links: Mapped[list[AnnouncementAssignmentLink]] = relationship(
-        "AnnouncementAssignmentLink",
-        back_populates="course",
-        cascade="all, delete-orphan",
+    announcement_assignment_links: Mapped[list[AnnouncementAssignmentLink]] = (
+        relationship(
+            "AnnouncementAssignmentLink",
+            back_populates="course",
+            cascade="all, delete-orphan",
+        )
     )
 
 

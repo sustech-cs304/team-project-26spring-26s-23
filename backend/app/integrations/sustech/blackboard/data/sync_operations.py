@@ -66,7 +66,9 @@ def _assignment_title_key(title: Any) -> str:
     return _text(title)
 
 
-def _assignment_record_score(row: dict[str, Any]) -> tuple[int, int, int, int, int, int, int, int, str]:
+def _assignment_record_score(
+    row: dict[str, Any],
+) -> tuple[int, int, int, int, int, int, int, int, str]:
     assignment_id = _text(row.get("assignment_id"))
     url = _text(row.get("url")).lower()
     source_page = _text(row.get("source_page")).lower()
@@ -164,7 +166,9 @@ def _merge_assignment_records_by_title(
                 "score",
                 "total_score",
             ):
-                if not _has_meaningful_value(merged_row.get(field_name)) and _has_meaningful_value(row.get(field_name)):
+                if not _has_meaningful_value(
+                    merged_row.get(field_name)
+                ) and _has_meaningful_value(row.get(field_name)):
                     merged_row[field_name] = row.get(field_name)
 
             merged_attachment_rows = _merge_assignment_attachment_rows(
@@ -204,7 +208,9 @@ def _merge_assignment_records_by_title(
         canonical_assignment_id = _text(merged_row.get("assignment_id"))
         if canonical_assignment_id and merged_attachment_rows:
             merged_attachments_by_assignment_id[canonical_assignment_id] = (
-                merged_attachment_source_page or _text(merged_row.get("source_page")) or None,
+                merged_attachment_source_page
+                or _text(merged_row.get("source_page"))
+                or None,
                 merged_attachment_rows,
             )
 

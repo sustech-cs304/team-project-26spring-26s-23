@@ -56,7 +56,9 @@ def _prefer_fallback_when_primary_is_title_shell(
 ) -> tuple[str | None, str | None]:
     normalized_title = _normalize_compact_text(title)
     normalized_primary_text = _normalize_compact_text(primary_text)
-    normalized_primary_html_text = _normalize_compact_text(_strip_html_tags(primary_html))
+    normalized_primary_html_text = _normalize_compact_text(
+        _strip_html_tags(primary_html)
+    )
     primary_looks_like_title_shell = bool(normalized_title) and (
         normalized_primary_text == normalized_title
         or normalized_primary_html_text == normalized_title
@@ -339,7 +341,9 @@ class BlackboardAssignmentAPI:
                 assignments.append(assignment)
         return assignments
 
-    def _collect_assignment_candidate_containers(self, soup: BeautifulSoup) -> list[Tag]:
+    def _collect_assignment_candidate_containers(
+        self, soup: BeautifulSoup
+    ) -> list[Tag]:
         candidate_containers: list[Tag] = []
         seen_ids: set[int] = set()
 
@@ -445,7 +449,9 @@ class BlackboardAssignmentAPI:
     ) -> tuple[str | None, str | None, list[AssignmentAttachmentDTO]]:
         details_scope = container.select_one(".details")
         scope = details_scope if isinstance(details_scope, Tag) else container
-        description_node = scope.select_one(".vtbegenerated, .description, #description")
+        description_node = scope.select_one(
+            ".vtbegenerated, .description, #description"
+        )
         description = (
             description_node.get_text(" ", strip=True)
             if isinstance(description_node, Tag)
@@ -467,7 +473,9 @@ class BlackboardAssignmentAPI:
             attachments,
         )
 
-    def _extract_assignment_container_title(self, container: Tag, fallback_text: str) -> str:
+    def _extract_assignment_container_title(
+        self, container: Tag, fallback_text: str
+    ) -> str:
         title_node = container.find("h3")
         if isinstance(title_node, Tag):
             title = normalize_assignment_title(title_node.get_text(" ", strip=True))
@@ -476,12 +484,16 @@ class BlackboardAssignmentAPI:
 
         link = container.select_one(".item a[href]") or container.find("a", href=True)
         if isinstance(link, Tag):
-            title = normalize_assignment_title(link.get_text(strip=True) or fallback_text[:100])
+            title = normalize_assignment_title(
+                link.get_text(strip=True) or fallback_text[:100]
+            )
             if title:
                 return title
         return normalize_assignment_title(fallback_text[:100])
 
-    def _resolve_assignment_container_detail_url(self, page_url: str, container: Tag) -> str:
+    def _resolve_assignment_container_detail_url(
+        self, page_url: str, container: Tag
+    ) -> str:
         title_link = container.select_one(".item a[href], h3 a[href]")
         if isinstance(title_link, Tag):
             detail_url = self.context.absolute_url(
@@ -588,7 +600,10 @@ class BlackboardAssignmentAPI:
             if not att_href or att_href == detail_url:
                 continue
             lowered_href = att_href.lower()
-            if any(token in lowered_href for token in ("/bbcswebdav/", "xid=", "attachment=true")):
+            if any(
+                token in lowered_href
+                for token in ("/bbcswebdav/", "xid=", "attachment=true")
+            ):
                 raw_attachments.append(
                     {
                         "title": att.get_text(strip=True)
@@ -629,9 +644,11 @@ class BlackboardAssignmentAPI:
 
         row_scope = self._find_assignment_detail_row(soup, fragment)
         scope = row_scope or soup
-        title, due_date, status, description, description_html = self._extract_assignment_detail_fields(
-            soup,
-            row_scope,
+        title, due_date, status, description, description_html = (
+            self._extract_assignment_detail_fields(
+                soup,
+                row_scope,
+            )
         )
         attachments = self._extract_detail_scope_attachments(base_url, scope)
 
@@ -706,7 +723,9 @@ class BlackboardAssignmentAPI:
         gradable_text = self._get_cell_text(row_scope, ".cell.gradable")
         activity_text = self._get_cell_text(row_scope, ".cell.activity")
         status_text = self._get_cell_text(row_scope, ".cell.status")
-        description_node = row_scope.select_one(".vtbegenerated, .description, #description")
+        description_node = row_scope.select_one(
+            ".vtbegenerated, .description, #description"
+        )
         description_text = (
             description_node.get_text(" ", strip=True)
             if isinstance(description_node, Tag)
@@ -777,7 +796,10 @@ class BlackboardAssignmentAPI:
             if not href or href in seen_attachment_urls:
                 continue
             lowered_href = href.lower()
-            if any(token in lowered_href for token in ("/bbcswebdav/", "xid=", "attachment=true")):
+            if any(
+                token in lowered_href
+                for token in ("/bbcswebdav/", "xid=", "attachment=true")
+            ):
                 attachments.append(
                     AssignmentAttachmentDTO(
                         name=link.get_text(strip=True)

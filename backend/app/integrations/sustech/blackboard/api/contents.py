@@ -266,7 +266,9 @@ class BlackboardContentAPI:
         seen_download_urls: set[str],
     ) -> None:
         """解析 listContent 页内的内容块容器及其附件。"""
-        for content_item in soup.select("#content_listContainer > li[id^='contentListItem:']"):
+        for content_item in soup.select(
+            "#content_listContainer > li[id^='contentListItem:']"
+        ):
             if not isinstance(content_item, Tag):
                 continue
 
@@ -341,7 +343,8 @@ class BlackboardContentAPI:
         container_url = f"{normalized_page_url}#{raw_item_id}"
 
         return ResourceDTO(
-            resource_id=content_id or stable_resource_id(course_id, name, container_url),
+            resource_id=content_id
+            or stable_resource_id(course_id, name, container_url),
             course_id=course_id,
             title=name,
             url=container_url,
@@ -457,7 +460,9 @@ class BlackboardContentAPI:
 
             if str(resource.type or "").strip().lower() == "folder":
                 parsed = urlparse(download_url)
-                fragment_match = re.search(r"contentListItem:(_\d+_\d+)", str(parsed.fragment))
+                fragment_match = re.search(
+                    r"contentListItem:(_\d+_\d+)", str(parsed.fragment)
+                )
                 if fragment_match:
                     real_id = fragment_match.group(1)
 
