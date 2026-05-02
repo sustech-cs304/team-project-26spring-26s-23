@@ -430,7 +430,7 @@ export function resolveAssignmentAttachments(
 
     return parsed
       .filter((attachment): attachment is Record<string, unknown> => typeof attachment === 'object' && attachment !== null)
-      .map((attachment) => {
+      .map((attachment): AssignmentAttachmentItem | null => {
         const title = String(attachment.title ?? attachment.name ?? '').trim()
         const url = String(attachment.url ?? '').trim() || null
         const size = String(attachment.size ?? '').trim() || null
@@ -576,7 +576,7 @@ function buildLinkedAnnouncementsCopyText(items: LinkedAnnouncementItem[]): stri
   return items
     .map((item) => {
       const title = String(item.title ?? item.announcement_id ?? '').trim()
-      const body = resolveAnnouncementMarkdown(item as DataItem) ?? String(item.content ?? '').trim()
+      const body = resolveAnnouncementMarkdown(item as unknown as DataItem) ?? String(item.content ?? '').trim()
       return [title, body].filter(Boolean).join('\n\n').trim()
     })
     .filter(Boolean)
@@ -2008,15 +2008,10 @@ export function BlackboardDataBrowser({ language, baseUrl, refreshToken = 0 }: B
                                       const attachmentUrl = String(attachment.url ?? '').trim()
                                       const attachmentDownloadState = resolveResourceDownloadUiState(
                                         {
-                                          resource_id: attachment.resource_id ?? null,
-                                          title: attachment.title,
-                                          name: attachment.title,
-                                          type: attachment.type ?? null,
-                                          url: attachment.url ?? null,
                                           local_path: null,
                                           is_downloaded: false,
                                           download_failed: false,
-                                        },
+                                        } as Pick<DataItem, 'local_path' | 'is_downloaded' | 'download_failed'>,
                                         attachmentUrl ? resourceDownloadStatusByUrl[attachmentUrl] ?? null : null,
                                       )
                                       const attachmentMeta = [

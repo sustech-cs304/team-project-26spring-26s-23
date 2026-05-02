@@ -104,10 +104,33 @@ async function waitForCondition(check: () => boolean, timeoutMs = 1000) {
   throw new Error('Condition was not met within timeout.')
 }
 
+function makeMockFileManager(): FileManagerApi {
+  return {
+    selectRootDirectory: vi.fn(async () => ({ ok: true as const, rootPath: 'C:/Chosen', entries: [] })),
+    listDirectory: vi.fn(async () => ({ ok: true as const, entries: [] })),
+    probeDirectory: vi.fn(async () => ({ ok: true as const, totalItems: 0, isLarge: false, maxDepth: 0 })),
+    createDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    copyEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    moveEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    renameEntry: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    trashEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    deleteEntriesPermanently: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    watchDirectories: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    unwatchDirectories: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    onDirectoryChanged: vi.fn(() => () => undefined),
+    loadLastRootDirectory: vi.fn(async () => ({ ok: true as const, rootPath: null })),
+    saveLastRootDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    clearLastRootDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    openEntryWithSystem: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    revealEntryInFolder: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+    copyTextToClipboard: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+  }
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
   document.body.innerHTML = ''
-  delete (window as typeof window & { fileManager?: FileManagerApi }).fileManager
+  delete (window as unknown as Record<string, unknown>).fileManager
 })
 
 describe('BlackboardDataBrowser', () => {
@@ -152,16 +175,13 @@ describe('BlackboardDataBrowser', () => {
 
   it('prefers backend-provided markdown for announcement content', () => {
     expect(resolveAnnouncementMarkdown({
-      id: 1,
-      body: 'Plain announcement text',
       body_markdown: 'Plain announcement text\n\n- Item 1',
-    })).toBe('Plain announcement text\n\n- Item 1')
+    } as Pick<DataItem, 'body_markdown' | 'content_markdown'>)).toBe('Plain announcement text\n\n- Item 1')
 
     expect(resolveAnnouncementMarkdown({
-      id: 2,
       body_markdown: '   ',
       content_markdown: 'Converted from HTML',
-    })).toBeNull()
+    } as Pick<DataItem, 'body_markdown' | 'content_markdown'>)).toBeNull()
   })
 
   it('builds scoped announcement requests without affecting other tabs', () => {
@@ -218,7 +238,7 @@ describe('BlackboardDataBrowser', () => {
       'ann-newer',
       'ann-older',
     ])
-    expect(resolveAnnouncementMarkdown(linked[0] as DataItem)).toBe('Newer **content**')
+    expect(resolveAnnouncementMarkdown(linked[0] as unknown as DataItem)).toBe('Newer **content**')
   })
 
   it('does not expose internal announcement relation metadata in the announcement card meta row', async () => {
@@ -663,24 +683,24 @@ describe('BlackboardDataBrowser', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const fileManager: FileManagerApi = {
-      selectRootDirectory: vi.fn(async () => ({ ok: true, rootPath: 'C:/Chosen', entries: [] })),
-      listDirectory: vi.fn(async () => ({ ok: true, entries: [] })),
-      probeDirectory: vi.fn(async () => ({ ok: true, totalItems: 0, isLarge: false, maxDepth: 0 })),
-      createDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      moveEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      renameEntry: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      trashEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      deleteEntriesPermanently: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      watchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      unwatchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
+      selectRootDirectory: vi.fn(async () => ({ ok: true as const, rootPath: 'C:/Chosen', entries: [] })),
+      listDirectory: vi.fn(async () => ({ ok: true as const, entries: [] })),
+      probeDirectory: vi.fn(async () => ({ ok: true as const, totalItems: 0, isLarge: false, maxDepth: 0 })),
+      createDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      copyEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      moveEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      renameEntry: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      trashEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      deleteEntriesPermanently: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      watchDirectories: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      unwatchDirectories: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
       onDirectoryChanged: vi.fn(() => () => undefined),
-      loadLastRootDirectory: vi.fn(async () => ({ ok: true, rootPath: null })),
-      saveLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      clearLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      openEntryWithSystem: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      revealEntryInFolder: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyTextToClipboard: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
+      loadLastRootDirectory: vi.fn(async () => ({ ok: true as const, rootPath: null })),
+      saveLastRootDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      clearLastRootDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      openEntryWithSystem: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      revealEntryInFolder: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      copyTextToClipboard: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
     }
     ;(window as typeof window & { fileManager?: FileManagerApi }).fileManager = fileManager
 
@@ -793,26 +813,8 @@ describe('BlackboardDataBrowser', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const fileManager: FileManagerApi = {
-      selectRootDirectory: vi.fn(async () => ({ ok: true, rootPath: 'C:/Chosen', entries: [] })),
-      listDirectory: vi.fn(async () => ({ ok: true, entries: [] })),
-      probeDirectory: vi.fn(async () => ({ ok: true, totalItems: 0, isLarge: false, maxDepth: 0 })),
-      createDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      moveEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      renameEntry: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      trashEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      deleteEntriesPermanently: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      watchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      unwatchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      onDirectoryChanged: vi.fn(() => () => undefined),
-      loadLastRootDirectory: vi.fn(async () => ({ ok: true, rootPath: null })),
-      saveLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      clearLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      openEntryWithSystem: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      revealEntryInFolder: vi.fn(async () => ({ ok: true, affectedPaths: ['C:/Downloads/res-2.pdf'] })),
-      copyTextToClipboard: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-    }
+    const fileManager = makeMockFileManager()
+    fileManager.revealEntryInFolder = vi.fn(async () => ({ ok: true as const, affectedPaths: ['C:/Downloads/res-2.pdf'] }))
     ;(window as typeof window & { fileManager?: FileManagerApi }).fileManager = fileManager
 
     const rendered = renderWithRoot(
@@ -942,26 +944,8 @@ describe('BlackboardDataBrowser', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const fileManager: FileManagerApi = {
-      selectRootDirectory: vi.fn(async () => ({ ok: true, rootPath: 'C:/Chosen', entries: [] })),
-      listDirectory: vi.fn(async () => ({ ok: true, entries: [] })),
-      probeDirectory: vi.fn(async () => ({ ok: true, totalItems: 0, isLarge: false, maxDepth: 0 })),
-      createDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      moveEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      renameEntry: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      trashEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      deleteEntriesPermanently: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      watchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      unwatchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      onDirectoryChanged: vi.fn(() => () => undefined),
-      loadLastRootDirectory: vi.fn(async () => ({ ok: true, rootPath: null })),
-      saveLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      clearLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      openEntryWithSystem: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      revealEntryInFolder: vi.fn(async () => ({ ok: true, affectedPaths: ['C:/Downloads/res-2.pdf'] })),
-      copyTextToClipboard: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-    }
+    const fileManager = makeMockFileManager()
+    fileManager.revealEntryInFolder = vi.fn(async () => ({ ok: true as const, affectedPaths: ['C:/Downloads/res-2.pdf'] }))
     ;(window as typeof window & { fileManager?: FileManagerApi }).fileManager = fileManager
 
     const rendered = renderWithRoot(
@@ -1090,26 +1074,8 @@ describe('BlackboardDataBrowser', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const fileManager: FileManagerApi = {
-      selectRootDirectory: vi.fn(async () => ({ ok: true, rootPath: 'C:/Chosen', entries: [] })),
-      listDirectory: vi.fn(async () => ({ ok: true, entries: [] })),
-      probeDirectory: vi.fn(async () => ({ ok: true, totalItems: 0, isLarge: false, maxDepth: 0 })),
-      createDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      moveEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      renameEntry: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      trashEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      deleteEntriesPermanently: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      watchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      unwatchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      onDirectoryChanged: vi.fn(() => () => undefined),
-      loadLastRootDirectory: vi.fn(async () => ({ ok: true, rootPath: null })),
-      saveLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      clearLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      openEntryWithSystem: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      revealEntryInFolder: vi.fn(async () => ({ ok: true, affectedPaths: ['C:/Downloads/spec.pdf'] })),
-      copyTextToClipboard: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-    }
+    const fileManager = makeMockFileManager()
+    fileManager.revealEntryInFolder = vi.fn(async () => ({ ok: true as const, affectedPaths: ['C:/Downloads/spec.pdf'] }))
     ;(window as typeof window & { fileManager?: FileManagerApi }).fileManager = fileManager
 
     const rendered = renderWithRoot(
@@ -1195,26 +1161,7 @@ describe('BlackboardDataBrowser', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const fileManager: FileManagerApi = {
-      selectRootDirectory: vi.fn(async () => ({ ok: true, rootPath: 'C:/Chosen', entries: [] })),
-      listDirectory: vi.fn(async () => ({ ok: true, entries: [] })),
-      probeDirectory: vi.fn(async () => ({ ok: true, totalItems: 0, isLarge: false, maxDepth: 0 })),
-      createDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      moveEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      renameEntry: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      trashEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      deleteEntriesPermanently: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      watchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      unwatchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      onDirectoryChanged: vi.fn(() => () => undefined),
-      loadLastRootDirectory: vi.fn(async () => ({ ok: true, rootPath: null })),
-      saveLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      clearLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      openEntryWithSystem: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      revealEntryInFolder: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyTextToClipboard: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-    }
+    const fileManager = makeMockFileManager()
     ;(window as typeof window & { fileManager?: FileManagerApi }).fileManager = fileManager
 
     const rendered = renderWithRoot(
@@ -1391,24 +1338,24 @@ describe('BlackboardDataBrowser', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const fileManager: FileManagerApi = {
-      selectRootDirectory: vi.fn(async () => ({ ok: true, rootPath: 'C:/Chosen', entries: [] })),
-      listDirectory: vi.fn(async () => ({ ok: true, entries: [] })),
-      probeDirectory: vi.fn(async () => ({ ok: true, totalItems: 0, isLarge: false, maxDepth: 0 })),
-      createDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      moveEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      renameEntry: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      trashEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      deleteEntriesPermanently: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      watchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      unwatchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
+      selectRootDirectory: vi.fn(async () => ({ ok: true as const, rootPath: 'C:/Chosen', entries: [] })),
+      listDirectory: vi.fn(async () => ({ ok: true as const, entries: [] })),
+      probeDirectory: vi.fn(async () => ({ ok: true as const, totalItems: 0, isLarge: false, maxDepth: 0 })),
+      createDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      copyEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      moveEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      renameEntry: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      trashEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      deleteEntriesPermanently: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      watchDirectories: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      unwatchDirectories: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
       onDirectoryChanged: vi.fn(() => () => undefined),
-      loadLastRootDirectory: vi.fn(async () => ({ ok: true, rootPath: null })),
-      saveLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      clearLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      openEntryWithSystem: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      revealEntryInFolder: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyTextToClipboard: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
+      loadLastRootDirectory: vi.fn(async () => ({ ok: true as const, rootPath: null })),
+      saveLastRootDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      clearLastRootDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      openEntryWithSystem: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      revealEntryInFolder: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      copyTextToClipboard: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
     }
     ;(window as typeof window & { fileManager?: FileManagerApi }).fileManager = fileManager
 
@@ -1580,24 +1527,24 @@ describe('BlackboardDataBrowser', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const fileManager: FileManagerApi = {
-      selectRootDirectory: vi.fn(async () => ({ ok: true, rootPath: 'C:/Chosen', entries: [] })),
-      listDirectory: vi.fn(async () => ({ ok: true, entries: [] })),
-      probeDirectory: vi.fn(async () => ({ ok: true, totalItems: 0, isLarge: false, maxDepth: 0 })),
-      createDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      moveEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      renameEntry: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      trashEntries: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      deleteEntriesPermanently: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      watchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      unwatchDirectories: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
+      selectRootDirectory: vi.fn(async () => ({ ok: true as const, rootPath: 'C:/Chosen', entries: [] })),
+      listDirectory: vi.fn(async () => ({ ok: true as const, entries: [] })),
+      probeDirectory: vi.fn(async () => ({ ok: true as const, totalItems: 0, isLarge: false, maxDepth: 0 })),
+      createDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      copyEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      moveEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      renameEntry: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      trashEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      deleteEntriesPermanently: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      watchDirectories: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      unwatchDirectories: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
       onDirectoryChanged: vi.fn(() => () => undefined),
-      loadLastRootDirectory: vi.fn(async () => ({ ok: true, rootPath: null })),
-      saveLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      clearLastRootDirectory: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      openEntryWithSystem: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      revealEntryInFolder: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
-      copyTextToClipboard: vi.fn(async () => ({ ok: true, affectedPaths: [] })),
+      loadLastRootDirectory: vi.fn(async () => ({ ok: true as const, rootPath: null })),
+      saveLastRootDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      clearLastRootDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      openEntryWithSystem: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      revealEntryInFolder: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
+      copyTextToClipboard: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
     }
     ;(window as typeof window & { fileManager?: FileManagerApi }).fileManager = fileManager
 

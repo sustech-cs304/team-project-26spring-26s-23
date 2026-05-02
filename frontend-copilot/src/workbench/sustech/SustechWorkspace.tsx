@@ -26,9 +26,19 @@ interface SyncState {
   timeoutSeconds?: number | null
 }
 
+const SUSTECH_SYNC_INTERVAL_STORAGE_KEY = 'sustech.syncInterval'
+
+function loadPersistedSyncInterval(): SyncState['syncInterval'] {
+  try {
+    const raw = window.localStorage.getItem(SUSTECH_SYNC_INTERVAL_STORAGE_KEY)
+    if (raw === 'two_hours' || raw === 'daily') return raw
+  } catch { /* localStorage unavailable */ }
+  return 'off'
+}
+
 const DEFAULT_SYNC_STATE: SyncState = {
   status: 'idle', lastSyncAt: null, nextSyncAt: null,
-  lastSyncError: null, syncInterval: 'off', progressMessage: null, progressStage: null, progressLogs: [], canCancel: false, timeoutSeconds: null,
+  lastSyncError: null, syncInterval: loadPersistedSyncInterval(), progressMessage: null, progressStage: null, progressLogs: [], canCancel: false, timeoutSeconds: null,
 }
 
 type SustechModule = 'blackboard' | 'tis'
@@ -175,6 +185,12 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
     }
     previousSyncStatusRef.current = syncState.status
   }, [syncState.status])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SUSTECH_SYNC_INTERVAL_STORAGE_KEY, syncState.syncInterval)
+    } catch { /* localStorage unavailable */ }
+  }, [syncState.syncInterval])
 
   useEffect(() => {
     if (syncState.status === 'running') {

@@ -5,4 +5,4 @@ All new code should import from ``app.shared_integrations.sustech_auth.cas_clien
 directly.
 """
 
-from app.shared_integrations.sustech_auth.cas_client import *  # noqa: F401, F403
+from app.shared_integrations.sustech_auth.cas_client import CASClient, CASLogger  # noqa: F401
