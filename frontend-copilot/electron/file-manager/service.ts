@@ -20,6 +20,7 @@ import type {
   RenameEntryRequest,
   RevealEntryInFolderRequest,
   SaveLastRootDirectoryRequest,
+  SelectRootDirectoryRequest,
   SelectDirectorySuccess,
   TrashEntriesRequest,
   UnwatchDirectoriesRequest,
@@ -425,11 +426,15 @@ export function createElectronFileManagerService(
   }
 
   const service: ElectronFileManagerService = {
-    async selectRootDirectory(): Promise<SelectDirectorySuccess | FileManagerError> {
+    async selectRootDirectory(request?: SelectRootDirectoryRequest): Promise<SelectDirectorySuccess | FileManagerError> {
       const win = getMainWindow?.() ?? null
       const dialogOptions: Electron.OpenDialogOptions = {
         properties: ['openDirectory'],
         title: '选择文件夹',
+      }
+      const initialPath = String(request?.initialPath ?? '').trim()
+      if (initialPath) {
+        dialogOptions.defaultPath = normalizePath(initialPath)
       }
       const result = win !== null
         ? await dialog.showOpenDialog(win, dialogOptions)
@@ -831,6 +836,18 @@ export function createElectronFileManagerService(
     },
 
     async openEntryWithSystem(request: OpenEntryWithSystemRequest) {
+      const rawPath = String(request.path ?? '').trim()
+      try {
+        const parsedUrl = new URL(rawPath)
+        if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
+          await shell.openExternal(parsedUrl.toString())
+          log('info', '文件管理器: 已通过系统浏览器打开 URL', { url: parsedUrl.toString() })
+          return { ok: true, affectedPaths: [parsedUrl.toString()] }
+        }
+      } catch {
+        // fall through and treat as a filesystem path
+      }
+
       const resolved = normalizePath(request.path)
       if (!fs.existsSync(resolved)) {
         return createFileManagerError('not_found', `路径不存在: ${request.path}`)
@@ -876,8 +893,10 @@ export function createElectronFileManagerService(
     },
 
     registerIpcHandlers(ipcMain: IpcMainLike): void {
-      ipcMain.handle(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, async () => {
-        return await service.selectRootDirectory()
+      ipcMain.handle(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, async (_event, request?: SelectRootDirectoryRequest) => {
+        return request === undefined
+          ? await service.selectRootDirectory()
+          : await service.selectRootDirectory(request)
       })
 
       ipcMain.handle(

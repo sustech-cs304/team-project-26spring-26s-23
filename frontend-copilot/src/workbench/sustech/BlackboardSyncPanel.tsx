@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, LoaderCircle } from 'lucide-react'
+import { Ban, ChevronDown, ChevronUp, LoaderCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { WorkbenchLanguage } from '../_locale/types'
 
@@ -13,6 +13,8 @@ interface SyncState {
   progressMessage: string | null
   progressStage: string | null
   progressLogs?: string[]
+  canCancel?: boolean
+  timeoutSeconds?: number | null
 }
 
 const STAGES = [
@@ -26,13 +28,15 @@ const STAGES = [
 interface BlackboardSyncPanelProps {
   language: WorkbenchLanguage
   syncState: SyncState
+  onCancelSync?: (() => void) | null
 }
 
-export function BlackboardSyncPanel({ language, syncState }: BlackboardSyncPanelProps) {
+export function BlackboardSyncPanel({ language, syncState, onCancelSync = null }: BlackboardSyncPanelProps) {
   const isEnglish = language === 'en-US'
   const { status, progressMessage, progressStage } = syncState
   const progressLogs = Array.isArray(syncState.progressLogs) ? syncState.progressLogs : []
   const isRunning = status === 'running'
+  const canCancel = syncState.canCancel !== false
   const [logOpen, setLogOpen] = useState(status === 'running')
 
   useEffect(() => {
@@ -55,7 +59,21 @@ export function BlackboardSyncPanel({ language, syncState }: BlackboardSyncPanel
         <h3 className="settings-card__title">
           {isEnglish ? 'Sync Status' : '同步状态'}
         </h3>
-        <SyncStatusBadge isEnglish={isEnglish} />
+        <div className="sustech-sync-panel__actions">
+          {onCancelSync && (
+            <button
+              type="button"
+              className="sustech-sync-cancel-button"
+              onClick={onCancelSync}
+              disabled={!canCancel}
+              aria-label={isEnglish ? 'Cancel sync' : '取消同步'}
+            >
+              <Ban size={14} />
+              <span>{isEnglish ? 'Cancel' : '取消'}</span>
+            </button>
+          )}
+          <SyncStatusBadge isEnglish={isEnglish} />
+        </div>
       </div>
 
       <div className="settings-stack settings-stack--compact">

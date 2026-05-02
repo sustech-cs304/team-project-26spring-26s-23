@@ -101,8 +101,8 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
     sustech: {
       studentId: '',
       email: '',
-      blackboardAutoDownloadEnabled: false,
-      blackboardDownloadLimitMb: '0',
+      blackboardCurrentTermOnly: false,
+      blackboardParallelSyncWorkers: '1',
       blackboardSyncInterval: 'off',
       blackboardLastAutoSyncAt: null,
       blackboardNextAutoSyncAt: null,

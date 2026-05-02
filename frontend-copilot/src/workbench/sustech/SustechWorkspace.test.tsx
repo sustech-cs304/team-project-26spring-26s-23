@@ -31,6 +31,7 @@ describe('SustechWorkspace', () => {
     )
     expect(html).toContain('手动同步')
     expect(html).toContain('设置')
+    expect(html).toContain('title="手动同步"')
   })
 
   it('renders in English', () => {

@@ -31,7 +31,7 @@ describe('preload file-manager bridge', () => {
 
     const fileManagerApi = getExposedApi<FileManagerApi>('fileManager')
 
-    await fileManagerApi.selectRootDirectory()
+    await fileManagerApi.selectRootDirectory({ initialPath: '/test/default-root' })
 
     await fileManagerApi.listDirectory({
       rootPath: '/test/root',
@@ -104,7 +104,7 @@ describe('preload file-manager bridge', () => {
     await fileManagerApi.copyTextToClipboard({ text: '/test/copied/path.txt' })
 
     expect(invokeMock.mock.calls).toEqual([
-      [FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL],
+      [FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, { initialPath: '/test/default-root' }],
       [FILE_MANAGER_LIST_DIRECTORY_CHANNEL, { rootPath: '/test/root', directoryPath: '/test/root/sub' }],
       [FILE_MANAGER_PROBE_DIRECTORY_CHANNEL, { rootPath: '/test/root' }],
       [FILE_MANAGER_CREATE_DIRECTORY_CHANNEL, { rootPath: '/test/root', parentPath: '/test/root/sub', name: 'new-folder' }],

@@ -128,8 +128,10 @@ export function createMainProcessServices(
     async handleDesktopCapabilityBridgeRequest(request) {
       return await accessors.getDesktopCapabilityBridgeService().handleRequest(request)
     },
-    async selectRootDirectory() {
-      return await fileManagerService.selectRootDirectory()
+    async selectRootDirectory(request) {
+      return request === undefined
+        ? await fileManagerService.selectRootDirectory()
+        : await fileManagerService.selectRootDirectory(request)
     },
     async listDirectory(request) {
       return await fileManagerService.listDirectory(request)

@@ -288,8 +288,10 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
       },
     },
     fileManager: {
-      selectRootDirectory() {
-        return ipcRenderer.invoke(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL)
+      selectRootDirectory(request) {
+        return request === undefined
+          ? ipcRenderer.invoke(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL)
+          : ipcRenderer.invoke(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, request)
       },
       listDirectory(request) {
         return ipcRenderer.invoke(FILE_MANAGER_LIST_DIRECTORY_CHANNEL, request)

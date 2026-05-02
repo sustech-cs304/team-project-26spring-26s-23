@@ -74,6 +74,28 @@ class BlackboardCourseParser:
 
         return None
 
+    @staticmethod
+    def _season_from_month(month: int) -> str:
+        if month in (3, 4, 5):
+            return "Spring"
+        if month in (6, 7, 8):
+            return "Summer"
+        if month in (9, 10, 11):
+            return "Fall"
+        return "Winter"
+
+    def current_term_label(self, now: datetime | None = None) -> str:
+        reference = now or datetime.now()
+        return f"{self._season_from_month(reference.month)} {reference.year}"
+
+    def is_current_term(self, term: str | None, now: datetime | None = None) -> bool:
+        if not term:
+            return False
+        normalized = self.normalize_term_label(term)
+        if normalized is None:
+            return False
+        return normalized == self.current_term_label(now)
+
     def is_archived_term(self, term: str | None) -> bool:
         """基于学期标签判断课程是否已归档。"""
         if not term:
@@ -108,14 +130,7 @@ class BlackboardCourseParser:
 
         season_order = {"Winter": 0, "Spring": 1, "Summer": 2, "Fall": 3}
         now = datetime.now()
-        if now.month in (3, 4, 5):
-            current_season = "Spring"
-        elif now.month in (6, 7, 8):
-            current_season = "Summer"
-        elif now.month in (9, 10, 11):
-            current_season = "Fall"
-        else:
-            current_season = "Winter"
+        current_season = self._season_from_month(now.month)
 
         current_key = (now.year, season_order[current_season])
         target_key = (year, season_order[season])

@@ -64,8 +64,8 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     sustech: {
       studentId: '',
       email: '',
-      blackboardAutoDownloadEnabled: false,
-      blackboardDownloadLimitMb: '0',
+      blackboardCurrentTermOnly: false,
+      blackboardParallelSyncWorkers: '1',
       blackboardSyncInterval: 'off' as const,
       blackboardLastAutoSyncAt: null,
       blackboardNextAutoSyncAt: null,

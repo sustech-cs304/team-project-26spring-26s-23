@@ -123,9 +123,10 @@ const sustechInfoCopy: Record<WorkbenchLanguage, {
   casPasswordLabel: string
   casPasswordPlaceholder: string
   blackboardInfoTitle: string
-  autoDownloadLabel: string
-  downloadLimitLabel: string
-  downloadLimitDescription: string
+  currentTermOnlyLabel: string
+  currentTermOnlyDescription: string
+  parallelSyncWorkersLabel: string
+  parallelSyncWorkersDescription: string
   tisInfoTitle: string
   comingSoon: string
 }> = {
@@ -138,9 +139,10 @@ const sustechInfoCopy: Record<WorkbenchLanguage, {
     casPasswordLabel: 'CAS 密码',
     casPasswordPlaceholder: '输入 CAS 密码',
     blackboardInfoTitle: 'Blackboard 信息',
-    autoDownloadLabel: '自动下载 Blackboard 文件',
-    downloadLimitLabel: '下载文件大小限制（MB）',
-    downloadLimitDescription: '0为不限制',
+    currentTermOnlyLabel: '仅抓取本学期课程（推荐）',
+    currentTermOnlyDescription: '勾选后会按当前时间识别学期，仅同步 Blackboard 中属于当前学期的课程。',
+    parallelSyncWorkersLabel: '并行 Blackboard 更新线程',
+    parallelSyncWorkersDescription: '可填写 1~6，建议按网络与设备性能逐步调高。',
     tisInfoTitle: 'TIS 信息',
     comingSoon: '敬请期待',
   },
@@ -153,9 +155,10 @@ const sustechInfoCopy: Record<WorkbenchLanguage, {
     casPasswordLabel: 'CAS Password',
     casPasswordPlaceholder: 'Enter CAS password',
     blackboardInfoTitle: 'Blackboard Information',
-    autoDownloadLabel: 'Download Blackboard files automatically',
-    downloadLimitLabel: 'Download Size Limit (MB)',
-    downloadLimitDescription: '0 means unlimited',
+    currentTermOnlyLabel: 'Only sync current-term courses (recommended)',
+    currentTermOnlyDescription: 'When enabled, the sync flow uses the current date to keep only Blackboard courses that belong to the current term.',
+    parallelSyncWorkersLabel: 'Parallel Blackboard Update Workers',
+    parallelSyncWorkersDescription: 'Enter a value from 1 to 6 and increase gradually based on network and device performance.',
     tisInfoTitle: 'TIS Information',
     comingSoon: 'Coming soon',
   },

@@ -239,6 +239,7 @@ def is_valid_resource(
     """判断是否为有效资源（非噪音数据）。"""
     name = str(resource.get("name") or "").strip()
     download_url = str(resource.get("download_url") or "").strip()
+    resource_type = str(resource.get("type") or "").strip().lower()
 
     def _log_filtered(reason: str, *, payload: dict[str, Any] | None = None) -> None:
         if logger is not None:
@@ -253,10 +254,6 @@ def is_valid_resource(
 
     lower_name = name.lower()
     lower_url = download_url.lower()
-
-    if lower_url.startswith("javascript:"):
-        _log_filtered("javascript_url", payload={"download_url": download_url})
-        return False
 
     help_url_tokens = (
         "/webapps/blackboard/content/getting-started/",
@@ -287,6 +284,31 @@ def is_valid_resource(
         "folder properties",
         "folder notifications",
     )
+
+    if resource_type == "folder" and lower_name in {"cancel", "close", "取消", "关闭"}:
+        _log_filtered(
+            "folder_navigation_action",
+            payload={"name": name, "download_url": download_url},
+        )
+        return False
+
+    if resource_type == "folder":
+        if not name:
+            _log_filtered("empty_folder_name", payload={"download_url": download_url})
+            return False
+        if is_navigation_noise(name):
+            _log_filtered(
+                "navigation_folder", payload={"name": name, "download_url": download_url}
+            )
+            return False
+        if any(token in lower_name for token in help_title_tokens):
+            _log_filtered("help_title", payload={"name": name})
+            return False
+        return True
+
+    if lower_url.startswith("javascript:"):
+        _log_filtered("javascript_url", payload={"download_url": download_url})
+        return False
     if any(token in lower_name for token in help_title_tokens):
         _log_filtered("help_title", payload={"name": name})
         return False

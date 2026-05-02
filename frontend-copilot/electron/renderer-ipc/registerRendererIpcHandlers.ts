@@ -149,6 +149,7 @@ import {
   type RenameEntryRequest,
   type RevealEntryInFolderRequest,
   type SaveLastRootDirectoryRequest,
+  type SelectRootDirectoryRequest,
   type SelectDirectoryResult,
   type TrashEntriesRequest,
   type UnwatchDirectoriesRequest,
@@ -501,8 +502,10 @@ export function registerRendererIpcHandlers(
     await handlers.closeDesktopWindow()
   })
 
-  ipcMain.handle(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, async (): Promise<SelectDirectoryResult> => {
-    return await handlers.selectRootDirectory()
+  ipcMain.handle(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, async (_event, request?: SelectRootDirectoryRequest): Promise<SelectDirectoryResult> => {
+    return request === undefined
+      ? await handlers.selectRootDirectory()
+      : await handlers.selectRootDirectory(request)
   })
 
   ipcMain.handle(

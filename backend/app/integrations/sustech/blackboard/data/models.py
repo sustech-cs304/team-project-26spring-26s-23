@@ -80,6 +80,11 @@ class Course(TimestampSoftDeleteMixin, Base):
     announcements: Mapped[list[Announcement]] = relationship(
         back_populates="course", cascade="all, delete-orphan"
     )
+    announcement_assignment_links: Mapped[list[AnnouncementAssignmentLink]] = relationship(
+        "AnnouncementAssignmentLink",
+        back_populates="course",
+        cascade="all, delete-orphan",
+    )
 
 
 class Assignment(TimestampSoftDeleteMixin, Base):
@@ -103,6 +108,7 @@ class Assignment(TimestampSoftDeleteMixin, Base):
     url: Mapped[str] = mapped_column(Text, nullable=False)
 
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description_html: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source_page: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     attachments_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -118,6 +124,11 @@ class Assignment(TimestampSoftDeleteMixin, Base):
     total_score: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     course: Mapped[Course] = relationship(back_populates="assignments")
+    announcement_links: Mapped[list[AnnouncementAssignmentLink]] = relationship(
+        "AnnouncementAssignmentLink",
+        back_populates="assignment",
+        cascade="all, delete-orphan",
+    )
 
 
 class Resource(TimestampSoftDeleteMixin, Base):
@@ -172,6 +183,67 @@ class Resource(TimestampSoftDeleteMixin, Base):
     children: Mapped[list[Resource]] = relationship("Resource", back_populates="parent")
 
 
+class ResourceDownloadBinding(TimestampSoftDeleteMixin, Base):
+    __tablename__ = "resource_download_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "resource_url_key",
+            name="uq_resource_download_bindings_resource_url_key",
+        ),
+        Index("idx_resource_download_bindings_course", "course_id"),
+        Index("idx_resource_download_bindings_resource", "resource_id"),
+        Index("idx_resource_download_bindings_local_path", "local_path"),
+    )
+
+    course_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("courses.course_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    resource_id: Mapped[Optional[str]] = mapped_column(
+        String(128),
+        ForeignKey("resources.resource_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    resource_url_key: Mapped[str] = mapped_column(String(2048), nullable=False)
+    local_path: Mapped[str] = mapped_column(Text, nullable=False)
+    directory_path: Mapped[str] = mapped_column(Text, nullable=False)
+    file_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    downloaded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    etag: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    content_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    course: Mapped[Course] = relationship("Course")
+    resource: Mapped[Optional[Resource]] = relationship("Resource")
+
+
+class ResourceDownloadDirectoryPreference(TimestampSoftDeleteMixin, Base):
+    __tablename__ = "resource_download_directory_preferences"
+    __table_args__ = (
+        UniqueConstraint(
+            "scope_type",
+            "scope_key",
+            name="uq_resource_download_directory_preferences_scope",
+        ),
+        Index(
+            "idx_resource_download_directory_preferences_scope_type",
+            "scope_type",
+        ),
+        Index(
+            "idx_resource_download_directory_preferences_scope_key",
+            "scope_key",
+        ),
+    )
+
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(2048), nullable=False)
+    directory_path: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class Grade(TimestampSoftDeleteMixin, Base):
     __tablename__ = "grades"
     __table_args__ = (
@@ -222,7 +294,11 @@ class Grade(TimestampSoftDeleteMixin, Base):
 
 class Announcement(TimestampSoftDeleteMixin, Base):
     __tablename__ = "announcements"
-    __table_args__ = (Index("idx_announcements_posted_at", "posted_at"),)
+    __table_args__ = (
+        Index("idx_announcements_posted_at", "posted_at"),
+        Index("idx_announcements_relation_type", "relation_type"),
+        Index("idx_announcements_relation_confidence", "relation_confidence"),
+    )
 
     course_id: Mapped[Optional[str]] = mapped_column(
         String(128),
@@ -237,6 +313,11 @@ class Announcement(TimestampSoftDeleteMixin, Base):
     course_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    content_html: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    relation_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    relation_confidence: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True
+    )
     author: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -245,6 +326,59 @@ class Announcement(TimestampSoftDeleteMixin, Base):
     source_page: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     course: Mapped[Optional[Course]] = relationship(back_populates="announcements")
+    assignment_links: Mapped[list[AnnouncementAssignmentLink]] = relationship(
+        "AnnouncementAssignmentLink",
+        back_populates="announcement",
+        cascade="all, delete-orphan",
+    )
+
+
+class AnnouncementAssignmentLink(TimestampSoftDeleteMixin, Base):
+    __tablename__ = "announcement_assignment_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "announcement_id",
+            "assignment_id",
+            name="uq_announcement_assignment_links_pair",
+        ),
+        Index("idx_announcement_assignment_links_course", "course_id"),
+        Index("idx_announcement_assignment_links_confidence", "confidence"),
+        Index("idx_announcement_assignment_links_announcement", "announcement_id"),
+        Index("idx_announcement_assignment_links_assignment", "assignment_id"),
+    )
+
+    announcement_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("announcements.announcement_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    assignment_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("assignments.assignment_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    course_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("courses.course_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    link_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    announcement: Mapped[Announcement] = relationship(
+        "Announcement",
+        back_populates="assignment_links",
+    )
+    assignment: Mapped[Assignment] = relationship(
+        "Assignment",
+        back_populates="announcement_links",
+    )
+    course: Mapped[Course] = relationship(
+        "Course",
+        back_populates="announcement_assignment_links",
+    )
 
 
 class CalendarSubscription(TimestampSoftDeleteMixin, Base):

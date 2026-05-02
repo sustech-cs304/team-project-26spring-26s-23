@@ -14,8 +14,8 @@ import {
 export interface SettingsWorkspaceFormState {
   studentId: string
   sustechEmail: string
-  blackboardAutoDownloadEnabled: boolean
-  blackboardDownloadLimitMb: string
+  blackboardCurrentTermOnly: boolean
+  blackboardParallelSyncWorkers: string
   blackboardSyncInterval: 'off' | 'two_hours' | 'daily'
   blackboardLastAutoSyncAt: string | null
   blackboardNextAutoSyncAt: string | null
@@ -44,8 +44,8 @@ export const initialSettingsWorkspaceActiveProviderId = initialProviderProfiles[
 const INITIAL_SETTINGS_WORKSPACE_FORM_STATE: SettingsWorkspaceFormState = {
   studentId: '',
   sustechEmail: '',
-  blackboardAutoDownloadEnabled: false,
-  blackboardDownloadLimitMb: '0',
+  blackboardCurrentTermOnly: false,
+  blackboardParallelSyncWorkers: '1',
   blackboardSyncInterval: 'off' as const,
   blackboardLastAutoSyncAt: null,
   blackboardNextAutoSyncAt: null,
@@ -84,8 +84,8 @@ export function createSettingsWorkspaceFormStateFromEditableState(
   return {
     studentId: state.sustech.studentId,
     sustechEmail: state.sustech.email,
-    blackboardAutoDownloadEnabled: state.sustech.blackboardAutoDownloadEnabled,
-    blackboardDownloadLimitMb: state.sustech.blackboardDownloadLimitMb,
+    blackboardCurrentTermOnly: state.sustech.blackboardCurrentTermOnly,
+    blackboardParallelSyncWorkers: state.sustech.blackboardParallelSyncWorkers,
     blackboardSyncInterval: state.sustech.blackboardSyncInterval,
     blackboardLastAutoSyncAt: state.sustech.blackboardLastAutoSyncAt ?? null,
     blackboardNextAutoSyncAt: state.sustech.blackboardNextAutoSyncAt ?? null,

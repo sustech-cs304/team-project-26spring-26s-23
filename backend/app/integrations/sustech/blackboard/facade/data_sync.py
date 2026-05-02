@@ -27,6 +27,7 @@ from . import tools
 class _BlackboardSnapshotSyncArguments(tools._BlackboardToolArguments):
     resetSchema: bool = False
     verifySecondSync: bool = True
+    parallelWorkers: int = 1
 
     @tools.field_validator("resetSchema", mode="before")
     @classmethod
@@ -37,6 +38,15 @@ class _BlackboardSnapshotSyncArguments(tools._BlackboardToolArguments):
     @classmethod
     def _normalize_verify_second_sync(cls, value: Any) -> bool:
         return tools._normalize_bool_value(value, "verifySecondSync", default=True)
+
+    @tools.field_validator("parallelWorkers", mode="before")
+    @classmethod
+    def _normalize_parallel_workers(cls, value: Any) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return 1
+        return max(1, min(6, parsed))
 
 
 class _BlackboardSnapshotSyncOutput(tools.SustechToolBoundaryModel):
@@ -107,6 +117,12 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
             "verifySecondSync": {
                 "type": "boolean",
                 "description": "When true, run a second sync pass to verify that no unexpected new or deleted records appear. Defaults to true.",
+            },
+            "parallelWorkers": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "How many worker threads to use when fetching per-course Blackboard assignment and grade data. Defaults to 1.",
             },
             "stateKey": {
                 "type": "string",
@@ -259,6 +275,7 @@ class BlackboardSnapshotSyncTool(tools._BlackboardFacadeToolBase):
             db_path=db_path,
             reset_schema=parsed_arguments.resetSchema,
             verify_second_sync=parsed_arguments.verifySecondSync,
+            parallel_workers=parsed_arguments.parallelWorkers,
             progress=progress_messages.append,
         )
         output = _snapshot_sync_output(report, progress_messages=progress_messages)

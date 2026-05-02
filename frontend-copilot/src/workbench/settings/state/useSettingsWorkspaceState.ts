@@ -20,8 +20,8 @@ interface UseSettingsWorkspaceStateResult {
   casPasswordValue: string
   setStudentId: (value: string) => void
   setSustechEmail: (value: string) => void
-  setBlackboardAutoDownloadEnabled: (value: boolean) => void
-  setBlackboardDownloadLimitMb: (value: string) => void
+  setBlackboardCurrentTermOnly: (value: boolean) => void
+  setBlackboardParallelSyncWorkers: (value: string) => void
   setBlackboardSyncInterval: (value: SettingsWorkspaceFormState['blackboardSyncInterval']) => void
   setProviderProfiles: (value: ProviderProfile[] | ((previous: ProviderProfile[]) => ProviderProfile[])) => void
   setPrimaryAssistantModel: (value: string | ((previous: string) => string)) => void
@@ -109,8 +109,8 @@ export function useSettingsWorkspaceState(initialActiveProviderId: string): UseS
     casPasswordValue,
     setStudentId: (value) => updateField(setFormState, 'studentId', value),
     setSustechEmail: (value) => updateField(setFormState, 'sustechEmail', value),
-    setBlackboardAutoDownloadEnabled: (value) => updateField(setFormState, 'blackboardAutoDownloadEnabled', value),
-    setBlackboardDownloadLimitMb: (value) => updateField(setFormState, 'blackboardDownloadLimitMb', value),
+    setBlackboardCurrentTermOnly: (value) => updateField(setFormState, 'blackboardCurrentTermOnly', value),
+    setBlackboardParallelSyncWorkers: (value) => updateField(setFormState, 'blackboardParallelSyncWorkers', value),
     setBlackboardSyncInterval: (value) => updateField(setFormState, 'blackboardSyncInterval', value),
     setProviderProfiles: (value) => {
       setFormState((previous) => ({

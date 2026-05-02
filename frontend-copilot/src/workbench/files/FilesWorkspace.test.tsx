@@ -165,7 +165,7 @@ async function openContextMenu(row: HTMLElement): Promise<HTMLElement> {
     row.dispatchEvent(event)
   })
 
-  const menu = row.closest('.file-workspace')?.querySelector('.file-context-menu')
+  const menu = document.querySelector('.file-context-menu')
   if (!menu) {
     throw new Error('Missing context menu')
   }
@@ -1126,7 +1126,7 @@ describe('FilesWorkspace', () => {
           root.render(<ContextMenu x={100} y={100} items={items} onClose={() => {}} />)
         })
 
-        const menu = host.querySelector('.file-context-menu') as HTMLElement
+        const menu = document.querySelector('.file-context-menu') as HTMLElement
         expect(menu.style.left).toBe('0px')
         expect(menu.style.top).toBe('0px')
       } finally {

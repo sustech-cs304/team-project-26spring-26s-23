@@ -2,6 +2,7 @@ import { Database, GraduationCap, Settings } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import type { WorkbenchLanguage } from '../_locale/types'
+import { loadSettingsWorkspaceState } from '../settings/workspace-state'
 import { BlackboardDataBrowser } from './BlackboardDataBrowser'
 import { BlackboardSyncPanel } from './BlackboardSyncPanel'
 
@@ -21,11 +22,13 @@ interface SyncState {
   progressMessage: string | null
   progressStage: string | null
   progressLogs: string[]
+  canCancel?: boolean
+  timeoutSeconds?: number | null
 }
 
 const DEFAULT_SYNC_STATE: SyncState = {
   status: 'idle', lastSyncAt: null, nextSyncAt: null,
-  lastSyncError: null, syncInterval: 'off', progressMessage: null, progressStage: null, progressLogs: [],
+  lastSyncError: null, syncInterval: 'off', progressMessage: null, progressStage: null, progressLogs: [], canCancel: false, timeoutSeconds: null,
 }
 
 type SustechModule = 'blackboard' | 'tis'
@@ -47,6 +50,7 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
   const targetModuleRef = useRef<SustechModule>('blackboard')
   const visibleModuleRef = useRef<SustechModule>('blackboard')
   const moduleTransitionTimerRef = useRef<number | null>(null)
+  const previousSyncStatusRef = useRef<SyncState['status']>('idle')
   const [syncState, setSyncState] = useState<SyncState>(DEFAULT_SYNC_STATE)
   const [showSettings, setShowSettings] = useState(false)
   const [dataRefreshToken, setDataRefreshToken] = useState(0)
@@ -66,6 +70,8 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
           progressMessage: data.progressMessage ?? (status === 'completed' ? null : prev.progressMessage),
           progressStage: data.progressStage ?? (status === 'completed' ? null : prev.progressStage),
           progressLogs,
+          canCancel: data.canCancel ?? prev.canCancel,
+          timeoutSeconds: data.timeoutSeconds ?? prev.timeoutSeconds,
         }
       })
     } catch { /* backend not ready */ }
@@ -81,9 +87,23 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
       progressMessage: isEnglish ? 'Starting sync…' : '开始同步...',
       progressStage: 'authenticating',
       progressLogs: [isEnglish ? 'Starting sync…' : '开始同步...'],
+      canCancel: true,
     }))
     try {
-      const res = await fetch(`${runtimeBaseUrl}/api/blackboard/sync/trigger`, { method: 'POST' })
+      const settingsResult = await loadSettingsWorkspaceState()
+      const parallelWorkersRaw = settingsResult.ok
+        ? settingsResult.state.sustech.blackboardParallelSyncWorkers
+        : '1'
+      const currentTermOnly = settingsResult.ok
+        ? settingsResult.state.sustech.blackboardCurrentTermOnly === true
+        : false
+      const parallelWorkers = Math.min(6, Math.max(1, Number.parseInt(parallelWorkersRaw, 10) || 1))
+
+      const res = await fetch(`${runtimeBaseUrl}/api/blackboard/sync/trigger`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parallelWorkers, currentTermOnly }),
+      })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         const serverError = (body as { error?: string }).error ?? `HTTP ${res.status}`
@@ -99,10 +119,9 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
         progressMessage: data.progressMessage ?? (status === 'completed' ? null : prev.progressMessage),
         progressStage: data.progressStage ?? (status === 'completed' ? null : prev.progressStage),
         progressLogs: Array.isArray(data.progressLogs) ? data.progressLogs : prev.progressLogs,
+        canCancel: data.canCancel ?? prev.canCancel,
+        timeoutSeconds: data.timeoutSeconds ?? prev.timeoutSeconds,
       }))
-      if (status === 'completed') {
-        setDataRefreshToken((value) => value + 1)
-      }
     } catch (err) {
       const message = err instanceof TypeError && err.message === 'Failed to fetch'
         ? `无法连接到后端 ${runtimeBaseUrl}，请确认桌面运行时已启动。`
@@ -113,9 +132,49 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
         lastSyncError: message,
         progressMessage: message,
         progressLogs: [...prev.progressLogs, message],
+        canCancel: false,
       }))
     }
   }, [runtimeBaseUrl, isEnglish])
+
+  const handleCancelSync = useCallback(async () => {
+    try {
+      const res = await fetch(`${runtimeBaseUrl}/api/blackboard/sync/cancel`, {
+        method: 'POST',
+      })
+      const data = await res.json().catch(() => ({}))
+      setSyncState((prev) => ({
+        ...prev,
+        status: data.status ?? prev.status,
+        progressMessage: data.progressMessage ?? prev.progressMessage,
+        progressStage: data.progressStage ?? prev.progressStage,
+        progressLogs: Array.isArray(data.progressLogs) ? data.progressLogs : prev.progressLogs,
+        canCancel: data.canCancel ?? false,
+        timeoutSeconds: data.timeoutSeconds ?? prev.timeoutSeconds,
+      }))
+    } catch (err) {
+      const message = err instanceof TypeError && err.message === 'Failed to fetch'
+        ? `无法连接到后端 ${runtimeBaseUrl}，请确认桌面运行时已启动。`
+        : String(err)
+      setSyncState((prev) => ({
+        ...prev,
+        status: 'failed',
+        lastSyncError: message,
+        progressMessage: message,
+        progressLogs: [...prev.progressLogs, message],
+        canCancel: false,
+      }))
+    }
+  }, [runtimeBaseUrl])
+
+  const isSyncRunning = syncState.status === 'running'
+
+  useEffect(() => {
+    if (syncState.status === 'completed' && previousSyncStatusRef.current !== 'completed') {
+      setDataRefreshToken((value) => value + 1)
+    }
+    previousSyncStatusRef.current = syncState.status
+  }, [syncState.status])
 
   useEffect(() => {
     if (syncState.status === 'running') {
@@ -227,7 +286,7 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
                       </h2>
                     </div>
                     <div className="toolbar-actions">
-                      <button type="button" className="icon-button" title={isEnglish ? 'Sync now' : '手动同步'} onClick={handleTriggerSync}>
+                      <button type="button" className="icon-button" title={isEnglish ? 'Sync now' : '手动同步'} onClick={handleTriggerSync} disabled={isSyncRunning}>
                         <span className="icon-button__label">↻</span>
                       </button>
                       <button type="button" className="icon-button" title={isEnglish ? 'Settings' : '设置'} onClick={() => setShowSettings(true)}>
@@ -235,9 +294,13 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
                       </button>
                     </div>
                   </header>
-                  <section className="workspace-main__content sustech-workspace__content">
-                    <BlackboardSyncPanel language={lang} syncState={syncState} />
-                    <BlackboardDataBrowser language={lang} baseUrl={runtimeBaseUrl} refreshToken={dataRefreshToken} />
+                  <section className={`workspace-main__content sustech-workspace__content${isSyncRunning ? ' sustech-workspace__content--syncing' : ''}`}>
+                    <div className={`sustech-sync-panel-slot${isSyncRunning ? ' sustech-sync-panel-slot--visible' : ''}`}>
+                      <BlackboardSyncPanel language={lang} syncState={syncState} onCancelSync={handleCancelSync} />
+                    </div>
+                    <div className={`sustech-data-browser-slot${isSyncRunning ? ' sustech-data-browser-slot--shifted' : ''}`}>
+                      <BlackboardDataBrowser language={lang} baseUrl={runtimeBaseUrl} refreshToken={dataRefreshToken} />
+                    </div>
                   </section>
                 </>
               ) : (

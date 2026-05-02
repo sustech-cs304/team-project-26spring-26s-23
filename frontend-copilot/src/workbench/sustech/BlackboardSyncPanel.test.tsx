@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { BlackboardSyncPanel } from './BlackboardSyncPanel'
 
 function idleSync() {
-  return { status: 'idle' as const, lastSyncAt: null, nextSyncAt: null, lastSyncError: null, syncInterval: 'off', progressMessage: null, progressStage: null }
+  return { status: 'idle' as const, lastSyncAt: null, nextSyncAt: null, lastSyncError: null, syncInterval: 'off', progressMessage: null, progressStage: null, progressLogs: [], canCancel: false, timeoutSeconds: null }
 }
 
 function runningSync() {
@@ -18,15 +18,17 @@ function runningSync() {
     progressMessage: '抓取课程列表',
     progressStage: 'fetching_courses',
     progressLogs: ['使用 CASClient 认证', '抓取课程列表'],
+    canCancel: true,
+    timeoutSeconds: 480,
   }
 }
 
 function completedSync() {
-  return { status: 'completed' as const, lastSyncAt: '2026-04-30T10:00:00Z', nextSyncAt: null, lastSyncError: null, syncInterval: 'off', progressMessage: null, progressStage: null, progressLogs: [] }
+  return { status: 'completed' as const, lastSyncAt: '2026-04-30T10:00:00Z', nextSyncAt: null, lastSyncError: null, syncInterval: 'off', progressMessage: null, progressStage: null, progressLogs: [], canCancel: false, timeoutSeconds: null }
 }
 
 function failedSync() {
-  return { status: 'failed' as const, lastSyncAt: null, nextSyncAt: null, lastSyncError: 'CAS 登录失败', syncInterval: 'off', progressMessage: null, progressStage: null }
+  return { status: 'failed' as const, lastSyncAt: null, nextSyncAt: null, lastSyncError: 'CAS 登录失败', syncInterval: 'off', progressMessage: null, progressStage: null, progressLogs: [], canCancel: false, timeoutSeconds: null }
 }
 
 describe('BlackboardSyncPanel', () => {
@@ -39,7 +41,7 @@ describe('BlackboardSyncPanel', () => {
 
   it('renders running state with progress stages and message', () => {
     const html = renderToStaticMarkup(
-      <BlackboardSyncPanel language="zh-CN" syncState={runningSync()} />,
+      <BlackboardSyncPanel language="zh-CN" syncState={runningSync()} onCancelSync={() => {}} />,
     )
     expect(html).toContain('同步中…')
     expect(html).toContain('认证')
@@ -47,6 +49,7 @@ describe('BlackboardSyncPanel', () => {
     expect(html).toContain('抓取课程列表')
     expect(html).toContain('日志详情')
     expect(html).toContain('使用 CASClient 认证')
+    expect(html).toContain('取消')
   })
 
   it('hides completed state after sync finishes', () => {
@@ -65,7 +68,7 @@ describe('BlackboardSyncPanel', () => {
 
   it('renders in English while running', () => {
     const html = renderToStaticMarkup(
-      <BlackboardSyncPanel language="en-US" syncState={runningSync()} />,
+      <BlackboardSyncPanel language="en-US" syncState={runningSync()} onCancelSync={() => {}} />,
     )
     expect(html).toContain('Sync Status')
     expect(html).toContain('Syncing…')

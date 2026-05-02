@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
-from app.integrations.sustech.blackboard.data import Announcement, Course, DatabaseManager, Resource
+from app.integrations.sustech.blackboard.data import (
+    Announcement,
+    AnnouncementAssignmentLink,
+    Assignment,
+    Course,
+    DatabaseManager,
+    Resource,
+)
 
 
 def _db_path(tmp_path: Path, name: str) -> Path:
@@ -33,6 +41,44 @@ def _get_announcement(manager: DatabaseManager, announcement_id: str) -> Announc
     session = manager.SessionLocal()
     try:
         return session.query(Announcement).filter(Announcement.announcement_id == announcement_id).one_or_none()
+    finally:
+        session.close()
+
+
+def _get_announcement_assignment_link(
+    manager: DatabaseManager,
+    announcement_id: str,
+    assignment_id: str,
+) -> AnnouncementAssignmentLink | None:
+    session = manager.SessionLocal()
+    try:
+        return (
+            session.query(AnnouncementAssignmentLink)
+            .filter(
+                AnnouncementAssignmentLink.announcement_id == announcement_id,
+                AnnouncementAssignmentLink.assignment_id == assignment_id,
+            )
+            .one_or_none()
+        )
+    finally:
+        session.close()
+
+
+def _table_columns(db_path: Path, table_name: str) -> set[str]:
+    with sqlite3.connect(str(db_path)) as connection:
+        rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _get_active_assignments_by_title(manager: DatabaseManager, title: str) -> list[Assignment]:
+    session = manager.SessionLocal()
+    try:
+        return (
+            session.query(Assignment)
+            .filter(Assignment.title == title, Assignment.is_deleted.is_(False))
+            .order_by(Assignment.assignment_id.asc())
+            .all()
+        )
     finally:
         session.close()
 
@@ -277,3 +323,236 @@ def test_sync_announcements_upsert_only_and_course_name_resolution(tmp_path: Pat
     assert preserved is not None
     assert preserved.is_deleted is False
     assert manager.get_table_counts()["announcements"] == {"total": 2, "active": 2}
+
+
+def test_sync_announcements_persists_relation_fields_and_links(tmp_path: Path) -> None:
+    manager = DatabaseManager(_db_path(tmp_path, "test_announcements_relation_links"), reset_schema=True)
+    course_id = "course_relation"
+
+    manager.sync_courses(
+        [
+            {
+                "course_id": course_id,
+                "name": "Computer Organization Spring 2026",
+                "url": None,
+            }
+        ]
+    )
+    manager.sync_assignments(
+        course_id,
+        [
+            {
+                "assignment_id": "asg_homework_2",
+                "title": "Homework 2",
+                "url": f"https://bb.sustech.edu.cn/webapps/assignment/uploadAssignment?course_id={course_id}&content_id=_596747_1",
+                "source_page": f"https://bb.sustech.edu.cn/webapps/blackboard/content/listContent.jsp?course_id={course_id}#contentListItem:_596747_1",
+            }
+        ],
+    )
+
+    stats = manager.sync_announcements(
+        [
+            {
+                "announcement_id": "ann_hw2_release",
+                "course_id": course_id,
+                "title": "Lab assignment 2 released",
+                "content": "Please open Homework 2 from Blackboard.",
+                "relation_type": "assignment_notice",
+                "relation_confidence": "high",
+                "publish_time": "2026-04-19 16:48",
+            }
+        ],
+        links_data=[
+            {
+                "announcement_id": "ann_hw2_release",
+                "assignment_id": "asg_homework_2",
+                "course_id": course_id,
+                "link_source": "ann_id_launch_link",
+                "confidence": "high",
+                "evidence_json": {"ann_id": "_43635_1", "path_text": "/Homework/Homework 2"},
+            }
+        ],
+    )
+
+    assert stats == {"inserted": 1, "updated": 0, "deleted": 0}
+    announcement = _get_announcement(manager, "ann_hw2_release")
+    assert announcement is not None
+    assert announcement.relation_type == "assignment_notice"
+    assert announcement.relation_confidence == "high"
+
+    link = _get_announcement_assignment_link(
+        manager,
+        "ann_hw2_release",
+        "asg_homework_2",
+    )
+    assert link is not None
+    assert link.is_deleted is False
+    assert link.link_source == "ann_id_launch_link"
+    assert link.confidence == "high"
+    assert '"ann_id": "_43635_1"' in str(link.evidence_json)
+
+    manager.sync_announcements(
+        [
+            {
+                "announcement_id": "ann_hw2_release",
+                "course_id": course_id,
+                "title": "Lab assignment 2 released",
+                "content": "Please open Homework 2 from Blackboard.",
+                "relation_type": "content_linked_announcement",
+                "relation_confidence": "high",
+                "publish_time": "2026-04-19 16:48",
+            }
+        ],
+        links_data=[],
+    )
+    link_after = _get_announcement_assignment_link(
+        manager,
+        "ann_hw2_release",
+        "asg_homework_2",
+    )
+    assert link_after is not None
+    assert link_after.is_deleted is True
+
+
+def test_sync_assignments_merges_same_title_rows_and_preserves_richer_fields(tmp_path: Path) -> None:
+    manager = DatabaseManager(_db_path(tmp_path, "test_assignments_same_title_merge"), reset_schema=True)
+    course_id = "course_assign_merge"
+
+    manager.sync_courses(
+        [
+            {
+                "course_id": course_id,
+                "name": "Assignment Merge Course",
+                "url": None,
+            }
+        ]
+    )
+
+    stats = manager.sync_assignments(
+        course_id,
+        [
+            {
+                "assignment_id": "asg_fragment",
+                "title": "Homework 1",
+                "url": f"https://bb.sustech.edu.cn/webapps/blackboard/content/listContent.jsp?course_id={course_id}#contentListItem:_1",
+                "summary": "fragment summary",
+                "attachments": [
+                    {
+                        "name": "spec.pdf",
+                        "url": "https://bb.sustech.edu.cn/bbcswebdav/xid-spec",
+                    }
+                ],
+            },
+            {
+                "assignment_id": "asg_detail",
+                "title": "Homework 1",
+                "url": f"https://bb.sustech.edu.cn/webapps/assignment/uploadAssignment?course_id={course_id}&content_id=_1",
+                "description_html": "<p>Detailed instructions</p>",
+                "due_date": "2026-05-01",
+                "submission_status": "Submitted",
+            },
+        ],
+    )
+
+    assert stats == {"inserted": 1, "updated": 0, "deleted": 0}
+    active_rows = _get_active_assignments_by_title(manager, "Homework 1")
+    assert len(active_rows) == 1
+    merged = active_rows[0]
+    assert merged.description_html == "<p>Detailed instructions</p>"
+    assert merged.due_date == "2026-05-01"
+    assert merged.submission_status == "Submitted"
+    assert "spec.pdf" in str(merged.attachments_json)
+
+
+def test_database_manager_adds_missing_html_columns_for_legacy_blackboard_db(tmp_path: Path) -> None:
+    db_path = _db_path(tmp_path, "test_legacy_blackboard_schema_upgrade")
+
+    with sqlite3.connect(str(db_path)) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE courses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                last_synced_at DATETIME NULL,
+                is_deleted BOOLEAN NOT NULL DEFAULT 0,
+                course_id VARCHAR(128) NOT NULL UNIQUE,
+                name VARCHAR(255) NOT NULL,
+                code VARCHAR(64) NULL,
+                instructor VARCHAR(255) NULL,
+                term VARCHAR(64) NULL,
+                url TEXT NULL,
+                total_grade VARCHAR(128) NULL,
+                listed_grade VARCHAR(128) NULL,
+                total_assignments INTEGER NOT NULL DEFAULT 0,
+                total_resources INTEGER NOT NULL DEFAULT 0,
+                total_announcements INTEGER NOT NULL DEFAULT 0,
+                is_active BOOLEAN NOT NULL DEFAULT 1
+            );
+
+            CREATE TABLE assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                last_synced_at DATETIME NULL,
+                is_deleted BOOLEAN NOT NULL DEFAULT 0,
+                course_id VARCHAR(128) NOT NULL,
+                assignment_id VARCHAR(128) NOT NULL UNIQUE,
+                title VARCHAR(512) NOT NULL,
+                url TEXT NOT NULL,
+                description TEXT NULL,
+                summary TEXT NULL,
+                source_page TEXT NULL,
+                attachments_json TEXT NULL,
+                due_date VARCHAR(128) NULL,
+                due_date_parsed DATETIME NULL,
+                posted_date VARCHAR(128) NULL,
+                status VARCHAR(128) NULL,
+                submission_status VARCHAR(128) NULL,
+                score VARCHAR(64) NULL,
+                total_score VARCHAR(64) NULL
+            );
+
+            CREATE TABLE announcements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                last_synced_at DATETIME NULL,
+                is_deleted BOOLEAN NOT NULL DEFAULT 0,
+                course_id VARCHAR(128) NULL,
+                announcement_id VARCHAR(128) NOT NULL UNIQUE,
+                course_name VARCHAR(255) NULL,
+                title VARCHAR(512) NOT NULL,
+                content TEXT NULL,
+                author VARCHAR(255) NULL,
+                posted_at DATETIME NULL,
+                url TEXT NULL,
+                source_page TEXT NULL
+            );
+            """
+        )
+
+    manager = DatabaseManager(db_path, reset_schema=False)
+
+    assert "description_html" in _table_columns(manager.db_path, "assignments")
+    assert "content_html" in _table_columns(manager.db_path, "announcements")
+    assert "relation_type" in _table_columns(manager.db_path, "announcements")
+    assert "relation_confidence" in _table_columns(manager.db_path, "announcements")
+    assert "announcement_assignment_links" in {
+        row[0]
+        for row in sqlite3.connect(str(manager.db_path))
+        .execute("SELECT name FROM sqlite_master WHERE type='table'")
+        .fetchall()
+    }
+    assert "resource_download_bindings" in {
+        row[0]
+        for row in sqlite3.connect(str(manager.db_path))
+        .execute("SELECT name FROM sqlite_master WHERE type='table'")
+        .fetchall()
+    }
+    assert "resource_download_directory_preferences" in {
+        row[0]
+        for row in sqlite3.connect(str(manager.db_path))
+        .execute("SELECT name FROM sqlite_master WHERE type='table'")
+        .fetchall()
+    }

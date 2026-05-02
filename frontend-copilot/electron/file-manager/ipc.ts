@@ -146,6 +146,10 @@ export interface SaveLastRootDirectoryRequest {
   rootPath: string
 }
 
+export interface SelectRootDirectoryRequest {
+  initialPath?: string
+}
+
 export interface LoadLastRootDirectorySuccess {
   ok: true
   rootPath: string | null
@@ -166,7 +170,7 @@ export interface CopyTextToClipboardRequest {
 }
 
 export interface FileManagerApi {
-  selectRootDirectory(): Promise<SelectDirectoryResult>
+  selectRootDirectory(request?: SelectRootDirectoryRequest): Promise<SelectDirectoryResult>
   listDirectory(request: ListDirectoryRequest): Promise<ListDirectoryResult>
   probeDirectory(request: ProbeDirectoryRequest): Promise<ProbeDirectoryResult>
   createDirectory(request: CreateDirectoryRequest): Promise<FileOperationResult>

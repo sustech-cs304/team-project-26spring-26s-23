@@ -21,6 +21,7 @@
     "test": "node ./scripts/run-vitest.mjs"
   },
   "dependencies": {
+    "@types/turndown": "^5.0.6",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.577.0",
     "mathjax-full": "^3.2.1",
@@ -31,7 +32,8 @@
     "rehype-highlight": "^7.0.2",
     "rehype-mathjax": "^7.1.0",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "turndown": "^7.2.4"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",

@@ -24,11 +24,14 @@ import {
 
 async function fetchBackendSyncTrigger(
   runtimeBaseUrl: string,
+  parallelWorkers: number,
+  currentTermOnly: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const response = await fetch(`${runtimeBaseUrl}/api/blackboard/sync/trigger`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parallelWorkers, currentTermOnly }),
     })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
@@ -38,6 +41,15 @@ async function fetchBackendSyncTrigger(
   } catch (error) {
     return { ok: false, error: String(error) }
   }
+}
+
+function normalizeParallelWorkers(value: unknown, fallback = 1): number {
+  const parsed = Number.parseInt(String(value ?? ''), 10)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+
+  return Math.min(6, Math.max(1, parsed))
 }
 
 export interface ElectronSustechBlackboardServiceOptions {
@@ -105,13 +117,17 @@ export function createElectronSustechBlackboardService(
     scheduler = createBlackboardScheduler({
       getSyncInterval: () => syncState.syncInterval,
       onTick: () => {
-        void executeSync()
+        void options.loadSettings().then((settings) => {
+          const parallelWorkers = normalizeParallelWorkers(settings?.sustech.blackboardParallelSyncWorkers, 1)
+          const currentTermOnly = settings?.sustech.blackboardCurrentTermOnly === true
+          return executeSync(parallelWorkers, currentTermOnly)
+        })
       },
     })
     scheduler.start()
   }
 
-  async function executeSync() {
+  async function executeSync(parallelWorkers = 1, currentTermOnly = false) {
     if (syncState.status === 'running') {
       return
     }
@@ -122,7 +138,7 @@ export function createElectronSustechBlackboardService(
       progressMessage: '开始同步...',
     })
 
-    const result = await fetchBackendSyncTrigger(options.getRuntimeBaseUrl())
+    const result = await fetchBackendSyncTrigger(options.getRuntimeBaseUrl(), parallelWorkers, currentTermOnly)
 
     if (result.ok) {
       updateSyncState({
@@ -152,7 +168,10 @@ export function createElectronSustechBlackboardService(
         if (syncState.status === 'running') {
           return { ok: true, state: { ...syncState } }
         }
-        await executeSync()
+        const settings = await options.loadSettings()
+        const parallelWorkers = normalizeParallelWorkers(settings?.sustech.blackboardParallelSyncWorkers, 1)
+        const currentTermOnly = settings?.sustech.blackboardCurrentTermOnly === true
+        await executeSync(parallelWorkers, currentTermOnly)
         return { ok: true, state: { ...syncState } }
       })
 
