@@ -8,6 +8,7 @@ import os
 import re
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
