@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -18,6 +19,7 @@ from fastapi import APIRouter, Body, Query, Request
 from markdownify import markdownify as html_to_markdown
 
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
+from app.integrations.sustech.blackboard.facade import tools as blackboard_facade_tools
 from app.integrations.sustech.blackboard.data.db_manager import (
     DatabaseManager,
     resolve_default_blackboard_db_path,
@@ -33,20 +35,129 @@ _SYNC_LOCK = threading.Lock()
 _MAX_PROGRESS_LOGS = 200
 _SYNC_TIMEOUT_SECONDS = 60 * 8
 _BLACKBOARD_LOGIN_SERVICE_URL = "https://bb.sustech.edu.cn/webapps/login/"
-_sync_status: dict[str, Any] = {
-    "status": "idle",
-    "lastSyncAt": None,
-    "lastSyncError": None,
-    "progressStage": None,
-    "progressMessage": None,
-    "progressLogs": [],
-    "canCancel": False,
-    "timeoutSeconds": _SYNC_TIMEOUT_SECONDS,
-}
 _sync_cancel_event = threading.Event()
 _RESOURCE_DOWNLOAD_TASKS_LOCK = threading.Lock()
 _RESOURCE_DOWNLOAD_TASKS_BY_ID: dict[str, "_ResourceDownloadTask"] = {}
 _RESOURCE_DOWNLOAD_TASK_ID_BY_URL: dict[str, str] = {}
+
+
+def _default_sync_status() -> dict[str, Any]:
+    return {
+        "status": "idle",
+        "lastSyncAt": None,
+        "lastSyncError": None,
+        "progressStage": None,
+        "progressMessage": None,
+        "progressLogs": [],
+        "canCancel": False,
+        "timeoutSeconds": _SYNC_TIMEOUT_SECONDS,
+        "updatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+    }
+
+
+def _touch_sync_status(state: dict[str, Any]) -> None:
+    state["updatedAt"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _apply_sync_status_patch(state: dict[str, Any], **patch: Any) -> None:
+    state.update(patch)
+    _touch_sync_status(state)
+
+
+def _bridge_sync_status_key() -> str:
+    context = _synthetic_invocation_context()
+    return (
+        f"{context.tool_id}:"
+        f"{blackboard_facade_tools._STATE_NAMESPACE_SNAPSHOT_SYNC}:"
+        f"{blackboard_facade_tools._LATEST_STATUS_STATE_KEY}"
+    )
+
+
+def _coerce_sync_status(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    coerced = _default_sync_status()
+    if value is None:
+        return coerced
+    for field_name in (
+        "status",
+        "lastSyncAt",
+        "lastSyncError",
+        "progressStage",
+        "progressMessage",
+        "canCancel",
+        "timeoutSeconds",
+        "updatedAt",
+    ):
+        if field_name in value:
+            coerced[field_name] = value[field_name]
+    progress_logs = value.get("progressLogs")
+    if isinstance(progress_logs, list):
+        coerced["progressLogs"] = [str(item) for item in progress_logs if str(item).strip()]
+    return coerced
+
+
+async def _load_persisted_sync_status_via_bridge(
+    bridge: Any,
+) -> dict[str, Any] | None:
+    if bridge is None or not hasattr(bridge, "get_state_value"):
+        return None
+    try:
+        payload = await bridge.get_state_value(
+            context=_synthetic_invocation_context(),
+            scope="tool",
+            key=_bridge_sync_status_key(),
+        )
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return _coerce_sync_status(payload)
+
+
+async def _persist_sync_status_via_bridge(
+    bridge: Any,
+    state: Mapping[str, Any],
+) -> None:
+    if bridge is None or not hasattr(bridge, "put_state_value"):
+        return
+    try:
+        await bridge.put_state_value(
+            context=_synthetic_invocation_context(),
+            scope="tool",
+            key=_bridge_sync_status_key(),
+            value=_coerce_sync_status(state),
+        )
+    except Exception:
+        return
+
+
+def _persist_sync_status_via_bridge_blocking(
+    bridge: Any,
+    state: Mapping[str, Any],
+) -> None:
+    if bridge is None or not hasattr(bridge, "put_state_value"):
+        return
+    try:
+        asyncio.run(_persist_sync_status_via_bridge(bridge, state))
+    except Exception:
+        return
+
+
+def _select_newer_sync_status(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    left_status = _coerce_sync_status(left)
+    if right is None:
+        return left_status
+    right_status = _coerce_sync_status(right)
+    left_updated = str(left_status.get("updatedAt") or "")
+    right_updated = str(right_status.get("updatedAt") or "")
+    if right_updated > left_updated:
+        return right_status
+    return left_status
+
+
+_sync_status: dict[str, Any] = _default_sync_status()
 
 
 @dataclass(slots=True)
@@ -834,12 +945,16 @@ def _update_sync_progress(
     stage = _infer_progress_stage(normalized)
     if stage is not None:
         state["progressStage"] = stage
+    _touch_sync_status(state)
 
 
-def _sync_status_snapshot() -> dict[str, Any]:
-    logs = _sync_status.get("progressLogs", [])
+def _sync_status_snapshot(
+    persisted_status: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    merged = _select_newer_sync_status(_sync_status, persisted_status)
+    logs = merged.get("progressLogs", [])
     return {
-        **_sync_status,
+        **merged,
         "progressLogs": list(logs) if isinstance(logs, list) else [],
     }
 
@@ -850,6 +965,7 @@ def _run_blackboard_sync_job(
     db_path: Path,
     current_term_only: bool,
     parallel_workers: int,
+    bridge: Any = None,
 ) -> None:
     try:
         started_at = time.monotonic()
@@ -860,6 +976,7 @@ def _run_blackboard_sync_job(
             if time.monotonic() - started_at > _SYNC_TIMEOUT_SECONDS:
                 raise TimeoutError(f"同步超时（>{_SYNC_TIMEOUT_SECONDS} 秒）")
             _update_sync_progress(_sync_status, message)
+            _persist_sync_status_via_bridge_blocking(bridge, _sync_status_snapshot())
 
         report = run_blackboard_snapshot_sync(
             username,
@@ -872,7 +989,8 @@ def _run_blackboard_sync_job(
             progress=progress_callback,
         )
         _reconcile_download_bindings_for_database(db_path)
-        _sync_status.update(
+        _apply_sync_status_patch(
+            _sync_status,
             status="completed",
             lastSyncAt=report.snapshot.logs[-1].timestamp
             if report.snapshot.logs
@@ -882,10 +1000,12 @@ def _run_blackboard_sync_job(
             progressMessage=None,
             canCancel=False,
         )
+        _persist_sync_status_via_bridge_blocking(bridge, _sync_status_snapshot())
     except Exception as exc:
         error_message = str(exc)
         if _sync_cancel_event.is_set() and error_message == "同步已取消":
-            _sync_status.update(
+            _apply_sync_status_patch(
+                _sync_status,
                 status="failed",
                 lastSyncError=error_message,
                 progressStage=None,
@@ -894,7 +1014,8 @@ def _run_blackboard_sync_job(
             )
             _update_sync_progress(_sync_status, error_message)
         else:
-            _sync_status.update(
+            _apply_sync_status_patch(
+                _sync_status,
                 status="failed",
                 lastSyncError=error_message,
                 progressStage=None,
@@ -902,6 +1023,7 @@ def _run_blackboard_sync_job(
                 canCancel=False,
             )
             _update_sync_progress(_sync_status, error_message)
+        _persist_sync_status_via_bridge_blocking(bridge, _sync_status_snapshot())
     finally:
         _sync_cancel_event.clear()
         _SYNC_LOCK.release()
@@ -911,30 +1033,36 @@ def build_blackboard_ui_router() -> APIRouter:
     router = APIRouter(prefix="/api/blackboard")
 
     @router.get("/sync/status")
-    def get_sync_status() -> dict[str, Any]:
-        return _sync_status_snapshot()
+    async def get_sync_status(request: Request) -> dict[str, Any]:
+        bridge = getattr(request.app.state, "host_capability_bridge_client", None)
+        persisted_status = await _load_persisted_sync_status_via_bridge(bridge)
+        return _sync_status_snapshot(persisted_status)
 
     @router.post("/sync/trigger")
     async def trigger_sync(
         request: Request,
         body: dict[str, Any] = Body(default={}),
     ) -> dict[str, Any]:
-        if _sync_status["status"] == "running":
+        bridge = getattr(request.app.state, "host_capability_bridge_client", None)
+        persisted_status = await _load_persisted_sync_status_via_bridge(bridge)
+        current_status = _sync_status_snapshot(persisted_status)
+        if current_status["status"] == "running":
             return {
                 "ok": True,
                 "message": "sync already in progress",
-                **_sync_status_snapshot(),
+                **current_status,
             }
         if not _SYNC_LOCK.acquire(blocking=False):
             return {
                 "ok": True,
                 "message": "sync already in progress",
-                **_sync_status_snapshot(),
+                **_sync_status_snapshot(persisted_status),
             }
 
         lock_owned_by_worker = False
         try:
-            _sync_status.update(
+            _apply_sync_status_patch(
+                _sync_status,
                 status="running",
                 progressStage="authenticating",
                 progressMessage="开始同步...",
@@ -944,6 +1072,7 @@ def build_blackboard_ui_router() -> APIRouter:
                 timeoutSeconds=_SYNC_TIMEOUT_SECONDS,
             )
             _sync_cancel_event.clear()
+            await _persist_sync_status_via_bridge(bridge, _sync_status_snapshot())
 
             username, password = await _resolve_credentials(request, body)
             current_term_only = bool(
@@ -956,7 +1085,8 @@ def build_blackboard_ui_router() -> APIRouter:
 
             if not username or not password:
                 error_message = "缺少 CAS 凭证，请在设置中配置 SUSTech 用户名和密码"
-                _sync_status.update(
+                _apply_sync_status_patch(
+                    _sync_status,
                     status="failed",
                     lastSyncError=error_message,
                     progressStage=None,
@@ -964,6 +1094,7 @@ def build_blackboard_ui_router() -> APIRouter:
                     progressLogs=[*_sync_status.get("progressLogs", []), error_message],
                     canCancel=False,
                 )
+                await _persist_sync_status_via_bridge(bridge, _sync_status_snapshot())
                 return {"ok": True, "message": "sync failed", **_sync_status_snapshot()}
 
             db_manager = _get_db_manager(request)
@@ -975,6 +1106,7 @@ def build_blackboard_ui_router() -> APIRouter:
                     db_manager.db_path,
                     current_term_only,
                     parallel_workers,
+                    bridge,
                 ),
                 name="blackboard-ui-sync",
                 daemon=True,
@@ -984,7 +1116,8 @@ def build_blackboard_ui_router() -> APIRouter:
             return {"ok": True, "message": "sync started", **_sync_status_snapshot()}
         except Exception as exc:
             error_message = str(exc)
-            _sync_status.update(
+            _apply_sync_status_patch(
+                _sync_status,
                 status="failed",
                 lastSyncError=error_message,
                 progressStage=None,
@@ -992,13 +1125,14 @@ def build_blackboard_ui_router() -> APIRouter:
                 canCancel=False,
             )
             _update_sync_progress(_sync_status, error_message)
+            await _persist_sync_status_via_bridge(bridge, _sync_status_snapshot())
             return {"ok": True, "message": "sync failed", **_sync_status_snapshot()}
         finally:
             if not lock_owned_by_worker:
                 _SYNC_LOCK.release()
 
     @router.post("/sync/cancel")
-    def cancel_sync() -> dict[str, Any]:
+    async def cancel_sync(request: Request) -> dict[str, Any]:
         if _sync_status.get("status") != "running":
             return {
                 "ok": True,
@@ -1006,11 +1140,14 @@ def build_blackboard_ui_router() -> APIRouter:
                 **_sync_status_snapshot(),
             }
         _sync_cancel_event.set()
-        _sync_status.update(
+        _apply_sync_status_patch(
+            _sync_status,
             progressMessage="正在取消同步...",
             canCancel=False,
         )
         _update_sync_progress(_sync_status, "正在取消同步...")
+        bridge = getattr(request.app.state, "host_capability_bridge_client", None)
+        await _persist_sync_status_via_bridge(bridge, _sync_status_snapshot())
         return {
             "ok": True,
             "message": "sync cancellation requested",

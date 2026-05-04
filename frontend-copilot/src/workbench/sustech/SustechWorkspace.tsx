@@ -2,7 +2,9 @@ import { Database, GraduationCap, Settings } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import type { WorkbenchLanguage } from '../_locale/types'
-import { loadSettingsWorkspaceState } from '../settings/workspace-state'
+import { createSettingsWorkspaceFormStateFromEditableState } from '../settings/settings-workspace-form-state'
+import { createSettingsWorkspaceStateSaveInput } from '../settings/settings-workspace-save-input'
+import { loadSettingsWorkspaceState, saveSettingsWorkspaceState } from '../settings/workspace-state'
 import { BlackboardDataBrowser } from './BlackboardDataBrowser'
 import { BlackboardSyncPanel } from './BlackboardSyncPanel'
 
@@ -18,7 +20,7 @@ interface SyncState {
   lastSyncAt: string | null
   nextSyncAt: string | null
   lastSyncError: string | null
-  syncInterval: string
+  syncInterval: 'off' | 'two_hours' | 'daily'
   progressMessage: string | null
   progressStage: string | null
   progressLogs: string[]
@@ -26,19 +28,9 @@ interface SyncState {
   timeoutSeconds?: number | null
 }
 
-const SUSTECH_SYNC_INTERVAL_STORAGE_KEY = 'sustech.syncInterval'
-
-function loadPersistedSyncInterval(): SyncState['syncInterval'] {
-  try {
-    const raw = window.localStorage.getItem(SUSTECH_SYNC_INTERVAL_STORAGE_KEY)
-    if (raw === 'two_hours' || raw === 'daily') return raw
-  } catch { /* localStorage unavailable */ }
-  return 'off'
-}
-
 const DEFAULT_SYNC_STATE: SyncState = {
   status: 'idle', lastSyncAt: null, nextSyncAt: null,
-  lastSyncError: null, syncInterval: loadPersistedSyncInterval(), progressMessage: null, progressStage: null, progressLogs: [], canCancel: false, timeoutSeconds: null,
+  lastSyncError: null, syncInterval: 'off', progressMessage: null, progressStage: null, progressLogs: [], canCancel: false, timeoutSeconds: null,
 }
 
 type SustechModule = 'blackboard' | 'tis'
@@ -86,6 +78,19 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
       })
     } catch { /* backend not ready */ }
   }, [runtimeBaseUrl])
+
+  useEffect(() => {
+    void (async () => {
+      const settingsResult = await loadSettingsWorkspaceState()
+      if (!settingsResult.ok) {
+        return
+      }
+      setSyncState((prev) => ({
+        ...prev,
+        syncInterval: settingsResult.state.sustech.blackboardSyncInterval as SyncState['syncInterval'],
+      }))
+    })()
+  }, [])
 
   useEffect(() => { void fetchStatus() }, [fetchStatus])
 
@@ -177,6 +182,19 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
     }
   }, [runtimeBaseUrl])
 
+  const handleSyncIntervalChange = useCallback(async (nextInterval: SyncState['syncInterval']) => {
+    setSyncState((prev) => ({ ...prev, syncInterval: nextInterval }))
+    const settingsResult = await loadSettingsWorkspaceState()
+    if (!settingsResult.ok) {
+      return
+    }
+    const formState = createSettingsWorkspaceFormStateFromEditableState(settingsResult.state)
+    await saveSettingsWorkspaceState(createSettingsWorkspaceStateSaveInput({
+      ...formState,
+      blackboardSyncInterval: nextInterval,
+    }))
+  }, [])
+
   const isSyncRunning = syncState.status === 'running'
 
   useEffect(() => {
@@ -185,12 +203,6 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
     }
     previousSyncStatusRef.current = syncState.status
   }, [syncState.status])
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(SUSTECH_SYNC_INTERVAL_STORAGE_KEY, syncState.syncInterval)
-    } catch { /* localStorage unavailable */ }
-  }, [syncState.syncInterval])
 
   useEffect(() => {
     if (syncState.status === 'running') {
@@ -357,7 +369,7 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
                 <label className="form-field">
                   <span className="form-field__label">{isEnglish ? 'Sync interval' : '同步间隔'}</span>
                   <select className="text-input" value={syncState.syncInterval}
-                    onChange={(e) => setSyncState((prev) => ({ ...prev, syncInterval: e.target.value as SyncState['syncInterval'] }))}>
+                    onChange={(e) => { void handleSyncIntervalChange(e.target.value as SyncState['syncInterval']) }}>
                     <option value="off">{isEnglish ? 'Off' : '关闭'}</option>
                     <option value="two_hours">{isEnglish ? 'Every 2 hours' : '每两小时'}</option>
                     <option value="daily">{isEnglish ? 'Daily' : '每天'}</option>

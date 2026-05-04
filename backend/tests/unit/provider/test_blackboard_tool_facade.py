@@ -759,6 +759,12 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert database.requests == ["blackboard/snapshot.db"]
     persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
     persisted_state_output = state_store.values[("blackboard.snapshot_sync", "snapshot-latest")]["output"]
+    latest_status = state_store.values[
+        (
+            facade_tools._STATE_NAMESPACE_SNAPSHOT_SYNC,
+            facade_tools._LATEST_STATUS_STATE_KEY,
+        )
+    ]
     assert persisted_state_output == persisted_artifact_output
     assert set(persisted_artifact_output) == {
         "dbPath",
@@ -781,10 +787,49 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert "resourcePayloadsByCourse" not in persisted_artifact_output
     assert "courses" not in persisted_artifact_output
     assert "payloads" not in persisted_artifact_output
+    assert latest_status["status"] == "completed"
+    assert latest_status["lastSyncError"] is None
+    assert latest_status["progressMessage"] is None
+    assert latest_status["progressStage"] is None
+    assert latest_status["progressLogs"] == ["fetching courses", "syncing sqlite"]
     assert [event.event_type for event in event_sink.events] == [
         "blackboard.snapshot.sync.started",
         "blackboard.snapshot.sync.completed",
     ]
+
+
+def test_snapshot_sync_tool_persists_failed_latest_status(monkeypatch: Any) -> None:
+    state_store = StubStateStore()
+
+    def _boom_sync(*_args: Any, **_kwargs: Any) -> BlackboardSnapshotSyncReport:
+        raise RuntimeError("snapshot boom")
+
+    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _boom_sync)
+
+    result = _invoke_tool(
+        BlackboardSnapshotSyncTool(),
+        arguments={
+            "username": "alice",
+            "password": "secret",
+        },
+        host=ToolHostCapabilities(
+            database_resolver=StubDatabaseResolver(Path("database-root")),
+            state_store=state_store,
+        ),
+    )
+
+    assert result.status == "error"
+    latest_status = state_store.values[
+        (
+            facade_tools._STATE_NAMESPACE_SNAPSHOT_SYNC,
+            facade_tools._LATEST_STATUS_STATE_KEY,
+        )
+    ]
+    assert latest_status["status"] == "failed"
+    assert latest_status["lastSyncError"] == "snapshot boom"
+    assert latest_status["progressMessage"] == "snapshot boom"
+    assert latest_status["progressStage"] is None
+    assert latest_status["progressLogs"] == ["snapshot boom"]
 
 
 def test_course_resources_sync_tool_requires_course_ids_and_persists_artifact_and_state(

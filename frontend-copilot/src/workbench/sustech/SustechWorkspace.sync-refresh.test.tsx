@@ -22,13 +22,102 @@ vi.mock('../settings/workspace-state', () => ({
     ok: true,
     state: {
       sustech: {
+        studentId: '',
+        email: '',
         blackboardParallelSyncWorkers: '1',
         blackboardCurrentTermOnly: true,
+        blackboardSyncInterval: 'off' as const,
+        blackboardLastAutoSyncAt: null,
+        blackboardNextAutoSyncAt: null,
+      },
+      providerProfiles: [
+        {
+          id: 'openrouter',
+          profileId: 'openrouter',
+          providerId: 'openai',
+          name: 'Persisted Router',
+          displayName: 'Persisted Router',
+          protocol: 'openai',
+          endpoint: 'https://persisted.example.com/v1',
+          baseUrl: 'https://persisted.example.com/v1',
+          hasApiKey: true,
+          fastModel: 'openai/gpt-4.1-mini',
+          fallbackModel: 'anthropic/claude-3.7-sonnet',
+          organization: 'persisted-org',
+          region: 'Global',
+          notes: 'persisted provider note',
+          compatibility: {
+            status: 'active',
+            reason: '',
+          },
+          extensions: {},
+          availableModels: [
+            {
+              profileId: 'openrouter',
+              modelId: 'openai/gpt-4.1',
+              displayName: 'Persisted Router / openai/gpt-4.1',
+              contextWindow: null,
+              maxOutputTokens: null,
+              supportsTools: true,
+              supportsReasoning: false,
+              supportsVision: false,
+              supportsStreaming: true,
+              supportsJsonMode: false,
+              supportsFunctionCalling: false,
+              isPreview: false,
+              capabilities: [],
+            },
+          ],
+        },
+      ],
+      defaultModelRouting: {
+        primaryAssistantModel: 'openai/gpt-4.1',
+        fastAssistantModel: 'openai/gpt-4.1-mini',
+        primaryAssistantModelRoute: {
+          routeKind: 'provider-model',
+          profileId: 'openrouter',
+          modelId: 'openai/gpt-4.1',
+        },
+        fastAssistantModelRoute: {
+          routeKind: 'provider-model',
+          profileId: 'openrouter',
+          modelId: 'openai/gpt-4.1-mini',
+        },
+      },
+      general: {
+        language: 'zh-CN',
+        assistantNotificationsEnabled: true,
+      },
+      mcp: {
+        mcpAutoDiscoveryEnabled: true,
+        toolPermissionMode: 'manual',
+        toolPermissionPolicy: {
+          version: 1,
+          migrationSourceMode: 'manual',
+          defaultMode: 'ask',
+          toolPermissions: {},
+        },
+      },
+      api: {
+        apiReconnectMode: 'exponential',
+        healthPollingEnabled: true,
+        apiBaseUrl: 'http://127.0.0.1:8000',
+      },
+      docs: {
+        docsFormat: 'markdown',
+      },
+      externalSource: {
+        wakeupShareLink: '',
       },
     },
   })),
+  saveSettingsWorkspaceState: vi.fn(async (input) => ({
+    ok: true,
+    state: input,
+  })),
 }))
 
+import { loadSettingsWorkspaceState, saveSettingsWorkspaceState } from '../settings/workspace-state'
 import { SustechWorkspace } from './SustechWorkspace'
 
 interface RenderedWorkspace {
@@ -67,6 +156,13 @@ function renderWithRoot(element: ReactElement): RenderedWorkspace {
 async function clickElement(element: Element) {
   await act(async () => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
+async function changeSelectValue(element: HTMLSelectElement, value: string) {
+  await act(async () => {
+    element.value = value
+    element.dispatchEvent(new Event('change', { bubbles: true }))
   })
 }
 
@@ -173,6 +269,40 @@ describe('SustechWorkspace sync refresh', () => {
 
       await waitForCondition(() => rendered.getByTestId('blackboard-browser-refresh-token').textContent === '1')
       expect(rendered.getByTestId('blackboard-sync-state').textContent).toBe('completed')
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('persists sync interval changes into settings workspace state', async () => {
+    const rendered = renderWithRoot(
+      <SustechWorkspace bootstrap={{ state: { runtimeUrl: 'http://localhost' } } as never} language="zh-CN" />,
+    )
+
+    try {
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      const settingsButton = Array.from(rendered.container.querySelectorAll<HTMLButtonElement>('button')).find((button) => {
+        return button.title === '设置'
+      })
+      expect(settingsButton).toBeTruthy()
+
+      await clickElement(settingsButton as HTMLButtonElement)
+
+      const select = rendered.container.querySelector('select')
+      expect(select).toBeInstanceOf(HTMLSelectElement)
+
+      await changeSelectValue(select as HTMLSelectElement, 'daily')
+
+      expect(loadSettingsWorkspaceState).toHaveBeenCalled()
+      await waitForCondition(() => vi.mocked(saveSettingsWorkspaceState).mock.calls.length > 0)
+      expect(saveSettingsWorkspaceState).toHaveBeenCalledWith(expect.objectContaining({
+        sustech: expect.objectContaining({
+          blackboardSyncInterval: 'daily',
+        }),
+      }))
     } finally {
       rendered.unmount()
     }

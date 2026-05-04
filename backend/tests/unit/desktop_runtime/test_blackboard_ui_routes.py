@@ -48,6 +48,9 @@ def _reset_sync_status() -> None:
         progressStage=None,
         progressMessage=None,
         progressLogs=[],
+        canCancel=False,
+        timeoutSeconds=blackboard_ui._SYNC_TIMEOUT_SECONDS,
+        updatedAt=None,
     )
     blackboard_ui._RESOURCE_DOWNLOAD_TASKS_BY_ID.clear()
     blackboard_ui._RESOURCE_DOWNLOAD_TASK_ID_BY_URL.clear()
@@ -513,6 +516,43 @@ def test_blackboard_ui_progress_update_exposes_capped_logs() -> None:
     assert state["progressLogs"] == [
         "▶ 处理课程 [1/1]: 数据结构 (course-1)",
         "▶ 同步数据库: /tmp/blackboard.db",
+    ]
+
+
+def test_blackboard_ui_status_route_prefers_bridge_persisted_snapshot(
+    tmp_path: Path,
+) -> None:
+    persisted_status = {
+        "status": "running",
+        "lastSyncAt": None,
+        "lastSyncError": None,
+        "progressStage": "fetching_details",
+        "progressMessage": "▶ 处理课程 [1/2]: 数据结构 (course-1)",
+        "progressLogs": ["开始同步...", "▶ 处理课程 [1/2]: 数据结构 (course-1)"],
+        "canCancel": False,
+        "timeoutSeconds": 480,
+        "updatedAt": "2026-05-03T03:00:00Z",
+    }
+
+    class _BridgeStub:
+        async def get_state_value(self, **_kwargs):
+            return dict(persisted_status)
+
+    _reset_sync_status()
+    app = FastAPI()
+    app.state.runtime_config = _RuntimeConfig(tmp_path / "database")
+    app.state.host_capability_bridge_client = _BridgeStub()
+    app.include_router(build_blackboard_ui_router())
+
+    with TestClient(app) as client:
+        payload = client.get("/api/blackboard/sync/status").json()
+
+    assert payload["status"] == "running"
+    assert payload["progressStage"] == "fetching_details"
+    assert payload["progressMessage"] == "▶ 处理课程 [1/2]: 数据结构 (course-1)"
+    assert payload["progressLogs"] == [
+        "开始同步...",
+        "▶ 处理课程 [1/2]: 数据结构 (course-1)",
     ]
 
 
