@@ -62,10 +62,6 @@ def _has_meaningful_value(value: Any) -> bool:
     return True
 
 
-def _assignment_title_key(title: Any) -> str:
-    return _text(title)
-
-
 def _assignment_record_score(
     row: dict[str, Any],
 ) -> tuple[int, int, int, int, int, int, int, int, str]:
@@ -127,16 +123,21 @@ def _merge_assignment_attachment_rows(
     return merged
 
 
-def _merge_assignment_records_by_title(
+def _merge_assignment_records_by_assignment_id(
     normalized: list[dict[str, Any]],
     attachments_by_assignment_id: dict[str, AssignmentAttachmentBatch],
 ) -> tuple[list[dict[str, Any]], dict[str, AssignmentAttachmentBatch]]:
+    """按 ``assignment_id`` 去重合并，避免因标题相同而误折叠不同作业。
+
+    同一门课中标题相同但 ``assignment_id`` 不同的作业会保留为独立记录；
+    仅对同一 ``assignment_id`` 的多条镜像记录执行字段级合并。
+    """
     grouped: dict[str, list[dict[str, Any]]] = {}
     for record in normalized:
-        title_key = _assignment_title_key(record.get("title"))
-        if not title_key:
+        assignment_id = _text(record.get("assignment_id"))
+        if not assignment_id:
             continue
-        grouped.setdefault(title_key, []).append(record)
+        grouped.setdefault(assignment_id, []).append(record)
 
     merged_records: list[dict[str, Any]] = []
     merged_attachments_by_assignment_id: dict[str, AssignmentAttachmentBatch] = {}
@@ -817,7 +818,7 @@ def sync_assignments(
                 attachment_batch
             )
 
-    normalized, attachments_by_assignment_id = _merge_assignment_records_by_title(
+    normalized, attachments_by_assignment_id = _merge_assignment_records_by_assignment_id(
         normalized,
         attachments_by_assignment_id,
     )

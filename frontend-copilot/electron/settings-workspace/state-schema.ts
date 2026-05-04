@@ -243,11 +243,12 @@ function normalizeBlackboardSyncInterval(
   input: unknown,
   fallback: SettingsWorkspaceStateValues['sustech']['blackboardSyncInterval'],
 ): SettingsWorkspaceStateValues['sustech']['blackboardSyncInterval'] {
-  switch (normalizeNonEmptyString(input, '')) {
+  const normalized = normalizeNonEmptyString(input, '')
+  switch (normalized) {
     case 'off':
     case 'two_hours':
     case 'daily':
-      return input as SettingsWorkspaceStateValues['sustech']['blackboardSyncInterval']
+      return normalized
     default:
       return fallback
   }

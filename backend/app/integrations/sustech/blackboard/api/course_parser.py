@@ -76,7 +76,9 @@ class BlackboardCourseParser:
 
     @staticmethod
     def _season_from_month(month: int) -> str:
-        if month in (3, 4, 5):
+        # SUSTech 春季学期从 2 月开始，将 2 月纳入 Spring 避免开学阶段
+        # current_term_only 误将本学期课程过滤掉。
+        if month in (2, 3, 4, 5):
             return "Spring"
         if month in (6, 7, 8):
             return "Summer"

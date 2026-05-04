@@ -414,8 +414,9 @@ def test_sync_announcements_persists_relation_fields_and_links(tmp_path: Path) -
     assert link_after.is_deleted is True
 
 
-def test_sync_assignments_merges_same_title_rows_and_preserves_richer_fields(tmp_path: Path) -> None:
-    manager = DatabaseManager(_db_path(tmp_path, "test_assignments_same_title_merge"), reset_schema=True)
+def test_sync_assignments_merges_same_assignment_id_rows_and_preserves_richer_fields(tmp_path: Path) -> None:
+    """同一 assignment_id 的多条镜像记录应合并字段，保留最丰富的信息。"""
+    manager = DatabaseManager(_db_path(tmp_path, "test_assignments_same_id_merge"), reset_schema=True)
     course_id = "course_assign_merge"
 
     manager.sync_courses(
@@ -432,7 +433,7 @@ def test_sync_assignments_merges_same_title_rows_and_preserves_richer_fields(tmp
         course_id,
         [
             {
-                "assignment_id": "asg_fragment",
+                "assignment_id": "asg_homework_1",
                 "title": "Homework 1",
                 "url": f"https://bb.sustech.edu.cn/webapps/blackboard/content/listContent.jsp?course_id={course_id}#contentListItem:_1",
                 "summary": "fragment summary",
@@ -444,7 +445,7 @@ def test_sync_assignments_merges_same_title_rows_and_preserves_richer_fields(tmp
                 ],
             },
             {
-                "assignment_id": "asg_detail",
+                "assignment_id": "asg_homework_1",
                 "title": "Homework 1",
                 "url": f"https://bb.sustech.edu.cn/webapps/assignment/uploadAssignment?course_id={course_id}&content_id=_1",
                 "description_html": "<p>Detailed instructions</p>",
@@ -462,6 +463,46 @@ def test_sync_assignments_merges_same_title_rows_and_preserves_richer_fields(tmp
     assert merged.due_date == "2026-05-01"
     assert merged.submission_status == "Submitted"
     assert "spec.pdf" in str(merged.attachments_json)
+
+
+def test_sync_assignments_keeps_distinct_assignments_with_same_title(tmp_path: Path) -> None:
+    """同一门课中标题相同但 assignment_id 不同的作业应保留为独立记录。"""
+    manager = DatabaseManager(_db_path(tmp_path, "test_assignments_same_title_distinct"), reset_schema=True)
+    course_id = "course_assign_distinct"
+
+    manager.sync_courses(
+        [
+            {
+                "course_id": course_id,
+                "name": "Distinct Assignment Course",
+                "url": None,
+            }
+        ]
+    )
+
+    stats = manager.sync_assignments(
+        course_id,
+        [
+            {
+                "assignment_id": "asg_homework_1_week3",
+                "title": "Homework 1",
+                "url": f"https://bb.sustech.edu.cn/webapps/assignment/uploadAssignment?course_id={course_id}&content_id=_100",
+                "due_date": "2026-03-15",
+                "status": "Submitted",
+            },
+            {
+                "assignment_id": "asg_homework_1_week5",
+                "title": "Homework 1",
+                "url": f"https://bb.sustech.edu.cn/webapps/assignment/uploadAssignment?course_id={course_id}&content_id=_200",
+                "due_date": "2026-04-01",
+                "status": "Not Submitted",
+            },
+        ],
+    )
+
+    assert stats == {"inserted": 2, "updated": 0, "deleted": 0}
+    active_rows = _get_active_assignments_by_title(manager, "Homework 1")
+    assert len(active_rows) == 2
 
 
 def test_database_manager_adds_missing_html_columns_for_legacy_blackboard_db(tmp_path: Path) -> None:

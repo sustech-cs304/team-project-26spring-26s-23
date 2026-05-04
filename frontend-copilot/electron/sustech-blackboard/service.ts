@@ -43,6 +43,30 @@ async function fetchBackendSyncTrigger(
   }
 }
 
+interface SyncStatusPayload {
+  status: string
+  lastSyncAt?: string | null
+  lastSyncError?: string | null
+  progressStage?: string | null
+  progressMessage?: string | null
+  canCancel?: boolean
+}
+
+async function fetchBackendSyncStatus(
+  runtimeBaseUrl: string,
+): Promise<SyncStatusPayload | null> {
+  try {
+    const response = await fetch(`${runtimeBaseUrl}/api/blackboard/sync/status`)
+    if (!response.ok) {
+      return null
+    }
+    const body = await response.json()
+    return body as SyncStatusPayload
+  } catch {
+    return null
+  }
+}
+
 function normalizeParallelWorkers(value: unknown, fallback = 1): number {
   const parsed = Number.parseInt(String(value ?? ''), 10)
   if (!Number.isFinite(parsed)) {
@@ -90,6 +114,8 @@ export function createElectronSustechBlackboardService(
     syncState = { ...syncState, ...patch }
     broadcastState()
   }
+
+  let pollAbortController: AbortController | null = null
 
   async function loadInitialState() {
     const settings = await options.loadSettings()
@@ -140,21 +166,98 @@ export function createElectronSustechBlackboardService(
 
     const result = await fetchBackendSyncTrigger(options.getRuntimeBaseUrl(), parallelWorkers, currentTermOnly)
 
-    if (result.ok) {
-      updateSyncState({
-        status: 'completed',
-        lastSyncAt: new Date().toISOString(),
-        lastSyncError: null,
-        progressStage: null,
-        progressMessage: null,
-      })
-    } else {
+    if (!result.ok) {
       updateSyncState({
         status: 'failed',
         lastSyncError: result.error ?? '同步失败',
         progressStage: null,
         progressMessage: null,
       })
+      return
+    }
+
+    // Poll /api/blackboard/sync/status until the background job finishes
+    pollAbortController = new AbortController()
+    const signal = pollAbortController.signal
+
+    const POLL_INTERVAL_MS = 1000
+    const MAX_POLL_DURATION_MS = 10 * 60 * 1000 // 10 minutes
+    const startedAt = Date.now()
+
+    try {
+      while (true) {
+        if (signal.aborted || disposed) {
+          return
+        }
+
+        if (Date.now() - startedAt > MAX_POLL_DURATION_MS) {
+          updateSyncState({
+            status: 'failed',
+            lastSyncError: '同步超时',
+            progressStage: null,
+            progressMessage: null,
+          })
+          return
+        }
+
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, POLL_INTERVAL_MS)
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer)
+            resolve()
+          }, { once: true })
+        })
+
+        if (signal.aborted || disposed) {
+          return
+        }
+
+        // eslint-disable-next-line no-await-in-loop
+        const status = await fetchBackendSyncStatus(options.getRuntimeBaseUrl())
+
+        if (status === null) {
+          updateSyncState({
+            status: 'failed',
+            lastSyncError: '无法获取同步状态',
+            progressStage: null,
+            progressMessage: null,
+          })
+          return
+        }
+
+        const backendStatus = status.status
+
+        if (backendStatus === 'running') {
+          updateSyncState({
+            progressStage: status.progressStage ?? syncState.progressStage,
+            progressMessage: status.progressMessage ?? syncState.progressMessage,
+          })
+          continue
+        }
+
+        if (backendStatus === 'completed') {
+          updateSyncState({
+            status: 'completed',
+            lastSyncAt: status.lastSyncAt ?? new Date().toISOString(),
+            lastSyncError: null,
+            progressStage: null,
+            progressMessage: null,
+          })
+          return
+        }
+
+        // failed, idle, or any other terminal state
+        updateSyncState({
+          status: 'failed',
+          lastSyncError: status.lastSyncError ?? '同步失败',
+          progressStage: null,
+          progressMessage: null,
+        })
+        return
+      }
+    } finally {
+      pollAbortController = null
     }
   }
 
@@ -210,6 +313,10 @@ export function createElectronSustechBlackboardService(
 
     dispose() {
       disposed = true
+      if (pollAbortController !== null) {
+        pollAbortController.abort()
+        pollAbortController = null
+      }
       if (scheduler !== null) {
         scheduler.stop()
         scheduler = null

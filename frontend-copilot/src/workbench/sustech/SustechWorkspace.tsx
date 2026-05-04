@@ -139,7 +139,9 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
       }))
     } catch (err) {
       const message = err instanceof TypeError && err.message === 'Failed to fetch'
-        ? `无法连接到后端 ${runtimeBaseUrl}，请确认桌面运行时已启动。`
+        ? (isEnglish
+          ? `Unable to connect to backend at ${runtimeBaseUrl}. Please ensure the desktop runtime is running.`
+          : `无法连接到后端 ${runtimeBaseUrl}，请确认桌面运行时已启动。`)
         : String(err)
       setSyncState((prev) => ({
         ...prev,
@@ -169,7 +171,9 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
       }))
     } catch (err) {
       const message = err instanceof TypeError && err.message === 'Failed to fetch'
-        ? `无法连接到后端 ${runtimeBaseUrl}，请确认桌面运行时已启动。`
+        ? (isEnglish
+          ? `Unable to connect to backend at ${runtimeBaseUrl}. Please ensure the desktop runtime is running.`
+          : `无法连接到后端 ${runtimeBaseUrl}，请确认桌面运行时已启动。`)
         : String(err)
       setSyncState((prev) => ({
         ...prev,
@@ -180,7 +184,7 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
         canCancel: false,
       }))
     }
-  }, [runtimeBaseUrl])
+  }, [runtimeBaseUrl, isEnglish])
 
   const handleSyncIntervalChange = useCallback(async (nextInterval: SyncState['syncInterval']) => {
     setSyncState((prev) => ({ ...prev, syncInterval: nextInterval }))
