@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ChevronDown,
   ChevronRight,
@@ -62,7 +63,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const adjustedX = Math.max(0, Math.min(x, window.innerWidth - 200))
   const adjustedY = Math.max(0, Math.min(y, window.innerHeight - items.length * 36 - 12))
 
-  return (
+  const menu = (
     <div
       ref={menuRef}
       className="file-context-menu"
@@ -90,9 +91,15 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           )}
           <span className="file-context-menu__label">{item.label}</span>
         </button>
-      ))}
+        ))}
     </div>
   )
+
+  if (typeof document === 'undefined' || document.body === null) {
+    return menu
+  }
+
+  return createPortal(menu, document.body)
 }
 
 /** 根据上下文构建菜单项 */

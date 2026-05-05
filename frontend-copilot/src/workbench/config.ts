@@ -34,6 +34,7 @@ export const railPrimaryItems: RailItem[] = [
   { id: 'assistant', label: '助手', icon: MessageSquare },
   { id: 'capabilities', label: '能力', icon: Sparkles },
   { id: 'files', label: '文件', icon: FolderOpen },
+  { id: 'sustech', label: 'SUSTech', icon: School },
   { id: 'developer', label: '开发', icon: Code2 },
 ]
 

@@ -17,8 +17,11 @@ export function createSettingsWorkspaceStateSaveInput(
     sustech: {
       studentId: state.studentId,
       email: state.sustechEmail,
-      blackboardAutoDownloadEnabled: state.blackboardAutoDownloadEnabled,
-      blackboardDownloadLimitMb: state.blackboardDownloadLimitMb,
+      blackboardCurrentTermOnly: state.blackboardCurrentTermOnly,
+      blackboardParallelSyncWorkers: state.blackboardParallelSyncWorkers,
+      blackboardSyncInterval: state.blackboardSyncInterval,
+      blackboardLastAutoSyncAt: state.blackboardLastAutoSyncAt ?? null,
+      blackboardNextAutoSyncAt: state.blackboardNextAutoSyncAt ?? null,
     },
     providerProfiles,
     defaultModelRouting: {

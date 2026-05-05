@@ -11,6 +11,7 @@ from app.integrations.sustech.blackboard.shared.logging import BlackboardLogger
 from sqlalchemy.orm import Session
 
 from app.integrations.sustech.blackboard.data.models import (
+    AnnouncementAssignmentLink,
     Announcement,
     Assignment,
     CalendarEvent,
@@ -49,6 +50,172 @@ def _normalize_assignment_id(
     if item_url:
         return stable_id("asg", course_id, item_url)
     return stable_id("asg", course_id, title, due_date)
+
+
+def _has_meaningful_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value)
+    return True
+
+
+def _assignment_record_score(
+    row: dict[str, Any],
+) -> tuple[int, int, int, int, int, int, int, int, str]:
+    assignment_id = _text(row.get("assignment_id"))
+    url = _text(row.get("url")).lower()
+    source_page = _text(row.get("source_page")).lower()
+    return (
+        1 if _has_meaningful_value(row.get("description_html")) else 0,
+        1 if _has_meaningful_value(row.get("description")) else 0,
+        1 if _has_meaningful_value(row.get("attachments_json")) else 0,
+        1 if _has_meaningful_value(row.get("submission_status")) else 0,
+        1 if _has_meaningful_value(row.get("status")) else 0,
+        1 if _has_meaningful_value(row.get("due_date")) else 0,
+        1 if "/webapps/assignment/" in url else 0,
+        1 if "content_id=" in url or "content_id=" in source_page else 0,
+        assignment_id,
+    )
+
+
+def _deserialize_assignment_attachments_json(value: Any) -> list[dict[str, Any]]:
+    text = _text(value)
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [row for row in parsed if isinstance(row, dict)]
+
+
+def _merge_assignment_attachment_rows(
+    *attachment_groups: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, str, str]] = set()
+    for group in attachment_groups:
+        for row in group:
+            if not isinstance(row, dict):
+                continue
+            url = _text(row.get("url"))
+            name = _text(row.get("name") or row.get("title"))
+            resource_id = _text(row.get("resource_id"))
+            dedupe_key = (resource_id, url, name)
+            if dedupe_key == ("", "", "") or dedupe_key in seen_keys:
+                continue
+            seen_keys.add(dedupe_key)
+            merged.append(
+                {
+                    "resource_id": resource_id or None,
+                    "name": name,
+                    "title": _text(row.get("title")) or name,
+                    "url": url or None,
+                    "type": row.get("type"),
+                    "size": row.get("size"),
+                }
+            )
+    return merged
+
+
+def _merge_assignment_records_by_assignment_id(
+    normalized: list[dict[str, Any]],
+    attachments_by_assignment_id: dict[str, AssignmentAttachmentBatch],
+) -> tuple[list[dict[str, Any]], dict[str, AssignmentAttachmentBatch]]:
+    """按 ``assignment_id`` 去重合并，避免因标题相同而误折叠不同作业。
+
+    同一门课中标题相同但 ``assignment_id`` 不同的作业会保留为独立记录；
+    仅对同一 ``assignment_id`` 的多条镜像记录执行字段级合并。
+    """
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for record in normalized:
+        assignment_id = _text(record.get("assignment_id"))
+        if not assignment_id:
+            continue
+        grouped.setdefault(assignment_id, []).append(record)
+
+    merged_records: list[dict[str, Any]] = []
+    merged_attachments_by_assignment_id: dict[str, AssignmentAttachmentBatch] = {}
+
+    for rows in grouped.values():
+        best_row = max(rows, key=_assignment_record_score)
+        merged_row = dict(best_row)
+        merged_attachment_rows = _merge_assignment_attachment_rows(
+            _deserialize_assignment_attachments_json(best_row.get("attachments_json"))
+        )
+        merged_attachment_source_page = _text(best_row.get("source_page")) or None
+
+        for row in rows:
+            if row is best_row:
+                continue
+            for field_name in (
+                "url",
+                "description",
+                "description_html",
+                "summary",
+                "source_page",
+                "due_date",
+                "due_date_parsed",
+                "posted_date",
+                "status",
+                "submission_status",
+                "score",
+                "total_score",
+            ):
+                if not _has_meaningful_value(
+                    merged_row.get(field_name)
+                ) and _has_meaningful_value(row.get(field_name)):
+                    merged_row[field_name] = row.get(field_name)
+
+            merged_attachment_rows = _merge_assignment_attachment_rows(
+                merged_attachment_rows,
+                _deserialize_assignment_attachments_json(row.get("attachments_json")),
+            )
+
+            source_page, attachment_rows = attachments_by_assignment_id.get(
+                _text(row.get("assignment_id")),
+                (None, []),
+            )
+            if source_page and not merged_attachment_source_page:
+                merged_attachment_source_page = source_page
+            merged_attachment_rows = _merge_assignment_attachment_rows(
+                merged_attachment_rows,
+                attachment_rows,
+            )
+
+        best_source_page, best_attachment_rows = attachments_by_assignment_id.get(
+            _text(best_row.get("assignment_id")),
+            (None, []),
+        )
+        if best_source_page and not merged_attachment_source_page:
+            merged_attachment_source_page = best_source_page
+        merged_attachment_rows = _merge_assignment_attachment_rows(
+            merged_attachment_rows,
+            best_attachment_rows,
+        )
+
+        merged_row["attachments_json"] = (
+            json.dumps(merged_attachment_rows, ensure_ascii=False)
+            if merged_attachment_rows
+            else None
+        )
+        merged_records.append(merged_row)
+
+        canonical_assignment_id = _text(merged_row.get("assignment_id"))
+        if canonical_assignment_id and merged_attachment_rows:
+            merged_attachments_by_assignment_id[canonical_assignment_id] = (
+                merged_attachment_source_page
+                or _text(merged_row.get("source_page"))
+                or None,
+                merged_attachment_rows,
+            )
+
+    return merged_records, merged_attachments_by_assignment_id
 
 
 def _normalize_assignment_attachments(
@@ -100,6 +267,7 @@ def _normalize_assignment_record(
         "title": title,
         "url": item_url,
         "description": item.get("description"),
+        "description_html": item.get("description_html"),
         "summary": item.get("summary"),
         "source_page": item.get("source_page"),
         "attachments_json": attachments_json,
@@ -414,11 +582,134 @@ def _normalize_announcement_record(
         "course_name": course_name,
         "title": title,
         "content": item.get("content") or item.get("detail"),
+        "content_html": item.get("content_html") or item.get("detail_html"),
+        "relation_type": _text(item.get("relation_type")) or None,
+        "relation_confidence": _text(item.get("relation_confidence")) or None,
         "author": item.get("author"),
         "posted_at": parse_datetime(posted_text),
         "url": url or None,
         "source_page": item.get("source_page"),
     }
+
+
+def _normalize_announcement_assignment_link_record(
+    item: dict[str, Any],
+) -> dict[str, Any] | None:
+    announcement_id = _text(item.get("announcement_id"))
+    assignment_id = _text(item.get("assignment_id"))
+    course_id = _text(item.get("course_id"))
+    if not announcement_id or not assignment_id or not course_id:
+        return None
+
+    evidence_value = item.get("evidence_json")
+    if evidence_value is None:
+        evidence_json = None
+    elif isinstance(evidence_value, str):
+        evidence_json = evidence_value.strip() or None
+    else:
+        evidence_json = json.dumps(
+            evidence_value,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+
+    return {
+        "announcement_id": announcement_id,
+        "assignment_id": assignment_id,
+        "course_id": course_id,
+        "link_source": _text(item.get("link_source")) or "content_id_match",
+        "confidence": _text(item.get("confidence")) or "medium",
+        "evidence_json": evidence_json,
+    }
+
+
+def _sync_announcement_assignment_links(
+    session: Session,
+    touched_course_ids: set[str],
+    links_data: list[dict[str, Any]],
+    *,
+    logger: BlackboardLogger | None,
+) -> None:
+    if not touched_course_ids:
+        return
+
+    now = utc_now_naive()
+    existing_rows = (
+        session.query(AnnouncementAssignmentLink)
+        .filter(AnnouncementAssignmentLink.course_id.in_(touched_course_ids))
+        .all()
+    )
+    existing_map = {
+        (str(row.announcement_id), str(row.assignment_id)): row for row in existing_rows
+    }
+    existing_announcement_ids = {
+        str(row[0]).strip()
+        for row in session.query(Announcement.announcement_id)
+        .filter(
+            Announcement.course_id.in_(touched_course_ids),
+            Announcement.is_deleted.is_(False),
+        )
+        .all()
+        if row[0]
+    }
+    existing_assignment_ids = {
+        str(row[0]).strip()
+        for row in session.query(Assignment.assignment_id)
+        .filter(
+            Assignment.course_id.in_(touched_course_ids),
+            Assignment.is_deleted.is_(False),
+        )
+        .all()
+        if row[0]
+    }
+
+    incoming_keys: set[tuple[str, str]] = set()
+    for raw_item in links_data:
+        normalized = _normalize_announcement_assignment_link_record(raw_item)
+        if normalized is None:
+            continue
+
+        announcement_id = str(normalized["announcement_id"])
+        assignment_id = str(normalized["assignment_id"])
+        if (
+            announcement_id not in existing_announcement_ids
+            or assignment_id not in existing_assignment_ids
+        ):
+            if logger is not None:
+                logger.warning(
+                    "⚠ 跳过无法落库的公告-作业关联",
+                    payload=normalized,
+                )
+            continue
+
+        key = (announcement_id, assignment_id)
+        incoming_keys.add(key)
+        row = existing_map.get(key)
+        if row is None:
+            session.add(
+                AnnouncementAssignmentLink(
+                    **normalized,
+                    created_at=now,
+                    updated_at=now,
+                    last_synced_at=now,
+                    is_deleted=False,
+                )
+            )
+            continue
+
+        for field_name, value in normalized.items():
+            setattr(row, field_name, value)
+        row.updated_at = now
+        row.last_synced_at = now
+        row.is_deleted = False
+
+    for key, row in existing_map.items():
+        if key in incoming_keys or row.is_deleted:
+            continue
+        row.is_deleted = True
+        row.updated_at = now
+        row.last_synced_at = now
 
 
 def _resolve_announcement_course_ids(
@@ -526,6 +817,11 @@ def sync_assignments(
             attachments_by_assignment_id[str(normalized_record["assignment_id"])] = (
                 attachment_batch
             )
+
+    normalized, attachments_by_assignment_id = _merge_assignment_records_by_assignment_id(
+        normalized,
+        attachments_by_assignment_id,
+    )
 
     stats = sync_records(
         session,
@@ -653,6 +949,7 @@ def sync_announcements(
     session: Session,
     announcements_data: list[dict[str, Any]],
     *,
+    links_data: list[dict[str, Any]] | None = None,
     normalize_url: Callable[[Any], str | None],
     parse_datetime: Callable[[Any], datetime | None],
     stable_id: Callable[..., str],
@@ -681,6 +978,18 @@ def sync_announcements(
         unique_field="announcement_id",
         records=normalized,
         allow_soft_delete=False,
+        logger=logger,
+    )
+    session.flush()
+    touched_course_ids = {
+        _text(item.get("course_id"))
+        for item in normalized
+        if _text(item.get("course_id"))
+    }
+    _sync_announcement_assignment_links(
+        session,
+        touched_course_ids,
+        links_data or [],
         logger=logger,
     )
     _refresh_announcement_course_stats(session, normalized)

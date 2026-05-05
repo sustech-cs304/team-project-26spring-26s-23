@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 DEFAULT_BLACKBOARD_BASE_URL = "https://bb.sustech.edu.cn"
 DEFAULT_ID_TYPES: tuple[str, ...] = (
+    "ann_id",
     "course_id",
     "content_id",
     "pk1",
@@ -141,7 +142,7 @@ def _extract_fragment_ids(
     requested_types: tuple[str, ...],
     result: dict[str, str | None],
 ) -> None:
-    fragment_match = re.fullmatch(r"(_\d+_\d+)", parsed_fragment)
+    fragment_match = re.search(r"(_\d+_\d+)", parsed_fragment)
     if not fragment_match:
         return
 

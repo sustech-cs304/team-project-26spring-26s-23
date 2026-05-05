@@ -89,6 +89,7 @@ import type {
   RenameEntryRequest,
   RevealEntryInFolderRequest,
   SaveLastRootDirectoryRequest,
+  SelectRootDirectoryRequest,
   SelectDirectoryResult,
   TrashEntriesRequest,
   UnwatchDirectoriesRequest,
@@ -183,7 +184,7 @@ export interface MainProcessServices {
   handleDesktopCapabilityBridgeRequest: (
     request: DesktopCapabilityBridgeRequest,
   ) => Promise<DesktopCapabilityBridgeResponse>
-  selectRootDirectory: () => Promise<SelectDirectoryResult>
+  selectRootDirectory: (request?: SelectRootDirectoryRequest) => Promise<SelectDirectoryResult>
   listDirectory: (request: ListDirectoryRequest) => Promise<ListDirectoryResult>
   probeDirectory: (request: ProbeDirectoryRequest) => Promise<ProbeDirectoryResult>
   createDirectory: (request: CreateDirectoryRequest) => Promise<FileOperationResult>

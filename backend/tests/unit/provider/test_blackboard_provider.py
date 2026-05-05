@@ -16,6 +16,7 @@ from app.integrations.sustech.blackboard.api.dto import (
     GradeDTO,
     ResourceDTO,
 )
+from app.integrations.sustech.blackboard.data import DatabaseManager
 from app.integrations.sustech.blackboard.provider.results import (
     BlackboardCourseResourcesSyncReport,
     BlackboardSnapshotFetchResult,
@@ -29,6 +30,7 @@ from app.integrations.sustech.blackboard.shared import BlackboardLogEvent
 from app.integrations.sustech.blackboard.provider.use_cases import calendar_ics as calendar_ics_use_case
 from app.integrations.sustech.blackboard.provider.use_cases import course_catalog as course_catalog_use_case
 from app.integrations.sustech.blackboard.provider.use_cases import snapshot_sync as snapshot_sync_use_case
+from app.integrations.sustech.blackboard.api.course_parser import BlackboardCourseParser
 from app.integrations.sustech.blackboard.provider.use_cases.calendar_ics import (
     refresh_calendar_ics_subscription_from_text,
 )
@@ -37,6 +39,7 @@ from app.integrations.sustech.blackboard.provider.use_cases.snapshot_sync import
     calculate_expected_active_counts,
     compare_active_counts,
     fetch_blackboard_snapshot,
+    rebuild_announcement_assignment_links,
 )
 
 
@@ -70,6 +73,8 @@ def test_build_blackboard_sync_payloads_and_expected_counts() -> None:
                 due_date="2026-03-10 23:59",
                 score="95/100",
                 url="https://bb.example/asg/1",
+                description="Read the instructions",
+                description_html="<p>Read the <strong>instructions</strong></p>",
                 source_page="assignments",
                 attachments=[
                     AssignmentAttachmentDTO(
@@ -113,7 +118,17 @@ def test_build_blackboard_sync_payloads_and_expected_counts() -> None:
             course_name="CS305 Database Systems",
             title="Welcome",
             detail="Hello class",
+            detail_html="<p>Hello <strong>class</strong></p>",
             publish_time="2026-03-01 10:00",
+            linked_content_candidates=[
+                {
+                    "url": "https://bb.example/webapps/blackboard/content/launchLink.jsp?ann_id=_43635_1&course_id=_course_1&mode=view",
+                    "path_text": "/Homework/Homework 1",
+                    "ann_id": "_43635_1",
+                    "course_id": "_course_1",
+                    "is_launch_link": True,
+                }
+            ],
         )
     ]
 
@@ -131,7 +146,42 @@ def test_build_blackboard_sync_payloads_and_expected_counts() -> None:
     _assert_equal(len(payloads.resource_payloads["_course_1"]), 2, "resource payload merges assignment attachment")
     _assert_equal(len(payloads.grade_payloads["_course_1"]), 1, "grade payload count")
     _assert_equal(len(payloads.announcements_payload), 1, "announcement payload count")
+    _assert_equal(
+        len(payloads.announcement_assignment_link_payloads),
+        1,
+        "announcement-assignment link payload count",
+    )
     _assert_equal(payloads.announcements_payload[0]["course_id"], "_course_1", "announcement course inferred")
+    _assert_equal(
+        payloads.announcements_payload[0]["relation_type"],
+        "assignment_notice",
+        "announcement relation type derived from launch link",
+    )
+    _assert_equal(
+        payloads.announcements_payload[0]["relation_confidence"],
+        "high",
+        "announcement relation confidence derived from launch link",
+    )
+    _assert_equal(
+        payloads.assignment_payloads["_course_1"][0]["description_html"],
+        "<p>Read the <strong>instructions</strong></p>",
+        "assignment html retained in sync payload",
+    )
+    _assert_equal(
+        payloads.announcements_payload[0]["content_html"],
+        "<p>Hello <strong>class</strong></p>",
+        "announcement html retained in sync payload",
+    )
+    _assert_equal(
+        payloads.announcements_payload[0]["linked_content_candidates"][0]["ann_id"],
+        "_43635_1",
+        "announcement linked-content evidence retained in sync payload",
+    )
+    _assert_equal(
+        payloads.announcement_assignment_link_payloads[0]["assignment_id"],
+        payloads.assignment_payloads["_course_1"][0]["assignment_id"],
+        "announcement link payload should target matched assignment",
+    )
     _assert_equal(
         payloads.grade_payloads["_course_1"][0]["assignment_id"],
         payloads.assignment_payloads["_course_1"][0]["assignment_id"],
@@ -162,6 +212,179 @@ def test_build_blackboard_sync_payloads_and_expected_counts() -> None:
             expected,
         ),
         "compare_active_counts should pass when counts match",
+    )
+
+
+def test_build_blackboard_sync_payloads_merges_same_assignment_id_assignments() -> None:
+    courses = [
+        CourseDTO(
+            course_id="_course_1",
+            name="CS305 Database Systems",
+        )
+    ]
+    assignments_by_course = {
+        "_course_1": [
+            AssignmentDTO(
+                assignment_id="asg_homework_1",
+                course_id="_course_1",
+                title="Homework 1",
+                url="https://bb.example/list#contentListItem:_1",
+                summary="fragment summary",
+                attachments=[
+                    AssignmentAttachmentDTO(
+                        name="spec.pdf",
+                        url="https://bb.example/file/spec.pdf",
+                        type="file",
+                    )
+                ],
+            ),
+            AssignmentDTO(
+                assignment_id="asg_homework_1",
+                course_id="_course_1",
+                title="Homework 1",
+                due_date="2026-03-10 23:59",
+                url="https://bb.example/asg/1",
+                description_html="<p>Read the <strong>instructions</strong></p>",
+                submission_status="Submitted",
+            ),
+        ]
+    }
+
+    payloads = build_blackboard_sync_payloads(
+        courses,
+        assignments_by_course,
+        {},
+        {},
+        [],
+    )
+
+    _assert_equal(len(payloads.assignment_payloads["_course_1"]), 1, "same-assignment-id rows should be merged into one payload row")
+    merged = payloads.assignment_payloads["_course_1"][0]
+    _assert_equal(merged["title"], "Homework 1", "merged row keeps exact title")
+    _assert_equal(merged["description_html"], "<p>Read the <strong>instructions</strong></p>", "merged row keeps richer html")
+    _assert_equal(merged["submission_status"], "Submitted", "merged row keeps richer submission status")
+    _assert_equal(len(merged["attachments"]), 1, "merged row keeps attachments from duplicate sibling")
+
+
+def test_build_blackboard_sync_payloads_keeps_distinct_same_title_assignments() -> None:
+    courses = [
+        CourseDTO(
+            course_id="_course_1",
+            name="CS305 Database Systems",
+        )
+    ]
+    assignments_by_course = {
+        "_course_1": [
+            AssignmentDTO(
+                assignment_id="asg_week_3",
+                course_id="_course_1",
+                title="Homework 1",
+                due_date="2026-03-10 23:59",
+                url="https://bb.example/asg/1",
+            ),
+            AssignmentDTO(
+                assignment_id="asg_week_5",
+                course_id="_course_1",
+                title="Homework 1",
+                due_date="2026-03-24 23:59",
+                url="https://bb.example/asg/2",
+            ),
+        ]
+    }
+
+    payloads = build_blackboard_sync_payloads(
+        courses,
+        assignments_by_course,
+        {},
+        {},
+        [],
+    )
+
+    _assert_equal(
+        len(payloads.assignment_payloads["_course_1"]),
+        2,
+        "same-title assignments with different assignment_id should remain distinct",
+    )
+
+
+def test_rebuild_announcement_assignment_links_backfills_existing_database_rows(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "test_blackboard_rebuild_relations.db"
+    manager = DatabaseManager(db_path, reset_schema=True)
+
+    manager.sync_courses(
+        [
+            {
+                "course_id": "_8132_1",
+                "name": "Computer Organization Spring 2026",
+                "url": "https://bb.sustech.edu.cn/course/_8132_1",
+            }
+        ]
+    )
+    manager.sync_assignments(
+        "_8132_1",
+        [
+            {
+                "assignment_id": "asg_hw2",
+                "title": "Homework 2",
+                "url": "https://bb.sustech.edu.cn/webapps/assignment/uploadAssignment?course_id=_8132_1&content_id=_596747_1",
+                "source_page": "https://bb.sustech.edu.cn/webapps/blackboard/content/listContent.jsp?course_id=_8132_1#contentListItem:_596747_1",
+            }
+        ],
+    )
+    manager.sync_announcements(
+        [
+            {
+                "announcement_id": "ann_hw2_release",
+                "course_id": "_8132_1",
+                "course_name": "Computer Organization Spring 2026",
+                "title": "Lab assignment 2 released",
+                "content": "Please open Homework 2 from Blackboard.",
+                "content_html": '<p><a href="/webapps/blackboard/content/launchLink.jsp?ann_id=_43635_1&course_id=_8132_1&mode=view">/Homework/Homework 2</a></p>',
+                "publish_time": "2026-04-19 16:48",
+            }
+        ],
+        links_data=[],
+    )
+
+    result = rebuild_announcement_assignment_links(manager)
+    _assert_equal(result["links"], 1, "rebuild should create one persisted link")
+
+    session = manager.SessionLocal()
+    try:
+        from app.integrations.sustech.blackboard.data.models import (
+            Announcement,
+            AnnouncementAssignmentLink,
+        )
+
+        announcement = (
+            session.query(Announcement)
+            .filter(Announcement.announcement_id == "ann_hw2_release")
+            .one()
+        )
+        link = (
+            session.query(AnnouncementAssignmentLink)
+            .filter(AnnouncementAssignmentLink.announcement_id == "ann_hw2_release")
+            .one()
+        )
+    finally:
+        session.close()
+
+    _assert_equal(
+        announcement.relation_type,
+        "assignment_notice",
+        "rebuild should classify historical announcement as assignment notice",
+    )
+    _assert_equal(
+        announcement.relation_confidence,
+        "high",
+        "rebuild should mark high confidence for launch-link evidence",
+    )
+    _assert_equal(
+        link.assignment_id,
+        "asg_hw2",
+        "rebuild should connect historical announcement to assignment",
     )
 
 
@@ -436,7 +659,7 @@ def test_search_course_catalog_use_case_delegates_to_api() -> None:
     _assert_true(int(result.log_summary["total"]) >= 3, "course catalog should produce multiple logs")
 
 
-def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
+def test_fetch_blackboard_snapshot_includes_course_resources() -> None:
     original_cas_client = snapshot_sync_use_case.CASClient
     original_course_api = snapshot_sync_use_case.BlackboardCourseAPI
     original_assignment_api = snapshot_sync_use_case.BlackboardAssignmentAPI
@@ -504,9 +727,21 @@ def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
                 )
             ]
 
-    class _FailingContentAPI:
+    class _FakeContentAPI:
         def __init__(self, *_: Any, **__: Any) -> None:
-            raise AssertionError("fetch_blackboard_snapshot should not instantiate BlackboardContentAPI")
+            pass
+
+        def get_course_content_dtos(self, course_id: str) -> list[ResourceDTO]:
+            return [
+                ResourceDTO(
+                    resource_id="res_1",
+                    course_id=course_id,
+                    title="Lecture 1",
+                    url="https://bb.example/file/lecture1.pdf",
+                    type="file",
+                    source_page="content",
+                )
+            ]
 
     class _FakeAnnouncementAPI:
         def __init__(self, *_: Any, **__: Any) -> None:
@@ -529,7 +764,7 @@ def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
         snapshot_sync_use_case.BlackboardCourseAPI = _FakeCourseAPI  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardAssignmentAPI = _FakeAssignmentAPI  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardGradeAPI = _FakeGradeAPI  # type: ignore[assignment]
-        snapshot_sync_use_case.BlackboardContentAPI = _FailingContentAPI  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardContentAPI = _FakeContentAPI  # type: ignore[assignment]
         snapshot_sync_use_case.BlackboardAnnouncementAPI = _FakeAnnouncementAPI  # type: ignore[assignment]
         snapshot = fetch_blackboard_snapshot("alice", "secret")
     finally:
@@ -543,10 +778,100 @@ def test_fetch_blackboard_snapshot_uses_api_dtos_directly() -> None:
     _assert_equal(snapshot.courses[0].course_id, "_course_1", "snapshot keeps course dto")
     _assert_equal(snapshot.assignments_by_course["_course_1"][0].assignment_id, "asg_1", "snapshot keeps assignment dto")
     _assert_equal(snapshot.grades_by_course["_course_1"][0].grade_id, "grd_1", "snapshot keeps grade dto")
-    _assert_true(snapshot.resources_by_course == {}, "snapshot no longer fetches resources by default")
+    _assert_equal(snapshot.resources_by_course["_course_1"][0].resource_id, "res_1", "snapshot keeps resource dto")
     _assert_equal(snapshot.announcements[0].announcement_id, "ann_1", "snapshot keeps announcement dto")
     _assert_true(bool(snapshot.logs), "snapshot fetch should collect logs")
     _assert_true(int(snapshot.log_summary["total"]) >= 5, "snapshot fetch should produce multiple logs")
+
+
+def test_fetch_blackboard_snapshot_filters_to_current_term_when_requested() -> None:
+    original_cas_client = snapshot_sync_use_case.CASClient
+    original_course_api = snapshot_sync_use_case.BlackboardCourseAPI
+    original_assignment_api = snapshot_sync_use_case.BlackboardAssignmentAPI
+    original_grade_api = snapshot_sync_use_case.BlackboardGradeAPI
+    original_content_api = snapshot_sync_use_case.BlackboardContentAPI
+    original_announcement_api = snapshot_sync_use_case.BlackboardAnnouncementAPI
+
+    current_term = BlackboardCourseParser().current_term_label()
+    assignment_calls: list[str] = []
+    grade_calls: list[str] = []
+    content_calls: list[str] = []
+
+    class _FakeCASClient:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            self.client = object()
+
+        def login(self, *_args: Any, **_kwargs: Any) -> bool:
+            return True
+
+        def close(self) -> None:
+            return None
+
+    class _FakeCourseAPI:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            pass
+
+        def get_courses(self) -> list[CourseDTO]:
+            return [
+                CourseDTO(course_id="_current_1", name="Current Course", term=current_term),
+                CourseDTO(course_id="_old_1", name="Old Course", term="Fall 1999"),
+            ]
+
+    class _FakeAssignmentAPI:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            pass
+
+        def get_course_assignments(self, course_id: str) -> list[AssignmentDTO]:
+            assignment_calls.append(course_id)
+            return []
+
+    class _FakeGradeAPI:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            pass
+
+        def get_course_grade_dtos(self, course_id: str) -> list[GradeDTO]:
+            grade_calls.append(course_id)
+            return []
+
+    class _FakeContentAPI:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            pass
+
+        def get_course_content_dtos(self, course_id: str) -> list[ResourceDTO]:
+            content_calls.append(course_id)
+            return []
+
+    class _FakeAnnouncementAPI:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            pass
+
+        def get_all_announcement_dtos(self, **_: Any) -> list[AnnouncementDTO]:
+            return []
+
+    try:
+        snapshot_sync_use_case.CASClient = _FakeCASClient  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardCourseAPI = _FakeCourseAPI  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardAssignmentAPI = _FakeAssignmentAPI  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardGradeAPI = _FakeGradeAPI  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardContentAPI = _FakeContentAPI  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardAnnouncementAPI = _FakeAnnouncementAPI  # type: ignore[assignment]
+        snapshot = fetch_blackboard_snapshot(
+            "alice",
+            "secret",
+            current_term_only=True,
+        )
+    finally:
+        snapshot_sync_use_case.CASClient = original_cas_client  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardCourseAPI = original_course_api  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardAssignmentAPI = original_assignment_api  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardGradeAPI = original_grade_api  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardContentAPI = original_content_api  # type: ignore[assignment]
+        snapshot_sync_use_case.BlackboardAnnouncementAPI = original_announcement_api  # type: ignore[assignment]
+
+    _assert_equal([course.course_id for course in snapshot.courses], ["_current_1"], "snapshot should keep only current-term courses")
+    _assert_equal(assignment_calls, ["_current_1"], "assignment fetch should run only for current-term courses")
+    _assert_equal(grade_calls, ["_current_1"], "grade fetch should run only for current-term courses")
+    _assert_equal(content_calls, ["_current_1"], "content fetch should run only for current-term courses")
 
 
 

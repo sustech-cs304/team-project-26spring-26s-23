@@ -6,15 +6,15 @@ export interface CreateSustechInfoSectionDomainArgs {
   sustechEmailFocused: boolean
   casPasswordDraft: string
   casPasswordFeedback: string | null
-  blackboardAutoDownloadEnabled: boolean
-  blackboardDownloadLimitMb: string
+  blackboardCurrentTermOnly: boolean
+  blackboardParallelSyncWorkers: string
   onStudentIdChange: (value: string) => void
   onSustechEmailChange: (value: string) => void
   onSustechEmailFocusChange: (focused: boolean) => void
   onCasPasswordDraftChange: (value: string) => void
   onPersistCasPasswordDraft: () => void | Promise<void>
-  onBlackboardAutoDownloadEnabledChange: (value: boolean) => void
-  onBlackboardDownloadLimitMbChange: (value: string) => void
+  onBlackboardCurrentTermOnlyChange: (value: boolean) => void
+  onBlackboardParallelSyncWorkersChange: (value: string) => void
 }
 
 export function createSustechInfoSectionDomain(
@@ -31,14 +31,14 @@ export function createSustechInfoSectionDomain(
     displayedSustechEmail,
     casPasswordDraft: args.casPasswordDraft,
     casPasswordFeedback: args.casPasswordFeedback,
-    blackboardAutoDownloadEnabled: args.blackboardAutoDownloadEnabled,
-    blackboardDownloadLimitMb: args.blackboardDownloadLimitMb,
+    blackboardCurrentTermOnly: args.blackboardCurrentTermOnly,
+    blackboardParallelSyncWorkers: args.blackboardParallelSyncWorkers,
     onStudentIdChange: args.onStudentIdChange,
     onSustechEmailChange: args.onSustechEmailChange,
     onSustechEmailFocusChange: args.onSustechEmailFocusChange,
     onCasPasswordDraftChange: args.onCasPasswordDraftChange,
     onPersistCasPasswordDraft: args.onPersistCasPasswordDraft,
-    onBlackboardAutoDownloadEnabledChange: args.onBlackboardAutoDownloadEnabledChange,
-    onBlackboardDownloadLimitMbChange: args.onBlackboardDownloadLimitMbChange,
+    onBlackboardCurrentTermOnlyChange: args.onBlackboardCurrentTermOnlyChange,
+    onBlackboardParallelSyncWorkersChange: args.onBlackboardParallelSyncWorkersChange,
   }
 }

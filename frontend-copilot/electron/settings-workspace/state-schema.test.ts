@@ -227,6 +227,22 @@ describe('settings workspace state schema migration', () => {
     })
   })
 
+  it('defaults current-term Blackboard filtering to false and preserves explicit stored values', () => {
+    const defaults = normalizeSettingsWorkspaceStateValues({})
+    expect(defaults.sustech.blackboardCurrentTermOnly).toBe(false)
+
+    const values = normalizeSettingsWorkspaceStateValues({
+      sustech: {
+        blackboardCurrentTermOnly: true,
+        blackboardParallelSyncWorkers: '3',
+      },
+    })
+    expect(values.sustech.blackboardCurrentTermOnly).toBe(true)
+
+    const editableState = projectSettingsWorkspaceEditableState(values, {})
+    expect(editableState.sustech.blackboardCurrentTermOnly).toBe(true)
+  })
+
   it('migrates legacy toolPermissionMode into the new MCP tool permission policy state', () => {
     const values = normalizeSettingsWorkspaceStateValues({
       mcp: {

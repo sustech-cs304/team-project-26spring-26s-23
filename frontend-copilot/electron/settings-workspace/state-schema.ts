@@ -51,8 +51,11 @@ export interface SettingsWorkspaceStateValues {
   sustech: {
     studentId: string
     email: string
-    blackboardAutoDownloadEnabled: boolean
-    blackboardDownloadLimitMb: string
+    blackboardCurrentTermOnly: boolean
+    blackboardParallelSyncWorkers: string
+    blackboardSyncInterval: 'off' | 'two_hours' | 'daily'
+    blackboardLastAutoSyncAt: string | null
+    blackboardNextAutoSyncAt: string | null
   }
   providerProfiles: SettingsWorkspaceStoredProviderProfile[]
   defaultModelRouting: SettingsWorkspaceStoredDefaultModelRouting
@@ -95,8 +98,11 @@ const DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES: SettingsWorkspaceStateValues = {
   sustech: {
     studentId: '',
     email: '',
-    blackboardAutoDownloadEnabled: false,
-    blackboardDownloadLimitMb: '0',
+    blackboardCurrentTermOnly: false,
+    blackboardParallelSyncWorkers: '1',
+    blackboardSyncInterval: 'off' as const,
+    blackboardLastAutoSyncAt: null,
+    blackboardNextAutoSyncAt: null,
   },
   providerProfiles: createDefaultStoredProviderProfiles(),
   defaultModelRouting: {
@@ -154,7 +160,7 @@ export function normalizeSettingsWorkspaceStateValues(input: unknown): SettingsW
   const normalizedMcp = normalizeMcpState(record.mcp, defaults.mcp)
 
   return {
-    sustech: normalizeBooleanStringGroup(record.sustech, defaults.sustech),
+    sustech: normalizeSustechState(record.sustech, defaults.sustech),
     providerProfiles,
     defaultModelRouting: normalizeStoredDefaultModelRouting(record.defaultModelRouting, providerProfiles),
     general: normalizeBooleanStringGroup(record.general, defaults.general),
@@ -189,6 +195,71 @@ export function projectSettingsWorkspaceEditableState(
     docs: clonedValues.docs,
     externalSource: clonedValues.externalSource,
   }
+}
+
+function normalizeSustechState(
+  input: unknown,
+  defaults: SettingsWorkspaceStateValues['sustech'],
+): SettingsWorkspaceStateValues['sustech'] {
+  const record = asRecord(input)
+
+  return {
+    studentId: normalizeNonEmptyString(record.studentId, defaults.studentId),
+    email: normalizeNonEmptyString(record.email, defaults.email),
+    blackboardCurrentTermOnly: typeof record.blackboardCurrentTermOnly === 'boolean'
+      ? record.blackboardCurrentTermOnly
+      : defaults.blackboardCurrentTermOnly,
+    blackboardParallelSyncWorkers: normalizeBlackboardParallelSyncWorkers(
+      record.blackboardParallelSyncWorkers,
+      defaults.blackboardParallelSyncWorkers,
+    ),
+    blackboardSyncInterval: normalizeBlackboardSyncInterval(
+      record.blackboardSyncInterval,
+      defaults.blackboardSyncInterval,
+    ),
+    blackboardLastAutoSyncAt: normalizeNullableString(record.blackboardLastAutoSyncAt, defaults.blackboardLastAutoSyncAt),
+    blackboardNextAutoSyncAt: normalizeNullableString(record.blackboardNextAutoSyncAt, defaults.blackboardNextAutoSyncAt),
+  }
+}
+
+function normalizeBlackboardParallelSyncWorkers(
+  input: unknown,
+  fallback: SettingsWorkspaceStateValues['sustech']['blackboardParallelSyncWorkers'],
+): SettingsWorkspaceStateValues['sustech']['blackboardParallelSyncWorkers'] {
+  const normalized = normalizeNonEmptyString(input, '')
+  if (!/^\d+$/.test(normalized)) {
+    return fallback
+  }
+
+  const parsed = Number.parseInt(normalized, 10)
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 6) {
+    return fallback
+  }
+
+  return String(parsed)
+}
+
+function normalizeBlackboardSyncInterval(
+  input: unknown,
+  fallback: SettingsWorkspaceStateValues['sustech']['blackboardSyncInterval'],
+): SettingsWorkspaceStateValues['sustech']['blackboardSyncInterval'] {
+  const normalized = normalizeNonEmptyString(input, '')
+  switch (normalized) {
+    case 'off':
+    case 'two_hours':
+    case 'daily':
+      return normalized
+    default:
+      return fallback
+  }
+}
+
+function normalizeNullableString(input: unknown, fallback: string | null): string | null {
+  if (typeof input !== 'string') {
+    return fallback
+  }
+  const normalized = input.trim()
+  return normalized === '' ? null : normalized
 }
 
 function cloneSettingsWorkspaceStateValues(values: SettingsWorkspaceStateValues): SettingsWorkspaceStateValues {

@@ -77,6 +77,7 @@ import type {
   RenameEntryRequest,
   RevealEntryInFolderRequest,
   SaveLastRootDirectoryRequest,
+  SelectRootDirectoryRequest,
   SelectDirectoryResult,
   TrashEntriesRequest,
   UnwatchDirectoriesRequest,
@@ -143,7 +144,7 @@ export interface RendererIpcHandlers {
   toggleMaximizeDesktopWindow: () => Promise<DesktopWindowState>
   closeDesktopWindow: () => Promise<void>
   notifyBootstrapWindowReady: () => Promise<void>
-  selectRootDirectory: () => Promise<SelectDirectoryResult>
+  selectRootDirectory: (request?: SelectRootDirectoryRequest) => Promise<SelectDirectoryResult>
   listDirectory: (request: ListDirectoryRequest) => Promise<ListDirectoryResult>
   probeDirectory: (request: ProbeDirectoryRequest) => Promise<ProbeDirectoryResult>
   createDirectory: (request: CreateDirectoryRequest) => Promise<FileOperationResult>

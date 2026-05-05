@@ -19,6 +19,7 @@ const fsMocks = vi.hoisted(() => ({
 
 const electronMocks = vi.hoisted(() => ({
   openPath: vi.fn(),
+  openExternal: vi.fn(),
   showItemInFolder: vi.fn(),
   writeText: vi.fn(),
   showOpenDialog: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('node:fs', () => fsMocks)
 vi.mock('electron', () => ({
   shell: {
     openPath: electronMocks.openPath,
+    openExternal: electronMocks.openExternal,
     showItemInFolder: electronMocks.showItemInFolder,
   },
   clipboard: {
@@ -339,6 +341,41 @@ describe('selectRootDirectory', () => {
     expect(electronMocks.showOpenDialog).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({ ok: true, rootPath })
   })
+
+  it('passes normalized defaultPath when an initial path is provided', async () => {
+    const rootPath = path.normalize('/test/root')
+    const initialPath = path.normalize('/test/initial')
+    electronMocks.showOpenDialog.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: [rootPath],
+    })
+    fsMocks.existsSync.mockImplementation((p: string) => {
+      const normalized = path.normalize(p)
+      return normalized === rootPath || normalized === initialPath
+    })
+    fsMocks.statSync.mockImplementation((p: string) => {
+      const normalized = path.normalize(p)
+      if (normalized === rootPath || normalized === initialPath) {
+        return {
+          isDirectory: () => true,
+          isFile: () => false,
+          size: 0,
+          mtime: new Date('2026-01-01T00:00:00.000Z'),
+        }
+      }
+      throw new Error(`Unexpected stat path: ${normalized}`)
+    })
+    fsMocks.readdirSync.mockReturnValue([])
+
+    const result = await service.selectRootDirectory({ initialPath })
+
+    expect(electronMocks.showOpenDialog).toHaveBeenCalledWith({
+      properties: ['openDirectory'],
+      title: '选择文件夹',
+      defaultPath: initialPath,
+    })
+    expect(result).toMatchObject({ ok: true, rootPath })
+  })
 })
 
 describe('copyEntries and moveEntries', () => {
@@ -565,6 +602,16 @@ describe('openEntryWithSystem', () => {
     const normalizedPath = path.normalize('/test/file.txt')
     expect(result).toEqual({ ok: true, affectedPaths: [normalizedPath] })
     expect(electronMocks.openPath).toHaveBeenCalledWith(normalizedPath)
+  })
+
+  it('opens http urls with the system browser', async () => {
+    electronMocks.openExternal.mockResolvedValue(undefined)
+
+    const result = await service.openEntryWithSystem({ path: 'https://bb.example/announcement/1' })
+
+    expect(result).toEqual({ ok: true, affectedPaths: ['https://bb.example/announcement/1'] })
+    expect(electronMocks.openExternal).toHaveBeenCalledWith('https://bb.example/announcement/1')
+    expect(fsMocks.existsSync).not.toHaveBeenCalled()
   })
 
   it('returns not_found when path does not exist', async () => {

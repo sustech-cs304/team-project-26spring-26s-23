@@ -222,7 +222,7 @@ describe('SettingsWorkspace persistence', () => {
           sustech: {
             studentId: '12210001',
             email: '12210001@sustech.edu.cn',
-            blackboardDownloadLimitMb: '128',
+            blackboardCurrentTermOnly: true,
           },
         }),
       },
@@ -237,6 +237,9 @@ describe('SettingsWorkspace persistence', () => {
     const studentIdInput = rendered.getByPlaceholder('输入学号') as HTMLInputElement
     expect(studentIdInput.value).toBe('12210001')
     expect(rendered.container.textContent).toContain('CAS 密码')
+    expect(rendered.container.textContent).toContain('仅抓取本学期课程（推荐）')
+    expect(rendered.container.textContent).not.toContain('自动下载 Blackboard 文件')
+    expect(rendered.container.textContent).not.toContain('下载文件大小限制')
 
     await setFormControlValue(studentIdInput, '12219999')
     await act(async () => {
@@ -246,6 +249,7 @@ describe('SettingsWorkspace persistence', () => {
     const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
     expect(lastSaveCall?.sustech.studentId).toBe('12219999')
     expect(lastSaveCall?.sustech.email).toBe('12210001@sustech.edu.cn')
+    expect(lastSaveCall?.sustech.blackboardCurrentTermOnly).toBe(true)
 
     rendered.unmount()
   })
