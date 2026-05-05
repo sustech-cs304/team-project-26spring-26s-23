@@ -73,6 +73,16 @@ function createIpcMainStub() {
   }
 }
 
+async function waitForCondition(check: () => boolean, attempts = 20) {
+  for (let index = 0; index < attempts; index += 1) {
+    if (check()) {
+      return
+    }
+    await Promise.resolve()
+  }
+  throw new Error('Condition was not met within the allotted attempts.')
+}
+
 describe('createElectronSustechBlackboardService', () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -120,6 +130,46 @@ describe('createElectronSustechBlackboardService', () => {
     expect(result.ok).toBe(true)
     expect(result.state.status).toBe('running')
     expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    service.dispose()
+  })
+
+  it('clears stale lastSyncError when a new sync starts running', async () => {
+    vi.useFakeTimers()
+
+    const settings = createSettingsState()
+    const ipcMain = createIpcMainStub()
+    const fetchMock = vi.fn<typeof fetch>()
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'boom' }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, status: 'running' }) } as Response)
+      .mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/api/blackboard/sync/status')) {
+          return {
+            ok: true,
+            json: async () => ({ status: 'running' }),
+          } as Response
+        }
+        throw new Error(`unexpected fetch ${url}`)
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const service = createElectronSustechBlackboardService({
+      getRuntimeBaseUrl: () => 'http://127.0.0.1:8000',
+      getLiveWindows: () => [],
+      loadSettings: async () => settings,
+      saveSettings: async () => {},
+    })
+    service.registerIpcHandlers(ipcMain)
+
+    await ipcMain.invoke(SUSTECH_BLACKBOARD_TRIGGER_SYNC_CHANNEL)
+    await waitForCondition(() => service.getSyncState().lastSyncError === 'boom')
+    expect(service.getSyncState().lastSyncError).toBe('boom')
+
+    await ipcMain.invoke(SUSTECH_BLACKBOARD_TRIGGER_SYNC_CHANNEL)
+    expect(service.getSyncState().status).toBe('running')
+    expect(service.getSyncState().lastSyncError).toBeNull()
 
     service.dispose()
   })

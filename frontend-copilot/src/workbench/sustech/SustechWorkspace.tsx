@@ -61,6 +61,15 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch(`${runtimeBaseUrl}/api/blackboard/sync/status`)
+      if (!res.ok) {
+        const message = `HTTP ${res.status}`
+        setSyncState((prev) => ({
+          ...prev,
+          lastSyncError: message,
+          progressLogs: [...prev.progressLogs, message],
+        }))
+        return
+      }
       const data = await res.json()
       setSyncState((prev) => {
         const status = data.status ?? prev.status
@@ -76,7 +85,14 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
           timeoutSeconds: data.timeoutSeconds ?? prev.timeoutSeconds,
         }
       })
-    } catch { /* backend not ready */ }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setSyncState((prev) => ({
+        ...prev,
+        lastSyncError: message,
+        progressLogs: [...prev.progressLogs, message],
+      }))
+    }
   }, [runtimeBaseUrl])
 
   useEffect(() => {

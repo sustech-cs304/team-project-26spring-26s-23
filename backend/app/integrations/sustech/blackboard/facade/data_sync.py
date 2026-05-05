@@ -385,8 +385,11 @@ class BlackboardSnapshotSyncTool(tools._BlackboardFacadeToolBase):
             db_path = tools._resolve_db_path(normalized_arguments, host)
 
             def _progress_callback(message: str) -> None:
-                progress_messages.append(message)
-                loop.call_soon_threadsafe(_schedule_status_persist, "running")
+                def _record_progress() -> None:
+                    progress_messages.append(message)
+                    _schedule_status_persist("running")
+
+                loop.call_soon_threadsafe(_record_progress)
 
             report = await asyncio.to_thread(
                 tools.run_blackboard_snapshot_sync,

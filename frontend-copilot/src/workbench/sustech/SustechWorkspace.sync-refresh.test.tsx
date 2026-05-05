@@ -12,8 +12,13 @@ vi.mock('./BlackboardDataBrowser', () => ({
 }))
 
 vi.mock('./BlackboardSyncPanel', () => ({
-  BlackboardSyncPanel: ({ syncState }: { syncState: { status: string } }) => {
-    return <div data-testid="blackboard-sync-state">{syncState.status}</div>
+  BlackboardSyncPanel: ({ syncState }: { syncState: { status: string; lastSyncError?: string | null } }) => {
+    return (
+      <>
+        <div data-testid="blackboard-sync-state">{syncState.status}</div>
+        <div data-testid="blackboard-sync-error">{syncState.lastSyncError ?? ''}</div>
+      </>
+    )
   },
 }))
 
@@ -303,6 +308,28 @@ describe('SustechWorkspace sync refresh', () => {
           blackboardSyncInterval: 'daily',
         }),
       }))
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('surfaces a concise error when sync status polling returns a non-2xx response', async () => {
+    const fetchMock = vi.fn<(input: string | URL, init?: RequestInit) => Promise<Response>>()
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.endsWith('/api/blackboard/sync/status')) {
+        return new Response('server boom', { status: 500, statusText: 'Internal Server Error' })
+      }
+      throw new Error(`Unhandled fetch URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const rendered = renderWithRoot(
+      <SustechWorkspace bootstrap={{ state: { runtimeUrl: 'http://localhost' } } as never} language="zh-CN" />,
+    )
+
+    try {
+      await waitForCondition(() => rendered.getByTestId('blackboard-sync-error').textContent === 'HTTP 500')
     } finally {
       rendered.unmount()
     }

@@ -239,6 +239,7 @@ export function createElectronSustechBlackboardService(
 
     updateSyncState({
       status: 'running',
+      lastSyncError: null,
       progressStage: 'authenticating',
       progressMessage: '开始同步...',
     })
