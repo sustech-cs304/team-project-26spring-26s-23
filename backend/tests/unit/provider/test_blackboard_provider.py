@@ -215,7 +215,7 @@ def test_build_blackboard_sync_payloads_and_expected_counts() -> None:
     )
 
 
-def test_build_blackboard_sync_payloads_merges_same_title_assignments() -> None:
+def test_build_blackboard_sync_payloads_merges_same_assignment_id_assignments() -> None:
     courses = [
         CourseDTO(
             course_id="_course_1",
@@ -225,7 +225,7 @@ def test_build_blackboard_sync_payloads_merges_same_title_assignments() -> None:
     assignments_by_course = {
         "_course_1": [
             AssignmentDTO(
-                assignment_id="asg_fragment",
+                assignment_id="asg_homework_1",
                 course_id="_course_1",
                 title="Homework 1",
                 url="https://bb.example/list#contentListItem:_1",
@@ -239,7 +239,7 @@ def test_build_blackboard_sync_payloads_merges_same_title_assignments() -> None:
                 ],
             ),
             AssignmentDTO(
-                assignment_id="asg_detail",
+                assignment_id="asg_homework_1",
                 course_id="_course_1",
                 title="Homework 1",
                 due_date="2026-03-10 23:59",
@@ -258,12 +258,53 @@ def test_build_blackboard_sync_payloads_merges_same_title_assignments() -> None:
         [],
     )
 
-    _assert_equal(len(payloads.assignment_payloads["_course_1"]), 1, "same-title assignments should be merged into one payload row")
+    _assert_equal(len(payloads.assignment_payloads["_course_1"]), 1, "same-assignment-id rows should be merged into one payload row")
     merged = payloads.assignment_payloads["_course_1"][0]
     _assert_equal(merged["title"], "Homework 1", "merged row keeps exact title")
     _assert_equal(merged["description_html"], "<p>Read the <strong>instructions</strong></p>", "merged row keeps richer html")
     _assert_equal(merged["submission_status"], "Submitted", "merged row keeps richer submission status")
     _assert_equal(len(merged["attachments"]), 1, "merged row keeps attachments from duplicate sibling")
+
+
+def test_build_blackboard_sync_payloads_keeps_distinct_same_title_assignments() -> None:
+    courses = [
+        CourseDTO(
+            course_id="_course_1",
+            name="CS305 Database Systems",
+        )
+    ]
+    assignments_by_course = {
+        "_course_1": [
+            AssignmentDTO(
+                assignment_id="asg_week_3",
+                course_id="_course_1",
+                title="Homework 1",
+                due_date="2026-03-10 23:59",
+                url="https://bb.example/asg/1",
+            ),
+            AssignmentDTO(
+                assignment_id="asg_week_5",
+                course_id="_course_1",
+                title="Homework 1",
+                due_date="2026-03-24 23:59",
+                url="https://bb.example/asg/2",
+            ),
+        ]
+    }
+
+    payloads = build_blackboard_sync_payloads(
+        courses,
+        assignments_by_course,
+        {},
+        {},
+        [],
+    )
+
+    _assert_equal(
+        len(payloads.assignment_payloads["_course_1"]),
+        2,
+        "same-title assignments with different assignment_id should remain distinct",
+    )
 
 
 def test_rebuild_announcement_assignment_links_backfills_existing_database_rows(

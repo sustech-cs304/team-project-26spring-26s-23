@@ -80,6 +80,7 @@ export interface ElectronSustechBlackboardServiceOptions {
   getRuntimeBaseUrl: () => string
   getLiveWindows: () => BrowserWindow[]
   loadSettings: () => Promise<SettingsWorkspaceStateSaveInput | null>
+  saveSettings?: (input: SettingsWorkspaceStateSaveInput) => Promise<void>
 }
 
 export interface ElectronSustechBlackboardService {
@@ -96,6 +97,7 @@ export function createElectronSustechBlackboardService(
   let syncState: BlackboardSyncState = { ...DEFAULT_BLACKBOARD_SYNC_STATE }
   let scheduler: BlackboardScheduler | null = null
   let disposed = false
+  let initializationPromise: Promise<void> | null = null
 
   function broadcastState() {
     const state = { ...syncState }
@@ -117,6 +119,59 @@ export function createElectronSustechBlackboardService(
 
   let pollAbortController: AbortController | null = null
 
+  function intervalMs(interval: BlackboardSyncInterval): number | null {
+    switch (interval) {
+      case 'two_hours':
+        return 2 * 60 * 60 * 1000
+      case 'daily':
+        return 24 * 60 * 60 * 1000
+      default:
+        return null
+    }
+  }
+
+  function resolveNextSyncAt(
+    interval: BlackboardSyncInterval,
+    referenceTime: string | null,
+  ): string | null {
+    const delayMs = intervalMs(interval)
+    if (delayMs === null || referenceTime === null) {
+      return null
+    }
+    const referenceTimestamp = Date.parse(referenceTime)
+    if (!Number.isFinite(referenceTimestamp)) {
+      return null
+    }
+    return new Date(referenceTimestamp + delayMs).toISOString()
+  }
+
+  async function persistAutoSyncTimestamps(patch: {
+    blackboardLastAutoSyncAt?: string | null
+    blackboardNextAutoSyncAt?: string | null
+  }): Promise<void> {
+    if (options.saveSettings === undefined) {
+      return
+    }
+
+    const settings = await options.loadSettings()
+    if (settings === null) {
+      return
+    }
+
+    await options.saveSettings({
+      ...settings,
+      sustech: {
+        ...settings.sustech,
+        ...(Object.prototype.hasOwnProperty.call(patch, 'blackboardLastAutoSyncAt')
+          ? { blackboardLastAutoSyncAt: patch.blackboardLastAutoSyncAt ?? null }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(patch, 'blackboardNextAutoSyncAt')
+          ? { blackboardNextAutoSyncAt: patch.blackboardNextAutoSyncAt ?? null }
+          : {}),
+      },
+    })
+  }
+
   async function loadInitialState() {
     const settings = await options.loadSettings()
     if (settings && !disposed) {
@@ -126,17 +181,32 @@ export function createElectronSustechBlackboardService(
         lastSyncAt: settings.sustech.blackboardLastAutoSyncAt ?? null,
         nextSyncAt: settings.sustech.blackboardNextAutoSyncAt ?? null,
       })
-      applySchedulerInterval(interval)
+      applySchedulerInterval(interval, {
+        referenceTime: settings.sustech.blackboardLastAutoSyncAt ?? null,
+        preservedNextSyncAt: settings.sustech.blackboardNextAutoSyncAt ?? null,
+        persist: false,
+      })
     }
   }
 
-  function applySchedulerInterval(interval: BlackboardSyncInterval) {
+  function applySchedulerInterval(
+    interval: BlackboardSyncInterval,
+    schedulerOptions: {
+      referenceTime?: string | null
+      preservedNextSyncAt?: string | null
+      persist?: boolean
+    } = {},
+  ) {
     if (scheduler !== null) {
       scheduler.stop()
       scheduler = null
     }
 
     if (interval === 'off') {
+      updateSyncState({ nextSyncAt: schedulerOptions.preservedNextSyncAt ?? null })
+      if (schedulerOptions.persist === true) {
+        void persistAutoSyncTimestamps({ blackboardNextAutoSyncAt: null })
+      }
       return
     }
 
@@ -151,6 +221,15 @@ export function createElectronSustechBlackboardService(
       },
     })
     scheduler.start()
+
+    const nextSyncAt = resolveNextSyncAt(
+      interval,
+      schedulerOptions.referenceTime ?? new Date().toISOString(),
+    )
+    updateSyncState({ nextSyncAt })
+    if (schedulerOptions.persist === true) {
+      void persistAutoSyncTimestamps({ blackboardNextAutoSyncAt: nextSyncAt })
+    }
   }
 
   async function executeSync(parallelWorkers = 1, currentTermOnly = false) {
@@ -237,12 +316,19 @@ export function createElectronSustechBlackboardService(
         }
 
         if (backendStatus === 'completed') {
+          const completedAt = status.lastSyncAt ?? new Date().toISOString()
+          const nextSyncAt = resolveNextSyncAt(syncState.syncInterval, completedAt)
           updateSyncState({
             status: 'completed',
-            lastSyncAt: status.lastSyncAt ?? new Date().toISOString(),
+            lastSyncAt: completedAt,
+            nextSyncAt,
             lastSyncError: null,
             progressStage: null,
             progressMessage: null,
+          })
+          await persistAutoSyncTimestamps({
+            blackboardLastAutoSyncAt: completedAt,
+            blackboardNextAutoSyncAt: nextSyncAt,
           })
           return
         }
@@ -264,28 +350,34 @@ export function createElectronSustechBlackboardService(
   const service: ElectronSustechBlackboardService = {
     registerIpcHandlers(ipcMain: IpcMainLike) {
       ipcMain.handle(SUSTECH_BLACKBOARD_GET_STATUS_CHANNEL, async (): Promise<BlackboardSyncStatusResult> => {
+        await initializationPromise
         return { ok: true, state: { ...syncState } }
       })
 
       ipcMain.handle(SUSTECH_BLACKBOARD_TRIGGER_SYNC_CHANNEL, async (): Promise<BlackboardSyncTriggerResult> => {
+        await initializationPromise
         if (syncState.status === 'running') {
           return { ok: true, state: { ...syncState } }
         }
         const settings = await options.loadSettings()
         const parallelWorkers = normalizeParallelWorkers(settings?.sustech.blackboardParallelSyncWorkers, 1)
         const currentTermOnly = settings?.sustech.blackboardCurrentTermOnly === true
-        await executeSync(parallelWorkers, currentTermOnly)
+        void executeSync(parallelWorkers, currentTermOnly)
         return { ok: true, state: { ...syncState } }
       })
 
       ipcMain.handle(SUSTECH_BLACKBOARD_UPDATE_SETTINGS_CHANNEL, async (_event: unknown, interval: string): Promise<BlackboardSyncSettingsUpdateResult> => {
+        await initializationPromise
         const validIntervals: BlackboardSyncInterval[] = ['off', 'two_hours', 'daily']
         const normalizedInterval: BlackboardSyncInterval = validIntervals.includes(interval as BlackboardSyncInterval)
           ? (interval as BlackboardSyncInterval)
           : 'off'
 
         updateSyncState({ syncInterval: normalizedInterval })
-        applySchedulerInterval(normalizedInterval)
+        applySchedulerInterval(normalizedInterval, {
+          referenceTime: syncState.lastSyncAt,
+          persist: true,
+        })
         return { ok: true, state: { ...syncState } }
       })
     },
@@ -304,10 +396,21 @@ export function createElectronSustechBlackboardService(
       if (disposed) {
         return
       }
+      const previousInterval = syncState.syncInterval
       const interval = settings.sustech.blackboardSyncInterval
-      if (interval !== syncState.syncInterval) {
-        updateSyncState({ syncInterval: interval })
-        applySchedulerInterval(interval)
+      const nextSyncAt = settings.sustech.blackboardNextAutoSyncAt
+        ?? resolveNextSyncAt(interval, settings.sustech.blackboardLastAutoSyncAt ?? null)
+      updateSyncState({
+        syncInterval: interval,
+        lastSyncAt: settings.sustech.blackboardLastAutoSyncAt ?? syncState.lastSyncAt,
+        nextSyncAt,
+      })
+      if (interval !== previousInterval) {
+        applySchedulerInterval(interval, {
+          referenceTime: settings.sustech.blackboardLastAutoSyncAt ?? null,
+          preservedNextSyncAt: settings.sustech.blackboardNextAutoSyncAt ?? null,
+          persist: false,
+        })
       }
     },
 
@@ -324,7 +427,7 @@ export function createElectronSustechBlackboardService(
     },
   }
 
-  void loadInitialState()
+  initializationPromise = loadInitialState()
 
   return service
 }

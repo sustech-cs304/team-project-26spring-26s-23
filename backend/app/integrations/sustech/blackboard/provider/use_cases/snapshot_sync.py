@@ -355,14 +355,17 @@ def _build_assignment_payloads(
                 }
             )
 
-        merged_by_title: dict[str, dict[str, Any]] = {}
+        merged_by_assignment_id: dict[str, dict[str, Any]] = {}
+        passthrough_rows: list[dict[str, Any]] = []
         for row in payload:
-            title_key = str(row.get("title") or "").strip()
-            if not title_key:
+            assignment_id_key = str(row.get("assignment_id") or "").strip()
+            if not assignment_id_key:
+                passthrough_rows.append(dict(row))
                 continue
-            existing = merged_by_title.get(title_key)
+
+            existing = merged_by_assignment_id.get(assignment_id_key)
             if existing is None:
-                merged_by_title[title_key] = dict(row)
+                merged_by_assignment_id[assignment_id_key] = dict(row)
                 continue
 
             preferred = (
@@ -401,9 +404,12 @@ def _build_assignment_payloads(
                 preferred.get("pk1_candidates"),
                 fallback.get("pk1_candidates"),
             )
-            merged_by_title[title_key] = merged_row
+            merged_by_assignment_id[assignment_id_key] = merged_row
 
-        assignment_payloads[course_id] = list(merged_by_title.values())
+        assignment_payloads[course_id] = [
+            *merged_by_assignment_id.values(),
+            *passthrough_rows,
+        ]
     return assignment_payloads
 
 

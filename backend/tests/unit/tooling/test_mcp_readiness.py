@@ -300,16 +300,14 @@ def test_legacy_sustech_root_packages_are_not_valid_import_targets() -> None:
     blackboard_spec = importlib.util.find_spec("app.blackboard")
     tis_spec = importlib.util.find_spec("app.teaching_information_system")
 
-    assert blackboard_spec is not None
-    assert tis_spec is not None
-    assert blackboard_spec.origin is None
-    assert tis_spec.origin is None
+    assert blackboard_spec is None or blackboard_spec.origin is None
+    assert tis_spec is None or tis_spec.origin is None
 
-    blackboard = importlib.import_module("app.blackboard")
-    tis = importlib.import_module("app.teaching_information_system")
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.blackboard")
 
-    assert not hasattr(blackboard, "get_blackboard_tool_contracts")
-    assert not hasattr(tis, "get_tis_tool_contracts")
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.teaching_information_system")
 
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("app.blackboard.facade")
