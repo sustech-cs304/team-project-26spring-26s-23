@@ -1094,8 +1094,8 @@ const workspaceMetaByLanguage: Record<WorkbenchLanguage, Record<WorkspaceView, {
       loadingDescription: '正在加载 SUSTech 页面…',
     },
     developer: {
-      label: '开发',
-      loadingDescription: '正在加载开发页面…',
+      label: '日历',
+      loadingDescription: '正在加载日历页面…',
     },
   },
   'en-US': {
@@ -1120,8 +1120,8 @@ const workspaceMetaByLanguage: Record<WorkbenchLanguage, Record<WorkspaceView, {
       loadingDescription: 'Loading SUSTech page…',
     },
     developer: {
-      label: 'Developer',
-      loadingDescription: 'Loading developer page…',
+      label: 'Calendar',
+      loadingDescription: 'Loading calendar page…',
     },
   },
 }
@@ -1129,29 +1129,41 @@ const workspaceMetaByLanguage: Record<WorkbenchLanguage, Record<WorkspaceView, {
 const hubWorkspaceContentByLanguage: Record<WorkbenchLanguage, Record<HubWorkspaceView, HubWorkspaceContent>> = {
   'zh-CN': {
     developer: {
-      eyebrow: '开发工作台',
-      title: '开发任务与联调面板',
-      panelTitle: '开发活动',
-      spotlightTitle: '代码实现与验证流程',
-      highlights: ['任务队列', '构建与测试反馈', '提交与发布记录'],
+      eyebrow: '日历工作台',
+      title: '统一日历与时间轴',
+      panelTitle: '事件源筛选',
+      spotlightTitle: '统一事件视图',
+      highlights: ['全部', 'bb', '课程', '自定义'],
       entries: [
-        { id: 'dev-tasks', title: '实现任务看板' },
-        { id: 'dev-builds', title: '构建与验证' },
-        { id: 'dev-history', title: '变更历史' },
+        { id: 'calendar-all', title: '全部' },
+        { id: 'calendar-bb', title: 'bb' },
+        { id: 'calendar-course', title: '课程' },
+        { id: 'calendar-custom', title: '自定义' },
+      ],
+      sections: [
+        { id: 'calendar-timeline', title: '时间轴视图' },
+        { id: 'calendar-list', title: '列表视图' },
+        { id: 'calendar-summary', title: '事件概览' },
       ],
     },
   },
   'en-US': {
     developer: {
-      eyebrow: 'Developer',
-      title: 'Development Tasks and Integration Panel',
-      panelTitle: 'Development Activity',
-      spotlightTitle: 'Code Delivery and Validation Flow',
-      highlights: ['Task queue', 'Build and validation feedback', 'Commit and release history'],
+      eyebrow: 'Calendar Workspace',
+      title: 'Unified Calendar and Timeline',
+      panelTitle: 'Source Filters',
+      spotlightTitle: 'Unified Event View',
+      highlights: ['All', 'bb', 'Courses', 'Custom'],
       entries: [
-        { id: 'dev-tasks', title: 'Implementation Board' },
-        { id: 'dev-builds', title: 'Builds and Validation' },
-        { id: 'dev-history', title: 'Change History' },
+        { id: 'calendar-all', title: 'All' },
+        { id: 'calendar-bb', title: 'bb' },
+        { id: 'calendar-course', title: 'Courses' },
+        { id: 'calendar-custom', title: 'Custom' },
+      ],
+      sections: [
+        { id: 'calendar-timeline', title: 'Timeline View' },
+        { id: 'calendar-list', title: 'List View' },
+        { id: 'calendar-summary', title: 'Event Summary' },
       ],
     },
   },

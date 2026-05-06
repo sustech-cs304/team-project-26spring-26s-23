@@ -54,6 +54,12 @@ export function HubWorkspace({ view, language = 'zh-CN' }: HubWorkspaceProps) {
                 <h3 className="hub-card__title">{entry.title}</h3>
               </section>
             ))}
+
+            {content.sections.map((section) => (
+              <section key={section.id} className="hub-card">
+                <h3 className="hub-card__title">{section.title}</h3>
+              </section>
+            ))}
           </div>
         </section>
       </main>
