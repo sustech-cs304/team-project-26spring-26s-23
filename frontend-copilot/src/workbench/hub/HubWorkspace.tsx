@@ -1,13 +1,60 @@
+import { useEffect, useState, useMemo } from 'react'
+import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { getHubWorkspaceContent, type WorkbenchLanguage } from '../locale'
 import type { HubWorkspaceView } from '../types'
+
+interface UnifiedCalendarEvent {
+  id: string | number
+  source: string
+  source_id: string | null
+  title: string
+  description: string | null
+  start_time: string
+  end_time: string
+  is_all_day: boolean
+  location: string | null
+  status: string
+}
+
+function resolveRuntimeBaseUrl(state?: CopilotBootstrapController['state']): string {
+  if (state && 'runtimeUrl' in state && state.runtimeUrl) {
+    return state.runtimeUrl
+  }
+  return 'http://127.0.0.1:8765'
+}
 
 interface HubWorkspaceProps {
   view: HubWorkspaceView
   language?: WorkbenchLanguage
+  bootstrap?: CopilotBootstrapController
 }
 
-export function HubWorkspace({ view, language = 'zh-CN' }: HubWorkspaceProps) {
+export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspaceProps) {
   const content = getHubWorkspaceContent(language, view)
+  const runtimeBaseUrl = useMemo(() => resolveRuntimeBaseUrl(bootstrap?.state), [bootstrap?.state])
+  const [events, setEvents] = useState<UnifiedCalendarEvent[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchEvents() {
+      setIsLoading(true)
+      setError(null)
+      try {
+        const response = await fetch(`${runtimeBaseUrl}/calendar/events`)
+        if (!response.ok) {
+          throw new Error('Failed to fetch events')
+        }
+        const data = await response.json()
+        setEvents(data)
+      } catch (err: any) {
+        setError(err.message)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchEvents()
+  }, [runtimeBaseUrl])
 
   return (
     <section className="workspace-stage hub-workspace" aria-label={`${content.title}工作区`}>
@@ -60,6 +107,29 @@ export function HubWorkspace({ view, language = 'zh-CN' }: HubWorkspaceProps) {
                 <h3 className="hub-card__title">{section.title}</h3>
               </section>
             ))}
+
+            <section className="hub-card">
+              <h3 className="hub-card__title">Upcoming Events</h3>
+              {isLoading ? (
+                <p>Loading events...</p>
+              ) : error ? (
+                <p style={{ color: 'red' }}>Error: {error}</p>
+              ) : events.length === 0 ? (
+                <p>No events found.</p>
+              ) : (
+                <ul style={{ paddingLeft: '1rem', marginTop: '1rem' }}>
+                  {events.map((evt) => (
+                    <li key={evt.id} style={{ marginBottom: '0.5rem' }}>
+                      <strong>{evt.title}</strong>
+                      <div style={{ fontSize: '0.85em', color: 'var(--vscode-descriptionForeground)' }}>
+                        {new Date(evt.start_time).toLocaleString()} - {evt.source.toUpperCase()}
+                        {evt.location && ` • ${evt.location}`}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </div>
         </section>
       </main>
