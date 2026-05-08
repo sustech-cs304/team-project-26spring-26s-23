@@ -1,6 +1,6 @@
 import {
   Brain,
-  Code2,
+  CalendarDays,
   Database,
   FileText,
   FolderOpen,
@@ -35,7 +35,7 @@ export const railPrimaryItems: RailItem[] = [
   { id: 'capabilities', label: '能力', icon: Sparkles },
   { id: 'files', label: '文件', icon: FolderOpen },
   { id: 'sustech', label: 'SUSTech', icon: School },
-  { id: 'developer', label: '开发', icon: Code2 },
+  { id: 'developer', label: '日历', icon: CalendarDays },
 ]
 
 export const railSecondaryItems: RailItem[] = [{ id: 'settings', label: '设置', icon: Settings }]
@@ -185,15 +185,21 @@ export const settingsItems: SettingsNavItem[] = [
 
 export const hubWorkspaceContent: Record<HubWorkspaceView, HubWorkspaceContent> = {
   developer: {
-    eyebrow: '开发工作台',
-    title: '开发任务与联调面板',
-    panelTitle: '开发活动',
-    spotlightTitle: '代码实现与验证流程',
-    highlights: ['任务队列', '构建与测试反馈', '提交与发布记录'],
+    eyebrow: '日历工作台',
+    title: '统一日历与时间轴',
+    panelTitle: '事件源筛选',
+    spotlightTitle: '统一事件视图',
+    highlights: ['全部', 'bb', '课程', '自定义'],
     entries: [
-      { id: 'dev-tasks', title: '实现任务看板' },
-      { id: 'dev-builds', title: '构建与验证' },
-      { id: 'dev-history', title: '变更历史' },
+      { id: 'calendar-all', title: '全部' },
+      { id: 'calendar-bb', title: 'bb' },
+      { id: 'calendar-course', title: '课程' },
+      { id: 'calendar-custom', title: '自定义' },
+    ],
+    sections: [
+      { id: 'calendar-timeline', title: '时间轴视图' },
+      { id: 'calendar-list', title: '列表视图' },
+      { id: 'calendar-summary', title: '事件概览' },
     ],
   },
 }

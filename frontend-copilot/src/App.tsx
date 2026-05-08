@@ -447,7 +447,7 @@ function renderWorkspace(
   }
 
   if (isHubWorkspaceView(view)) {
-    return <HubWorkspace view={view} language={workbenchLanguage} />
+    return <HubWorkspace view={view} language={workbenchLanguage} bootstrap={bootstrap} />
   }
 
   return null

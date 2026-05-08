@@ -171,6 +171,7 @@ export function getHubWorkspaceContent(language: string, view: HubWorkspaceView)
     spotlightTitle: content.spotlightTitle,
     highlights: [...content.highlights],
     entries: content.entries.map((entry) => ({ ...entry })),
+    sections: content.sections.map((entry) => ({ ...entry })),
   }
 }
 

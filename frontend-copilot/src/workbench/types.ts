@@ -234,6 +234,7 @@ export interface HubWorkspaceContent {
   spotlightTitle: string
   highlights: string[]
   entries: HubEntry[]
+  sections: HubEntry[]
 }
 
 export interface ProviderProfile {
