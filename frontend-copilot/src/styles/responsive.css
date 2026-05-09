@@ -28,10 +28,36 @@
 }
 
 @media (max-width: 900px) {
+  .copilot-chat {
+    --copilot-chat-readable-width: 100%;
+    --copilot-chat-compact-width: 100%;
+    --copilot-chat-side-gutter: 1rem;
+  }
+
+  .copilot-chat__stream {
+    gap: 1.05rem;
+    padding-inline: var(--copilot-chat-side-gutter);
+  }
+
+  .copilot-chat__message-text--markdown {
+    font-size: 1.04rem;
+    line-height: 1.72;
+  }
+
+  .copilot-chat__message--user .copilot-chat__message-text {
+    max-width: min(100%, 42rem);
+  }
+
+  .copilot-chat__composer {
+    width: 100%;
+    padding-inline: var(--copilot-chat-side-gutter);
+  }
+
   .workbench-shell {
     grid-template-columns: 1fr;
-    height: auto;
-    min-height: 100vh;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
   }
 
   .workbench-rail {
@@ -50,13 +76,13 @@
   .settings-workspace,
   .hub-workspace {
     grid-template-columns: 1fr;
-    height: auto;
-    min-height: auto;
+    height: 100%;
+    min-height: 0;
   }
 
   .workspace-stage {
-    height: auto;
-    min-height: calc(100vh - 60px);
+    height: 100%;
+    min-height: 0;
   }
 
   .workspace-panel {
@@ -118,6 +144,33 @@
 }
 
 @media (max-width: 640px) {
+  .copilot-chat {
+    --copilot-chat-side-gutter: 0.8rem;
+  }
+
+  .copilot-chat__stream {
+    gap: 0.95rem;
+    padding-block-start: 0.2rem;
+  }
+
+  .copilot-chat__message--reasoning,
+  .copilot-chat__message--tool,
+  .copilot-chat__message--inline-form,
+  .copilot-chat__message--diagnostic,
+  .copilot-chat__message--terminal,
+  .copilot-chat__message--error {
+    border-radius: var(--radius-md);
+  }
+
+  .copilot-chat__message-text--markdown {
+    gap: 0.75rem;
+    font-size: 1rem;
+  }
+
+  .copilot-chat__composer {
+    padding-inline: var(--copilot-chat-side-gutter);
+  }
+
   .workspace-panel,
   .workspace-main,
   .settings-page,

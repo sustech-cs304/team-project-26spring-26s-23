@@ -15,9 +15,9 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 def build_calendar_router() -> APIRouter:
-    router = APIRouter(tags=["Calendar"])
+    router = APIRouter(prefix="/calendar", tags=["calendar"])
 
-    @router.get("/calendar/events")
+    @router.get("/events")
     def list_calendar_events(request: Request) -> dict[str, list[dict[str, Any]]]:
         # TODO: Replace with real database queries once the persistence layer is ready.
         # This is mock data for the frontend to start developing the UI.

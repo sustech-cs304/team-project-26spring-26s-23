@@ -97,6 +97,9 @@ class BlackboardSyncPayloads:
     resource_payloads: dict[str, list[dict[str, Any]]]
     grade_payloads: dict[str, list[dict[str, Any]]]
     announcements_payload: list[dict[str, Any]]
+    announcement_assignment_link_payloads: list[dict[str, Any]] = dataclass_field(
+        default_factory=list
+    )
 
 
 @dataclass(slots=True)

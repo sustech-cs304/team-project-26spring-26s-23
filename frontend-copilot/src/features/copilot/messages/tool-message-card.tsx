@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react'
+import { AlertTriangle, CircleSlash, Wrench } from 'lucide-react'
 
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import { CONTROLLED_INLINE_FORM_TOOL_ID } from '../inline-form'
@@ -101,6 +102,7 @@ export function ToolMessageCard({
                 }}
               >
                 <span className="copilot-chat__tool-toggle-main">
+                  {renderToolStepIcon(turn)}
                   <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▾</span>
                   <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
                 </span>
@@ -129,6 +131,7 @@ export function ToolMessageCard({
                 }}
               >
                 <span className="copilot-chat__tool-toggle-main">
+                  {renderToolStepIcon(turn)}
                   <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▸</span>
                   <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
                 </span>
@@ -185,7 +188,7 @@ export function ToolMessageCard({
                         setInputExpanded((current) => !current)
                       }}
                     >
-                      <span className="copilot-chat__tool-toggle-main">
+                      <span className="copilot-chat__tool-toggle-main copilot-chat__tool-toggle-main--nested">
                         <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▾</span>
                         <span className="copilot-chat__tool-section-label">输入</span>
                       </span>
@@ -203,7 +206,7 @@ export function ToolMessageCard({
                         setInputExpanded((current) => !current)
                       }}
                     >
-                      <span className="copilot-chat__tool-toggle-main">
+                      <span className="copilot-chat__tool-toggle-main copilot-chat__tool-toggle-main--nested">
                         <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▸</span>
                         <span className="copilot-chat__tool-section-label">输入</span>
                       </span>
@@ -230,20 +233,40 @@ export function ToolMessageCard({
   )
 }
 
+function renderToolStepIcon(turn: CopilotToolMessageItem) {
+  const failed = turn.status === 'failed' || turn.toolPhase === 'failed'
+  const cancelled = turn.status === 'cancelled' || turn.toolPhase === 'cancelled'
+  const Icon = failed ? AlertTriangle : cancelled ? CircleSlash : Wrench
+  const iconClassName = failed
+    ? 'copilot-chat__step-icon--error'
+    : cancelled
+      ? 'copilot-chat__step-icon--cancelled'
+      : 'copilot-chat__step-icon--tool'
+
+  return (
+    <span
+      className={`copilot-chat__step-icon ${iconClassName}`}
+      aria-hidden="true"
+    >
+      <Icon size={14} strokeWidth={2.2} />
+    </span>
+  )
+}
+
 function ToolContentSection({
   label,
   value,
   kind,
   testIdPrefix,
 }: {
-  label: string
+  label: string | null
   value: string
   kind: 'input' | 'result' | 'error'
   testIdPrefix: string
 }) {
   return (
     <section className={[`copilot-chat__tool-section`, `copilot-chat__tool-section--${kind}`].join(' ')}>
-      <p className="copilot-chat__tool-section-label">{label}</p>
+      {label !== null && <p className="copilot-chat__tool-section-label">{label}</p>}
       <ToolStructuredContent value={value} kind={kind} testIdPrefix={testIdPrefix} />
     </section>
   )
@@ -309,13 +332,14 @@ function ToolStructuredContent({
         ].join(' ')}
         data-testid={`${testIdPrefix}-json`}
         data-json-viewer={JsonViewComponent === null ? 'fallback' : 'react18-json-view'}
+        data-json-collapsed="true"
       >
         {JsonViewComponent === null
           ? <ToolJsonFallback value={structuredValue.value} />
           : (
               <JsonViewComponent
                 src={structuredValue.value}
-                collapsed={false}
+                collapsed={true}
                 displaySize="collapsed"
                 enableClipboard={false}
                 theme="vscode"
@@ -339,12 +363,12 @@ function ToolStructuredContent({
 }
 
 function buildToolContentSections(turn: CopilotToolMessageItem): Array<{
-  label: string
+  label: string | null
   value: string
   kind: 'result' | 'error'
 }> {
   const sections: Array<{
-    label: string
+    label: string | null
     value: string
     kind: 'result' | 'error'
   }> = [{
@@ -352,14 +376,6 @@ function buildToolContentSections(turn: CopilotToolMessageItem): Array<{
     value: turn.content,
     kind: turn.status === 'failed' ? 'error' : 'result',
   }]
-
-  if (hasDistinctNonEmptyValue(turn.resultSummary, turn.content)) {
-    sections.push({
-      label: '结果摘要',
-      value: turn.resultSummary,
-      kind: 'result',
-    })
-  }
 
   if (hasDistinctNonEmptyValue(turn.errorSummary, turn.content)) {
     sections.push({
@@ -372,7 +388,7 @@ function buildToolContentSections(turn: CopilotToolMessageItem): Array<{
   return sections
 }
 
-function resolveToolPrimarySectionLabel(turn: CopilotToolMessageItem): string {
+function resolveToolPrimarySectionLabel(turn: CopilotToolMessageItem): string | null {
   switch (turn.status) {
     case 'streaming':
       return '当前状态'
@@ -381,7 +397,7 @@ function resolveToolPrimarySectionLabel(turn: CopilotToolMessageItem): string {
     case 'cancelled':
       return '当前状态'
     case 'completed':
-      return '返回内容'
+      return null
   }
 }
 
@@ -613,9 +629,12 @@ function parseStructuredToolValue(value: string):
 
 function ToolJsonFallback({ value }: { value: unknown }) {
   return (
-    <pre className="copilot-chat__tool-plain-text copilot-chat__tool-plain-text--json-fallback">
-      {JSON.stringify(value, null, 2)}
-    </pre>
+    <details className="copilot-chat__tool-json-fallback">
+      <summary className="copilot-chat__tool-json-fallback-summary">JSON 内容</summary>
+      <pre className="copilot-chat__tool-plain-text copilot-chat__tool-plain-text--json-fallback">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    </details>
   )
 }
 

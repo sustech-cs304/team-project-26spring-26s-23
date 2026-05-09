@@ -547,6 +547,49 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
+  it('does not restart restored thread capability hydration when detail loading starts concurrently', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const historyFixture = createPersistedHistoryFixture()
+    const pendingCapabilities = createDeferred<ReturnType<typeof createCapabilitiesResponse>>()
+    const pendingDetail = createDeferred<typeof historyFixture.detail>()
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true,
+      version: 'chat-history-v1',
+      threads: [historyFixture.summary],
+    })
+    const getCapabilities = vi.fn().mockImplementation(() => pendingCapabilities.promise)
+    const getHistoryThreadDetail = vi.fn().mockImplementation(() => pendingDetail.promise)
+    const getHistoryRunReplay = vi.fn().mockResolvedValue(historyFixture.replay)
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listHistoryThreads={listHistoryThreads}
+        getCapabilities={getCapabilities}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getCapabilities.mock.calls.length >= 1
+      && getHistoryThreadDetail.mock.calls.length >= 1
+    ))
+    await flushAssistantWorkspaceEffects()
+
+    expect(getCapabilities).toHaveBeenCalledTimes(1)
+    expect(getLastMockCopilotChatPanelProps().sessionHistory).toMatchObject({
+      detailStatus: 'loading',
+      capabilitiesStatus: 'loading',
+    })
+
+    rendered.unmount()
+  })
+
   it('creates history state for a new live session and refreshes persisted detail after run settlement', async () => {
     mockCopilotChatPanel.mockClear()
 
@@ -1340,6 +1383,125 @@ describe('AssistantWorkspace render + interactions', () => {
         && controllerRecord[protectedFixture.summary.threadId] === undefined
         && controllerRecord[evictableFixture.summary.threadId] !== undefined
     }, 24)
+
+    rendered.unmount()
+  })
+
+  it('renders keepalive wrapper with layout class on the active panel and hides inactive panels accessibly', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const fixtures = createLruPersistedHistoryFixtures()
+    if (fixtures.length < 2) {
+      throw new Error('Expected at least 2 LRU fixtures for keepalive wrapper test.')
+    }
+
+    const { rendered } = await renderAssistantWorkspaceWithHydratedLruFixtures(fixtures)
+
+    const keepaliveWrappers = rendered.container.querySelectorAll('[data-keepalive-panel]')
+    expect(keepaliveWrappers.length).toBeGreaterThanOrEqual(1)
+
+    const activeWrappers: Element[] = []
+    const hiddenWrappers: Element[] = []
+
+    for (const wrapper of keepaliveWrappers) {
+      if (wrapper.hasAttribute('hidden')) {
+        hiddenWrappers.push(wrapper)
+      } else {
+        activeWrappers.push(wrapper)
+      }
+    }
+
+    expect(activeWrappers.length).toBe(1)
+    expect(hiddenWrappers.length).toBeGreaterThanOrEqual(1)
+
+    const activeWrapper = activeWrappers[0]!
+    expect(activeWrapper.classList.contains('workspace-chat-keepalive-panel')).toBe(true)
+    expect(activeWrapper.hasAttribute('hidden')).toBe(false)
+    expect(activeWrapper.getAttribute('data-keepalive-panel')).toBeTruthy()
+    expect(activeWrapper.querySelector('[data-testid="mock-copilot-chat-panel"]')).not.toBeNull()
+
+    for (const hiddenWrapper of hiddenWrappers) {
+      expect(hiddenWrapper.classList.contains('workspace-chat-keepalive-panel')).toBe(true)
+      expect(hiddenWrapper.hasAttribute('hidden')).toBe(true)
+      expect(hiddenWrapper.getAttribute('aria-hidden')).toBe('true')
+      expect(hiddenWrapper.getAttribute('data-keepalive-panel')).toBeTruthy()
+    }
+
+    rendered.unmount()
+  })
+
+  it('keeps the previous visited panel visible and locked while an unvisited restored thread loads', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const firstFixture = createPersistedHistoryFixture()
+    const secondFixture = createMultiRunPersistedHistoryFixture()
+    const pendingSecondDetail = createDeferred<typeof secondFixture.detail>()
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: [firstFixture.summary, secondFixture.summary],
+    })
+    const getCapabilities = vi.fn().mockImplementation(async ({ sessionId }: { sessionId: string }) => createCapabilitiesResponse({
+      sessionId,
+      capabilitiesVersion: `cap-${sessionId}`,
+    }))
+    const getHistoryThreadDetail = vi.fn().mockImplementation((threadId: string) => (
+      threadId === secondFixture.summary.threadId ? pendingSecondDetail.promise : Promise.resolve(firstFixture.detail)
+    ))
+    const getHistoryRunReplay = vi.fn().mockImplementation(async (runId: string) => {
+      if (runId === firstFixture.replay.run.runId) {
+        return firstFixture.replay
+      }
+
+      return secondFixture.replaysByRunId[runId as keyof typeof secondFixture.replaysByRunId]
+    })
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listHistoryThreads={listHistoryThreads}
+        getCapabilities={getCapabilities}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === firstFixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+    ))
+
+    await clickElement(rendered.getByTestId(`assistant-session-card-${secondFixture.summary.threadId}`))
+    await waitForAssistantWorkspaceCondition(() => (
+      getHistoryThreadDetail.mock.calls.some(([threadId]) => threadId === secondFixture.summary.threadId)
+    ))
+    await flushAssistantWorkspaceEffects()
+
+    const retainedPanel = rendered.container.querySelector(`[data-keepalive-panel="${firstFixture.summary.threadId}"]`)
+    const pendingPanel = rendered.container.querySelector(`[data-keepalive-panel="${secondFixture.summary.threadId}"]`)
+    expect(retainedPanel).not.toBeNull()
+    expect(retainedPanel?.hasAttribute('hidden')).toBe(false)
+    expect(retainedPanel?.getAttribute('aria-hidden')).toBe('false')
+    expect(retainedPanel?.getAttribute('data-session-switch-retained')).toBe('true')
+    expect(retainedPanel?.hasAttribute('inert')).toBe(true)
+    expect(pendingPanel === null || pendingPanel.hasAttribute('hidden')).toBe(true)
+
+    pendingSecondDetail.resolve(secondFixture.detail)
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === secondFixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+    ))
+
+    const readyPanel = rendered.container.querySelector(`[data-keepalive-panel="${secondFixture.summary.threadId}"]`)
+    expect(readyPanel).not.toBeNull()
+    expect(readyPanel?.hasAttribute('hidden')).toBe(false)
+    expect(readyPanel?.getAttribute('aria-hidden')).toBe('false')
+    expect(readyPanel?.hasAttribute('inert')).toBe(false)
+    expect(retainedPanel?.hasAttribute('hidden')).toBe(true)
+    expect(retainedPanel?.getAttribute('data-session-switch-retained')).toBeNull()
 
     rendered.unmount()
   })
@@ -2595,6 +2757,225 @@ function createMultiRunPersistedHistoryFixture() {
   }
 }
 
+  it('keeps recently visited chat panels alive in the DOM with hidden inactive panels when switching sessions', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const selectedAgent = directoryState.agents[0]
+    if (!selectedAgent) {
+      throw new Error('Expected seeded agent directory.')
+    }
+
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const createSession = vi.fn()
+      .mockResolvedValueOnce(createSessionResponse({ threadId: 'session-a', createdAt: '2026-04-14T08:00:00Z', updatedAt: '2026-04-14T08:00:00Z' }))
+      .mockResolvedValueOnce(createSessionResponse({ threadId: 'session-b', createdAt: '2026-04-14T08:01:00Z', updatedAt: '2026-04-14T08:01:00Z' }))
+      .mockResolvedValueOnce(createSessionResponse({ threadId: 'session-c', createdAt: '2026-04-14T08:02:00Z', updatedAt: '2026-04-14T08:02:00Z' }))
+    const getCapabilities = vi.fn().mockImplementation(async ({ sessionId }: { sessionId: string }) => createCapabilitiesResponse({ sessionId }))
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        createSession={createSession}
+        getCapabilities={getCapabilities}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'session-a'
+    ))
+
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'session-b'
+    ))
+
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'session-c'
+    ))
+
+    const panelA = rendered.container.querySelector('[data-keepalive-panel="session-a"]')
+    const panelB = rendered.container.querySelector('[data-keepalive-panel="session-b"]')
+    const panelC = rendered.container.querySelector('[data-keepalive-panel="session-c"]')
+
+    expect(panelA).not.toBeNull()
+    expect(panelB).not.toBeNull()
+    expect(panelC).not.toBeNull()
+
+    expect(panelA?.hasAttribute('hidden')).toBe(true)
+    expect(panelA?.getAttribute('aria-hidden')).toBe('true')
+    expect(panelB?.hasAttribute('hidden')).toBe(true)
+    expect(panelB?.getAttribute('aria-hidden')).toBe('true')
+    expect(panelC?.hasAttribute('hidden')).toBe(false)
+    expect(panelC?.getAttribute('aria-hidden')).toBe('false')
+
+    await clickElement(rendered.getByTestId('assistant-session-card-session-a'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'session-a'
+    ))
+
+    const panelAAfterSwitch = rendered.container.querySelector('[data-keepalive-panel="session-a"]')
+    const panelCAfterSwitch = rendered.container.querySelector('[data-keepalive-panel="session-c"]')
+
+    expect(panelAAfterSwitch?.hasAttribute('hidden')).toBe(false)
+    expect(panelAAfterSwitch?.getAttribute('aria-hidden')).toBe('false')
+    expect(panelCAfterSwitch?.hasAttribute('hidden')).toBe(true)
+    expect(panelCAfterSwitch?.getAttribute('aria-hidden')).toBe('true')
+
+    rendered.unmount()
+  })
+
+  it('evicts the least-recently-used chat panel from DOM when keep-alive capacity (10) is exceeded', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const PANEL_CAPACITY = 10
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const selectedAgent = directoryState.agents[0]
+    if (!selectedAgent) {
+      throw new Error('Expected seeded agent directory.')
+    }
+
+    const sessionIds = Array.from({ length: PANEL_CAPACITY + 2 }, (_, i) => `keepalive-session-${i + 1}`)
+    const createSession = vi.fn()
+    for (const sessionId of sessionIds) {
+      createSession.mockResolvedValueOnce(createSessionResponse({
+        threadId: sessionId,
+        createdAt: `2026-04-14T08:${String(sessionIds.indexOf(sessionId)).padStart(2, '0')}:00Z`,
+        updatedAt: `2026-04-14T08:${String(sessionIds.indexOf(sessionId)).padStart(2, '0')}:00Z`,
+      }))
+    }
+    const getCapabilities = vi.fn().mockImplementation(async ({ sessionId }: { sessionId: string }) => createCapabilitiesResponse({ sessionId }))
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        createSession={createSession}
+        getCapabilities={getCapabilities}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    for (const sessionId of sessionIds) {
+      await clickElement(rendered.getByTestId('assistant-create-session-button'))
+      await waitForAssistantWorkspaceCondition(() => (
+        getLastMockCopilotChatPanelProps().sessionShell?.sessionId === sessionId
+      ))
+    }
+
+    const keepAlivePanels = rendered.container.querySelectorAll('[data-keepalive-panel]')
+    expect(keepAlivePanels.length).toBe(PANEL_CAPACITY)
+
+    const firstSessionId = sessionIds[0]
+    expect(rendered.container.querySelector(`[data-keepalive-panel="${firstSessionId}"]`)).toBeNull()
+
+    const lastSessionIds = sessionIds.slice(-PANEL_CAPACITY)
+    for (const sessionId of lastSessionIds) {
+      expect(rendered.container.querySelector(`[data-keepalive-panel="${sessionId}"]`)).not.toBeNull()
+    }
+
+    const secondSessionId = sessionIds[1]
+    expect(rendered.container.querySelector(`[data-keepalive-panel="${secondSessionId}"]`)).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('preserves inactive panel props with correct sessionShell and sessionHistory after switching away', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const historyFixture = createPersistedHistoryFixture()
+    const secondFixture = {
+      ...createPersistedHistoryFixture(),
+      summary: {
+        ...createPersistedHistoryFixture().summary,
+        threadId: 'thread-2',
+        title: '第二个历史线程',
+      },
+      detail: {
+        ...createPersistedHistoryFixture().detail,
+        thread: {
+          ...createPersistedHistoryFixture().detail.thread,
+          threadId: 'thread-2',
+          title: '第二个历史线程',
+        },
+      },
+    }
+    secondFixture.replay = {
+      ...secondFixture.replay,
+      run: {
+        ...secondFixture.replay.run,
+        threadId: 'thread-2',
+      },
+    }
+
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: [historyFixture.summary, secondFixture.summary],
+    })
+    const getHistoryThreadDetail = vi.fn().mockImplementation(async (threadId: string) => (
+      threadId === 'thread-2' ? secondFixture.detail : historyFixture.detail
+    ))
+    const getHistoryRunReplay = vi.fn().mockImplementation(async (runId: string) => {
+      if (runId === secondFixture.replay.run.runId) {
+        return secondFixture.replay
+      }
+      return historyFixture.replay
+    })
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-1'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+    ))
+
+    await clickElement(rendered.getByTestId('assistant-session-card-thread-2'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-2'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+    ))
+
+    const panel1 = rendered.container.querySelector('[data-keepalive-panel="thread-1"]')
+    expect(panel1).not.toBeNull()
+    expect(panel1?.hasAttribute('hidden')).toBe(true)
+    expect(panel1?.getAttribute('aria-hidden')).toBe('true')
+
+    const inactivePanelProps = findLast(
+      mockCopilotChatPanel.mock.calls,
+      ([props]) => (props as Record<string, unknown>).selectSessionHistoryRun === undefined
+        && (props as Record<string, unknown>).sessionShell !== null
+        && ((props as Record<string, unknown>).sessionShell as { sessionId?: string })?.sessionId === 'thread-1',
+    )
+    expect(inactivePanelProps).toBeDefined()
+    const inactiveProps = inactivePanelProps![0] as Record<string, unknown>
+    expect(inactiveProps.sessionShell).toBeDefined()
+    expect((inactiveProps.sessionShell as { sessionId?: string }).sessionId).toBe('thread-1')
+    expect(inactiveProps.sessionHistory).toBeDefined()
+    expect((inactiveProps.sessionHistory as { detailStatus?: string }).detailStatus).toBe('ready')
+
+    rendered.unmount()
+  })
+
 type MockRuntimeControllerRecord = Record<string, {
   composerDraft?: {
     messageText?: string
@@ -2808,7 +3189,14 @@ function getLastMockCopilotChatPanelProps(): {
     value: MockRuntimeControllerRecord | ((current: MockRuntimeControllerRecord) => MockRuntimeControllerRecord)
   ) => void
 } {
-  const props = mockCopilotChatPanel.mock.calls[mockCopilotChatPanel.mock.calls.length - 1]?.[0]
+  const activeCall = findLast(
+    mockCopilotChatPanel.mock.calls,
+    ([props]) => typeof (props as Record<string, unknown>).selectSessionHistoryRun === 'function',
+  )
+  const props = activeCall !== undefined
+    ? activeCall[0]
+    : mockCopilotChatPanel.mock.calls[mockCopilotChatPanel.mock.calls.length - 1]?.[0]
+
   if (props === undefined) {
     throw new Error('Expected CopilotChatPanel to receive props.')
   }
@@ -2835,6 +3223,16 @@ function getLastMockCopilotChatPanelProps(): {
       value: MockRuntimeControllerRecord | ((current: MockRuntimeControllerRecord) => MockRuntimeControllerRecord)
     ) => void
   }
+}
+
+function findLast<T>(array: readonly T[], predicate: (item: T) => boolean): T | undefined {
+  for (let index = array.length - 1; index >= 0; index -= 1) {
+    const item = array[index]
+    if (item !== undefined && predicate(item)) {
+      return item
+    }
+  }
+  return undefined
 }
 
 function readPersistedAssistantWorkspaceShellState(): {

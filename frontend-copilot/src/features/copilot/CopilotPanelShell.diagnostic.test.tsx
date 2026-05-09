@@ -216,23 +216,23 @@ describe('CopilotPanelShell diagnostic visibility', () => {
       modelGroups: createHistoryLoadingGateModelGroups(),
     }))
 
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('旧话题回答')
+    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).toBeNull()
+    expect(queryActiveByTestId(rendered.container, 'chat-message-scroll-region')?.textContent).toContain('旧话题回答')
 
     await act(async () => {
       vi.advanceTimersByTime(299)
     })
 
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('旧话题回答')
+    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).toBeNull()
+    expect(queryActiveByTestId(rendered.container, 'chat-message-scroll-region')?.textContent).toContain('旧话题回答')
 
     await act(async () => {
       vi.advanceTimersByTime(1)
     })
 
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-message-scroll-region')).toBeNull()
-    expect(rendered.container.textContent).not.toContain('旧话题回答')
+    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).not.toBeNull()
+    expect(queryActiveByTestId(rendered.container, 'chat-message-scroll-region')).toBeNull()
+    expect(readActiveTextContent(rendered.container)).not.toContain('旧话题回答')
     rendered.unmount()
   })
 
@@ -253,7 +253,7 @@ describe('CopilotPanelShell diagnostic visibility', () => {
       vi.advanceTimersByTime(300)
     })
 
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).not.toBeNull()
 
     rendered.rerender(buildHistoryLoadingGateShell({
       sessionId: 'thread-2',
@@ -273,7 +273,7 @@ describe('CopilotPanelShell diagnostic visibility', () => {
       vi.advanceTimersByTime(1)
     })
 
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).toBeNull()
     rendered.unmount()
   })
 
@@ -294,26 +294,26 @@ describe('CopilotPanelShell diagnostic visibility', () => {
       vi.advanceTimersByTime(300)
     })
 
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).not.toBeNull()
 
     rendered.rerender(buildHistoryLoadingGateShell({
       sessionId: 'thread-3',
       detailStatus: 'loading',
     }))
 
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).toBeNull()
 
     await act(async () => {
       vi.advanceTimersByTime(299)
     })
 
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).toBeNull()
 
     await act(async () => {
       vi.advanceTimersByTime(1)
     })
 
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
+    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).not.toBeNull()
     rendered.unmount()
   })
 
@@ -344,6 +344,105 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     expect(liveRendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
     expect(liveRendered.queryByTestId('chat-message-scroll-region')).not.toBeNull()
     liveRendered.unmount()
+  })
+
+  it('suppresses the persisted history skeleton when renderLoadingSkeleton is false', () => {
+    const html = renderToStaticMarkup(
+      <CopilotPanelShell
+        state={createReadyState()}
+        retrying={false}
+        onRetry={vi.fn()}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createPersistedSessionHistoryState({
+          detailStatus: 'loading',
+        })}
+        renderLoadingSkeleton={false}
+        sendError={null}
+        modelGroups={[]}
+        thinkingCapability={null}
+        composerDraft={createEmptyComposerDraft()}
+        onComposerDraftChange={vi.fn()}
+        onSend={vi.fn()}
+        onCancelCurrentRun={vi.fn()}
+        sendStatus="idle"
+        canCancelSend={false}
+        sendDisabledReason={null}
+        composerLockedReason={null}
+        historyDrift={null}
+        historyRebindAcknowledged={false}
+        onAcknowledgeHistoryRebind={vi.fn()}
+        conversation={[]}
+        assistantPlaceholder={{
+          shouldRender: false,
+          dismissReason: 'inactive',
+        }}
+        composerInputRef={createRef<HTMLTextAreaElement>()}
+        composerHeight={160}
+        onComposerResizeStart={vi.fn()}
+      />,
+    )
+
+    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
+  })
+
+  it('transitions from hidden loading to ready without a skeleton exit stage when renderLoadingSkeleton is false', async () => {
+    vi.useFakeTimers()
+    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+      sessionId: 'thread-hidden',
+      detailStatus: 'loading',
+      renderLoadingSkeleton: false,
+    }))
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+
+    rendered.rerender(buildHistoryLoadingGateShell({
+      sessionId: 'thread-hidden',
+      detailStatus: 'ready',
+      hasLoadedDetail: true,
+      conversation: createHistoryLoadingGateConversation('新话题回答'),
+      renderLoadingSkeleton: false,
+    }))
+
+    await act(async () => {
+      vi.advanceTimersByTime(160)
+    })
+
+    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('新话题回答')
+
+    rendered.unmount()
+  })
+
+  it('does not stage a hidden loading-to-ready cross-fade before a restored thread is revealed', async () => {
+    vi.useFakeTimers()
+    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+      sessionId: 'thread-hidden-stage',
+      detailStatus: 'loading',
+      renderLoadingSkeleton: false,
+    }))
+
+    rendered.rerender(buildHistoryLoadingGateShell({
+      sessionId: 'thread-hidden-stage',
+      detailStatus: 'ready',
+      hasLoadedDetail: true,
+      conversation: createHistoryLoadingGateConversation('新话题回答'),
+      renderLoadingSkeleton: false,
+    }))
+
+    await act(async () => {})
+
+    expect(rendered.container.querySelector('.cross-fade__stage--entering')).toBeNull()
+    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('新话题回答')
+
+    rendered.unmount()
   })
 
   it('prefers transient conversation content over persisted loading gating', () => {
@@ -703,6 +802,17 @@ describe('CopilotPanelShell diagnostic visibility', () => {
   })
 })
 
+function queryActiveByTestId(container: HTMLElement, testId: string): HTMLElement | null {
+  const candidates = Array.from(container.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`))
+  return candidates.find((candidate) => candidate.closest('.cross-fade__stage--exiting') === null) ?? null
+}
+
+function readActiveTextContent(container: HTMLElement): string {
+  const clone = container.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('.cross-fade__stage--exiting').forEach((element) => element.remove())
+  return clone.textContent ?? ''
+}
+
 function renderShell(debugModeEnabled: boolean): string {
   const conversation: CopilotMessageListItem[] = [
     {
@@ -950,6 +1060,7 @@ function buildHistoryLoadingGateShell(input: {
   composerDraft?: ReturnType<typeof createHistoryLoadingGateComposerDraft>
   conversation?: CopilotMessageListItem[]
   sendDisabledReason?: string | null
+  renderLoadingSkeleton?: boolean
 } = {}) {
   const sessionId = input.sessionId ?? 'thread-1'
   const detailStatus = input.detailStatus ?? 'idle'
@@ -980,6 +1091,7 @@ function buildHistoryLoadingGateShell(input: {
         hasLoadedDetail: input.hasLoadedDetail ?? (detailStatus === 'ready'),
         selectedRunId: isPersistedThread ? 'run-1' : null,
       })}
+      renderLoadingSkeleton={input.renderLoadingSkeleton}
       sendError={null}
       modelGroups={input.modelGroups ?? []}
       thinkingCapability={null}

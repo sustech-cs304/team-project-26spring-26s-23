@@ -14,6 +14,72 @@ import {
 } from './SettingsWorkspace.test-support'
 
 describe('SettingsWorkspace persistence', () => {
+  it('fades out the current settings section before fading in the next section while preserving visited state', async () => {
+    installSettingsWorkspaceBridge()
+    const rendered = renderSettingsWorkspace({
+      initialSection: 'model-service',
+    })
+
+    await flushAsyncEffects()
+
+    const providerSearchInput = rendered.container.querySelector('.search-box__input') as HTMLInputElement
+    await setFormControlValue(providerSearchInput, 'Router')
+    expect(providerSearchInput.value).toBe('Router')
+
+    vi.useFakeTimers()
+    try {
+      const generalNavButton = Array.from(rendered.container.querySelectorAll<HTMLButtonElement>('.settings-nav-item')).find((button) => {
+        return button.textContent?.includes('常规设置')
+      })
+      if (!(generalNavButton instanceof HTMLButtonElement)) {
+        throw new Error('Missing general settings nav button')
+      }
+
+      await clickElement(generalNavButton)
+
+      const providerSection = rendered.container.querySelector('[data-settings-section="model-service"]') as HTMLElement
+      const generalSection = rendered.container.querySelector('[data-settings-section="general"]') as HTMLElement
+      expect(providerSection.className).toContain('settings-section-keepalive-panel--exiting')
+      expect(providerSection.hidden).toBe(false)
+      expect(providerSection.getAttribute('aria-hidden')).toBe('true')
+      expect(generalSection.hidden).toBe(true)
+
+      await act(async () => {
+        vi.advanceTimersByTime(120)
+        await Promise.resolve()
+      })
+
+      expect(providerSection.hidden).toBe(true)
+      expect((providerSection.querySelector('.search-box__input') as HTMLInputElement).value).toBe('Router')
+      expect(generalSection.hidden).toBe(false)
+      expect(generalSection.className).toContain('settings-section-keepalive-panel--active')
+
+      const modelServiceNavButton = Array.from(rendered.container.querySelectorAll<HTMLButtonElement>('.settings-nav-item')).find((button) => {
+        return button.textContent?.includes('模型服务')
+      })
+      if (!(modelServiceNavButton instanceof HTMLButtonElement)) {
+        throw new Error('Missing model service settings nav button')
+      }
+
+      await clickElement(modelServiceNavButton)
+      expect(generalSection.className).toContain('settings-section-keepalive-panel--exiting')
+      expect(providerSection.hidden).toBe(true)
+
+      await act(async () => {
+        vi.advanceTimersByTime(120)
+        await Promise.resolve()
+      })
+
+      const activeProviderSection = rendered.container.querySelector('[data-settings-section="model-service"]') as HTMLElement
+      expect(activeProviderSection.hidden).toBe(false)
+      expect(activeProviderSection.className).toContain('settings-section-keepalive-panel--active')
+      expect((activeProviderSection.querySelector('.search-box__input') as HTMLInputElement).value).toBe('Router')
+    } finally {
+      rendered.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('loads persisted provider metadata and saves normal provider edits without serializing secrets', async () => {
     vi.useFakeTimers()
 
@@ -156,7 +222,7 @@ describe('SettingsWorkspace persistence', () => {
           sustech: {
             studentId: '12210001',
             email: '12210001@sustech.edu.cn',
-            blackboardDownloadLimitMb: '128',
+            blackboardCurrentTermOnly: true,
           },
         }),
       },
@@ -171,6 +237,9 @@ describe('SettingsWorkspace persistence', () => {
     const studentIdInput = rendered.getByPlaceholder('输入学号') as HTMLInputElement
     expect(studentIdInput.value).toBe('12210001')
     expect(rendered.container.textContent).toContain('CAS 密码')
+    expect(rendered.container.textContent).toContain('仅抓取本学期课程（推荐）')
+    expect(rendered.container.textContent).not.toContain('自动下载 Blackboard 文件')
+    expect(rendered.container.textContent).not.toContain('下载文件大小限制')
 
     await setFormControlValue(studentIdInput, '12219999')
     await act(async () => {
@@ -180,6 +249,7 @@ describe('SettingsWorkspace persistence', () => {
     const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
     expect(lastSaveCall?.sustech.studentId).toBe('12219999')
     expect(lastSaveCall?.sustech.email).toBe('12210001@sustech.edu.cn')
+    expect(lastSaveCall?.sustech.blackboardCurrentTermOnly).toBe(true)
 
     rendered.unmount()
   })

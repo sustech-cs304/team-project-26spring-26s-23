@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 
 import { notifyBootstrapScreenReady, waitForNextPaint } from './bootstrap-window'
 import { BootstrapScreen, BOOTSTRAP_PREPARING_MESSAGE } from './components/BootstrapScreen'
+import { DesktopChrome } from './components/DesktopChrome'
 import { primeStartupTheme } from './startup-theme'
 
 const rootElement = document.getElementById('root')
@@ -65,18 +66,28 @@ function scheduleBootstrapWindowReadyNotification() {
 }
 
 async function bootstrapRenderer() {
-  logStartupTrace('startup-theme:prime:start')
-  const themeMode = await primeStartupTheme()
-  logStartupTrace('startup-theme:prime:resolved', { themeMode })
-
   getRoot().render(
     <StrictMode>
-      <BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />
+      <DesktopChrome>
+        <BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />
+      </DesktopChrome>
     </StrictMode>,
   )
 
   logStartupTrace('react-root-loading:rendered')
   scheduleBootstrapWindowReadyNotification()
+  logStartupTrace('startup-theme:prime:start')
+
+  void primeStartupTheme()
+    .then((themeMode) => {
+      logStartupTrace('startup-theme:prime:resolved', { themeMode })
+    })
+    .catch((error: unknown) => {
+      logStartupTrace('startup-theme:prime:failed', {
+        error: formatBootstrapError(error),
+      })
+    })
+
   logStartupTrace('copilot-root-import:start')
 
   void import('./CopilotAppRoot')
@@ -98,18 +109,20 @@ async function bootstrapRenderer() {
       })
 
       getRoot().render(
-        <BootstrapScreen
-          title="桌面界面启动失败"
-          description="Renderer 根装配层入口加载失败。当前保留可解释失败态，避免重新退化为纯白。"
-          tone="error"
-          details={<pre className="startup-shell__pre">{formatBootstrapError(error)}</pre>}
-          actions={[
-            {
-              label: '重新加载页面',
-              onClick: () => window.location.reload(),
-            },
-          ]}
-        />,
+        <DesktopChrome>
+          <BootstrapScreen
+            title="应用启动失败"
+            description="应用入口加载失败，请刷新页面重试。如果问题持续出现，请联系技术支持。"
+            tone="error"
+            details={<pre className="startup-shell__pre">{formatBootstrapError(error)}</pre>}
+            actions={[
+              {
+                label: '重新加载页面',
+                onClick: () => window.location.reload(),
+              },
+            ]}
+          />
+        </DesktopChrome>,
       )
     })
 }

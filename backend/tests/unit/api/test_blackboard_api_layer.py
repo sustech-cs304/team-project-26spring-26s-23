@@ -106,6 +106,21 @@ def test_blackboard_course_api_parses_ajax_module_to_dto() -> None:
     _assert_equal(courses[1].course_id, "_200_1", "api second course_id")
 
 
+def test_blackboard_course_parser_identifies_current_term() -> None:
+    parser = BlackboardCourseParser()
+
+    _assert_equal(
+        parser.is_current_term(parser.current_term_label()),
+        True,
+        "parser should recognize current term label",
+    )
+    _assert_equal(
+        parser.is_current_term("Fall 1999"),
+        False,
+        "parser should reject non-current term label",
+    )
+
+
 def test_blackboard_course_catalog_api_returns_dto_with_pagination() -> None:
     page1_html = """
     <html><body>
