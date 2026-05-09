@@ -430,6 +430,13 @@ describe('createSettingsWorkspaceStorage', () => {
         baseUrl: 'https://resolved.example.com/v1',
         modelId: 'gpt-4.1',
         authKind: 'api-key',
+        capabilityHints: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          reasoning: true,
+          search: false,
+        },
       }
       const expectedPrivateAuth = {
         authKind: 'api-key',
@@ -773,6 +780,13 @@ describe('createSettingsWorkspaceStorage', () => {
           baseUrl: 'http://127.0.0.1:11434/v1',
           modelId: 'llama3.2',
           authKind: 'none',
+          capabilityHints: {
+            streaming: true,
+            tools: true,
+            vision: true,
+            reasoning: true,
+            search: false,
+          },
         },
         privateAuth: {
           authKind: 'none',

@@ -66,6 +66,10 @@ def test_host_model_route_bridge_client_resolves_provider_route_successfully() -
                     "baseUrl": "https://api.example.com/v1",
                     "modelId": "gpt-4.1",
                     "authKind": "api-key",
+                    "capabilityHints": {
+                        "tools": True,
+                        "vision": True,
+                    },
                 },
                 "privateAuth": {
                     "authKind": "api-key",
@@ -104,9 +108,14 @@ def test_host_model_route_bridge_client_resolves_provider_route_successfully() -
     assert resolved.model_id == "gpt-4.1"
     assert resolved.auth_kind == "api-key"
     assert resolved.api_key == "resolved-secret"
+    assert resolved.capability_hints == {"tools": True, "vision": True}
     assert resolved.route_ref is not None
     assert resolved.route_ref.profile_id == "provider-1"
     assert resolved.route_ref.model_id == "gpt-4.1"
+    assert resolved.to_resolved_route_dict()["capabilityHints"] == {
+        "tools": True,
+        "vision": True,
+    }
     assert captured_headers == ["bridge-token-123"]
     assert captured_bodies == [
         {

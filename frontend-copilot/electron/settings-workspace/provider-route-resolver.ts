@@ -3,6 +3,7 @@ import {
   getProviderCatalogRevision,
   normalizeProviderCatalogIdentifier,
   type ProviderAuthKind,
+  type ProviderCatalogCapabilityHints,
   type ProviderRuntimeStatus,
 } from '../../src/provider-catalog'
 import type { ProviderProfile } from '../../src/workbench/types'
@@ -51,6 +52,7 @@ export interface SettingsWorkspaceResolvedProviderRoute {
   baseUrl: string
   modelId: string
   authKind: ProviderAuthKind
+  capabilityHints: ProviderCatalogCapabilityHints
 }
 
 export interface SettingsWorkspaceResolvedProviderRoutePrivateAuth {
@@ -286,6 +288,7 @@ export function resolveSettingsWorkspaceProviderRoute(
     baseUrl: normalizedBaseUrl,
     modelId: normalizedModelId,
     authKind,
+    capabilityHints: { ...providerCatalogEntry.capabilityHints },
   }
 
   return {
