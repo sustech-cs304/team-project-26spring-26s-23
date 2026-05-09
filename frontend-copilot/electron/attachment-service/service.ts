@@ -69,6 +69,7 @@ const IMAGE_EXTENSION_TO_MIME = new Map<string, string>([
   ['.jpeg', 'image/jpeg'],
   ['.gif', 'image/gif'],
   ['.webp', 'image/webp'],
+  ['.svg', 'image/svg+xml'],
   ['.bmp', 'image/bmp'],
   ['.ico', 'image/x-icon'],
 ])
@@ -221,6 +222,21 @@ function createNotFoundError(filePath: string): AttachmentServiceError {
   return createAttachmentServiceError('not_found', `附件不存在: ${filePath}`)
 }
 
+function readFilePrefix(filePath: string, byteLength: number): Buffer {
+  if (byteLength <= 0) {
+    return Buffer.alloc(0)
+  }
+
+  const fd = fs.openSync(filePath, 'r')
+  try {
+    const buffer = Buffer.alloc(byteLength)
+    const bytesRead = fs.readSync(fd, buffer, 0, byteLength, 0)
+    return buffer.subarray(0, bytesRead)
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
 export function createElectronAttachmentService(
   options: ElectronAttachmentServiceOptions = {},
 ): Omit<ElectronAttachmentService, 'resolveFilePath'> {
@@ -328,29 +344,33 @@ export function createElectronAttachmentService(
           return createAttachmentServiceError('unsupported', `当前仅支持预览文件附件: ${previewPath}`)
         }
 
-        const buffer = fs.readFileSync(previewPath)
-        const imageMimeType = detectImageMimeType(buffer, previewPath)
         const name = path.basename(previewPath)
+        const extension = path.extname(previewPath).toLowerCase()
+        const maxBytes = clampTextPreviewMaxBytes(request.maxTextBytes)
 
-        if (imageMimeType !== null) {
-          const image = nativeImage.createFromBuffer(buffer)
-          const size = image.getSize()
-          return {
-            ok: true,
-            kind: 'image',
-            path: previewPath,
-            name,
-            size: stats.size,
-            mimeType: imageMimeType,
-            dataUrl: `data:${imageMimeType};base64,${buffer.toString('base64')}`,
-            width: size.width,
-            height: size.height,
+        if (IMAGE_EXTENSION_TO_MIME.has(extension)) {
+          const buffer = fs.readFileSync(previewPath)
+          const imageMimeType = detectImageMimeType(buffer, previewPath)
+
+          if (imageMimeType !== null) {
+            const image = nativeImage.createFromBuffer(buffer)
+            const size = image.getSize()
+            return {
+              ok: true,
+              kind: 'image',
+              path: previewPath,
+              name,
+              size: stats.size,
+              mimeType: imageMimeType,
+              dataUrl: `data:${imageMimeType};base64,${buffer.toString('base64')}`,
+              width: size.width,
+              height: size.height,
+            }
           }
         }
 
-        if (shouldTreatAsText(previewPath, buffer)) {
-          const maxBytes = clampTextPreviewMaxBytes(request.maxTextBytes)
-          const previewBuffer = buffer.subarray(0, maxBytes)
+        const previewBuffer = readFilePrefix(previewPath, maxBytes)
+        if (shouldTreatAsText(previewPath, previewBuffer)) {
           return {
             ok: true,
             kind: 'text',
@@ -359,7 +379,7 @@ export function createElectronAttachmentService(
             size: stats.size,
             mimeType: 'text/plain',
             text: previewBuffer.toString('utf8'),
-            truncated: buffer.byteLength > maxBytes,
+            truncated: stats.size > previewBuffer.byteLength,
             maxBytes,
             encoding: 'utf-8',
           }
@@ -402,10 +422,11 @@ export function createElectronAttachmentService(
 
           const stats = fs.statSync(resolvedPath)
           if (stats.isDirectory()) {
-            fs.rmSync(resolvedPath, { recursive: true, force: true })
-          } else {
-            fs.unlinkSync(resolvedPath)
+            skippedPaths.push(resolvedPath)
+            continue
           }
+
+           fs.unlinkSync(resolvedPath)
           deletedPaths.push(resolvedPath)
         }
 

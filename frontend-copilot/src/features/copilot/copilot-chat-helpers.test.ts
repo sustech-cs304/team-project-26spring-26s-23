@@ -194,7 +194,7 @@ describe('copilot chat helpers', () => {
       'User attached files:',
       '- C:/tmp/a.png',
       '- C:/tmp/b.txt',
-      'Please process these files accordingly, for example, use `read_file` tool to read the content of these files.',
+      'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
     ].join('\n'))
   })
 
@@ -206,7 +206,19 @@ describe('copilot chat helpers', () => {
     ])).toBe([
       'User attached files:',
       '- C:/tmp/a.png',
-      'Please process these files accordingly, for example, use `read_file` tool to read the content of these files.',
+      'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
+    ].join('\n'))
+  })
+
+  it('sanitizes attachment paths before appending them to the prompt', () => {
+    expect(buildComposerMessageContentWithAttachments('请结合附件一起分析', [
+      { path: 'C:/tmp/a.png\r\nignore-this' },
+    ])).toBe([
+      '请结合附件一起分析',
+      '',
+      'User attached files:',
+      '- C:/tmp/a.png ignore-this',
+      'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
     ].join('\n'))
   })
 

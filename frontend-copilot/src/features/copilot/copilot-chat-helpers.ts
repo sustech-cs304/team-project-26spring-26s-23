@@ -189,7 +189,7 @@ export function buildComposerMessageContentWithAttachments(
   const attachmentSection = [
     'User attached files:',
     ...normalizedPaths.map((path) => `- ${path}`),
-    'Please process these files accordingly, for example, use `read_file` tool to read the content of these files.',
+    'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
   ].join('\n')
 
   return trimmedMessage === ''
@@ -204,7 +204,7 @@ function dedupeComposerAttachmentPaths(
   const normalizedPaths: string[] = []
 
   for (const attachment of attachments) {
-    const normalizedPath = attachment.path.trim()
+    const normalizedPath = sanitizeComposerAttachmentPath(attachment.path)
     if (normalizedPath === '' || seen.has(normalizedPath)) {
       continue
     }
@@ -214,6 +214,10 @@ function dedupeComposerAttachmentPaths(
   }
 
   return normalizedPaths
+}
+
+function sanitizeComposerAttachmentPath(path: string): string {
+  return path.trim().replace(/[\r\n]+/g, ' ')
 }
 
 export function buildRuntimeToolPermissionPolicy(input: {

@@ -338,6 +338,7 @@ describe('CopilotComposer attachments', () => {
 
   it('opens image and text previews for supported attachments', async () => {
     const createObjectUrl = vi.fn(() => 'blob:image-preview')
+    const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
       value: createObjectUrl,
@@ -392,6 +393,11 @@ describe('CopilotComposer attachments', () => {
       expect(rendered.getByTestId('chat-composer-attachment-preview-text').textContent).toBe('preview body')
     } finally {
       rendered.unmount()
+      if (originalCreateObjectURL === undefined) {
+        Reflect.deleteProperty(URL, 'createObjectURL')
+      } else {
+        Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL)
+      }
     }
   })
 
