@@ -11,6 +11,11 @@ import {
   type SetStateAction,
 } from 'react'
 
+import {
+  createEmptyComposerAttachmentsState,
+  revokeComposerAttachmentPreviewUrls,
+} from '../attachments/state'
+import type { CopilotComposerAttachmentsState } from '../attachments/types'
 import type {
   AgentType,
   AssistantSessionShell,
@@ -113,8 +118,10 @@ export interface CopilotChatPanelState {
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
   composerDraft: CopilotChatComposerDraft
+  composerAttachments: CopilotComposerAttachmentsState
   toolPermissionPolicy: Parameters<typeof buildRuntimeToolPermissionPolicy>[0]['policy']
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+  onComposerAttachmentsChange: Dispatch<SetStateAction<CopilotComposerAttachmentsState>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
   onSubmitInlineForm: (input: {
     toolCallId: string
@@ -183,6 +190,7 @@ export function useCopilotChatPanelState({
     [activeSessionId, transientStateBySessionId],
   )
   const composerDraft = activeTransientState.composerDraft
+  const composerAttachments = activeTransientState.composerAttachments
   const conversation = activeTransientState.conversation
   const runState = activeTransientState.runState
   const thinkingCapability = activeTransientState.thinkingCapability
@@ -215,6 +223,20 @@ export function useCopilotChatPanelState({
         : {
             ...sessionState,
             composerDraft: nextComposerDraft,
+          }
+    })
+  }, [setActiveSessionTransientState])
+
+  const setComposerAttachments: Dispatch<SetStateAction<CopilotComposerAttachmentsState>> = useCallback((value) => {
+    setActiveSessionTransientState((sessionState) => {
+      const nextComposerAttachments = typeof value === 'function'
+        ? value(sessionState.composerAttachments)
+        : value
+      return nextComposerAttachments === sessionState.composerAttachments
+        ? sessionState
+        : {
+            ...sessionState,
+            composerAttachments: nextComposerAttachments,
           }
     })
   }, [setActiveSessionTransientState])
@@ -925,11 +947,13 @@ export function useCopilotChatPanelState({
       sessionShell,
       runState,
       composerDraft: effectiveComposerDraft,
+      hasAttachments: composerAttachments.items.length > 0,
       hasConfiguredModels,
       hasAvailableModels,
       selectedModelOption,
     }),
     [
+      composerAttachments.items.length,
       effectiveComposerDraft,
       hasAvailableModels,
       hasConfiguredModels,
@@ -1013,11 +1037,26 @@ export function useCopilotChatPanelState({
       })
     }
 
+    const setBoundComposerAttachments: Dispatch<SetStateAction<CopilotComposerAttachmentsState>> = (value) => {
+      updateSessionTransientStateById(boundSessionId, (sessionState) => {
+        const nextComposerAttachments = typeof value === 'function'
+          ? value(sessionState.composerAttachments)
+          : value
+        return nextComposerAttachments === sessionState.composerAttachments
+          ? sessionState
+          : {
+              ...sessionState,
+              composerAttachments: nextComposerAttachments,
+            }
+      })
+    }
+
     return {
       setBoundRunState,
       setBoundConversation,
       setBoundSendError,
       setBoundComposerDraft,
+      setBoundComposerAttachments,
     }
   }, [updateSessionTransientStateById])
 
@@ -1035,7 +1074,15 @@ export function useCopilotChatPanelState({
       setBoundConversation,
       setBoundSendError,
       setBoundComposerDraft,
+      setBoundComposerAttachments,
     } = createBoundSessionDispatchers(boundSessionId)
+    const attachmentsSnapshot = composerAttachments.items.slice()
+
+    setBoundComposerAttachments((current) => {
+      revokeComposerAttachmentPreviewUrls(current.items)
+      return createEmptyComposerAttachmentsState()
+    })
+
     updateSessionTransientStateById(boundSessionId, (sessionState) => (
       sessionState.activeAbortController === abortController
         ? sessionState
@@ -1050,6 +1097,7 @@ export function useCopilotChatPanelState({
         state,
         sessionShell,
         composerDraft: effectiveComposerDraft,
+        attachments: attachmentsSnapshot,
         runState: expirePendingCopilotInlineFormSegments(runState),
         hasConfiguredModels,
         hasAvailableModels,
@@ -1175,8 +1223,10 @@ export function useCopilotChatPanelState({
     modelGroups: modelCatalog.groups,
     thinkingCapability: effectiveThinkingCapability,
     composerDraft: effectiveComposerDraft,
+    composerAttachments,
     toolPermissionPolicy: workspaceToolPermissionPolicy,
     onComposerDraftChange: setComposerDraft,
+    onComposerAttachmentsChange: setComposerAttachments,
     onSend: handleSend,
     onSubmitInlineForm: handleSubmitInlineForm,
     onCancelCurrentRun: handleCancelCurrentRun,

@@ -2,6 +2,7 @@ import type { Dispatch, RefObject, SetStateAction } from 'react'
 
 import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
 import type { AssistantSessionShell } from '../../workbench/types'
+import type { CopilotComposerAttachment } from './attachments/types'
 import {
   RuntimeRequestError,
   startRuntimeRun,
@@ -11,6 +12,7 @@ import {
   type RuntimeRunStartResponse,
 } from './thread-run-contract'
 import {
+  buildComposerMessageContentWithAttachments,
   buildRuntimeMessageSendInput,
   createCopilotTransientErrorState,
   createPreflightErrorDetail,
@@ -129,6 +131,7 @@ export function getCopilotSendDisabledReason(input: {
   sessionShell: AssistantSessionShell | null
   runState: CopilotRunState
   composerDraft: CopilotChatComposerDraft
+  hasAttachments?: boolean
   hasConfiguredModels: boolean
   hasAvailableModels: boolean
   selectedModelOption: CopilotModelOption | null
@@ -157,7 +160,7 @@ export function getCopilotSendDisabledReason(input: {
     return '当前没有可用模型，请前往设置页调整模型配置。'
   }
 
-  if (input.composerDraft.messageText.trim() === '') {
+  if (input.composerDraft.messageText.trim() === '' && input.hasAttachments !== true) {
     return '请输入消息内容。'
   }
 
@@ -354,6 +357,7 @@ export async function orchestrateCopilotSend(input: {
   state: CopilotBootstrapState
   sessionShell: AssistantSessionShell | null
   composerDraft: CopilotChatComposerDraft
+  attachments?: readonly CopilotComposerAttachment[]
   runState: CopilotRunState
   hasConfiguredModels: boolean
   hasAvailableModels: boolean
@@ -423,7 +427,7 @@ export async function orchestrateCopilotSend(input: {
   }
 
   const trimmedMessage = (input.messageOverride?.content ?? input.composerDraft.messageText).trim()
-  if (trimmedMessage === '') {
+  if (trimmedMessage === '' && (input.attachments?.length ?? 0) === 0) {
     input.setSendError(createPreflightTransientErrorState({
       message: '请输入消息内容后再发送。',
       code: 'message_required',
@@ -503,6 +507,7 @@ export async function orchestrateCopilotSend(input: {
         ...input.composerDraft,
         messageText: trimmedMessage,
       },
+      attachments: input.attachments,
       requestOptions,
       structuredPayload: input.messageOverride?.structuredPayload,
       toolPermissionPolicy: input.toolPermissionPolicy,
@@ -524,7 +529,7 @@ export async function orchestrateCopilotSend(input: {
     ...current,
     ...buildCopilotRunSegmentViewModel(input.runState),
     createUserMessageListItem({
-      content: trimmedMessage,
+      content: buildComposerMessageContentWithAttachments(trimmedMessage, input.attachments ?? []),
       structuredPayload: runtimeInput.message.structuredPayload ?? null,
     }),
   ])

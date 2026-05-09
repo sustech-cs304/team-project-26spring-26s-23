@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import {
+  ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
+  ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+  ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+  ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+} from './attachment-service/ipc'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL } from './bootstrap-window'
 import { CONFIG_CENTER_PUBLIC_PATCH_CHANNEL } from './config-center/public-patch'
 import { CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL } from './config-center/public-snapshot'
@@ -111,6 +117,10 @@ describe('registerRendererIpcHandlers', () => {
       TOOL_CATALOG_LOAD_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
+      ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+      ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+      ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+      ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
       DESKTOP_NOTIFICATION_SHOW_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
       DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
@@ -171,6 +181,10 @@ describe('registerRendererIpcHandlers', () => {
       TOOL_CATALOG_LOAD_CHANNEL,
       COPILOT_RUNTIME_LOAD_CHANNEL,
       COPILOT_RUNTIME_RETRY_CHANNEL,
+      ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+      ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+      ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+      ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
       DESKTOP_NOTIFICATION_SHOW_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
       DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
@@ -224,6 +238,22 @@ describe('registerRendererIpcHandlers', () => {
     const loadToolCatalogHandler = getRegisteredHandler(registeredHandlers, TOOL_CATALOG_LOAD_CHANNEL)
     const loadRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_LOAD_CHANNEL)
     const retryRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_RETRY_CHANNEL)
+    const readClipboardAttachmentDataHandler = getRegisteredHandler(
+      registeredHandlers,
+      ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+    )
+    const writeAttachmentTempFileHandler = getRegisteredHandler(
+      registeredHandlers,
+      ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+    )
+    const readAttachmentPreviewHandler = getRegisteredHandler(
+      registeredHandlers,
+      ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+    )
+    const cleanupAttachmentTempFilesHandler = getRegisteredHandler(
+      registeredHandlers,
+      ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
+    )
     const notifyDesktopNotificationHandler = getRegisteredHandler(registeredHandlers, DESKTOP_NOTIFICATION_SHOW_CHANNEL)
     const notifyBootstrapWindowReadyHandler = getRegisteredHandler(registeredHandlers, BOOTSTRAP_WINDOW_READY_CHANNEL)
     const loadDesktopWindowStateHandler = getRegisteredHandler(registeredHandlers, DESKTOP_WINDOW_STATE_LOAD_CHANNEL)
@@ -309,6 +339,34 @@ describe('registerRendererIpcHandlers', () => {
     )
     await expect(loadRuntimeHandler()).resolves.toEqual(await handlers.loadCopilotRuntime())
     await expect(retryRuntimeHandler()).resolves.toEqual(await handlers.retryCopilotRuntime())
+    await expect(readClipboardAttachmentDataHandler()).resolves.toEqual(await handlers.readClipboardAttachmentData())
+    await expect(writeAttachmentTempFileHandler(undefined, {
+      data: {
+        mimeType: 'image/png',
+        base64Data: 'cG5nLWRhdGE=',
+        byteLength: 8,
+        width: 320,
+        height: 180,
+        suggestedName: 'pasted-image.png',
+      },
+    })).resolves.toEqual(await handlers.writeAttachmentTempFile({
+      data: {
+        mimeType: 'image/png',
+        base64Data: 'cG5nLWRhdGE=',
+        byteLength: 8,
+        width: 320,
+        height: 180,
+        suggestedName: 'pasted-image.png',
+      },
+    }))
+    await expect(readAttachmentPreviewHandler(undefined, { path: '/tmp/readme.txt', maxTextBytes: 1024 })).resolves.toEqual(
+      await handlers.readAttachmentPreview({ path: '/tmp/readme.txt', maxTextBytes: 1024 }),
+    )
+    await expect(cleanupAttachmentTempFilesHandler(undefined, {
+      paths: ['/tmp/candue-attachments/pasted-image.png'],
+    })).resolves.toEqual(await handlers.cleanupAttachmentTempFiles({
+      paths: ['/tmp/candue-attachments/pasted-image.png'],
+    }))
     await expect(notifyDesktopNotificationHandler(undefined, {
       title: '助手消息已完成',
       body: '这是助手回显',
@@ -362,11 +420,33 @@ describe('registerRendererIpcHandlers', () => {
   it('wires main-process file manager system action services into renderer IPC handlers', async () => {
     const { registeredHandlers, ipcMain } = createFakeIpcMain()
     const rendererHandlers = createRendererIpcHandlers()
+    const readClipboardAttachmentDataResult = await rendererHandlers.readClipboardAttachmentData()
+    const writeAttachmentTempFileResult = await rendererHandlers.writeAttachmentTempFile({
+      data: {
+        mimeType: 'image/png',
+        base64Data: 'cG5nLWRhdGE=',
+        byteLength: 8,
+        width: 320,
+        height: 180,
+        suggestedName: 'pasted-image.png',
+      },
+    })
+    const readAttachmentPreviewResult = await rendererHandlers.readAttachmentPreview({
+      path: '/tmp/readme.txt',
+      maxTextBytes: 1024,
+    })
+    const cleanupAttachmentTempFilesResult = await rendererHandlers.cleanupAttachmentTempFiles({
+      paths: ['/tmp/candue-attachments/pasted-image.png'],
+    })
     const openEntryWithSystemResult = { ok: true as const, affectedPaths: ['/test/opened-file.txt'] }
     const revealEntryInFolderResult = { ok: true as const, affectedPaths: ['/test/revealed-entry'] }
     const copyTextToClipboardResult = { ok: true as const, affectedPaths: [] }
     const services: MainProcessServices = {
       ...rendererHandlers,
+      readClipboardAttachmentData: vi.fn(async () => readClipboardAttachmentDataResult),
+      writeAttachmentTempFile: vi.fn(async () => writeAttachmentTempFileResult),
+      readAttachmentPreview: vi.fn(async () => readAttachmentPreviewResult),
+      cleanupAttachmentTempFiles: vi.fn(async () => cleanupAttachmentTempFilesResult),
       openEntryWithSystem: vi.fn(async () => openEntryWithSystemResult),
       revealEntryInFolder: vi.fn(async () => revealEntryInFolderResult),
       copyTextToClipboard: vi.fn(async () => copyTextToClipboardResult),
@@ -394,13 +474,61 @@ describe('registerRendererIpcHandlers', () => {
     const openEntryWithSystemHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL)
     const revealEntryInFolderHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL)
     const copyTextToClipboardHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL)
+    const readClipboardAttachmentDataHandler = getRegisteredHandler(
+      registeredHandlers,
+      ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+    )
+    const writeAttachmentTempFileHandler = getRegisteredHandler(
+      registeredHandlers,
+      ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+    )
+    const readAttachmentPreviewHandler = getRegisteredHandler(
+      registeredHandlers,
+      ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+    )
+    const cleanupAttachmentTempFilesHandler = getRegisteredHandler(
+      registeredHandlers,
+      ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
+    )
 
     await expect(openEntryWithSystemHandler(undefined, { path: '/test/file.txt' })).resolves.toEqual(openEntryWithSystemResult)
     await expect(revealEntryInFolderHandler(undefined, { path: '/test/dir' })).resolves.toEqual(revealEntryInFolderResult)
     await expect(copyTextToClipboardHandler(undefined, { text: 'copied text' })).resolves.toEqual(copyTextToClipboardResult)
+    await expect(readClipboardAttachmentDataHandler()).resolves.toEqual(readClipboardAttachmentDataResult)
+    await expect(writeAttachmentTempFileHandler(undefined, {
+      data: {
+        mimeType: 'image/png',
+        base64Data: 'cG5nLWRhdGE=',
+        byteLength: 8,
+        width: 320,
+        height: 180,
+        suggestedName: 'pasted-image.png',
+      },
+    })).resolves.toEqual(writeAttachmentTempFileResult)
+    await expect(readAttachmentPreviewHandler(undefined, { path: '/tmp/readme.txt', maxTextBytes: 1024 })).resolves.toEqual(
+      readAttachmentPreviewResult,
+    )
+    await expect(cleanupAttachmentTempFilesHandler(undefined, {
+      paths: ['/tmp/candue-attachments/pasted-image.png'],
+    })).resolves.toEqual(cleanupAttachmentTempFilesResult)
     expect(services.openEntryWithSystem).toHaveBeenCalledWith({ path: '/test/file.txt' })
     expect(services.revealEntryInFolder).toHaveBeenCalledWith({ path: '/test/dir' })
     expect(services.copyTextToClipboard).toHaveBeenCalledWith({ text: 'copied text' })
+    expect(services.readClipboardAttachmentData).toHaveBeenCalledOnce()
+    expect(services.writeAttachmentTempFile).toHaveBeenCalledWith({
+      data: {
+        mimeType: 'image/png',
+        base64Data: 'cG5nLWRhdGE=',
+        byteLength: 8,
+        width: 320,
+        height: 180,
+        suggestedName: 'pasted-image.png',
+      },
+    })
+    expect(services.readAttachmentPreview).toHaveBeenCalledWith({ path: '/tmp/readme.txt', maxTextBytes: 1024 })
+    expect(services.cleanupAttachmentTempFiles).toHaveBeenCalledWith({
+      paths: ['/tmp/candue-attachments/pasted-image.png'],
+    })
   })
 })
 

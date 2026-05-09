@@ -12,6 +12,7 @@ import {
 } from 'react'
 
 import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
+import type { CopilotComposerAttachmentsState } from './attachments/types'
 import { getCopilotChatCopy } from '../../workbench/locale'
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
@@ -68,8 +69,10 @@ export interface CopilotPanelShellProps {
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
   composerDraft: CopilotChatComposerDraft
+  composerAttachments?: CopilotComposerAttachmentsState
   toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+  onComposerAttachmentsChange?: Dispatch<SetStateAction<CopilotComposerAttachmentsState>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
   onSubmitInlineForm?: (input: {
     toolCallId: string
@@ -316,8 +319,10 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
             modelGroups={props.modelGroups}
             thinkingCapability={props.thinkingCapability}
             draft={props.composerDraft}
+            attachments={props.composerAttachments}
             toolPermissionPolicy={props.toolPermissionPolicy}
             onDraftChange={props.onComposerDraftChange}
+            onAttachmentsChange={props.onComposerAttachmentsChange}
             onSubmit={props.onSend}
             onCancel={props.onCancelCurrentRun}
             sendStatus={props.sendStatus}

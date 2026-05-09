@@ -4,6 +4,61 @@ import { createPersistedWorkspaceState, createProviderProfile } from '../../src/
 import { resolveSettingsWorkspaceProviderRoute } from './provider-route-resolver'
 
 describe('resolveSettingsWorkspaceProviderRoute', () => {
+  it('includes provider catalog capability hints in resolved routes', () => {
+    const result = resolveSettingsWorkspaceProviderRoute({
+      state: createPersistedWorkspaceState(),
+      secretStates: {
+        openrouter: {
+          hasApiKey: true,
+          apiKey: 'persisted-secret',
+        },
+      },
+      request: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'openrouter',
+          modelId: 'openai/gpt-4.1',
+        },
+      },
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      resolvedRoute: {
+        routeRef: {
+          routeKind: 'provider-model',
+          profileId: 'openrouter',
+          modelId: 'openai/gpt-4.1',
+        },
+        providerProfileId: 'openrouter',
+        provider: 'openai',
+        providerId: 'openai',
+        adapterId: 'openai',
+        runtimeStatus: 'enabled',
+        catalogRevision: '2026-04-06-provider-catalog-v1',
+        endpointFamily: 'openai',
+        endpointType: 'openai-compatible',
+        baseUrl: 'https://persisted.example.com/v1',
+        modelId: 'openai/gpt-4.1',
+        authKind: 'api-key',
+        capabilityHints: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          reasoning: true,
+          search: false,
+        },
+      },
+      privateAuth: {
+        authKind: 'api-key',
+        authPayload: {
+          apiKey: 'persisted-secret',
+        },
+        apiKey: 'persisted-secret',
+      },
+    })
+  })
+
   it('resolves stable route refs against the requested provider profile even when model ids overlap', () => {
     const alphaProfile = createProviderProfile({
       id: 'alpha-profile',
@@ -86,6 +141,13 @@ describe('resolveSettingsWorkspaceProviderRoute', () => {
         baseUrl: 'https://beta.example.com/v1',
         modelId: 'shared-model',
         authKind: 'api-key',
+        capabilityHints: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          reasoning: true,
+          search: false,
+        },
       },
       privateAuth: {
         authKind: 'api-key',

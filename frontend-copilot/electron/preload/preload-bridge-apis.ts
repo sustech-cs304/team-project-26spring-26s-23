@@ -1,5 +1,12 @@
 import type { IpcRenderer } from 'electron'
 import {
+  ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
+  ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+  ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+  ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+  type AttachmentManagerApi,
+} from '../attachment-service/ipc'
+import {
   CONFIG_CENTER_PUBLIC_PATCH_CHANNEL,
   type ConfigCenterPublicPatchApi,
 } from '../config-center/public-patch'
@@ -116,6 +123,7 @@ export interface PreloadBridgeApis {
   skillRegistry: SkillRegistryApi
   skillRegistrySubscription: SkillRegistrySubscriptionApi
   toolCatalog: ToolCatalogApi
+  attachmentManager: AttachmentManagerApi
   desktopNotification: DesktopNotificationApi
   windowControls: DesktopWindowControlsApi
   bootstrapWindow: BootstrapWindowApi
@@ -124,7 +132,12 @@ export interface PreloadBridgeApis {
 
 type IpcRendererLike = Pick<IpcRenderer, 'invoke' | 'on' | 'off'>
 
-export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBridgeApis {
+export function createPreloadBridgeApis(
+  ipcRenderer: IpcRendererLike,
+  helpers: {
+    resolveFilePath?: (file: File) => string | null
+  } = {},
+): PreloadBridgeApis {
   return {
     copilotRuntime: {
       load() {
@@ -252,6 +265,23 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
     toolCatalog: {
       load(request) {
         return ipcRenderer.invoke(TOOL_CATALOG_LOAD_CHANNEL, request)
+      },
+    },
+    attachmentManager: {
+      resolveFilePath(file) {
+        return helpers.resolveFilePath?.(file) ?? null
+      },
+      readClipboardData() {
+        return ipcRenderer.invoke(ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL)
+      },
+      writeTempFile(request) {
+        return ipcRenderer.invoke(ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL, request)
+      },
+      readPreview(request) {
+        return ipcRenderer.invoke(ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL, request)
+      },
+      cleanupTempFiles(request) {
+        return ipcRenderer.invoke(ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL, request)
       },
     },
     desktopNotification: {
