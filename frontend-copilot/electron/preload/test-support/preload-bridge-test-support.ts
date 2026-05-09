@@ -5,6 +5,7 @@ import type { SettingsWorkspaceEditableState } from '../../settings-workspace/st
 
 const preloadMocks = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
+  getPathForFile: vi.fn(),
   invoke: vi.fn(),
   on: vi.fn(),
   off: vi.fn(),
@@ -19,6 +20,9 @@ vi.mock('electron', () => ({
     on: preloadMocks.on,
     off: preloadMocks.off,
   },
+  webUtils: {
+    getPathForFile: preloadMocks.getPathForFile,
+  },
 }))
 
 beforeEach(() => {
@@ -32,6 +36,7 @@ export async function loadPreloadModule(): Promise<void> {
 
 export function resetPreloadBridgeMocks(): void {
   preloadMocks.exposeInMainWorld.mockReset()
+  preloadMocks.getPathForFile.mockReset()
   preloadMocks.invoke.mockReset()
   preloadMocks.on.mockReset()
   preloadMocks.off.mockReset()
@@ -53,6 +58,10 @@ export function getExposedApi<TApi>(key: string): TApi {
 
 export function getInvokeMock() {
   return preloadMocks.invoke
+}
+
+export function getPathForFileMock() {
+  return preloadMocks.getPathForFile
 }
 
 export function getOffMock() {

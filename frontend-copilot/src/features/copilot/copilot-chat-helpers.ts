@@ -4,6 +4,7 @@ import type {
   ThinkingLevelIntent,
 } from '../../workbench/types'
 import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
+import type { CopilotComposerAttachment } from './attachments/types'
 import { sanitizeEnabledToolIds } from './tool-picker'
 import type { CopilotTransientErrorState } from './copilot-conversation-turns'
 import {
@@ -130,6 +131,7 @@ export function buildRuntimeMessageSendInput(input: {
   runtimeUrl: string
   sessionShell: AssistantSessionShell
   draft: CopilotChatComposerDraft
+  attachments?: readonly Pick<CopilotComposerAttachment, 'path'>[]
   requestOptions: Record<string, unknown>
   structuredPayload?: Record<string, unknown> | null
   toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
@@ -156,7 +158,7 @@ export function buildRuntimeMessageSendInput(input: {
     agent: input.sessionShell.boundAgent.id,
     message: {
       role: 'user',
-      content: input.draft.messageText.trim(),
+      content: buildComposerMessageContentWithAttachments(input.draft.messageText, input.attachments ?? []),
       ...(input.structuredPayload === undefined ? {} : { structuredPayload: input.structuredPayload }),
     },
     modelRoute: cloneRuntimeModelRoute(input.draft.selectedModelRoute),
@@ -172,6 +174,46 @@ export function buildRuntimeMessageSendInput(input: {
     ...(toolPermissionPolicy === null ? {} : { toolPermissionPolicy }),
     requestOptions: { ...input.requestOptions },
   }
+}
+
+export function buildComposerMessageContentWithAttachments(
+  messageText: string,
+  attachments: readonly Pick<CopilotComposerAttachment, 'path'>[],
+): string {
+  const trimmedMessage = messageText.trim()
+  const normalizedPaths = dedupeComposerAttachmentPaths(attachments)
+  if (normalizedPaths.length === 0) {
+    return trimmedMessage
+  }
+
+  const attachmentSection = [
+    'User attached files:',
+    ...normalizedPaths.map((path) => `- ${path}`),
+    'Please process these files accordingly, for example, use `read_file` tool to read the content of these files.',
+  ].join('\n')
+
+  return trimmedMessage === ''
+    ? attachmentSection
+    : `${trimmedMessage}\n\n${attachmentSection}`
+}
+
+function dedupeComposerAttachmentPaths(
+  attachments: readonly Pick<CopilotComposerAttachment, 'path'>[],
+): string[] {
+  const seen = new Set<string>()
+  const normalizedPaths: string[] = []
+
+  for (const attachment of attachments) {
+    const normalizedPath = attachment.path.trim()
+    if (normalizedPath === '' || seen.has(normalizedPath)) {
+      continue
+    }
+
+    seen.add(normalizedPath)
+    normalizedPaths.push(normalizedPath)
+  }
+
+  return normalizedPaths
 }
 
 export function buildRuntimeToolPermissionPolicy(input: {

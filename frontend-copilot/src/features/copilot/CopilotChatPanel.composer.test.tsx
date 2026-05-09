@@ -52,6 +52,7 @@ afterAll(() => {
 
 afterEach(() => {
   restoreNotificationApi()
+  restoreAttachmentManagerApi()
 })
 
 describe('CopilotChatPanel composer interactions', () => {
@@ -552,6 +553,119 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(document.activeElement).toBe(messageInput)
 
     rendered.unmount()
+  })
+
+  it('allows attachment-only sends and appends the fixed attached-file list to the outgoing message', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    try {
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      const composerForm = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+      const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+      const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const file = createFileWithPath({
+        name: 'note.txt',
+        type: 'text/plain',
+        path: 'attachment-only.txt',
+        content: 'attachment body',
+      })
+
+      await act(async () => {
+        messageInput.dispatchEvent(createPasteEvent({
+          types: ['Files'],
+          items: [],
+          files: [file],
+        }))
+      })
+
+      expect(sendButton.disabled).toBe(false)
+      await submitForm(composerForm)
+
+      expect(rendered.container.querySelector('[data-testid="chat-composer-attachment-trigger"]')).toBeNull()
+      expect(sendMessage).toHaveBeenCalledTimes(1)
+      expect(sendMessage.mock.calls[0]?.[0].message.content).toBe([
+        'User attached files:',
+        '- attachment-only.txt',
+        'Please process these files accordingly, for example, use `read_file` tool to read the content of these files.',
+      ].join('\n'))
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('clears attachments immediately after send is triggered even when the run later fails', async () => {
+    const control = createDeferredSignal()
+    const sendMessage = createFailedBeforeAssistantSendMessageSpy(control)
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    try {
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      const composerForm = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+      const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const file = createFileWithPath({
+        name: 'failed.txt',
+        type: 'text/plain',
+        path: 'failed-attachment.txt',
+        content: 'attachment body',
+      })
+
+      await act(async () => {
+        messageInput.dispatchEvent(createPasteEvent({
+          types: ['Files'],
+          items: [],
+          files: [file],
+        }))
+      })
+      await setFormControlValue(messageInput, '失败也应立即清空')
+
+      await submitForm(composerForm)
+      expect(rendered.container.querySelector('[data-testid="chat-composer-attachment-trigger"]')).toBeNull()
+
+      control.release()
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(rendered.container.querySelector('[data-testid="chat-composer-attachment-trigger"]')).toBeNull()
+    } finally {
+      rendered.unmount()
+    }
   })
 
   it('renders the bottom-anchored composer surface and updates height when the resize handle is dragged', async () => {
@@ -4365,6 +4479,81 @@ function restoreNotificationApi() {
       show: vi.fn(async () => undefined),
     } as Window['desktopNotification'],
   })
+}
+
+function restoreAttachmentManagerApi() {
+  Object.defineProperty(window, 'attachmentManager', {
+    configurable: true,
+    writable: true,
+    value: {
+      resolveFilePath: vi.fn(() => null),
+      readClipboardData: vi.fn(async () => ({ ok: true, status: 'empty', availableFormats: [] })),
+      writeTempFile: vi.fn(async () => ({
+        ok: true,
+        file: {
+          path: 'temp-image.png',
+          name: 'temp-image.png',
+          mimeType: 'image/png',
+          size: 0,
+          createdAt: '2026-05-09T00:00:00.000Z',
+          isTemporary: true,
+        },
+      })),
+      readPreview: vi.fn(async () => ({
+        ok: true,
+        kind: 'unsupported',
+        path: 'unknown.bin',
+        name: 'unknown.bin',
+        size: 0,
+        reason: 'unsupported_type',
+      })),
+      cleanupTempFiles: vi.fn(async () => ({
+        ok: true,
+        deletedPaths: [],
+        missingPaths: [],
+        skippedPaths: [],
+      })),
+    } as Window['attachmentManager'],
+  })
+}
+
+function createFileWithPath(input: {
+  name: string
+  type: string
+  path: string
+  content: string
+}) {
+  const file = new File([input.content], input.name, { type: input.type })
+  Object.defineProperty(file, 'path', {
+    configurable: true,
+    value: input.path,
+  })
+  return file
+}
+
+function createPasteEvent(input: {
+  types: string[]
+  items: Array<{ kind: string; type: string }>
+  files: File[]
+}) {
+  const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+    clipboardData: {
+      types: string[]
+      items: Array<{ kind: string; type: string }>
+      files: File[]
+    }
+  }
+
+  Object.defineProperty(event, 'clipboardData', {
+    configurable: true,
+    value: {
+      types: input.types,
+      items: input.items,
+      files: input.files,
+    },
+  })
+
+  return event
 }
 
 interface DeferredSignal {

@@ -117,6 +117,19 @@ import {
   type ToolCatalogLoadResult,
 } from '../tool-catalog/ipc'
 import {
+  ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
+  ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+  ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+  ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+  type CleanupTemporaryAttachmentFilesRequest,
+  type CleanupTemporaryAttachmentFilesResult,
+  type ReadAttachmentPreviewRequest,
+  type ReadAttachmentPreviewResult,
+  type ReadClipboardAttachmentDataResult,
+  type WriteAttachmentTempFileRequest,
+  type WriteAttachmentTempFileResult,
+} from '../attachment-service/ipc'
+import {
   FILE_MANAGER_COPY_ENTRIES_CHANNEL,
   FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
   FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
@@ -195,6 +208,10 @@ const RENDERER_IPC_CHANNELS = [
   TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
+  ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+  ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+  ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+  ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
   BOOTSTRAP_WINDOW_READY_CHANNEL,
   DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
@@ -477,6 +494,34 @@ export function registerRendererIpcHandlers(
   ipcMain.handle(COPILOT_RUNTIME_RETRY_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
     return await handlers.retryCopilotRuntime()
   })
+
+  ipcMain.handle(ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL, async (): Promise<ReadClipboardAttachmentDataResult> => {
+    return await handlers.readClipboardAttachmentData()
+  })
+
+  ipcMain.handle(
+    ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+    async (_event, request: WriteAttachmentTempFileRequest): Promise<WriteAttachmentTempFileResult> => {
+      return await handlers.writeAttachmentTempFile(request)
+    },
+  )
+
+  ipcMain.handle(
+    ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+    async (_event, request: ReadAttachmentPreviewRequest): Promise<ReadAttachmentPreviewResult> => {
+      return await handlers.readAttachmentPreview(request)
+    },
+  )
+
+  ipcMain.handle(
+    ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
+    async (
+      _event,
+      request: CleanupTemporaryAttachmentFilesRequest,
+    ): Promise<CleanupTemporaryAttachmentFilesResult> => {
+      return await handlers.cleanupAttachmentTempFiles(request)
+    },
+  )
 
   ipcMain.handle(DESKTOP_NOTIFICATION_SHOW_CHANNEL, async (_event, request: DesktopNotificationRequest): Promise<void> => {
     await handlers.notifyDesktopNotification(request)
