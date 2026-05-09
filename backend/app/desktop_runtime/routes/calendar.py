@@ -1,63 +1,77 @@
-from datetime import datetime, timedelta, UTC
-from fastapi import APIRouter
-from pydantic import BaseModel
+"""Unified calendar query routes for the desktop runtime (MOCK)."""
 
-class UnifiedCalendarEvent(BaseModel):
-    id: str | int
-    source: str
-    source_id: str | None
-    title: str
-    description: str | None
-    start_time: str
-    end_time: str
-    is_all_day: bool
-    location: str | None
-    status: str
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from fastapi import APIRouter, Request
+
+from app.event_manager.data.dto import UnifiedCalendarEvent
+from ..security import require_local_token
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 def build_calendar_router() -> APIRouter:
     router = APIRouter(prefix="/calendar", tags=["calendar"])
 
-    @router.get("/events", response_model=list[UnifiedCalendarEvent])
-    async def get_events():
-        # Mock data representing Phase 2
-        now = datetime.now(UTC)
-        return [
+    @router.get("/events")
+    def list_calendar_events(request: Request) -> dict[str, list[dict[str, Any]]]:
+        # TODO: Replace with real database queries once the persistence layer is ready.
+        # This is mock data for the frontend to start developing the UI.
+        runtime_config = (
+            request.app.state.runtime_config
+            if hasattr(request.app.state, "runtime_config")
+            else None
+        )
+        if runtime_config is not None:
+            require_local_token(request, runtime_config)
+
+        now = _utc_now()
+        
+        mock_events = [
             UnifiedCalendarEvent(
                 id=1,
+                title="DSAA Assignment 6",
+                description="Implement red-black tree operations.",
+                start_time=now + timedelta(days=2),
+                end_time=now + timedelta(days=3),
                 source="bb",
-                source_id="mock_bb_1",
-                title="软件工程 期中考试",
-                description="期中考试，闭卷",
-                start_time=(now + timedelta(days=1)).isoformat() + "Z",
-                end_time=(now + timedelta(days=1, hours=2)).isoformat() + "Z",
-                is_all_day=False,
-                location="一教 101",
-                status="upcoming",
+                source_id="bb_hw_001",
+                is_all_day=True,
+                status="not_started",
+                metadata_payload={"link": "https://bb.cuhk.edu.cn/dsaa/ass6"}
             ),
             UnifiedCalendarEvent(
                 id=2,
-                source="course",
-                source_id="mock_course_1",
-                title="数据库原理 课程",
-                description="理论课",
-                start_time=(now + timedelta(days=2)).isoformat() + "Z",
-                end_time=(now + timedelta(days=2, hours=1.5)).isoformat() + "Z",
+                title="SWE Group Meeting",
+                description="Sync up on project progress.",
+                start_time=now + timedelta(hours=2),
+                end_time=now + timedelta(hours=3),
+                source="custom",
+                source_id="custom_001",
                 is_all_day=False,
-                location="二教 202",
-                status="upcoming",
+                status="in_progress",
+                metadata_payload=None
             ),
             UnifiedCalendarEvent(
                 id=3,
-                source="custom",
-                source_id=None,
-                title="项目周会",
-                description="组内同步进度",
-                start_time=(now + timedelta(days=3)).isoformat() + "Z",
-                end_time=(now + timedelta(days=3, hours=1)).isoformat() + "Z",
+                title="Database Systems Lab",
+                description="SQL Query Optimization Lab",
+                start_time=now - timedelta(days=1, hours=2),
+                end_time=now - timedelta(days=1, hours=1),
+                source="course",
+                source_id="course_dba_001",
                 is_all_day=False,
-                location="工学院 100",
-                status="upcoming",
-            ),
+                status="completed",
+                metadata_payload={"location": "Teaching D 302"}
+            )
         ]
+        
+        return {
+            "items": [event.to_dict() for event in mock_events]
+        }
 
     return router
