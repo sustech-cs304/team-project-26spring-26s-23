@@ -77,6 +77,7 @@ import type {
   RenameEntryRequest,
   RevealEntryInFolderRequest,
   SaveLastRootDirectoryRequest,
+  SavePastedFileRequest,
   SelectRootDirectoryRequest,
   SelectDirectoryResult,
   TrashEntriesRequest,
@@ -143,6 +144,7 @@ export interface RendererIpcHandlers {
   minimizeDesktopWindow: () => Promise<void>
   toggleMaximizeDesktopWindow: () => Promise<DesktopWindowState>
   closeDesktopWindow: () => Promise<void>
+  savePastedFile: (request: SavePastedFileRequest) => Promise<import('../file-manager/ipc').SavePastedFileResult>
   notifyBootstrapWindowReady: () => Promise<void>
   selectRootDirectory: (request?: SelectRootDirectoryRequest) => Promise<SelectDirectoryResult>
   listDirectory: (request: ListDirectoryRequest) => Promise<ListDirectoryResult>

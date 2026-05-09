@@ -89,6 +89,7 @@ import type {
   RenameEntryRequest,
   RevealEntryInFolderRequest,
   SaveLastRootDirectoryRequest,
+  SavePastedFileRequest,
   SelectRootDirectoryRequest,
   SelectDirectoryResult,
   TrashEntriesRequest,
@@ -201,4 +202,5 @@ export interface MainProcessServices {
   openEntryWithSystem: (request: OpenEntryWithSystemRequest) => Promise<FileOperationResult>
   revealEntryInFolder: (request: RevealEntryInFolderRequest) => Promise<FileOperationResult>
   copyTextToClipboard: (request: CopyTextToClipboardRequest) => Promise<FileOperationResult>
+  savePastedFile: (request: SavePastedFileRequest) => Promise<import('../file-manager/ipc').SavePastedFileResult>
 }

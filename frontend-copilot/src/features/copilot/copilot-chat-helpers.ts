@@ -33,6 +33,12 @@ import type {
   CopilotDiagnosticsSummary,
 } from './types'
 
+export interface CopilotComposerPastedFileReference {
+  id: string
+  name: string
+  path: string
+}
+
 export interface CopilotChatComposerDraft {
   messageText: string
   selectedModelId: string
@@ -41,6 +47,7 @@ export interface CopilotChatComposerDraft {
   thinkingSelectionByModelKey: Record<string, RuntimeThinkingSelection | null>
   enabledTools: string[]
   requestOptionsText: string
+  pastedFiles: CopilotComposerPastedFileReference[]
 }
 
 export interface RuntimeMessageSendInput {
@@ -108,6 +115,7 @@ export function createEmptyComposerDraft(): CopilotChatComposerDraft {
     thinkingSelectionByModelKey: {},
     enabledTools: [],
     requestOptionsText: '{}',
+    pastedFiles: [],
   }
 }
 
@@ -123,7 +131,13 @@ export function createComposerDraftFromSession(
     thinkingSelectionByModelKey: {},
     enabledTools: [],
     requestOptionsText: '{}',
+    pastedFiles: [],
   }
+}
+
+export function createPastedFilePromptSuffix(pastedFiles: readonly CopilotComposerPastedFileReference[]): string {
+  const references = pastedFiles.map((file) => `- ${file.path}`).join('\n')
+  return references === '' ? '' : `\n\n[引用文件]\n${references}`
 }
 
 export function buildRuntimeMessageSendInput(input: {
@@ -150,13 +164,16 @@ export function buildRuntimeMessageSendInput(input: {
     policy: input.toolPermissionPolicy ?? null,
   })
 
+  const trimmedMessage = input.draft.messageText.trim()
+  const content = `${trimmedMessage}${createPastedFilePromptSuffix(input.draft.pastedFiles)}`
+
   return {
     runtimeUrl: input.runtimeUrl,
     sessionId: input.sessionShell.sessionId,
     agent: input.sessionShell.boundAgent.id,
     message: {
       role: 'user',
-      content: input.draft.messageText.trim(),
+      content,
       ...(input.structuredPayload === undefined ? {} : { structuredPayload: input.structuredPayload }),
     },
     modelRoute: cloneRuntimeModelRoute(input.draft.selectedModelRoute),

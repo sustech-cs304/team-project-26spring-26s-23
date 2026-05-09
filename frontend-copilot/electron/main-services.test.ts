@@ -77,6 +77,7 @@ const hoisted = vi.hoisted(() => {
     openEntryWithSystem: vi.fn(),
     revealEntryInFolder: vi.fn(),
     copyTextToClipboard: vi.fn(),
+    savePastedFile: vi.fn(),
   }
   const copilotHistoryService = {
     listThreads: vi.fn(),
@@ -452,6 +453,7 @@ describe('createMainProcessServices', () => {
     const openEntryWithSystemResult = { ok: true as const, affectedPaths: ['/test/opened-file.txt'] }
     const revealEntryInFolderResult = { ok: true as const, affectedPaths: ['/test/revealed-entry'] }
     const copyTextToClipboardResult = { ok: true as const, affectedPaths: [] }
+    const savePastedFileResult = { ok: true as const, filePath: '/test/copilot-pasted-files/pasted.txt' }
     hoisted.fileManagerService.loadLastRootDirectory.mockResolvedValue(loadLastRootDirectoryResult)
     hoisted.fileManagerService.saveLastRootDirectory.mockResolvedValue({
       ok: true as const,
@@ -461,6 +463,7 @@ describe('createMainProcessServices', () => {
     hoisted.fileManagerService.openEntryWithSystem.mockResolvedValue(openEntryWithSystemResult)
     hoisted.fileManagerService.revealEntryInFolder.mockResolvedValue(revealEntryInFolderResult)
     hoisted.fileManagerService.copyTextToClipboard.mockResolvedValue(copyTextToClipboardResult)
+    hoisted.fileManagerService.savePastedFile.mockResolvedValue(savePastedFileResult)
 
     hoisted.createElectronUnifiedConfigService.mockReturnValue(hoisted.unifiedConfigService)
     hoisted.createElectronSettingsWorkspaceService.mockReturnValue(hoisted.settingsWorkspaceService)
@@ -611,6 +614,9 @@ describe('createMainProcessServices', () => {
     await expect(services.openEntryWithSystem({ path: '/test/file.txt' })).resolves.toEqual(openEntryWithSystemResult)
     await expect(services.revealEntryInFolder({ path: '/test/dir' })).resolves.toEqual(revealEntryInFolderResult)
     await expect(services.copyTextToClipboard({ text: 'copied text' })).resolves.toEqual(copyTextToClipboardResult)
+    await expect(services.savePastedFile({ name: 'pasted.txt', content: new Uint8Array([1, 2, 3]) })).resolves.toEqual(
+      savePastedFileResult,
+    )
 
     expect(hoisted.createElectronUnifiedConfigService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronSettingsWorkspaceService).toHaveBeenCalledTimes(1)
@@ -723,6 +729,10 @@ describe('createMainProcessServices', () => {
     })
     expect(hoisted.fileManagerService.copyTextToClipboard).toHaveBeenCalledWith({
       text: 'copied text',
+    })
+    expect(hoisted.fileManagerService.savePastedFile).toHaveBeenCalledWith({
+      name: 'pasted.txt',
+      content: new Uint8Array([1, 2, 3]),
     })
 
     const fileManagerOptions = hoisted.createElectronFileManagerService.mock.calls[0]?.[0]

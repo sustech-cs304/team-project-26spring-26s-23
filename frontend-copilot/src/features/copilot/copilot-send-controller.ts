@@ -157,7 +157,7 @@ export function getCopilotSendDisabledReason(input: {
     return '当前没有可用模型，请前往设置页调整模型配置。'
   }
 
-  if (input.composerDraft.messageText.trim() === '') {
+  if (input.composerDraft.messageText.trim() === '' && input.composerDraft.pastedFiles.length === 0) {
     return '请输入消息内容。'
   }
 
@@ -423,7 +423,7 @@ export async function orchestrateCopilotSend(input: {
   }
 
   const trimmedMessage = (input.messageOverride?.content ?? input.composerDraft.messageText).trim()
-  if (trimmedMessage === '') {
+  if (trimmedMessage === '' && input.composerDraft.pastedFiles.length === 0) {
     input.setSendError(createPreflightTransientErrorState({
       message: '请输入消息内容后再发送。',
       code: 'message_required',
@@ -538,6 +538,7 @@ export async function orchestrateCopilotSend(input: {
     input.setComposerDraft((current) => ({
       ...current,
       messageText: '',
+      pastedFiles: [],
     }))
     if (input.composerInputRef.current !== null) {
       input.composerInputRef.current.value = ''

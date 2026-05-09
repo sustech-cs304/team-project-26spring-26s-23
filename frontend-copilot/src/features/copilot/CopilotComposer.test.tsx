@@ -170,6 +170,78 @@ describe('CopilotComposer thinking controls', () => {
       rendered.unmount()
     }
   })
+
+  it('imports dropped files into composer attachments', async () => {
+    const savePastedFile = vi.fn(async (request: { name: string; content: ArrayBuffer | Uint8Array }) => {
+      void request
+      return {
+        ok: true as const,
+        filePath: 'D:/workspace/copilot-data/copilot-pasted-files/dropped.txt',
+      }
+    })
+    Object.defineProperty(window, 'fileManager', {
+      configurable: true,
+      value: {
+        savePastedFile,
+      },
+    })
+
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const composerField = rendered.container.querySelector('.copilot-chat__composer-field') as HTMLDivElement | null
+      if (composerField === null) {
+        throw new Error('Missing composer field container.')
+      }
+
+      const droppedFile = new File([new Uint8Array([65, 66, 67])], 'dropped.txt', { type: 'text/plain' })
+      const dropEvent = createFileTransferEvent('drop', [droppedFile])
+
+      await act(async () => {
+        composerField.dispatchEvent(dropEvent)
+      })
+      await flushMicrotasks()
+
+      expect(savePastedFile).toHaveBeenCalledWith({
+        name: 'dropped.txt',
+        content: expect.any(ArrayBuffer),
+      })
+      expect(rendered.getByTestId('chat-composer-pasted-files').textContent).toContain('dropped.txt')
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('marks drag-over with copy semantics when files are dragged into the composer', async () => {
+    const savePastedFile = vi.fn()
+    Object.defineProperty(window, 'fileManager', {
+      configurable: true,
+      value: {
+        savePastedFile,
+      },
+    })
+
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const composerField = rendered.container.querySelector('.copilot-chat__composer-field') as HTMLDivElement | null
+      if (composerField === null) {
+        throw new Error('Missing composer field container.')
+      }
+
+      const draggedFile = new File([new Uint8Array([1])], 'dragged.txt', { type: 'text/plain' })
+      const dragOverEvent = createFileTransferEvent('dragover', [draggedFile])
+
+      await act(async () => {
+        composerField.dispatchEvent(dragOverEvent)
+      })
+
+      expect(dragOverEvent.defaultPrevented).toBe(true)
+      expect(readDropEffect(dragOverEvent)).toBe('copy')
+    } finally {
+      rendered.unmount()
+    }
+  })
 })
 
 function ComposerHarness() {
@@ -378,5 +450,29 @@ async function pressKey(element: HTMLElement, key: string) {
   await act(async () => {
     element.focus()
     element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key }))
+  })
+}
+
+function createFileTransferEvent(type: 'dragover' | 'drop', files: File[]): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', {
+    configurable: true,
+    value: {
+      files,
+      dropEffect: 'none',
+    },
+  })
+  return event
+}
+
+function readDropEffect(event: Event): string | undefined {
+  return (event as Event & { dataTransfer?: { dropEffect?: string } }).dataTransfer?.dropEffect
+}
+
+async function flushMicrotasks() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
   })
 }

@@ -2,23 +2,24 @@ import { describe, expect, it } from 'vitest'
 
 import type { FileManagerApi } from './file-manager/ipc'
 import {
+  FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
   FILE_MANAGER_COPY_ENTRIES_CHANNEL,
   FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
   FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
   FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
   FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+  FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
   FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
   FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
   FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
   FILE_MANAGER_RENAME_ENTRY_CHANNEL,
   FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+  FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL,
   FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
   FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
-  FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
   FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
-  FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
-  FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
-  FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
 } from './file-manager/ipc'
 import { getExposedApi, getInvokeMock, loadPreloadModule } from './preload.test-support'
 
@@ -103,6 +104,11 @@ describe('preload file-manager bridge', () => {
 
     await fileManagerApi.copyTextToClipboard({ text: '/test/copied/path.txt' })
 
+    await fileManagerApi.savePastedFile({
+      name: 'pasted image.png',
+      content: new Uint8Array([1, 2, 3]),
+    })
+
     expect(invokeMock.mock.calls).toEqual([
       [FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, { initialPath: '/test/default-root' }],
       [FILE_MANAGER_LIST_DIRECTORY_CHANNEL, { rootPath: '/test/root', directoryPath: '/test/root/sub' }],
@@ -164,6 +170,7 @@ describe('preload file-manager bridge', () => {
       [FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL, { path: '/test/file.txt' }],
       [FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL, { path: '/test/dir' }],
       [FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL, { text: '/test/copied/path.txt' }],
+      [FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL, { name: 'pasted image.png', content: new Uint8Array([1, 2, 3]) }],
     ])
   })
 })

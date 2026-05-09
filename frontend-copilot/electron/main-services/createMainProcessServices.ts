@@ -181,5 +181,8 @@ export function createMainProcessServices(
     async copyTextToClipboard(request) {
       return await fileManagerService.copyTextToClipboard(request)
     },
+    async savePastedFile(request) {
+      return await fileManagerService.savePastedFile(request)
+    },
   }
 }

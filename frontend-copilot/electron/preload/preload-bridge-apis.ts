@@ -91,6 +91,7 @@ import {
   FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
   FILE_MANAGER_RENAME_ENTRY_CHANNEL,
   FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+  FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL,
   FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
   FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
   FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
@@ -349,6 +350,9 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
       },
       copyTextToClipboard(request) {
         return ipcRenderer.invoke(FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL, request)
+      },
+      savePastedFile(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL, request)
       },
     },
   }

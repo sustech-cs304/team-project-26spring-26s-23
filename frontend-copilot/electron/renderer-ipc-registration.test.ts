@@ -60,6 +60,7 @@ import {
   FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
   FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
   FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL,
 } from './file-manager/ipc'
 import { registerMainProcessIpcHandlers } from './main-ipc'
 import type { MainProcessServices } from './main-services'
@@ -134,6 +135,7 @@ describe('registerRendererIpcHandlers', () => {
       FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
       FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
       FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+      FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL,
     ])
     expect([...registeredHandlers.keys()]).toEqual([
       CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
@@ -194,6 +196,7 @@ describe('registerRendererIpcHandlers', () => {
       FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
       FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
       FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+      FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL,
     ])
     expect(registeredHandlers.has('copilot-settings:load')).toBe(false)
     expect(registeredHandlers.has('copilot-settings:save')).toBe(false)
@@ -336,6 +339,7 @@ describe('registerRendererIpcHandlers', () => {
     const openEntryWithSystemHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL)
     const revealEntryInFolderHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL)
     const copyTextToClipboardHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL)
+    const savePastedFileHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL)
 
     await expect(watchDirectoriesHandler(undefined, { paths: ['/test/root'] })).resolves.toEqual(
       await handlers.watchDirectories({ paths: ['/test/root'] }),
@@ -357,6 +361,15 @@ describe('registerRendererIpcHandlers', () => {
     await expect(copyTextToClipboardHandler(undefined, { text: 'copied text' })).resolves.toEqual(
       await handlers.copyTextToClipboard({ text: 'copied text' }),
     )
+    await expect(savePastedFileHandler(undefined, {
+      name: 'pasted.txt',
+      content: new Uint8Array([1, 2, 3]),
+    })).resolves.toEqual(
+      await handlers.savePastedFile({
+        name: 'pasted.txt',
+        content: new Uint8Array([1, 2, 3]),
+      }),
+    )
   })
 
   it('wires main-process file manager system action services into renderer IPC handlers', async () => {
@@ -365,11 +378,13 @@ describe('registerRendererIpcHandlers', () => {
     const openEntryWithSystemResult = { ok: true as const, affectedPaths: ['/test/opened-file.txt'] }
     const revealEntryInFolderResult = { ok: true as const, affectedPaths: ['/test/revealed-entry'] }
     const copyTextToClipboardResult = { ok: true as const, affectedPaths: [] }
+    const savePastedFileResult = { ok: true as const, filePath: '/test/copilot-pasted-files/pasted.txt' }
     const services: MainProcessServices = {
       ...rendererHandlers,
       openEntryWithSystem: vi.fn(async () => openEntryWithSystemResult),
       revealEntryInFolder: vi.fn(async () => revealEntryInFolderResult),
       copyTextToClipboard: vi.fn(async () => copyTextToClipboardResult),
+      savePastedFile: vi.fn(async () => savePastedFileResult),
       warmupEnabledMcpServersOnStartup: vi.fn(async () => undefined),
       resolveSettingsWorkspaceProviderRoute: vi.fn(async () => {
         throw new Error('Unexpected provider route resolution during IPC wiring test.')
@@ -394,13 +409,16 @@ describe('registerRendererIpcHandlers', () => {
     const openEntryWithSystemHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL)
     const revealEntryInFolderHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL)
     const copyTextToClipboardHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL)
+    const savePastedFileHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL)
 
     await expect(openEntryWithSystemHandler(undefined, { path: '/test/file.txt' })).resolves.toEqual(openEntryWithSystemResult)
     await expect(revealEntryInFolderHandler(undefined, { path: '/test/dir' })).resolves.toEqual(revealEntryInFolderResult)
     await expect(copyTextToClipboardHandler(undefined, { text: 'copied text' })).resolves.toEqual(copyTextToClipboardResult)
+    await expect(savePastedFileHandler(undefined, { name: 'pasted.txt', content: new Uint8Array([1, 2, 3]) })).resolves.toEqual(savePastedFileResult)
     expect(services.openEntryWithSystem).toHaveBeenCalledWith({ path: '/test/file.txt' })
     expect(services.revealEntryInFolder).toHaveBeenCalledWith({ path: '/test/dir' })
     expect(services.copyTextToClipboard).toHaveBeenCalledWith({ text: 'copied text' })
+    expect(services.savePastedFile).toHaveBeenCalledWith({ name: 'pasted.txt', content: new Uint8Array([1, 2, 3]) })
   })
 })
 

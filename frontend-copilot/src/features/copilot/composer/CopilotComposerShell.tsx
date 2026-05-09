@@ -1,17 +1,20 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
   type Dispatch,
+  type DragEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type RefObject,
   type SetStateAction,
 } from 'react'
-import { ArrowUp, Lightbulb, Square } from 'lucide-react'
+import { ArrowUp, FileText, Lightbulb, Square, X } from 'lucide-react'
 
 import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../../electron/settings-workspace/state-schema'
 import { resolveThinkingValueLabel } from '../../../workbench/thinking-display'
@@ -189,6 +192,95 @@ export function CopilotComposerShell({
     }
   }
 
+  const importExternalFiles = useCallback((files: readonly File[]) => {
+    if (inputDisabled || files.length === 0) {
+      return
+    }
+
+    const fileManager = window.fileManager
+    if (!fileManager?.savePastedFile) {
+      return
+    }
+
+    void (async () => {
+      const savedFiles = [] as Array<{ id: string; name: string; path: string }>
+
+      for (const file of files) {
+        const fileName = file.name.trim() === '' ? 'pasted-file' : file.name
+        const result = await fileManager.savePastedFile({
+          name: fileName,
+          content: await file.arrayBuffer(),
+        })
+
+        if (result.ok) {
+          savedFiles.push({
+            id: result.filePath,
+            name: fileName,
+            path: result.filePath,
+          })
+        }
+      }
+
+      if (savedFiles.length === 0) {
+        return
+      }
+
+      onDraftChange((current) => {
+        const nextPastedFiles = [...current.pastedFiles]
+        for (const savedFile of savedFiles) {
+          if (!nextPastedFiles.some((existingFile) => existingFile.path === savedFile.path)) {
+            nextPastedFiles.push(savedFile)
+          }
+        }
+        return {
+          ...current,
+          pastedFiles: nextPastedFiles,
+        }
+      })
+    })()
+  }, [inputDisabled, onDraftChange])
+
+  const handleMessageInputPaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const pastedFiles = Array.from(event.clipboardData.files ?? [])
+    if (inputDisabled || pastedFiles.length === 0) {
+      return
+    }
+
+    event.preventDefault()
+    importExternalFiles(pastedFiles)
+  }, [importExternalFiles, inputDisabled])
+
+  const handleMessageInputDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (inputDisabled) {
+      return
+    }
+
+    const draggedFiles = Array.from(event.dataTransfer?.files ?? [])
+    if (draggedFiles.length === 0) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }, [inputDisabled])
+
+  const handleMessageInputDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    const droppedFiles = Array.from(event.dataTransfer?.files ?? [])
+    if (inputDisabled || droppedFiles.length === 0) {
+      return
+    }
+
+    event.preventDefault()
+    importExternalFiles(droppedFiles)
+  }, [importExternalFiles, inputDisabled])
+
+  const handleRemovePastedFile = useCallback((fileId: string) => {
+    onDraftChange((current) => ({
+      ...current,
+      pastedFiles: current.pastedFiles.filter((file) => file.id !== fileId),
+    }))
+  }, [onDraftChange])
+
   const handleThinkingSelectionChange = (thinkingSelection: RuntimeThinkingSelection | null) => {
     onDraftChange((current) => applyThinkingSelectionToComposerDraft(current, {
       modelRoute: current.selectedModelRoute,
@@ -305,7 +397,35 @@ export function CopilotComposerShell({
         className={`copilot-chat__composer-surface ${buildComposerSurfaceHeightClassName(composerHeight)}`}
         data-testid="chat-composer-surface"
       >
-        <div className="copilot-panel__field-group copilot-chat__composer-field">
+        <div
+          className="copilot-panel__field-group copilot-chat__composer-field"
+          onDragOver={handleMessageInputDragOver}
+          onDrop={handleMessageInputDrop}
+        >
+          {draft.pastedFiles.length > 0 && (
+            <div className="copilot-chat__composer-attachments" data-testid="chat-composer-pasted-files" aria-label="已引用文件">
+              {draft.pastedFiles.map((file) => (
+                <span
+                  key={file.id}
+                  className="copilot-chat__composer-attachment"
+                  title={file.path}
+                  data-testid={`chat-composer-pasted-file-${file.id}`}
+                >
+                  <FileText className="copilot-chat__composer-attachment-icon" aria-hidden="true" />
+                  <span className="copilot-chat__composer-attachment-name">{file.name}</span>
+                  <button
+                    type="button"
+                    className="copilot-chat__composer-attachment-remove"
+                    aria-label={`移除文件 ${file.name}`}
+                    title="移除文件"
+                    onClick={() => handleRemovePastedFile(file.id)}
+                  >
+                    <X className="copilot-chat__composer-attachment-remove-icon" aria-hidden="true" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             ref={composerInputRef}
             className="copilot-chat__composer-input"
@@ -320,6 +440,7 @@ export function CopilotComposerShell({
                 messageText: nextValue,
               }))
             }}
+            onPaste={handleMessageInputPaste}
             onKeyDown={handleMessageInputKeyDown}
             placeholder={copy.composer.messageInputPlaceholder}
           />

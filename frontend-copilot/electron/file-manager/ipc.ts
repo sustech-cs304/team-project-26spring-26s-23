@@ -16,6 +16,7 @@ export const FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL = 'file-manager:clea
 export const FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL = 'file-manager:open-entry-with-system'
 export const FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL = 'file-manager:reveal-entry-in-folder'
 export const FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL = 'file-manager:copy-text-to-clipboard'
+export const FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL = 'file-manager:save-pasted-file'
 
 export interface FileTreeEntry {
   id: string
@@ -169,6 +170,18 @@ export interface CopyTextToClipboardRequest {
   text: string
 }
 
+export interface SavePastedFileRequest {
+  name: string
+  content: ArrayBuffer | Uint8Array
+}
+
+export interface SavePastedFileSuccess {
+  ok: true
+  filePath: string
+}
+
+export type SavePastedFileResult = SavePastedFileSuccess | FileManagerError
+
 export interface FileManagerApi {
   selectRootDirectory(request?: SelectRootDirectoryRequest): Promise<SelectDirectoryResult>
   listDirectory(request: ListDirectoryRequest): Promise<ListDirectoryResult>
@@ -188,4 +201,5 @@ export interface FileManagerApi {
   openEntryWithSystem(request: OpenEntryWithSystemRequest): Promise<FileOperationResult>
   revealEntryInFolder(request: RevealEntryInFolderRequest): Promise<FileOperationResult>
   copyTextToClipboard(request: CopyTextToClipboardRequest): Promise<FileOperationResult>
+  savePastedFile(request: SavePastedFileRequest): Promise<SavePastedFileResult>
 }

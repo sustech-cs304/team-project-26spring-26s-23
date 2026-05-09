@@ -702,3 +702,45 @@ describe('copyTextToClipboard', () => {
     expect(electronMocks.writeText).toHaveBeenCalledWith('')
   })
 })
+
+describe('savePastedFile', () => {
+  let service: ReturnType<typeof import('./service').createElectronFileManagerService>
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    const mod = await import('./service')
+    service = mod.createElectronFileManagerService({ userDataPath: path.normalize('/userdata') })
+  })
+
+  it('saves pasted file bytes into the persisted pasted-files directory', async () => {
+    const result = await service.savePastedFile({
+      name: ' report?.txt ',
+      content: new Uint8Array([65, 66, 67]),
+    })
+
+    const expectedDirectory = path.join(path.normalize('/userdata'), 'desktop-runtime', 'workspace', 'copilot-pasted-files')
+    const expectedFilePath = path.join(expectedDirectory, 'report_.txt')
+
+    expect(result).toEqual({ ok: true, filePath: expectedFilePath })
+    expect(fsMocks.mkdirSync).toHaveBeenCalledWith(expectedDirectory, { recursive: true })
+    expect(fsMocks.writeFileSync).toHaveBeenCalledTimes(1)
+    expect(fsMocks.writeFileSync.mock.calls[0]?.[0]).toBe(expectedFilePath)
+    expect(Buffer.isBuffer(fsMocks.writeFileSync.mock.calls[0]?.[1])).toBe(true)
+    expect([...((fsMocks.writeFileSync.mock.calls[0]?.[1]) as Buffer)]).toEqual([65, 66, 67])
+  })
+
+  it('creates a unique file name when the sanitized target already exists', async () => {
+    const expectedDirectory = path.join(path.normalize('/userdata'), 'desktop-runtime', 'workspace', 'copilot-pasted-files')
+    const firstPath = path.join(expectedDirectory, 'pasted-file.txt')
+    const secondPath = path.join(expectedDirectory, 'pasted-file-2.txt')
+    fsMocks.existsSync.mockImplementation((input: string) => path.normalize(input) === path.normalize(firstPath))
+
+    const result = await service.savePastedFile({
+      name: 'pasted-file.txt',
+      content: new Uint8Array([1, 2]),
+    })
+
+    expect(result).toEqual({ ok: true, filePath: secondPath })
+    expect(fsMocks.writeFileSync).toHaveBeenCalledWith(secondPath, expect.any(Buffer))
+  })
+})

@@ -127,6 +127,7 @@ import {
   FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
   FILE_MANAGER_RENAME_ENTRY_CHANNEL,
   FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+  FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL,
   FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
   FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
   FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
@@ -149,6 +150,7 @@ import {
   type RenameEntryRequest,
   type RevealEntryInFolderRequest,
   type SaveLastRootDirectoryRequest,
+  type SavePastedFileRequest,
   type SelectRootDirectoryRequest,
   type SelectDirectoryResult,
   type TrashEntriesRequest,
@@ -218,6 +220,7 @@ const RENDERER_IPC_CHANNELS = [
   FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
   FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
   FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+  FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL,
 ] as const
 
 export function registerRendererIpcHandlers(
@@ -611,6 +614,13 @@ export function registerRendererIpcHandlers(
     FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
     async (_event, request: CopyTextToClipboardRequest): Promise<FileOperationResult> => {
       return await handlers.copyTextToClipboard(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL,
+    async (_event, request: SavePastedFileRequest): Promise<import('../file-manager/ipc').SavePastedFileResult> => {
+      return await handlers.savePastedFile(request)
     },
   )
 }

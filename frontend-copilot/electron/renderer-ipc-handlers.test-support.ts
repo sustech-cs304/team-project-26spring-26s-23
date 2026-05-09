@@ -60,6 +60,7 @@ import type {
   ListDirectoryResult,
   LoadLastRootDirectoryResult,
   ProbeDirectoryResult,
+  SavePastedFileResult,
   SelectDirectoryResult,
 } from './file-manager/ipc'
 
@@ -410,6 +411,10 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
     copyTextToClipboard: vi.fn(async (): Promise<FileOperationResult> => ({
       ok: true,
       affectedPaths: [],
+    })),
+    savePastedFile: vi.fn(async (): Promise<SavePastedFileResult> => ({
+      ok: true,
+      filePath: 'D:/workspace/copilot-data/copilot-pasted-files/pasted-file.txt',
     })),
   }
 }

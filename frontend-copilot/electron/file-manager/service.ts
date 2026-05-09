@@ -20,6 +20,7 @@ import type {
   RenameEntryRequest,
   RevealEntryInFolderRequest,
   SaveLastRootDirectoryRequest,
+  SavePastedFileRequest,
   SelectRootDirectoryRequest,
   SelectDirectorySuccess,
   TrashEntriesRequest,
@@ -37,6 +38,7 @@ import {
   FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
   FILE_MANAGER_RENAME_ENTRY_CHANNEL,
   FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+  FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL,
   FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
   FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
   FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL,
@@ -297,10 +299,16 @@ function validateDirectoryExists(dirPath: string, label: string): FileManagerErr
 }
 
 const LAST_ROOT_DIRECTORY_FILE_NAME = 'last-root-directory.json'
+const COPILOT_PASTED_FILES_DIRECTORY_NAME = 'copilot-pasted-files'
 
 function getLastRootDirectoryFilePath(userDataPath: string | undefined): string | null {
   if (userDataPath === undefined || userDataPath.length === 0) return null
   return path.join(userDataPath, 'file-manager', LAST_ROOT_DIRECTORY_FILE_NAME)
+}
+
+function getPastedFilesDirectoryPath(userDataPath: string | undefined): string | null {
+  if (userDataPath === undefined || userDataPath.length === 0) return null
+  return path.join(userDataPath, 'desktop-runtime', 'workspace', COPILOT_PASTED_FILES_DIRECTORY_NAME)
 }
 
 function readLastRootDirectoryFromDisk(filePath: string): string | null {
@@ -333,6 +341,37 @@ function clearLastRootDirectoryFromDisk(filePath: string): void {
   } catch {
     // best-effort; ignore removal failures
   }
+}
+
+function sanitizePastedFileName(name: string): string {
+  const baseName = path.basename(name.trim()) || 'pasted-file'
+  const sanitized = baseName
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return sanitized === '' ? 'pasted-file' : sanitized
+}
+
+function resolveUniqueFilePath(directoryPath: string, fileName: string): string {
+  const extension = path.extname(fileName)
+  const baseName = path.basename(fileName, extension)
+  let counter = 2
+  let candidate = path.join(directoryPath, fileName)
+
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(directoryPath, `${baseName}-${counter}${extension}`)
+    counter += 1
+  }
+
+  return candidate
+}
+
+function toBinaryBuffer(value: ArrayBuffer | Uint8Array): Buffer {
+  if (value instanceof Uint8Array) {
+    return Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+  }
+
+  return Buffer.from(value)
 }
 
 export function createElectronFileManagerService(
@@ -892,6 +931,35 @@ export function createElectronFileManagerService(
       return { ok: true, affectedPaths: [] }
     },
 
+    async savePastedFile(request: SavePastedFileRequest) {
+      const pastedFilesDirectory = getPastedFilesDirectoryPath(userDataPath)
+      if (pastedFilesDirectory === null) {
+        return createFileManagerError('invalid_operation', '未配置持久化路径')
+      }
+
+      const fileName = sanitizePastedFileName(request.name)
+      const contentBuffer = toBinaryBuffer(request.content)
+
+      try {
+        fs.mkdirSync(pastedFilesDirectory, { recursive: true })
+        const filePath = resolveUniqueFilePath(pastedFilesDirectory, fileName)
+        fs.writeFileSync(filePath, contentBuffer)
+        log('info', '文件管理器: 已保存粘贴文件', {
+          originalName: request.name,
+          filePath,
+          sizeBytes: contentBuffer.byteLength,
+        })
+        return { ok: true as const, filePath }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log('error', '文件管理器: 保存粘贴文件失败', {
+          originalName: request.name,
+          error: message,
+        })
+        return createFileManagerError('io_error', '保存粘贴文件失败', message)
+      }
+    },
+
     registerIpcHandlers(ipcMain: IpcMainLike): void {
       ipcMain.handle(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, async (_event, request?: SelectRootDirectoryRequest) => {
         return request === undefined
@@ -1004,12 +1072,20 @@ export function createElectronFileManagerService(
           return await service.copyTextToClipboard(request)
         },
       )
+
+      ipcMain.handle(
+        FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL,
+        async (_event, request: SavePastedFileRequest) => {
+          return await service.savePastedFile(request)
+        },
+      )
     },
 
     removeIpcHandlers(ipcMain: IpcMainLike): void {
       ipcMain.removeHandler(FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL)
       ipcMain.removeHandler(FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL)
       ipcMain.removeHandler(FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL)
+      ipcMain.removeHandler(FILE_MANAGER_SAVE_PASTED_FILE_CHANNEL)
       ipcMain.removeHandler(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL)
       ipcMain.removeHandler(FILE_MANAGER_LIST_DIRECTORY_CHANNEL)
       ipcMain.removeHandler(FILE_MANAGER_PROBE_DIRECTORY_CHANNEL)

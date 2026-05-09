@@ -9,10 +9,12 @@ import {
   buildRuntimeMessageSendInput,
   buildRuntimeThinkingCapabilityFromError,
   buildSessionDebugSummary,
+  buildRuntimeToolPermissionPolicy,
   cancelStreamingToolTurns,
   createComposerDraftFromSession,
   createCopilotTransientErrorState,
   createEmptyComposerDraft,
+  createPastedFilePromptSuffix,
   createPendingAssistantTurn,
   createPreflightErrorDetail,
   createRuntimeRequestErrorDetail,
@@ -21,7 +23,6 @@ import {
   parseRequestOptionsText,
   syncComposerDraftThinkingSelection,
   upsertToolStepTurn,
-  buildRuntimeToolPermissionPolicy,
 } from './copilot-chat-helpers'
 import { sanitizeEnabledToolIds } from './tool-picker'
 import { RuntimeRequestError } from './thread-run-contract'
@@ -82,6 +83,7 @@ describe('copilot chat helpers', () => {
       thinkingSelectionByModelKey: {},
       enabledTools: [],
       requestOptionsText: '{}',
+      pastedFiles: [],
     })
 
     const draft = createComposerDraftFromSession(createSessionShell())
@@ -94,6 +96,7 @@ describe('copilot chat helpers', () => {
       thinkingSelectionByModelKey: {},
       enabledTools: [],
       requestOptionsText: '{}',
+      pastedFiles: [],
     })
   })
 
@@ -126,6 +129,7 @@ describe('copilot chat helpers', () => {
         },
         enabledTools: ['tool.fs.read', 'tool.remote-search', 'tool.remote-search'],
         requestOptionsText: '{"trace":true}',
+        pastedFiles: [],
       },
       toolPermissionPolicy: {
         version: 1,
@@ -181,6 +185,39 @@ describe('copilot chat helpers', () => {
       },
     })
     expect(input).not.toHaveProperty('thinkingLevelIntent')
+  })
+
+  it('appends pasted file references to the sent user message content', () => {
+    const sessionShell = createSessionShell()
+    const pastedFiles = [
+      {
+        id: 'pasted-1',
+        name: 'report.pdf',
+        path: 'D:/workspace/copilot-data/report.pdf',
+      },
+      {
+        id: 'pasted-2',
+        name: 'notes.txt',
+        path: 'D:/workspace/copilot-data/notes.txt',
+      },
+    ]
+    const input = buildRuntimeMessageSendInput({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionShell,
+      draft: {
+        ...createEmptyComposerDraft(),
+        messageText: '请分析这些文件',
+        selectedModelId: 'provider-openai:openai/gpt-4.1',
+        selectedModelRoute: createRuntimeModelRoute(),
+        pastedFiles,
+      },
+      requestOptions: {},
+    })
+
+    expect(createPastedFilePromptSuffix(pastedFiles)).toBe('\n\n[引用文件]\n- D:/workspace/copilot-data/report.pdf\n- D:/workspace/copilot-data/notes.txt')
+    expect(input.message.content).toBe(
+      '请分析这些文件\n\n[引用文件]\n- D:/workspace/copilot-data/report.pdf\n- D:/workspace/copilot-data/notes.txt',
+    )
   })
 
   it('drops denied tools from enabledTools before sending even when stale local selection still includes them', () => {
