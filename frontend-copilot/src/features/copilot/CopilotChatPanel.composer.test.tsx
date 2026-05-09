@@ -604,7 +604,7 @@ describe('CopilotChatPanel composer interactions', () => {
       expect(sendMessage.mock.calls[0]?.[0].message.content).toBe([
         'User attached files:',
         '- attachment-only.txt',
-        'Please process these files accordingly, for example, use `read_file` tool to read the content of these files.',
+        'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
       ].join('\n'))
     } finally {
       rendered.unmount()

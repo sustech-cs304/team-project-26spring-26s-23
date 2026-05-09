@@ -283,6 +283,70 @@ describe('CopilotComposer attachments', () => {
     }
   })
 
+  it('keeps both local files and pathless clipboard images when a single paste contains both', async () => {
+    const localFile = createFileWithPath({
+      name: 'note.txt',
+      type: 'text/plain',
+      path: 'attachment-note.txt',
+      content: 'hello',
+    })
+    const imageFile = new File(['png-data'], 'pasted-image.png', { type: 'image/png' })
+    const readClipboardData = vi.fn(async () => ({
+      ok: true as const,
+      status: 'image' as const,
+      availableFormats: ['image/png'],
+      data: {
+        mimeType: 'image/png' as const,
+        base64Data: 'cG5nLWRhdGE=',
+        byteLength: 8,
+        width: 320,
+        height: 180,
+        suggestedName: 'pasted-image.png',
+      },
+    }))
+    const writeTempFile = vi.fn(async () => ({
+      ok: true as const,
+      file: {
+        path: 'temp-image.png',
+        name: 'temp-image.png',
+        mimeType: 'image/png',
+        size: 8,
+        createdAt: '2026-05-09T00:00:00.000Z',
+        isTemporary: true as const,
+      },
+    }))
+    installMockAttachmentManager({
+      resolveFilePath: vi.fn((candidate: File) => (candidate === localFile ? 'attachment-note.txt' : null)),
+      readClipboardData,
+      writeTempFile,
+    })
+
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const textarea = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const pasteEvent = createPasteEvent({
+        types: ['Files', 'image/png'],
+        items: [{ kind: 'file', type: 'text/plain' }, { kind: 'file', type: 'image/png' }],
+        files: [localFile, imageFile],
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(pasteEvent)
+      })
+      await flushMicrotasks()
+
+      expect(pasteEvent.defaultPrevented).toBe(true)
+      expect(readClipboardData).toHaveBeenCalledTimes(1)
+      expect(writeTempFile).toHaveBeenCalledTimes(1)
+      expect(rendered.getByTestId('chat-composer-attachment-trigger-count').textContent).toBe('2')
+      expect(rendered.container.textContent).toContain('note.txt')
+      expect(rendered.container.textContent).toContain('temp-image.png')
+    } finally {
+      rendered.unmount()
+    }
+  })
+
   it('supports multi-file drag and drop with drag highlight', async () => {
     const rendered = renderWithRoot(<ComposerHarness />)
 

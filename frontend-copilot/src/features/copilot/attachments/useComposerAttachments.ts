@@ -111,21 +111,42 @@ export function useComposerAttachments(input: {
   const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const clipboardFiles = Array.from(event.clipboardData.files)
     if (clipboardFiles.length > 0) {
-      const localFiles = clipboardFiles.filter((file) => extractFileSystemPath(file) !== null)
-      if (localFiles.length > 0) {
-        event.preventDefault()
-        importFiles(localFiles)
-        return
+      const localFiles: File[] = []
+      let hasPathlessImageClipboardFile = false
+      let hasUnsupportedClipboardFile = false
+
+      for (const file of clipboardFiles) {
+        if (extractFileSystemPath(file) !== null) {
+          localFiles.push(file)
+          continue
+        }
+
+        if (file.type.startsWith('image/')) {
+          hasPathlessImageClipboardFile = true
+          continue
+        }
+
+        hasUnsupportedClipboardFile = true
       }
 
-      const hasImageClipboardFile = clipboardFiles.some((file) => file.type.startsWith('image/'))
       event.preventDefault()
-      if (hasImageClipboardFile) {
-        void importClipboardImageData()
+      if (localFiles.length > 0) {
+        importFiles(localFiles)
+      }
+
+      if (hasPathlessImageClipboardFile) {
+        void (async () => {
+          await importClipboardImageData()
+          if (hasUnsupportedClipboardFile) {
+            showNotice(unsupportedNotice)
+          }
+        })()
         return
       }
 
-      showNotice(unsupportedNotice)
+      if (hasUnsupportedClipboardFile) {
+        showNotice(unsupportedNotice)
+      }
       return
     }
 
