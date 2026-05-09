@@ -43,6 +43,15 @@ import {
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from '../bootstrap-window'
 import {
+  DESKTOP_WINDOW_CLOSE_CHANNEL,
+  DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+  DESKTOP_WINDOW_STATE_CHANGED_CHANNEL,
+  DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+  DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+  type DesktopWindowControlsApi,
+  type DesktopWindowState,
+} from '../window-controls'
+import {
   MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
   MANAGED_RUNTIME_LOAD_CHANNEL,
   type ManagedRuntimeApi,
@@ -70,6 +79,28 @@ import {
   type SkillRegistrySubscriptionApi,
 } from '../skill-registry/ipc'
 import { TOOL_CATALOG_LOAD_CHANNEL, type ToolCatalogApi } from '../tool-catalog/ipc'
+import {
+  FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+  FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+  FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
+  FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL,
+  FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+  FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
+  FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
+  FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_RENAME_ENTRY_CHANNEL,
+  FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+  FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
+  FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
+  type DirectoryChangedEvent,
+  type FileManagerApi,
+} from '../file-manager/ipc'
 
 export interface PreloadBridgeApis {
   copilotRuntime: CopilotRuntimeApi
@@ -86,7 +117,9 @@ export interface PreloadBridgeApis {
   skillRegistrySubscription: SkillRegistrySubscriptionApi
   toolCatalog: ToolCatalogApi
   desktopNotification: DesktopNotificationApi
+  windowControls: DesktopWindowControlsApi
   bootstrapWindow: BootstrapWindowApi
+  fileManager: FileManagerApi
 }
 
 type IpcRendererLike = Pick<IpcRenderer, 'invoke' | 'on' | 'off'>
@@ -226,9 +259,96 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
         return ipcRenderer.invoke(DESKTOP_NOTIFICATION_SHOW_CHANNEL, request)
       },
     },
+    windowControls: {
+      loadState() {
+        return ipcRenderer.invoke(DESKTOP_WINDOW_STATE_LOAD_CHANNEL)
+      },
+      minimize() {
+        return ipcRenderer.invoke(DESKTOP_WINDOW_MINIMIZE_CHANNEL)
+      },
+      toggleMaximize() {
+        return ipcRenderer.invoke(DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL)
+      },
+      close() {
+        return ipcRenderer.invoke(DESKTOP_WINDOW_CLOSE_CHANNEL)
+      },
+      onStateChanged(listener: (state: DesktopWindowState) => void): () => void {
+        const handler = (_event: unknown, state: DesktopWindowState) => {
+          listener(state)
+        }
+        ipcRenderer.on(DESKTOP_WINDOW_STATE_CHANGED_CHANNEL, handler)
+        return () => {
+          ipcRenderer.off(DESKTOP_WINDOW_STATE_CHANGED_CHANNEL, handler)
+        }
+      },
+    },
     bootstrapWindow: {
       signalBootstrapScreenReady() {
         return ipcRenderer.invoke(BOOTSTRAP_WINDOW_READY_CHANNEL)
+      },
+    },
+    fileManager: {
+      selectRootDirectory(request) {
+        return request === undefined
+          ? ipcRenderer.invoke(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL)
+          : ipcRenderer.invoke(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, request)
+      },
+      listDirectory(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_LIST_DIRECTORY_CHANNEL, request)
+      },
+      probeDirectory(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_PROBE_DIRECTORY_CHANNEL, request)
+      },
+      createDirectory(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_CREATE_DIRECTORY_CHANNEL, request)
+      },
+      copyEntries(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_COPY_ENTRIES_CHANNEL, request)
+      },
+      moveEntries(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_MOVE_ENTRIES_CHANNEL, request)
+      },
+      renameEntry(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_RENAME_ENTRY_CHANNEL, request)
+      },
+      trashEntries(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_TRASH_ENTRIES_CHANNEL, request)
+      },
+      deleteEntriesPermanently(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL, request)
+      },
+      watchDirectories(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL, request)
+      },
+      unwatchDirectories(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL, request)
+      },
+      onDirectoryChanged(listener: (event: DirectoryChangedEvent) => void): () => void {
+        const handler = (_event: unknown, event: DirectoryChangedEvent) => {
+          listener(event)
+        }
+        ipcRenderer.on(FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL, handler)
+        return () => {
+          ipcRenderer.off(FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL, handler)
+        }
+      },
+      loadLastRootDirectory() {
+        return ipcRenderer.invoke(FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL)
+      },
+      saveLastRootDirectory(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL, request)
+      },
+      clearLastRootDirectory() {
+        return ipcRenderer.invoke(FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL)
+      },
+      openEntryWithSystem(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL, request)
+      },
+      revealEntryInFolder(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL, request)
+      },
+      copyTextToClipboard(request) {
+        return ipcRenderer.invoke(FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL, request)
       },
     },
   }

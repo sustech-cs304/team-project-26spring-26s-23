@@ -73,6 +73,28 @@ import type {
 } from '../skill-registry/ipc'
 import type { SkillRegistrySubscriptionEvent } from '../skill-registry/types'
 import type { ToolCatalogLoadResult } from '../tool-catalog/ipc'
+import type {
+  CopyEntriesRequest,
+  CopyTextToClipboardRequest,
+  CreateDirectoryRequest,
+  DeleteEntriesRequest,
+  FileOperationResult,
+  ListDirectoryRequest,
+  ListDirectoryResult,
+  LoadLastRootDirectoryResult,
+  MoveEntriesRequest,
+  OpenEntryWithSystemRequest,
+  ProbeDirectoryRequest,
+  ProbeDirectoryResult,
+  RenameEntryRequest,
+  RevealEntryInFolderRequest,
+  SaveLastRootDirectoryRequest,
+  SelectRootDirectoryRequest,
+  SelectDirectoryResult,
+  TrashEntriesRequest,
+  UnwatchDirectoriesRequest,
+  WatchDirectoriesRequest,
+} from '../file-manager/ipc'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
 
@@ -100,6 +122,7 @@ export interface CreateMainProcessServicesOptions {
     event: SkillRegistrySubscriptionEvent,
   ) => void | Promise<void>
   createCopilotHistoryService: () => ElectronCopilotHistoryService
+  getMainWindow?: () => Electron.BrowserWindow | null
 }
 
 export interface MainProcessServices {
@@ -161,4 +184,21 @@ export interface MainProcessServices {
   handleDesktopCapabilityBridgeRequest: (
     request: DesktopCapabilityBridgeRequest,
   ) => Promise<DesktopCapabilityBridgeResponse>
+  selectRootDirectory: (request?: SelectRootDirectoryRequest) => Promise<SelectDirectoryResult>
+  listDirectory: (request: ListDirectoryRequest) => Promise<ListDirectoryResult>
+  probeDirectory: (request: ProbeDirectoryRequest) => Promise<ProbeDirectoryResult>
+  createDirectory: (request: CreateDirectoryRequest) => Promise<FileOperationResult>
+  copyEntries: (request: CopyEntriesRequest) => Promise<FileOperationResult>
+  moveEntries: (request: MoveEntriesRequest) => Promise<FileOperationResult>
+  renameEntry: (request: RenameEntryRequest) => Promise<FileOperationResult>
+  trashEntries: (request: TrashEntriesRequest) => Promise<FileOperationResult>
+  deleteEntriesPermanently: (request: DeleteEntriesRequest) => Promise<FileOperationResult>
+  watchDirectories: (request: WatchDirectoriesRequest) => Promise<FileOperationResult>
+  unwatchDirectories: (request: UnwatchDirectoriesRequest) => Promise<FileOperationResult>
+  loadLastRootDirectory: () => Promise<LoadLastRootDirectoryResult>
+  saveLastRootDirectory: (request: SaveLastRootDirectoryRequest) => Promise<FileOperationResult>
+  clearLastRootDirectory: () => Promise<FileOperationResult>
+  openEntryWithSystem: (request: OpenEntryWithSystemRequest) => Promise<FileOperationResult>
+  revealEntryInFolder: (request: RevealEntryInFolderRequest) => Promise<FileOperationResult>
+  copyTextToClipboard: (request: CopyTextToClipboardRequest) => Promise<FileOperationResult>
 }

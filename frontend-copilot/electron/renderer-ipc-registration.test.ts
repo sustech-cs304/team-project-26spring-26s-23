@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { BOOTSTRAP_WINDOW_READY_CHANNEL } from './bootstrap-window'
 import { CONFIG_CENTER_PUBLIC_PATCH_CHANNEL } from './config-center/public-patch'
@@ -36,6 +36,33 @@ import {
 } from './skill-registry/ipc'
 import { TOOL_CATALOG_LOAD_CHANNEL } from './tool-catalog/ipc'
 import { DESKTOP_NOTIFICATION_SHOW_CHANNEL } from './desktop-notification'
+import {
+  DESKTOP_WINDOW_CLOSE_CHANNEL,
+  DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+  DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+  DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+} from './window-controls'
+import {
+  FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+  FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+  FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
+  FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+  FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
+  FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
+  FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_RENAME_ENTRY_CHANNEL,
+  FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+  FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
+  FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
+} from './file-manager/ipc'
+import { registerMainProcessIpcHandlers } from './main-ipc'
+import type { MainProcessServices } from './main-services'
 import { createRendererIpcHandlers } from './renderer-ipc-handlers.test-support'
 import { createMcpStdioStubServerFixture, createSkillRecordFixture } from './renderer-ipc.test-support'
 import { createFakeIpcMain } from './renderer-ipc-transport.test-support'
@@ -86,6 +113,27 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_RUNTIME_RETRY_CHANNEL,
       DESKTOP_NOTIFICATION_SHOW_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
+      DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+      DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+      DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+      DESKTOP_WINDOW_CLOSE_CHANNEL,
+      FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
+      FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+      FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
+      FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
+      FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+      FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
+      FILE_MANAGER_RENAME_ENTRY_CHANNEL,
+      FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
+      FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
+      FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
+      FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
+      FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
+      FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+      FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
+      FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
+      FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+      FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
     ])
     expect([...registeredHandlers.keys()]).toEqual([
       CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
@@ -125,6 +173,27 @@ describe('registerRendererIpcHandlers', () => {
       COPILOT_RUNTIME_RETRY_CHANNEL,
       DESKTOP_NOTIFICATION_SHOW_CHANNEL,
       BOOTSTRAP_WINDOW_READY_CHANNEL,
+      DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+      DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+      DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+      DESKTOP_WINDOW_CLOSE_CHANNEL,
+      FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
+      FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+      FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
+      FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
+      FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+      FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
+      FILE_MANAGER_RENAME_ENTRY_CHANNEL,
+      FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
+      FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
+      FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
+      FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
+      FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
+      FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+      FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
+      FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
+      FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+      FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
     ])
     expect(registeredHandlers.has('copilot-settings:load')).toBe(false)
     expect(registeredHandlers.has('copilot-settings:save')).toBe(false)
@@ -157,6 +226,10 @@ describe('registerRendererIpcHandlers', () => {
     const retryRuntimeHandler = getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_RETRY_CHANNEL)
     const notifyDesktopNotificationHandler = getRegisteredHandler(registeredHandlers, DESKTOP_NOTIFICATION_SHOW_CHANNEL)
     const notifyBootstrapWindowReadyHandler = getRegisteredHandler(registeredHandlers, BOOTSTRAP_WINDOW_READY_CHANNEL)
+    const loadDesktopWindowStateHandler = getRegisteredHandler(registeredHandlers, DESKTOP_WINDOW_STATE_LOAD_CHANNEL)
+    const minimizeDesktopWindowHandler = getRegisteredHandler(registeredHandlers, DESKTOP_WINDOW_MINIMIZE_CHANNEL)
+    const toggleMaximizeDesktopWindowHandler = getRegisteredHandler(registeredHandlers, DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL)
+    const closeDesktopWindowHandler = getRegisteredHandler(registeredHandlers, DESKTOP_WINDOW_CLOSE_CHANNEL)
 
     await expect(loadSnapshotHandler()).resolves.toEqual(await handlers.loadConfigCenterPublicSnapshot())
     await expect(applyPatchHandler(undefined, {
@@ -248,6 +321,86 @@ describe('registerRendererIpcHandlers', () => {
     })
     await expect(notifyBootstrapWindowReadyHandler()).resolves.toBeUndefined()
     expect(handlers.notifyBootstrapWindowReady).toHaveBeenCalledOnce()
+    await expect(loadDesktopWindowStateHandler()).resolves.toEqual(await handlers.loadDesktopWindowState())
+    await expect(minimizeDesktopWindowHandler()).resolves.toBeUndefined()
+    expect(handlers.minimizeDesktopWindow).toHaveBeenCalledOnce()
+    await expect(toggleMaximizeDesktopWindowHandler()).resolves.toEqual(await handlers.toggleMaximizeDesktopWindow())
+    await expect(closeDesktopWindowHandler()).resolves.toBeUndefined()
+    expect(handlers.closeDesktopWindow).toHaveBeenCalledOnce()
+
+    const watchDirectoriesHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL)
+    const unwatchDirectoriesHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL)
+    const loadLastRootHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL)
+    const saveLastRootHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL)
+    const clearLastRootHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL)
+    const openEntryWithSystemHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL)
+    const revealEntryInFolderHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL)
+    const copyTextToClipboardHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL)
+
+    await expect(watchDirectoriesHandler(undefined, { paths: ['/test/root'] })).resolves.toEqual(
+      await handlers.watchDirectories({ paths: ['/test/root'] }),
+    )
+    await expect(unwatchDirectoriesHandler(undefined, { paths: ['/test/root'] })).resolves.toEqual(
+      await handlers.unwatchDirectories({ paths: ['/test/root'] }),
+    )
+    await expect(loadLastRootHandler()).resolves.toEqual(await handlers.loadLastRootDirectory())
+    await expect(saveLastRootHandler(undefined, { rootPath: '/test/saved-root' })).resolves.toEqual(
+      await handlers.saveLastRootDirectory({ rootPath: '/test/saved-root' }),
+    )
+    await expect(clearLastRootHandler()).resolves.toEqual(await handlers.clearLastRootDirectory())
+    await expect(openEntryWithSystemHandler(undefined, { path: '/test/file.txt' })).resolves.toEqual(
+      await handlers.openEntryWithSystem({ path: '/test/file.txt' }),
+    )
+    await expect(revealEntryInFolderHandler(undefined, { path: '/test/dir' })).resolves.toEqual(
+      await handlers.revealEntryInFolder({ path: '/test/dir' }),
+    )
+    await expect(copyTextToClipboardHandler(undefined, { text: 'copied text' })).resolves.toEqual(
+      await handlers.copyTextToClipboard({ text: 'copied text' }),
+    )
+  })
+
+  it('wires main-process file manager system action services into renderer IPC handlers', async () => {
+    const { registeredHandlers, ipcMain } = createFakeIpcMain()
+    const rendererHandlers = createRendererIpcHandlers()
+    const openEntryWithSystemResult = { ok: true as const, affectedPaths: ['/test/opened-file.txt'] }
+    const revealEntryInFolderResult = { ok: true as const, affectedPaths: ['/test/revealed-entry'] }
+    const copyTextToClipboardResult = { ok: true as const, affectedPaths: [] }
+    const services: MainProcessServices = {
+      ...rendererHandlers,
+      openEntryWithSystem: vi.fn(async () => openEntryWithSystemResult),
+      revealEntryInFolder: vi.fn(async () => revealEntryInFolderResult),
+      copyTextToClipboard: vi.fn(async () => copyTextToClipboardResult),
+      warmupEnabledMcpServersOnStartup: vi.fn(async () => undefined),
+      resolveSettingsWorkspaceProviderRoute: vi.fn(async () => {
+        throw new Error('Unexpected provider route resolution during IPC wiring test.')
+      }),
+      handleDesktopCapabilityBridgeRequest: vi.fn(async () => {
+        throw new Error('Unexpected desktop capability bridge request during IPC wiring test.')
+      }),
+    }
+
+    registerMainProcessIpcHandlers(ipcMain as never, {
+      services,
+      loadCopilotRuntime: rendererHandlers.loadCopilotRuntime,
+      retryCopilotRuntime: rendererHandlers.retryCopilotRuntime,
+      notifyDesktopNotification: rendererHandlers.notifyDesktopNotification,
+      loadDesktopWindowState: rendererHandlers.loadDesktopWindowState,
+      minimizeDesktopWindow: rendererHandlers.minimizeDesktopWindow,
+      toggleMaximizeDesktopWindow: rendererHandlers.toggleMaximizeDesktopWindow,
+      closeDesktopWindow: rendererHandlers.closeDesktopWindow,
+      notifyBootstrapWindowReady: rendererHandlers.notifyBootstrapWindowReady,
+    })
+
+    const openEntryWithSystemHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL)
+    const revealEntryInFolderHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL)
+    const copyTextToClipboardHandler = getRegisteredHandler(registeredHandlers, FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL)
+
+    await expect(openEntryWithSystemHandler(undefined, { path: '/test/file.txt' })).resolves.toEqual(openEntryWithSystemResult)
+    await expect(revealEntryInFolderHandler(undefined, { path: '/test/dir' })).resolves.toEqual(revealEntryInFolderResult)
+    await expect(copyTextToClipboardHandler(undefined, { text: 'copied text' })).resolves.toEqual(copyTextToClipboardResult)
+    expect(services.openEntryWithSystem).toHaveBeenCalledWith({ path: '/test/file.txt' })
+    expect(services.revealEntryInFolder).toHaveBeenCalledWith({ path: '/test/dir' })
+    expect(services.copyTextToClipboard).toHaveBeenCalledWith({ text: 'copied text' })
   })
 })
 

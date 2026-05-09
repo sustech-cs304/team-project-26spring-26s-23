@@ -857,7 +857,7 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).not.toContain('chat-message-assistant-icon-1')
   })
 
-  it('renders assistant content as structured markdown with dividers and MathJax formulas', () => {
+  it('renders assistant content as structured markdown with dividers, MathJax formulas, and highlighted code blocks', () => {
     const modelCatalog = createTestModelCatalog()
     const conversation: CopilotMessageListItem[] = [{
       id: 'assistant:run-markdown:1',
@@ -865,7 +865,7 @@ describe('CopilotMessageList segment rendering', () => {
       runId: 'run-markdown',
       sequence: 1,
       title: '助手响应',
-      content: '# 标题\n\n---\n\n- 列表项\n\n**加粗** 与 `代码`\n\n行内公式 $E = mc^2$\n\n$$\na^2+b^2=c^2\n$$\n\n| 列 | 值 |\n| --- | --- |\n| A | B |',
+      content: '# 标题\n\n---\n\n- 列表项\n\n**加粗** 与 `代码`\n\n```python\ndef bubble_sort(items):\n    return sorted(items)\n```\n\n行内公式 $E = mc^2$\n\n$$\na^2+b^2=c^2\n$$\n\n| 列 | 值 |\n| --- | --- |\n| A | B |',
       status: 'completed',
       resolvedModelId: 'openai/gpt-4.1',
       resolvedModelRoute: createRuntimeModelRoute({
@@ -891,13 +891,90 @@ describe('CopilotMessageList segment rendering', () => {
     expect(html).toContain('<ul>')
     expect(html).toContain('<li>列表项</li>')
     expect(html).toContain('<strong>加粗</strong>')
-    expect(html).toContain('<code>代码</code>')
+    expect(html).toContain('<code class="copilot-chat__inline-code">代码</code>')
+    expect(html).toContain('copilot-chat__code-block')
+    expect(html).toContain('copilot-chat__code-block-language">Python</span>')
+    expect(html).toContain('data-code-block-action="copy"')
+    expect(html).toContain('data-code-block-action="download"')
+    expect(html).toContain('data-code-block-action="wrap"')
+    expect(html).toContain('hljs language-python')
     expect(html).toContain('<table>')
     expect(html).toContain('mjx-container')
     expect(html).toContain('jax="SVG"')
     expect(html).not.toContain('**加粗**')
     expect(html).not.toContain('| --- |')
     expect(html).toContain('copilot-chat__message-text--markdown')
+  })
+
+  it('renders fenced code blocks without a declared language as block code instead of inline code', () => {
+    const modelCatalog = createTestModelCatalog()
+    const conversation: CopilotMessageListItem[] = [{
+      id: 'assistant:run-markdown-no-language:1',
+      kind: 'assistant',
+      runId: 'run-markdown-no-language',
+      sequence: 1,
+      title: '助手响应',
+      content: '```\nconst answer = 42\n```',
+      status: 'completed',
+      resolvedModelId: 'openai/gpt-4.1',
+      resolvedModelRoute: createRuntimeModelRoute({
+        providerProfileId: 'provider-openai',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://api.example.com/v1',
+          modelId: 'openai/gpt-4.1',
+        },
+      }),
+      resolvedToolIds: [],
+      requestOptions: {},
+    }]
+
+    const html = renderToStaticMarkup(
+      <CopilotMessageList conversation={conversation} models={modelCatalog.models} />,
+    )
+
+    expect(html).toContain('copilot-chat__code-block')
+    expect(html).toContain('copilot-chat__code-block-language">Text</span>')
+    expect(html).toContain('<pre class="copilot-chat__code-block-pre"><code class="hljs">const answer = 42\n</code></pre>')
+    expect(html).not.toContain('copilot-chat__inline-code">const answer = 42')
+  })
+
+  it('renders typst fenced blocks with the local fallback highlighter', () => {
+    const modelCatalog = createTestModelCatalog()
+    const conversation: CopilotMessageListItem[] = [{
+      id: 'assistant:run-markdown-typst:1',
+      kind: 'assistant',
+      runId: 'run-markdown-typst',
+      sequence: 1,
+      title: '助手响应',
+      content: '```typst\n#set text(size: 12pt)\n= Course Note\n// comment\n```',
+      status: 'completed',
+      resolvedModelId: 'openai/gpt-4.1',
+      resolvedModelRoute: createRuntimeModelRoute({
+        providerProfileId: 'provider-openai',
+        snapshot: {
+          provider: 'openai',
+          endpointType: 'openai-compatible',
+          baseUrl: 'https://api.example.com/v1',
+          modelId: 'openai/gpt-4.1',
+        },
+      }),
+      resolvedToolIds: [],
+      requestOptions: {},
+    }]
+
+    const html = renderToStaticMarkup(
+      <CopilotMessageList conversation={conversation} models={modelCatalog.models} />,
+    )
+
+    expect(html).toContain('copilot-chat__code-block-language">Typst</span>')
+    expect(html).toContain('data-language-id="typst"')
+    expect(html).toContain('hljs language-typst')
+    expect(html).toContain('<span class="hljs-keyword">#set</span>')
+    expect(html).toContain('<span class="hljs-number">12pt</span>')
+    expect(html).toContain('<span class="hljs-title">= Course Note</span>')
+    expect(html).toContain('<span class="hljs-comment">// comment</span>')
   })
 
   it('keeps user content as plain text and does not render markdown syntax as html', () => {
@@ -1023,6 +1100,27 @@ describe('CopilotMessageList segment rendering', () => {
     expect(css).toContain('border-top: 1px solid')
     expect(css).not.toContain('radial-gradient')
     expect(css).not.toContain('border-style: dotted')
+  })
+
+  it('styles assistant code blocks with a theme-aware shell and token colors', () => {
+    const cssFilePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), './copilot-message-list.css')
+    const css = readFileSync(cssFilePath, 'utf8')
+
+    expect(css).toContain('.copilot-chat__code-block')
+    expect(css).toContain('.copilot-chat__code-block-header')
+    expect(css).toContain('.copilot-chat__code-block-language')
+    expect(css).toContain('.copilot-chat__code-block-actions')
+    expect(css).toContain('.copilot-chat__code-block-action')
+    expect(css).toContain('.copilot-chat__code-block--nowrap .copilot-chat__code-block-pre code')
+    expect(css).toContain('--copilot-code-block-bg:')
+    expect(css).toContain('--copilot-code-text: #253044;')
+    expect(css).toContain(":root[data-theme='dark'] .copilot-chat")
+    expect(css).toContain('--copilot-code-text: #e2e8f0;')
+    expect(css).toContain('.copilot-chat__code-block-pre .hljs-keyword')
+    expect(css).toContain('color: var(--copilot-code-keyword);')
+    expect(css).toContain('white-space: pre-wrap;')
+    expect(css).toContain('white-space: pre;')
+    expect(css).toContain('.copilot-chat__inline-code')
   })
 
   it('uses pre-wrap semantics for multiline user messages', () => {

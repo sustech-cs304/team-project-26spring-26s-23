@@ -1,9 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import rehypeMathjax from 'rehype-mathjax/svg'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
-import type { Components } from 'react-markdown'
 
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import { ModelPickerIcon } from '../components/ModelPicker'
@@ -30,22 +25,7 @@ import {
   type RenderedAssistantPlaceholderState,
 } from './assistant-placeholder'
 
-const assistantMarkdownComponents: Components = {
-  hr({ className, ...props }) {
-    return (
-      <hr
-        {...props}
-        className={[
-          'copilot-chat__markdown-divider',
-          className,
-        ].filter((value) => value !== undefined && value !== '').join(' ')}
-      />
-    )
-  },
-}
-
-const assistantMarkdownRemarkPlugins = [remarkGfm, remarkMath]
-const assistantMarkdownRehypePlugins = [rehypeMathjax]
+import { renderAssistantMarkdownMessageBody } from './assistant-markdown'
 
 const assistantPlaceholderExitMs = 180
 
@@ -166,7 +146,7 @@ export function CopilotMessagesShell({
       {visibleConversation.length === 0 && !renderedAssistantPlaceholder.visible
         ? (
             <div
-              className="copilot-chat__empty"
+              className="copilot-chat__empty copilot-panel__enter"
               data-testid={emptyState === null ? 'chat-empty-state' : 'chat-no-model-empty-state'}
             >
               <p className="copilot-chat__empty-title">{emptyState?.title ?? copy.messages.emptyStateTitle}</p>
@@ -177,6 +157,7 @@ export function CopilotMessagesShell({
           )
         : visibleConversation.map((turn, index) => {
             const detailRows = buildDetailRows()
+            const enterDelay = Math.min(index * 35, 300)
             return (
               <article
                 key={turn.id}
@@ -186,6 +167,7 @@ export function CopilotMessagesShell({
                   turn.status ? `copilot-chat__message--${turn.status}` : '',
                 ].filter((className) => className !== '').join(' ')}
                 data-testid={`chat-message-${turn.kind}-${index}`}
+                style={{ animationDelay: `${enterDelay}ms` }}
               >
                 {turn.kind === 'inline-form'
                   ? (
@@ -410,23 +392,10 @@ function findFirstNonEmptyValue(...values: Array<string | null | undefined>): st
   return null
 }
 
-function renderMarkdownMessageBody(content: string) {
-  return (
-    <div className="copilot-chat__message-text copilot-chat__message-text--markdown">
-      <ReactMarkdown
-        components={assistantMarkdownComponents}
-        remarkPlugins={assistantMarkdownRemarkPlugins}
-        rehypePlugins={assistantMarkdownRehypePlugins}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  )
-}
 
 function renderMessageBody(turn: CopilotMessageListItem) {
   if (turn.kind === 'assistant') {
-    return renderMarkdownMessageBody(turn.content)
+    return renderAssistantMarkdownMessageBody(turn.content)
   }
 
   if (turn.kind === 'user') {

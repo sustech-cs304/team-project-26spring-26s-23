@@ -23,7 +23,9 @@ describe('preload renderer bridge', () => {
       'skillRegistrySubscription',
       'toolCatalog',
       'desktopNotification',
+      'windowControls',
       'bootstrapWindow',
+      'fileManager',
     ])
     expect(exposedKeys).not.toContain('copilotSettings')
   })

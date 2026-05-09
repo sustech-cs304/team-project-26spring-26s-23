@@ -4,12 +4,20 @@ import type {
 } from './MainProcessServiceTypes'
 import { createMainProcessServiceAccessors } from './MainProcessServiceAccessors'
 import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
+import { createElectronFileManagerService } from '../file-manager/service'
 
 export function createMainProcessServices(
   options: CreateMainProcessServicesOptions,
 ): MainProcessServices {
   const accessors = createMainProcessServiceAccessors(options)
   const copilotHistoryService = options.createCopilotHistoryService()
+  const fileManagerService = createElectronFileManagerService({
+    getMainWindow: options.getMainWindow,
+    userDataPath: options.userDataPath,
+    appendLog(level, message, context) {
+      return options.appendMainRuntimeLog(level, `[file-manager] ${message}`, context ?? null)
+    },
+  })
 
   return {
     async loadConfigCenterPublicSnapshot() {
@@ -119,6 +127,59 @@ export function createMainProcessServices(
     },
     async handleDesktopCapabilityBridgeRequest(request) {
       return await accessors.getDesktopCapabilityBridgeService().handleRequest(request)
+    },
+    async selectRootDirectory(request) {
+      return request === undefined
+        ? await fileManagerService.selectRootDirectory()
+        : await fileManagerService.selectRootDirectory(request)
+    },
+    async listDirectory(request) {
+      return await fileManagerService.listDirectory(request)
+    },
+    async probeDirectory(request) {
+      return await fileManagerService.probeDirectory(request)
+    },
+    async createDirectory(request) {
+      return await fileManagerService.createDirectory(request)
+    },
+    async copyEntries(request) {
+      return await fileManagerService.copyEntries(request)
+    },
+    async moveEntries(request) {
+      return await fileManagerService.moveEntries(request)
+    },
+    async renameEntry(request) {
+      return await fileManagerService.renameEntry(request)
+    },
+    async trashEntries(request) {
+      return await fileManagerService.trashEntries(request)
+    },
+    async deleteEntriesPermanently(request) {
+      return await fileManagerService.deleteEntriesPermanently(request)
+    },
+    async watchDirectories(request) {
+      return await fileManagerService.watchDirectories(request)
+    },
+    async unwatchDirectories(request) {
+      return await fileManagerService.unwatchDirectories(request)
+    },
+    async loadLastRootDirectory() {
+      return await fileManagerService.loadLastRootDirectory()
+    },
+    async saveLastRootDirectory(request) {
+      return await fileManagerService.saveLastRootDirectory(request)
+    },
+    async clearLastRootDirectory() {
+      return await fileManagerService.clearLastRootDirectory()
+    },
+    async openEntryWithSystem(request) {
+      return await fileManagerService.openEntryWithSystem(request)
+    },
+    async revealEntryInFolder(request) {
+      return await fileManagerService.revealEntryInFolder(request)
+    },
+    async copyTextToClipboard(request) {
+      return await fileManagerService.copyTextToClipboard(request)
     },
   }
 }
