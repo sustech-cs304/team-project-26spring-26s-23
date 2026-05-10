@@ -65,6 +65,8 @@ def _build_result(
     stats: dict[str, Any],
     *,
     logs: list[BlackboardLogEvent] | None = None,
+    unified_stats: dict[str, int] | None = None,
+    unified_error: str | None = None,
 ) -> CalendarICSSyncResult:
     active_event_rows = db_manager.list_calendar_events(feed_url, include_deleted=False)
     all_event_rows = db_manager.list_calendar_events(feed_url, include_deleted=True)
@@ -76,6 +78,8 @@ def _build_result(
         active_events=active_event_rows,
         all_events=all_event_rows,
         logs=[] if logs is None else logs,
+        unified_stats=unified_stats,
+        unified_error=unified_error,
     )
 
 
@@ -230,6 +234,8 @@ def refresh_calendar_ics_subscription_from_text(
     )
 
     # 同步到统一日历
+    unified_stats: dict[str, int] | None = None
+    unified_error: str | None = None
     event_db: EventDatabaseManager | None = None
     try:
         event_db = EventDatabaseManager()
@@ -239,9 +245,10 @@ def refresh_calendar_ics_subscription_from_text(
             payload={"unified_stats": unified_stats},
         )
     except Exception as sync_ex:
+        unified_error = str(sync_ex)
         logger.warning(
             "⚠ 同步至统一日历失败",
-            payload={"error": str(sync_ex)},
+            payload={"error": unified_error},
         )
     finally:
         if event_db is not None:
@@ -290,4 +297,6 @@ def refresh_calendar_ics_subscription_from_text(
             "refreshed_at": now,
         },
         logs=log_session.snapshot(),
+        unified_stats=unified_stats,
+        unified_error=unified_error,
     )

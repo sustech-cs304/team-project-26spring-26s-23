@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.integrations.sustech.blackboard.api import BlackboardCalendarICSParser
 from app.integrations.sustech.blackboard.data import CalendarEvent, DatabaseManager
+from app.integrations.sustech.blackboard.provider.results import CalendarICSSyncResult
 from app.integrations.sustech.blackboard.provider.use_cases.calendar_ics import (
     refresh_calendar_ics_subscription_from_text,
 )
@@ -216,3 +217,74 @@ END:VCALENDAR
 
     events_all = manager.list_calendar_events(feed_url, include_deleted=True)
     _assert_equal(len(events_all), 1, "Blackboard 不应生成重复事件")
+
+
+# ── CalendarICSSyncResult unified_* 字段 ─────────────────────────────
+
+def test_calendar_ics_result_unified_ok_when_success() -> None:
+    result = CalendarICSSyncResult(
+        feed_url="https://example.ics",
+        refresh_mode="force",
+        db_path=Path("/tmp/test.db"),
+        stats={"inserted": 1, "updated": 0, "deleted": 0},
+        active_events=[],
+        all_events=[],
+        unified_stats={"inserted": 2, "updated": 0, "deleted": 0},
+    )
+    _assert_true(result.unified_ok, "unified_stats 存在且 unified_error 为 None，应返回 True")
+    assert result.unified_stats is not None
+    _assert_equal(result.unified_stats["inserted"], 2, "应能读取 unified_stats")
+    _assert_true(result.unified_error is None, "unified_error 应为 None")
+
+
+def test_calendar_ics_result_unified_not_ok_when_error() -> None:
+    result = CalendarICSSyncResult(
+        feed_url="https://example.ics",
+        refresh_mode="force",
+        db_path=Path("/tmp/test.db"),
+        stats={"inserted": 1, "updated": 0, "deleted": 0},
+        active_events=[],
+        all_events=[],
+        unified_error="database locked",
+    )
+    _assert_true(not result.unified_ok, "unified_error 存在时应返回 False")
+    _assert_equal(result.unified_error, "database locked", "unified_error 应保留错误信息")
+    _assert_true(result.unified_stats is None, "unified_stats 应为 None")
+
+
+def test_calendar_ics_result_unified_ok_defaults_to_false() -> None:
+    result = CalendarICSSyncResult(
+        feed_url="https://example.ics",
+        refresh_mode="force",
+        db_path=Path("/tmp/test.db"),
+        stats={"inserted": 0},
+        active_events=[],
+        all_events=[],
+    )
+    _assert_true(not result.unified_ok, "两个字段均为默认值 None 时应返回 False")
+
+
+def test_calendar_ics_result_unified_field_in_return_value(tmp_path: Path) -> None:
+    """从 ICS 刷新接口返回的结果应包含 unified_stats / unified_error。"""
+    db_path = tmp_path / "test_ics.db"
+    feed_url = "https://bb.example/calendar.ics"
+
+    ics_text = """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:unified-test@example.com
+SUMMARY:Unified Test Event
+DTSTART:20260501T100000Z
+DTEND:20260501T120000Z
+END:VEVENT
+END:VCALENDAR"""
+
+    result = refresh_calendar_ics_subscription_from_text(
+        feed_url, ics_text, db_path=db_path
+    )
+
+    # unified_stats 和 unified_error 应存在（至少一个不为 None）
+    _assert_true(
+        result.unified_stats is not None or result.unified_error is not None,
+        "返回结果应包含 unified_stats 或 unified_error",
+    )
