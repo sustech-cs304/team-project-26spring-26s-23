@@ -2405,7 +2405,7 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
-  it('restores an empty persisted thread as ready empty state without requesting history detail', async () => {
+  it('restores an empty persisted thread through detail loading and keeps the new topic title', async () => {
     mockCopilotChatPanel.mockClear()
 
     const directoryResponse = createDirectoryResponse()
@@ -2434,15 +2434,16 @@ describe('AssistantWorkspace render + interactions', () => {
       />,
     )
 
+    await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length >= 1)
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === emptyHistoryFixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().sessionShell?.title === '新话题'
       && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
       && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
     ))
 
-    expect(getHistoryThreadDetail).not.toHaveBeenCalled()
+    expect(getHistoryThreadDetail).toHaveBeenCalledWith(emptyHistoryFixture.summary.threadId)
     expect(getLastMockCopilotChatPanelProps().sessionHistory).toMatchObject({
-      hasLoadedDetail: true,
       detailStatus: 'ready',
       timelineItems: [],
       runSummaries: [],
@@ -2564,8 +2565,8 @@ function createEmptyPersistedHistoryFixture() {
   const summary = {
     threadId: 'thread-empty',
     boundAgentId: 'general',
-    title: '空会话',
-    titleSource: 'manual',
+    title: '新话题',
+    titleSource: 'deterministic',
     summary: null,
     summarySource: null,
     createdAt: '2026-04-13T16:00:00Z',

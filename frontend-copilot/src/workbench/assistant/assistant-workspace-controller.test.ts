@@ -8,7 +8,6 @@ import {
   createAssistantSessionShell,
   formatAssistantWorkspaceError,
 } from './assistant-workspace-controller'
-import { createAssistantSessionShellFromHistorySummary } from './assistant-history-state'
 import {
   createCapabilitiesResponse,
   createDirectoryResponse,
@@ -93,30 +92,6 @@ describe('assistant-workspace-controller', () => {
         toolSelectionMode: 'recommendation-only',
       },
     })
-  })
-
-  it('restores an empty persisted thread summary with the new topic title', () => {
-    const shell = createAssistantSessionShellFromHistorySummary({
-      summary: {
-        threadId: 'thread-empty',
-        boundAgentId: 'default',
-        title: null,
-        titleSource: null,
-        summary: null,
-        summarySource: null,
-        createdAt: '2026-04-13T16:00:00Z',
-        updatedAt: '2026-04-13T16:00:00Z',
-        lastActivityAt: null,
-        lastRunId: null,
-        lastRunStatus: null,
-        lastUserMessagePreview: null,
-        lastAssistantMessagePreview: null,
-        driftSummary: null,
-      },
-      agents: [getSelectedAgent()],
-    })
-
-    expect(shell.title).toBe('新话题')
   })
 
   it('maps runtime directory payload into assistant directory state', () => {

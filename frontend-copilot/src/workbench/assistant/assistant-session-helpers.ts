@@ -36,7 +36,7 @@ export function resolveAssistantSessionTitle(sessionEntry: AssistantSessionShell
     return normalizedTitle
   }
 
-  return '新话题'
+  return sessionEntry.boundAgent.label
 }
 
 export function renameAssistantSessionShell(
