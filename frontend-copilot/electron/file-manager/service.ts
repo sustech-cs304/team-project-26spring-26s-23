@@ -493,6 +493,7 @@ export function createElectronFileManagerService(
         return createFileManagerError('invalid_operation', '文件夹名称不能为空')
       }
 
+      // eslint-disable-next-line no-control-regex -- sanitizing filename control characters
       const invalidChars = /[<>:"/\\|?*\x00-\x1f]/
       if (invalidChars.test(name)) {
         return createFileManagerError('invalid_operation', '文件夹名称包含非法字符')
@@ -638,6 +639,7 @@ export function createElectronFileManagerService(
         return createFileManagerError('invalid_operation', '名称不能为空')
       }
 
+      // eslint-disable-next-line no-control-regex -- sanitizing filename control characters
       const invalidChars = /[<>:"/\\|?*\x00-\x1f]/
       if (invalidChars.test(newName)) {
         return createFileManagerError('invalid_operation', '名称包含非法字符')

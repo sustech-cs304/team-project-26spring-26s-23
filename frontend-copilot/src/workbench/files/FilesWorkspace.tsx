@@ -1,51 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import type { DirectoryChangedEvent, FileManagerApi } from '../../../electron/file-manager/ipc'
+import type { DirectoryChangedEvent } from '../../../electron/file-manager/ipc'
 import { ConfirmDialog } from './ConfirmDialog'
-import { ContextMenu, buildContextMenuItems } from './ContextMenu'
+import { ContextMenu } from './ContextMenu'
+import { buildContextMenuItems } from './context-menu-items'
 import { FileToolbar } from './FileToolbar'
 import { FileTree } from './FileTree'
 import { useFileManagerState } from './useFileManagerState'
+import { computeWatchedDirectories, getFileManager, syncWatchedDirectories } from './watcher-helpers'
 
-/** 获取 fileManager bridge（仅 Electron 环境可用） */
-function getFileManager() {
-  if (typeof window === 'undefined' || !window.fileManager) return null
-  return window.fileManager
-}
-
-/** 计算当前需要监听的目录集合 */
-function computeWatchedDirectories(
-  rootPath: string | null,
-  expandedPaths: Set<string>,
-): string[] {
-  if (!rootPath) return []
-  const paths = [rootPath]
-  for (const expandedPath of expandedPaths) {
-    if (expandedPath !== rootPath) {
-      paths.push(expandedPath)
-    }
-  }
-  return paths
-}
-
-export function syncWatchedDirectories(
-  fm: Pick<FileManagerApi, 'watchDirectories' | 'unwatchDirectories'>,
-  previousPaths: string[],
-  paths: string[],
-): void {
-  if (paths.length === 0) {
-    if (previousPaths.length > 0) {
-      void fm.unwatchDirectories({ paths: previousPaths }).catch(() => {
-        // 静默处理监听清理失败
-      })
-    }
-    return
-  }
-
-  void fm.watchDirectories({ paths }).catch(() => {
-    // 静默处理监听注册失败
-  })
-}
-
+// eslint-disable-next-line max-lines-per-function
 export function FilesWorkspace() {
   const state = useFileManagerState()
   const latestStateRef = useRef(state)
@@ -58,6 +21,7 @@ export function FilesWorkspace() {
     if (hasAttemptedRestore.current) return
     hasAttemptedRestore.current = true
     void state.loadRootDirectory()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.loadRootDirectory])
 
   // ── Watcher 目录集合同步 ──────────────────────────────
@@ -142,6 +106,7 @@ export function FilesWorkspace() {
         void fm.unwatchDirectories({ paths: watchedPathsRef.current }).catch(() => {})
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flushDebounceTimers])
 
   // ── 组件卸载时清理 debounce 定时器 ────────────────────

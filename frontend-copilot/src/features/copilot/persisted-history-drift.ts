@@ -159,6 +159,6 @@ function normalizePersistedHistoryDriftCode(value: unknown): PersistedHistoryDri
   return null
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

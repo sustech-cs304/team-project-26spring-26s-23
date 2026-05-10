@@ -38,6 +38,8 @@ export function createDefaultInlineFormValues(
   return Object.fromEntries(fields.map((field) => [field.name, field.type === 'checkbox' ? false : '']))
 }
 
+const FIELD_REQUIRED_MESSAGE = '此项为必填。'
+
 export function validateInlineFormValues(input: {
   fields: RuntimeInlineFormField[]
   values: CopilotInlineFormDraftValues
@@ -47,55 +49,7 @@ export function validateInlineFormValues(input: {
 
   for (const field of input.fields) {
     const rawValue = input.values[field.name]
-
-    switch (field.type) {
-      case 'checkbox': {
-        const value = rawValue === true
-        if (field.required === true && !value) {
-          errors[field.name] = '请确认此项。'
-        }
-        values[field.name] = value
-        break
-      }
-      case 'number': {
-        const normalized = typeof rawValue === 'string' ? rawValue.trim() : ''
-        if (normalized === '') {
-          if (field.required === true) {
-            errors[field.name] = '此项为必填。'
-          }
-          values[field.name] = ''
-          break
-        }
-
-        const parsed = Number(normalized)
-        if (!Number.isFinite(parsed)) {
-          errors[field.name] = '请输入有效数字。'
-          values[field.name] = normalized
-          break
-        }
-
-        values[field.name] = parsed
-        break
-      }
-      case 'select':
-      case 'text':
-      case 'textarea': {
-        const normalized = typeof rawValue === 'string' ? rawValue.trim() : ''
-        if (field.required === true && normalized === '') {
-          errors[field.name] = '此项为必填。'
-        }
-        if (
-          field.type === 'select'
-          && normalized !== ''
-          && Array.isArray(field.options)
-          && !field.options.some((option) => option.value === normalized)
-        ) {
-          errors[field.name] = '请选择有效选项。'
-        }
-        values[field.name] = normalized
-        break
-      }
-    }
+    validateInlineFormField(field, rawValue, errors, values)
   }
 
   return {
@@ -103,6 +57,86 @@ export function validateInlineFormValues(input: {
     errors,
     values,
   }
+}
+
+function validateInlineFormField(
+  field: RuntimeInlineFormField,
+  rawValue: CopilotInlineFormDraftValue | undefined,
+  errors: Record<string, string>,
+  values: CopilotInlineFormValues,
+): void {
+  switch (field.type) {
+    case 'checkbox':
+      validateCheckboxField(field, rawValue, errors, values)
+      break
+    case 'number':
+      validateNumberField(field, rawValue, errors, values)
+      break
+    case 'select':
+    case 'text':
+    case 'textarea':
+      validateTextLikeField(field, rawValue, errors, values)
+      break
+  }
+}
+
+function validateCheckboxField(
+  field: RuntimeInlineFormField,
+  rawValue: CopilotInlineFormDraftValue | undefined,
+  errors: Record<string, string>,
+  values: CopilotInlineFormValues,
+): void {
+  const value = rawValue === true
+  if (field.required === true && !value) {
+    errors[field.name] = '请确认此项。'
+  }
+  values[field.name] = value
+}
+
+function validateNumberField(
+  field: RuntimeInlineFormField,
+  rawValue: CopilotInlineFormDraftValue | undefined,
+  errors: Record<string, string>,
+  values: CopilotInlineFormValues,
+): void {
+  const normalized = typeof rawValue === 'string' ? rawValue.trim() : ''
+  if (normalized === '') {
+    if (field.required === true) {
+      errors[field.name] = FIELD_REQUIRED_MESSAGE
+    }
+    values[field.name] = ''
+    return
+  }
+
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) {
+    errors[field.name] = '请输入有效数字。'
+    values[field.name] = normalized
+    return
+  }
+
+  values[field.name] = parsed
+}
+
+function validateTextLikeField(
+  field: RuntimeInlineFormField,
+  rawValue: CopilotInlineFormDraftValue | undefined,
+  errors: Record<string, string>,
+  values: CopilotInlineFormValues,
+): void {
+  const normalized = typeof rawValue === 'string' ? rawValue.trim() : ''
+  if (field.required === true && normalized === '') {
+    errors[field.name] = FIELD_REQUIRED_MESSAGE
+  }
+  if (
+    field.type === 'select'
+    && normalized !== ''
+    && Array.isArray(field.options)
+    && !field.options.some((option) => option.value === normalized)
+  ) {
+    errors[field.name] = '请选择有效选项。'
+  }
+  values[field.name] = normalized
 }
 
 export function buildInlineFormSubmissionSummary(input: {

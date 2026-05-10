@@ -51,6 +51,9 @@ import type {
 
 export { createIdleCopilotRunState } from './run-segment-reducer'
 
+const DEBUG_LOG_CATEGORY = 'copilot-send-controller'
+const MODEL_UNAVAILABLE_MESSAGE = '当前选择的模型不可用于聊天。'
+
 export interface CopilotMessageDispatchInput extends RuntimeMessageSendInput {
   debugModeEnabled?: boolean
   fetchFn?: FetchLike
@@ -62,7 +65,7 @@ export async function* dispatchCopilotMessage(
   input: CopilotMessageDispatchInput,
 ): AsyncGenerator<RuntimeRunEvent> {
   const debugModeEnabled = input.debugModeEnabled === true
-  appendCopilotDebugLog(debugModeEnabled, 'copilot-send-controller', 'runtime-run-start-requested', {
+  appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'runtime-run-start-requested', {
     sessionId: input.sessionId,
     enabledTools: [...input.enabledTools],
     toolPermissionPolicy: input.toolPermissionPolicy ?? null,
@@ -84,7 +87,7 @@ export async function* dispatchCopilotMessage(
     signal: input.signal,
   })
 
-  appendCopilotDebugLog(debugModeEnabled, 'copilot-send-controller', 'runtime-run-start-succeeded', {
+  appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'runtime-run-start-succeeded', {
     sessionId: input.sessionId,
     runId: runStartResponse.run.runId,
     status: runStartResponse.run.status,
@@ -111,14 +114,14 @@ export async function* dispatchCopilotMessage(
       sawTerminalEvent = true
     }
 
-    appendCopilotDebugLog(debugModeEnabled, 'copilot-send-controller', 'runtime-stream-event-received',
+    appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'runtime-stream-event-received',
       summarizeRuntimeRunEventForDebug(event),
     )
 
     yield event
   }
 
-  appendCopilotDebugLog(debugModeEnabled, 'copilot-send-controller', 'runtime-stream-ended', {
+  appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'runtime-stream-ended', {
     sessionId: input.sessionId,
     runId: runStartResponse.run.runId,
     sawTerminalEvent,
@@ -153,7 +156,7 @@ export function getCopilotSendDisabledReason(input: {
   }
 
   if (!input.hasAvailableModels && input.selectedModelOption !== null && !input.selectedModelOption.available) {
-    return input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。'
+    return input.selectedModelOption.unavailableReason ?? MODEL_UNAVAILABLE_MESSAGE
   }
 
   if (!input.hasAvailableModels) {
@@ -166,7 +169,7 @@ export function getCopilotSendDisabledReason(input: {
 
   if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
     if (input.selectedModelOption !== null && !input.selectedModelOption.available) {
-      return input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。'
+      return input.selectedModelOption.unavailableReason ?? MODEL_UNAVAILABLE_MESSAGE
     }
 
     return '请先选择模型。'
@@ -226,11 +229,6 @@ function summarizeRuntimeRunEventForDebug(event: RuntimeRunEvent): Record<string
         stage: event.payload.stage ?? null,
       }
     case 'text_delta':
-      return {
-        runId: event.runId,
-        type: event.type,
-        textDeltaLength: event.payload.delta.length,
-      }
     case 'reasoning_delta':
       return {
         runId: event.runId,
@@ -386,117 +384,21 @@ export async function orchestrateCopilotSend(input: {
     return
   }
 
-  if (!input.hasConfiguredModels) {
-    input.setSendError(createPreflightTransientErrorState({
-      message: '尚未配置模型，请先前往设置页完成模型配置。',
-      code: 'no_configured_models',
-      details: {
-        hasConfiguredModels: false,
-      },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
+  const preflightResult = validateCopilotSendPreflight({
+    hasConfiguredModels: input.hasConfiguredModels,
+    hasAvailableModels: input.hasAvailableModels,
+    selectedModelOption: input.selectedModelOption,
+    composerDraft: input.composerDraft,
+    attachments: input.attachments,
+    messageOverride: input.messageOverride,
+    setSendError: input.setSendError,
+  })
+
+  if (!preflightResult.ok) {
     return
   }
 
-  if (!input.hasAvailableModels && input.selectedModelOption !== null && !input.selectedModelOption.available) {
-    input.setSendError(createPreflightTransientErrorState({
-      message: input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。',
-      code: 'selected_model_unavailable',
-      details: {
-        selectedModelId: input.selectedModelOption.modelId,
-        unavailableReason: input.selectedModelOption.unavailableReason,
-      },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return
-  }
-
-  if (!input.hasAvailableModels) {
-    input.setSendError(createPreflightTransientErrorState({
-      message: '当前没有可用模型，请前往设置页调整模型配置。',
-      code: 'no_available_models',
-      details: {
-        hasAvailableModels: false,
-      },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return
-  }
-
-  const trimmedMessage = (input.messageOverride?.content ?? input.composerDraft.messageText).trim()
-  if (trimmedMessage === '' && (input.attachments?.length ?? 0) === 0) {
-    input.setSendError(createPreflightTransientErrorState({
-      message: '请输入消息内容后再发送。',
-      code: 'message_required',
-      details: {
-        field: 'messageText',
-      },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return
-  }
-
-  if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
-    if (input.selectedModelOption !== null && !input.selectedModelOption.available) {
-      input.setSendError(createPreflightTransientErrorState({
-        message: input.selectedModelOption.unavailableReason ?? '当前选择的模型不可用于聊天。',
-        code: 'selected_model_unavailable',
-        details: {
-          selectedModelId: input.selectedModelOption.modelId,
-          unavailableReason: input.selectedModelOption.unavailableReason,
-        },
-        composerDraft: input.composerDraft,
-        selectedModelOption: input.selectedModelOption,
-      }))
-      return
-    }
-
-    input.setSendError(createPreflightTransientErrorState({
-      message: '请先选择模型。',
-      code: 'model_required',
-      details: {
-        field: 'selectedModelRoute',
-      },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return
-  }
-
-  const streamingSupportReason = getRuntimeModelRouteStreamingSupportReason(input.composerDraft.selectedModelRoute)
-  if (streamingSupportReason !== null) {
-    input.setSendError(createPreflightTransientErrorState({
-      message: streamingSupportReason,
-      code: 'streaming_not_supported',
-      details: {
-        reason: streamingSupportReason,
-      },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return
-  }
-
-  let requestOptions: Record<string, unknown>
-  try {
-    requestOptions = parseRequestOptionsText(input.composerDraft.requestOptionsText)
-  } catch (error) {
-    input.setSendError(createPreflightTransientErrorState({
-      message: formatRequestOptionsError(error),
-      code: 'request_options_invalid',
-      rawMessage: error instanceof Error ? error.message : String(error),
-      details: {
-        requestOptionsText: input.composerDraft.requestOptionsText,
-      },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return
-  }
+  const { trimmedMessage, requestOptions } = preflightResult
 
   let runtimeInput: RuntimeMessageSendInput
   try {
@@ -593,6 +495,120 @@ export async function orchestrateCopilotSend(input: {
       input.composerInputRef.current?.focus()
     })
   }
+}
+
+function validateCopilotSendPreflight(input: {
+  hasConfiguredModels: boolean
+  hasAvailableModels: boolean
+  selectedModelOption: CopilotModelOption | null
+  composerDraft: CopilotChatComposerDraft
+  attachments?: readonly CopilotComposerAttachment[]
+  messageOverride?: { content: string }
+  setSendError: Dispatch<SetStateAction<CopilotTransientErrorState | null>>
+}):
+  | { ok: true; trimmedMessage: string; requestOptions: Record<string, unknown> }
+  | { ok: false } {
+  if (!input.hasConfiguredModels) {
+    input.setSendError(createPreflightTransientErrorState({
+      message: '尚未配置模型，请先前往设置页完成模型配置。',
+      code: 'no_configured_models',
+      details: { hasConfiguredModels: false },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return { ok: false }
+  }
+
+  if (!input.hasAvailableModels && input.selectedModelOption !== null && !input.selectedModelOption.available) {
+    input.setSendError(createPreflightTransientErrorState({
+      message: input.selectedModelOption.unavailableReason ?? MODEL_UNAVAILABLE_MESSAGE,
+      code: 'selected_model_unavailable',
+      details: {
+        selectedModelId: input.selectedModelOption.modelId,
+        unavailableReason: input.selectedModelOption.unavailableReason,
+      },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return { ok: false }
+  }
+
+  if (!input.hasAvailableModels) {
+    input.setSendError(createPreflightTransientErrorState({
+      message: '当前没有可用模型，请前往设置页调整模型配置。',
+      code: 'no_available_models',
+      details: { hasAvailableModels: false },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return { ok: false }
+  }
+
+  const trimmedMessage = (input.messageOverride?.content ?? input.composerDraft.messageText).trim()
+  if (trimmedMessage === '' && (input.attachments?.length ?? 0) === 0) {
+    input.setSendError(createPreflightTransientErrorState({
+      message: '请输入消息内容后再发送。',
+      code: 'message_required',
+      details: { field: 'messageText' },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return { ok: false }
+  }
+
+  if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
+    if (input.selectedModelOption !== null && !input.selectedModelOption.available) {
+      input.setSendError(createPreflightTransientErrorState({
+        message: input.selectedModelOption.unavailableReason ?? MODEL_UNAVAILABLE_MESSAGE,
+        code: 'selected_model_unavailable',
+        details: {
+          selectedModelId: input.selectedModelOption.modelId,
+          unavailableReason: input.selectedModelOption.unavailableReason,
+        },
+        composerDraft: input.composerDraft,
+        selectedModelOption: input.selectedModelOption,
+      }))
+      return { ok: false }
+    }
+
+    input.setSendError(createPreflightTransientErrorState({
+      message: '请先选择模型。',
+      code: 'model_required',
+      details: { field: 'selectedModelRoute' },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return { ok: false }
+  }
+
+  const streamingSupportReason = getRuntimeModelRouteStreamingSupportReason(input.composerDraft.selectedModelRoute)
+  if (streamingSupportReason !== null) {
+    input.setSendError(createPreflightTransientErrorState({
+      message: streamingSupportReason,
+      code: 'streaming_not_supported',
+      details: { reason: streamingSupportReason },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return { ok: false }
+  }
+
+  let requestOptions: Record<string, unknown>
+  try {
+    requestOptions = parseRequestOptionsText(input.composerDraft.requestOptionsText)
+  } catch (error) {
+    input.setSendError(createPreflightTransientErrorState({
+      message: formatRequestOptionsError(error),
+      code: 'request_options_invalid',
+      rawMessage: error instanceof Error ? error.message : String(error),
+      details: { requestOptionsText: input.composerDraft.requestOptionsText },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return { ok: false }
+  }
+
+  return { ok: true, trimmedMessage, requestOptions }
 }
 
 function isAbortError(error: unknown): boolean {

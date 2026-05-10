@@ -72,7 +72,7 @@ async function postBridgeRequest(
   body: Record<string, unknown>,
 ): Promise<{
   response: Response
-  payload: Record<string, any>
+  payload: Record<string, unknown>
 }> {
   const response = await fetch(bridge.bootstrap.url, {
     method: 'POST',
@@ -85,7 +85,7 @@ async function postBridgeRequest(
 
   return {
     response,
-    payload: await response.json() as Record<string, any>,
+    payload: await response.json() as Record<string, unknown>,
   }
 }
 

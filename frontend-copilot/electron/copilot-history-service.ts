@@ -254,7 +254,7 @@ async function appendHistoryDebugLog(
 
 function summarizeHistorySuccessPayload(
   operation: string,
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
 ): Record<string, unknown> {
   switch (operation) {
     case 'list-threads':
@@ -346,7 +346,7 @@ function extractFailureDetail(
   }
 }
 
-function isPlainRecord(value: unknown): value is Record<string, any> {
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 

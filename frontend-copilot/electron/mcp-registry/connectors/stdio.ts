@@ -49,6 +49,34 @@ export interface CreateStdioMcpServerConnectorOptions {
   }
 }
 
+interface StdioPendingRequest {
+  resolve: (value: JsonRpcResponsePayload) => void
+  reject: (error: unknown) => void
+}
+
+interface StdioContext {
+  server: McpServerRecord
+  transportConfig: Extract<McpServerRecord['transportConfig'], { kind: 'stdio' }>
+  context: McpConnectorContext
+  resolvedCommand: {
+    requestedCommand: string
+    resolutionKind: 'raw' | 'managed'
+    managedFamily?: 'node' | 'uv'
+  }
+  child: ChildProcessWithoutNullStreams | null
+  parser: JsonRpcMessageLineParser
+  nextRequestId: number
+  sessionReady: boolean
+  tools: McpRemoteToolSummary[]
+  lastExitCode: number | null
+  lastExitSignal: string | null
+  currentPhase: McpConnectionPhase | null
+  stderrLines: string[]
+  state: McpServerStateSummary
+  requestQueue: Promise<void>
+  pending: Map<number, StdioPendingRequest>
+}
+
 export function createStdioMcpServerConnector(
   options: CreateStdioMcpServerConnectorOptions,
 ): McpServerConnector {
@@ -56,662 +84,710 @@ export function createStdioMcpServerConnector(
     throw new Error('createStdioMcpServerConnector requires a stdio transport config.')
   }
 
-  const server = options.server
-  const transportConfig = options.server.transportConfig
-  const context = options.context
-  const resolvedCommand = options.resolvedCommand ?? {
-    requestedCommand: transportConfig.command,
-    resolutionKind: 'raw' as const,
+  const ctx: StdioContext = {
+    server: options.server,
+    transportConfig: options.server.transportConfig as Extract<McpServerRecord['transportConfig'], { kind: 'stdio' }>,
+    context: options.context,
+    resolvedCommand: options.resolvedCommand ?? {
+      requestedCommand: options.server.transportConfig.command,
+      resolutionKind: 'raw' as const,
+    },
+    child: null,
+    parser: new JsonRpcMessageLineParser(),
+    nextRequestId: 1,
+    sessionReady: false,
+    tools: [],
+    lastExitCode: null,
+    lastExitSignal: null,
+    currentPhase: null,
+    stderrLines: [],
+    state: createConnectorState(options.server, options.server.enabled ? 'idle' : 'disabled', 0, {}),
+    requestQueue: Promise.resolve(),
+    pending: new Map(),
   }
-  let child: ChildProcessWithoutNullStreams | null = null
-  let parser = new JsonRpcMessageLineParser()
-  let nextRequestId = 1
-  let sessionReady = false
-  let tools: McpRemoteToolSummary[] = []
-  let lastExitCode: number | null = null
-  let lastExitSignal: string | null = null
-  let currentPhase: McpConnectionPhase | null = null
-  const stderrLines: string[] = []
-  let state = createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, context.now)
-  let requestQueue = Promise.resolve()
-  const pending = new Map<number, {
-    resolve: (value: JsonRpcResponsePayload) => void
-    reject: (error: unknown) => void
-  }>()
 
   return {
-    start,
-    refreshCatalog,
-    callTool,
-    stop,
-    getState() {
-      return cloneStateSummary(state)
+    start: () => stdioStart(ctx),
+    refreshCatalog: () => stdioRefreshCatalog(ctx),
+    callTool: (request) => stdioCallTool(ctx, request),
+    stop: () => stdioStop(ctx),
+    getState: () => cloneStateSummary(ctx.state),
+    getTools: () => cloneRemoteTools(ctx.tools),
+  }
+}
+
+async function stdioStart(ctx: StdioContext): Promise<McpConnectorOperationResult> {
+  ctx.sessionReady = false
+  await stdioDisposeChild(ctx)
+  ctx.parser = new JsonRpcMessageLineParser()
+  ctx.currentPhase = 'spawn'
+  ctx.stderrLines.splice(0)
+  ctx.state = createConnectorState(ctx.server, 'connecting', ctx.tools.length, {
+    transportState: {
+      kind: 'stdio',
+      processStatus: 'starting',
+      pid: null,
+      lastExitCode: ctx.lastExitCode,
+      lastExitSignal: ctx.lastExitSignal,
     },
-    getTools() {
-      return cloneRemoteTools(tools)
-    },
+    lastPhase: ctx.currentPhase,
+    lastHandshakeAt: ctx.state.lastHandshakeAt ?? null,
+    lastCatalogSyncAt: ctx.state.lastCatalogSyncAt ?? null,
+    lastError: null,
+  })
+  await stdioEmitState(ctx)
+
+  const managedRuntimeFailure = stdioReadManagedRuntimeFailure(ctx)
+  if (managedRuntimeFailure !== null) {
+    return await stdioApplyFailure(ctx, new McpConnectorError(managedRuntimeFailure))
   }
 
-  async function start(): Promise<McpConnectorOperationResult> {
-    sessionReady = false
-    await disposeChild()
-    parser = new JsonRpcMessageLineParser()
-    currentPhase = 'spawn'
-    stderrLines.splice(0)
-    state = createConnectorState(server, 'connecting', tools.length, context.now, {
-      transportState: {
-        kind: 'stdio',
-        processStatus: 'starting',
-        pid: null,
-        lastExitCode,
-        lastExitSignal,
-        },
-      lastPhase: currentPhase,
-      lastHandshakeAt: state.lastHandshakeAt ?? null,
-      lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
-      lastError: null,
+  try {
+    const spawned = spawn(ctx.transportConfig.command, ctx.transportConfig.args, {
+      cwd: ctx.transportConfig.cwd ?? undefined,
+      env: {
+        ...process.env,
+        ...(ctx.transportConfig.env ?? {}),
+      },
+      stdio: 'pipe',
+      windowsHide: true,
     })
-    await emitState()
-
-    const managedRuntimeFailure = readManagedRuntimeFailure()
-    if (managedRuntimeFailure !== null) {
-      return await applyFailure(new McpConnectorError(managedRuntimeFailure))
-    }
-
-    try {
-      const spawned = spawn(transportConfig.command, transportConfig.args, {
-        cwd: transportConfig.cwd ?? undefined,
-        env: {
-          ...process.env,
-          ...(transportConfig.env ?? {}),
-        },
-        stdio: 'pipe',
-        windowsHide: true,
-      })
-      child = spawned
-      const spawnReady = bindChild(spawned)
-      await spawnReady
-      state = createConnectorState(server, 'connecting', tools.length, context.now, {
-        transportState: {
-          kind: 'stdio',
-          processStatus: 'running',
-          pid: spawned.pid ?? null,
-          lastExitCode,
-          lastExitSignal,
-        },
-        lastPhase: currentPhase,
-        lastHandshakeAt: state.lastHandshakeAt ?? null,
-        lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
-        lastError: null,
-      })
-      await emitState()
-
-      await performHandshake()
-      const nextTools = await requestToolsList(true)
-      sessionReady = true
-      tools = cloneRemoteTools(nextTools)
-      currentPhase = null
-      const success = createConnectorSuccess(server, nextTools, context.now, {
+    ctx.child = spawned
+    const spawnReady = stdioBindChild(ctx, spawned)
+    await spawnReady
+    ctx.state = createConnectorState(ctx.server, 'connecting', ctx.tools.length, {
+      transportState: {
         kind: 'stdio',
         processStatus: 'running',
         pid: spawned.pid ?? null,
-        lastExitCode,
-        lastExitSignal,
-      }, {
-        lastPhase: null,
-        lastHandshakeAt: context.now(),
-        lastCatalogSyncAt: context.now(),
-        warnings: getWarnings(),
-      })
-      state = cloneStateSummary(success.state)
-      await emitState()
-      return success
-    } catch (error) {
-      return await applyFailure(error)
-    }
-  }
-
-  async function refreshCatalog(): Promise<McpConnectorOperationResult> {
-    if (!sessionReady || child === null) {
-      return await start()
-    }
-
-    try {
-      const nextTools = await requestToolsList(false)
-      tools = cloneRemoteTools(nextTools)
-      const success = createConnectorSuccess(server, nextTools, context.now, {
-        kind: 'stdio',
-        processStatus: 'running',
-        pid: child.pid ?? null,
-        lastExitCode,
-        lastExitSignal,
-      }, {
-        lastPhase: null,
-        lastHandshakeAt: state.lastHandshakeAt ?? context.now(),
-        lastCatalogSyncAt: context.now(),
-        warnings: getWarnings(),
-      })
-      state = cloneStateSummary(success.state)
-      await emitState()
-      return success
-    } catch (error) {
-      return await applyFailure(error)
-    }
-  }
-
-  async function stop(): Promise<void> {
-    sessionReady = false
-    await disposeChild()
-    currentPhase = null
-    state = createConnectorState(server, 'idle', 0, context.now, {
-      transportState: {
-        kind: 'stdio',
-        processStatus: 'stopped',
-        pid: null,
-        lastExitCode,
-        lastExitSignal,
+        lastExitCode: ctx.lastExitCode,
+        lastExitSignal: ctx.lastExitSignal,
       },
-      lastPhase: null,
-      lastHandshakeAt: state.lastHandshakeAt ?? null,
-      lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
+      lastPhase: ctx.currentPhase,
+      lastHandshakeAt: ctx.state.lastHandshakeAt ?? null,
+      lastCatalogSyncAt: ctx.state.lastCatalogSyncAt ?? null,
       lastError: null,
     })
-    await emitState()
+    await stdioEmitState(ctx)
+
+    await stdioPerformHandshake(ctx)
+    const nextTools = await stdioRequestToolsList(ctx, true)
+    ctx.sessionReady = true
+    ctx.tools = cloneRemoteTools(nextTools)
+    ctx.currentPhase = null
+    const success = createConnectorSuccess(ctx.server, nextTools, {
+      now: ctx.context.now,
+      transportState: {
+        kind: 'stdio',
+        processStatus: 'running',
+        pid: spawned.pid ?? null,
+        lastExitCode: ctx.lastExitCode,
+        lastExitSignal: ctx.lastExitSignal,
+      },
+      lastPhase: null,
+      lastHandshakeAt: ctx.context.now(),
+      lastCatalogSyncAt: ctx.context.now(),
+      warnings: stdioGetWarnings(ctx),
+    })
+    ctx.state = cloneStateSummary(success.state)
+    await stdioEmitState(ctx)
+    return success
+  } catch (error) {
+    return await stdioApplyFailure(ctx, error)
+  }
+}
+
+async function stdioRefreshCatalog(ctx: StdioContext): Promise<McpConnectorOperationResult> {
+  if (!ctx.sessionReady || ctx.child === null) {
+    return await stdioStart(ctx)
   }
 
-  function bindChild(spawned: ChildProcessWithoutNullStreams): Promise<void> {
-    const spawnReady = new Promise<void>((resolve, reject) => {
-      spawned.once('spawn', () => {
-        if (spawned !== child) {
-          return
-        }
-
-        resolve()
-      })
-
-      spawned.once('error', (error) => {
-        if (spawned !== child) {
-          return
-        }
-
-        reject(error)
-      })
+  try {
+    const nextTools = await stdioRequestToolsList(ctx, false)
+    ctx.tools = cloneRemoteTools(nextTools)
+    const success = createConnectorSuccess(ctx.server, nextTools, {
+      now: ctx.context.now,
+      transportState: {
+        kind: 'stdio',
+        processStatus: 'running',
+        pid: ctx.child?.pid ?? null,
+        lastExitCode: ctx.lastExitCode,
+        lastExitSignal: ctx.lastExitSignal,
+      },
+      lastPhase: null,
+      lastHandshakeAt: ctx.state.lastHandshakeAt ?? ctx.context.now(),
+      lastCatalogSyncAt: ctx.context.now(),
+      warnings: stdioGetWarnings(ctx),
     })
-
-    spawned.stdout.on('data', (chunk: Buffer | string) => {
-      if (spawned !== child) {
-        return
-      }
-
-      try {
-        const messages = parser.push(chunk)
-        for (const message of messages) {
-          for (const [requestId, pendingRequest] of pending.entries()) {
-            if (!isJsonRpcResponseForId(message, requestId)) {
-              continue
-            }
-
-            pending.delete(requestId)
-            pendingRequest.resolve(message)
-            break
-          }
-        }
-      } catch (error) {
-        rejectPending(error)
-        if (sessionReady) {
-          void applyUnexpectedDisconnect(error)
-        }
-      }
-    })
-
-    spawned.stderr.on('data', (chunk: Buffer | string) => {
-      const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
-      const normalized = text.trim()
-      if (normalized !== '') {
-        recordStderr(normalized)
-      }
-    })
-
-    spawned.on('exit', (code, signal) => {
-      if (spawned !== child) {
-        lastExitCode = code ?? null
-        lastExitSignal = signal ?? null
-        return
-      }
-
-      lastExitCode = code ?? null
-      lastExitSignal = signal ?? null
-      child = null
-      rejectPending(new McpConnectorError(createProcessExitSummary(code, signal)))
-      const wasReady = sessionReady
-      sessionReady = false
-      if (wasReady) {
-        void applyUnexpectedDisconnect(createProcessExitSummary(code, signal))
-      }
-    })
-
-    spawned.on('error', (error) => {
-      if (spawned !== child) {
-        return
-      }
-
-      rejectPending(error)
-      if (sessionReady) {
-        void applyUnexpectedDisconnect(error)
-      }
-    })
-
-    return spawnReady
+    ctx.state = cloneStateSummary(success.state)
+    await stdioEmitState(ctx)
+    return success
+  } catch (error) {
+    return await stdioApplyFailure(ctx, error)
   }
+}
 
-  async function performHandshake(): Promise<void> {
-    await updatePhase('initialize')
-    const initializeResponse = await sendRequest(MCP_INITIALIZE_METHOD, createInitializeParams())
-    unwrapJsonRpcResponse(initializeResponse, context.now)
-    await updatePhase('initialized')
-    await sendNotification(MCP_INITIALIZED_NOTIFICATION_METHOD, {})
-  }
-
-  async function requestToolsList(updatePhaseState: boolean): Promise<McpRemoteToolSummary[]> {
-    return await withSerializedPhase('tools/list', async () => {
-      if (updatePhaseState) {
-        await updatePhase('tools/list')
-      }
-
-      const response = await sendRequest(MCP_TOOLS_LIST_METHOD, {})
-      const result = unwrapJsonRpcResponse(response, context.now)
-      return normalizeToolsListResult(result)
-    })
-  }
-
-  async function callTool(request: McpConnectorToolCallRequest): Promise<McpToolCallResult> {
-    if (!sessionReady || child === null) {
-      return {
-        ok: false,
-        toolId: request.toolId,
-        serverId: request.serverId,
-        remoteToolName: request.remoteToolName,
-        snapshotRevision: request.snapshotRevision ?? null,
-        error: createMcpErrorSummary(
-          'temporarily_unavailable',
-          'The MCP stdio server is not ready to execute tools.',
-          true,
-          context.now,
-        ),
-      }
-    }
-
-    if (!tools.some((tool) => tool.name === request.remoteToolName)) {
-      return {
-        ok: false,
-        toolId: request.toolId,
-        serverId: request.serverId,
-        remoteToolName: request.remoteToolName,
-        snapshotRevision: request.snapshotRevision ?? null,
-        error: createMcpErrorSummary(
-          'directory_drift',
-          'The requested MCP tool no longer exists in the current server catalog.',
-          false,
-          context.now,
-        ),
-      }
-    }
-
-    try {
-      const response = await withSerializedPhase('tools/call', async () => {
-        return await sendRequest(MCP_TOOLS_CALL_METHOD, {
-          name: request.remoteToolName,
-          arguments: request.arguments,
-        }, {
-          timeoutMs: Math.max(context.timeoutMs, STDIO_TOOL_CALL_TIMEOUT_MS),
-        })
-      })
-      const result = unwrapJsonRpcResponse(response, context.now)
-      return normalizeToolsCallResult({
-        result,
-        request,
-        server,
-        now: context.now,
-      })
-    } catch (error) {
-      return {
-        ok: false,
-        toolId: request.toolId,
-        serverId: request.serverId,
-        remoteToolName: request.remoteToolName,
-        snapshotRevision: request.snapshotRevision ?? null,
-        error: normalizeConnectorError(error, context.now, 'stdio_tool_call_failed'),
-      }
-    }
-  }
-
-  async function sendRequest(
-    method: string,
-    params?: unknown,
-    options: { timeoutMs?: number } = {},
-  ): Promise<JsonRpcResponsePayload> {
-    const activeChild = child
-    if (activeChild === null || activeChild.stdin.destroyed) {
-      throw new McpConnectorError(createMcpErrorSummary(
-        'connection_closed',
-        'The MCP stdio process is not available.',
-        true,
-        context.now,
-      ))
-    }
-
-    const requestId = nextRequestId
-    nextRequestId += 1
-    const timeoutMs = options.timeoutMs ?? (context.timeoutMs > 0 ? context.timeoutMs : STDIO_CONNECT_TIMEOUT_MS)
-
-    const responsePromise = new Promise<JsonRpcResponsePayload>((resolve, reject) => {
-      pending.set(requestId, { resolve, reject })
-      activeChild.stdin.write(encodeJsonRpcMessageLine(createJsonRpcRequest(requestId, method, params)), (error) => {
-        if (error === undefined || error === null) {
-          return
-        }
-
-        const pendingRequest = pending.get(requestId)
-        if (pendingRequest === undefined) {
-          return
-        }
-
-        pending.delete(requestId)
-        pendingRequest.reject(error)
-      })
-    })
-
-    return await withTimeout(
-      responsePromise,
-      timeoutMs,
-      context.now,
-      createPhaseTimeoutMessage(currentPhase),
-    )
-  }
-
-  async function withSerializedPhase<T>(phase: McpConnectionPhase, work: () => Promise<T>): Promise<T> {
-    const next = requestQueue.catch(() => undefined).then(async () => {
-      const previousPhase = currentPhase
-      currentPhase = phase
-      try {
-        const result = await work()
-        currentPhase = previousPhase
-        return result
-      } catch (error) {
-        currentPhase = phase
-        throw error
-      }
-    })
-
-    requestQueue = next.then(() => undefined, () => undefined)
-    return await next
-  }
-
-  async function sendNotification(method: string, params?: unknown): Promise<void> {
-    const activeChild = child
-    if (activeChild === null || activeChild.stdin.destroyed) {
-      throw new McpConnectorError(createMcpErrorSummary(
-        'connection_closed',
-        'The MCP stdio process is not available.',
-        true,
-        context.now,
-      ))
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      activeChild.stdin.write(encodeJsonRpcMessageLine(createJsonRpcNotification(method, params)), (error) => {
-        if (error === undefined || error === null) {
-          resolve()
-          return
-        }
-
-        reject(error)
-      })
-    })
-  }
-
-  async function applyFailure(error: unknown): Promise<McpConnectorOperationResult> {
-    const summary = enrichFailureSummary(normalizeConnectorError(error, context.now, 'stdio_connection_failed'))
-    await disposeChild()
-    sessionReady = false
-    const failure = createConnectorFailure(server, summary, context.now, {
+async function stdioStop(ctx: StdioContext): Promise<void> {
+  ctx.sessionReady = false
+  await stdioDisposeChild(ctx)
+  ctx.currentPhase = null
+  ctx.state = createConnectorState(ctx.server, 'idle', 0, {
+    transportState: {
       kind: 'stdio',
-      processStatus: lastExitCode === null && lastExitSignal === null ? 'stopped' : 'exited',
+      processStatus: 'stopped',
       pid: null,
-      lastExitCode,
-      lastExitSignal,
-    }, {
-      lastPhase: currentPhase,
-      previousTools: tools,
-      lastHandshakeAt: state.lastHandshakeAt ?? null,
-      lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
-      warnings: getWarnings(),
-    })
-    state = cloneStateSummary(failure.state)
-    await emitState()
-    return failure
-  }
+      lastExitCode: ctx.lastExitCode,
+      lastExitSignal: ctx.lastExitSignal,
+    },
+    lastPhase: null,
+    lastHandshakeAt: ctx.state.lastHandshakeAt ?? null,
+    lastCatalogSyncAt: ctx.state.lastCatalogSyncAt ?? null,
+    lastError: null,
+  })
+  await stdioEmitState(ctx)
+}
 
-  async function applyUnexpectedDisconnect(error: unknown): Promise<void> {
-    const summary = enrichFailureSummary(normalizeConnectorError(error, context.now, 'stdio_disconnected'))
-    const failure = createConnectorFailure(server, summary, context.now, {
-      kind: 'stdio',
-      processStatus: 'exited',
-      pid: null,
-      lastExitCode,
-      lastExitSignal,
-    }, {
-      lastPhase: currentPhase,
-      previousTools: tools,
-      lastHandshakeAt: state.lastHandshakeAt ?? null,
-      lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
-      warnings: getWarnings(),
+function stdioBindChild(
+  ctx: StdioContext,
+  spawned: ChildProcessWithoutNullStreams,
+): Promise<void> {
+  const spawnReady = new Promise<void>((resolve, reject) => {
+    spawned.once('spawn', () => {
+      if (spawned !== ctx.child) {
+        return
+      }
+      resolve()
     })
-    state = cloneStateSummary(failure.state)
-    await emitState()
-  }
 
-  async function disposeChild(): Promise<void> {
-    const activeChild = child
-    if (activeChild === null) {
+    spawned.once('error', (error) => {
+      if (spawned !== ctx.child) {
+        return
+      }
+      reject(error)
+    })
+  })
+
+  spawned.stdout.on('data', (chunk: Buffer | string) => {
+    if (spawned !== ctx.child) {
       return
     }
 
-    child = null
-    rejectPending(new McpConnectorError(createMcpErrorSummary(
+    try {
+      const messages = ctx.parser.push(chunk)
+      for (const message of messages) {
+        for (const [requestId, pendingRequest] of ctx.pending.entries()) {
+          if (!isJsonRpcResponseForId(message, requestId)) {
+            continue
+          }
+
+          ctx.pending.delete(requestId)
+          pendingRequest.resolve(message)
+          break
+        }
+      }
+    } catch (error) {
+      stdioRejectPending(ctx, error)
+      if (ctx.sessionReady) {
+        void stdioApplyUnexpectedDisconnect(ctx, error)
+      }
+    }
+  })
+
+  spawned.stderr.on('data', (chunk: Buffer | string) => {
+    const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+    const normalized = text.trim()
+    if (normalized !== '') {
+      stdioRecordStderr(ctx, normalized)
+    }
+  })
+
+  spawned.on('exit', (code, signal) => {
+    if (spawned !== ctx.child) {
+      ctx.lastExitCode = code ?? null
+      ctx.lastExitSignal = signal ?? null
+      return
+    }
+
+    ctx.lastExitCode = code ?? null
+    ctx.lastExitSignal = signal ?? null
+    ctx.child = null
+    stdioRejectPending(ctx, new McpConnectorError(
+      stdioCreateProcessExitSummary(ctx, code, signal),
+    ))
+    const wasReady = ctx.sessionReady
+    ctx.sessionReady = false
+    if (wasReady) {
+      void stdioApplyUnexpectedDisconnect(
+        ctx,
+        stdioCreateProcessExitSummary(ctx, code, signal),
+      )
+    }
+  })
+
+  spawned.on('error', (error) => {
+    if (spawned !== ctx.child) {
+      return
+    }
+
+    stdioRejectPending(ctx, error)
+    if (ctx.sessionReady) {
+      void stdioApplyUnexpectedDisconnect(ctx, error)
+    }
+  })
+
+  return spawnReady
+}
+
+async function stdioPerformHandshake(ctx: StdioContext): Promise<void> {
+  await stdioUpdatePhase(ctx, 'initialize')
+  const initializeResponse = await stdioSendRequest(ctx, MCP_INITIALIZE_METHOD, createInitializeParams())
+  unwrapJsonRpcResponse(initializeResponse, ctx.context.now)
+  await stdioUpdatePhase(ctx, 'initialized')
+  await stdioSendNotification(ctx, MCP_INITIALIZED_NOTIFICATION_METHOD, {})
+}
+
+async function stdioRequestToolsList(
+  ctx: StdioContext,
+  updatePhaseState: boolean,
+): Promise<McpRemoteToolSummary[]> {
+  return await stdioWithSerializedPhase(ctx, 'tools/list', async () => {
+    if (updatePhaseState) {
+      await stdioUpdatePhase(ctx, 'tools/list')
+    }
+
+    const response = await stdioSendRequest(ctx, MCP_TOOLS_LIST_METHOD, {})
+    const result = unwrapJsonRpcResponse(response, ctx.context.now)
+    return normalizeToolsListResult(result)
+  })
+}
+
+async function stdioCallTool(
+  ctx: StdioContext,
+  request: McpConnectorToolCallRequest,
+): Promise<McpToolCallResult> {
+  if (!ctx.sessionReady || ctx.child === null) {
+    return {
+      ok: false,
+      toolId: request.toolId,
+      serverId: request.serverId,
+      remoteToolName: request.remoteToolName,
+      snapshotRevision: request.snapshotRevision ?? null,
+      error: createMcpErrorSummary(
+        'temporarily_unavailable',
+        'The MCP stdio server is not ready to execute tools.',
+        { retryable: true, now: ctx.context.now },
+      ),
+    }
+  }
+
+  if (!ctx.tools.some((tool) => tool.name === request.remoteToolName)) {
+    return {
+      ok: false,
+      toolId: request.toolId,
+      serverId: request.serverId,
+      remoteToolName: request.remoteToolName,
+      snapshotRevision: request.snapshotRevision ?? null,
+      error: createMcpErrorSummary(
+        'directory_drift',
+        'The requested MCP tool no longer exists in the current server catalog.',
+        { retryable: false, now: ctx.context.now },
+      ),
+    }
+  }
+
+  try {
+    const response = await stdioWithSerializedPhase(ctx, 'tools/call', async () => {
+      return await stdioSendRequest(ctx, MCP_TOOLS_CALL_METHOD, {
+        name: request.remoteToolName,
+        arguments: request.arguments,
+      }, {
+        timeoutMs: Math.max(ctx.context.timeoutMs, STDIO_TOOL_CALL_TIMEOUT_MS),
+      })
+    })
+    const result = unwrapJsonRpcResponse(response, ctx.context.now)
+    return normalizeToolsCallResult({
+      result,
+      request,
+      server: ctx.server,
+      now: ctx.context.now,
+    })
+  } catch (error) {
+    return {
+      ok: false,
+      toolId: request.toolId,
+      serverId: request.serverId,
+      remoteToolName: request.remoteToolName,
+      snapshotRevision: request.snapshotRevision ?? null,
+      error: normalizeConnectorError(error, ctx.context.now, 'stdio_tool_call_failed'),
+    }
+  }
+}
+
+async function stdioSendRequest(
+  ctx: StdioContext,
+  method: string,
+  params?: unknown,
+  options: { timeoutMs?: number } = {},
+): Promise<JsonRpcResponsePayload> {
+  const activeChild = ctx.child
+  if (activeChild === null || activeChild.stdin.destroyed) {
+    throw new McpConnectorError(createMcpErrorSummary(
       'connection_closed',
-      'The MCP stdio connection was closed.',
-      true,
-      context.now,
-    )))
-
-    if (!activeChild.killed) {
-      activeChild.kill()
-    }
-
-    await Promise.race([
-      once(activeChild, 'exit').then(() => undefined).catch(() => undefined),
-      delay(150),
-    ])
+      'The MCP stdio process is not available.',
+      { retryable: true, now: ctx.context.now },
+    ))
   }
 
-  function rejectPending(error: unknown): void {
-    for (const [requestId, pendingRequest] of pending.entries()) {
-      pending.delete(requestId)
+  const requestId = ctx.nextRequestId
+  ctx.nextRequestId += 1
+  const timeoutMs = options.timeoutMs ?? (ctx.context.timeoutMs > 0 ? ctx.context.timeoutMs : STDIO_CONNECT_TIMEOUT_MS)
+
+  const responsePromise = new Promise<JsonRpcResponsePayload>((resolve, reject) => {
+    ctx.pending.set(requestId, { resolve, reject })
+    activeChild.stdin.write(encodeJsonRpcMessageLine(createJsonRpcRequest(requestId, method, params)), (error) => {
+      if (error === undefined || error === null) {
+        return
+      }
+
+      const pendingRequest = ctx.pending.get(requestId)
+      if (pendingRequest === undefined) {
+        return
+      }
+
+      ctx.pending.delete(requestId)
       pendingRequest.reject(error)
+    })
+  })
+
+  return await withTimeout(
+    responsePromise,
+    timeoutMs,
+    ctx.context.now,
+    createPhaseTimeoutMessage(ctx.currentPhase),
+  )
+}
+
+async function stdioWithSerializedPhase<T>(
+  ctx: StdioContext,
+  phase: McpConnectionPhase,
+  work: () => Promise<T>,
+): Promise<T> {
+  const next = ctx.requestQueue.catch(() => undefined).then(async () => {
+    const previousPhase = ctx.currentPhase
+    ctx.currentPhase = phase
+    try {
+      const result = await work()
+      ctx.currentPhase = previousPhase
+      return result
+    } catch (error) {
+      ctx.currentPhase = phase
+      throw error
     }
+  })
+
+  ctx.requestQueue = next.then(() => undefined, () => undefined)
+  return await next
+}
+
+async function stdioSendNotification(
+  ctx: StdioContext,
+  method: string,
+  params?: unknown,
+): Promise<void> {
+  const activeChild = ctx.child
+  if (activeChild === null || activeChild.stdin.destroyed) {
+    throw new McpConnectorError(createMcpErrorSummary(
+      'connection_closed',
+      'The MCP stdio process is not available.',
+      { retryable: true, now: ctx.context.now },
+    ))
   }
 
-  function createProcessExitSummary(code: number | null, signal: NodeJS.Signals | null) {
-    const stderrSummary = getStderrSummary()
-    const detailParts = [
-      code === null ? null : `exit code ${code}`,
-      signal === null ? null : `signal ${signal}`,
-      stderrSummary,
-    ].filter((value): value is string => value !== null)
+  await new Promise<void>((resolve, reject) => {
+    activeChild.stdin.write(encodeJsonRpcMessageLine(createJsonRpcNotification(method, params)), (error) => {
+      if (error === undefined || error === null) {
+        resolve()
+        return
+      }
 
-    const suffix = detailParts.length === 0 ? '' : ` (${detailParts.join(', ')})`
-    return createMcpErrorSummary(
-      'process_exited',
-      `The MCP stdio process exited unexpectedly${suffix}.`,
-      true,
-      context.now,
-      {
+      reject(error)
+    })
+  })
+}
+
+async function stdioApplyFailure(
+  ctx: StdioContext,
+  error: unknown,
+): Promise<McpConnectorOperationResult> {
+  const summary = stdioEnrichFailureSummary(
+    ctx,
+    normalizeConnectorError(error, ctx.context.now, 'stdio_connection_failed'),
+  )
+  await stdioDisposeChild(ctx)
+  ctx.sessionReady = false
+  const failure = createConnectorFailure(ctx.server, summary, {
+    now: ctx.context.now,
+    transportState: {
+      kind: 'stdio',
+      processStatus: ctx.lastExitCode === null && ctx.lastExitSignal === null ? 'stopped' : 'exited',
+      pid: null,
+      lastExitCode: ctx.lastExitCode,
+      lastExitSignal: ctx.lastExitSignal,
+    },
+    lastPhase: ctx.currentPhase,
+    previousTools: ctx.tools,
+    lastHandshakeAt: ctx.state.lastHandshakeAt ?? null,
+    lastCatalogSyncAt: ctx.state.lastCatalogSyncAt ?? null,
+    warnings: stdioGetWarnings(ctx),
+  })
+  ctx.state = cloneStateSummary(failure.state)
+  await stdioEmitState(ctx)
+  return failure
+}
+
+async function stdioApplyUnexpectedDisconnect(
+  ctx: StdioContext,
+  error: unknown,
+): Promise<void> {
+  const summary = stdioEnrichFailureSummary(
+    ctx,
+    normalizeConnectorError(error, ctx.context.now, 'stdio_disconnected'),
+  )
+  const failure = createConnectorFailure(ctx.server, summary, {
+    now: ctx.context.now,
+    transportState: {
+      kind: 'stdio',
+      processStatus: 'exited',
+      pid: null,
+      lastExitCode: ctx.lastExitCode,
+      lastExitSignal: ctx.lastExitSignal,
+    },
+    lastPhase: ctx.currentPhase,
+    previousTools: ctx.tools,
+    lastHandshakeAt: ctx.state.lastHandshakeAt ?? null,
+    lastCatalogSyncAt: ctx.state.lastCatalogSyncAt ?? null,
+    warnings: stdioGetWarnings(ctx),
+  })
+  ctx.state = cloneStateSummary(failure.state)
+  await stdioEmitState(ctx)
+}
+
+async function stdioDisposeChild(ctx: StdioContext): Promise<void> {
+  const activeChild = ctx.child
+  if (activeChild === null) {
+    return
+  }
+
+  ctx.child = null
+  stdioRejectPending(ctx, new McpConnectorError(createMcpErrorSummary(
+    'connection_closed',
+    'The MCP stdio connection was closed.',
+    { retryable: true, now: ctx.context.now },
+  )))
+
+  if (!activeChild.killed) {
+    activeChild.kill()
+  }
+
+  await Promise.race([
+    once(activeChild, 'exit').then(() => undefined).catch(() => undefined),
+    delay(150),
+  ])
+}
+
+function stdioRejectPending(ctx: StdioContext, error: unknown): void {
+  for (const [requestId, pendingRequest] of ctx.pending.entries()) {
+    ctx.pending.delete(requestId)
+    pendingRequest.reject(error)
+  }
+}
+
+function stdioCreateProcessExitSummary(
+  ctx: StdioContext,
+  code: number | null,
+  signal: NodeJS.Signals | null,
+) {
+  const stderrSummary = stdioGetStderrSummary(ctx)
+  const detailParts = [
+    code === null ? null : `exit code ${code}`,
+    signal === null ? null : `signal ${signal}`,
+    stderrSummary,
+  ].filter((value): value is string => value !== null)
+
+  const suffix = detailParts.length === 0 ? '' : ` (${detailParts.join(', ')})`
+  return createMcpErrorSummary(
+    'process_exited',
+    `The MCP stdio process exited unexpectedly${suffix}.`,
+    {
+      retryable: true,
+      now: ctx.context.now,
+      details: {
         exitCode: code,
         exitSignal: signal,
-        phase: currentPhase,
+        phase: ctx.currentPhase,
         stderrSummary,
       },
+    },
+  )
+}
+
+async function stdioEmitState(ctx: StdioContext): Promise<void> {
+  await ctx.context.onStateChange?.(cloneStateSummary(ctx.state))
+}
+
+async function stdioUpdatePhase(
+  ctx: StdioContext,
+  phase: McpConnectionPhase,
+): Promise<void> {
+  ctx.currentPhase = phase
+  ctx.state = createConnectorState(ctx.server, 'connecting', ctx.tools.length, {
+    transportState: ctx.child === null
+      ? {
+          kind: 'stdio',
+          processStatus: 'starting',
+          pid: null,
+          lastExitCode: ctx.lastExitCode,
+          lastExitSignal: ctx.lastExitSignal,
+        }
+      : {
+          kind: 'stdio',
+          processStatus: 'running',
+          pid: ctx.child.pid ?? null,
+          lastExitCode: ctx.lastExitCode,
+          lastExitSignal: ctx.lastExitSignal,
+        },
+    lastPhase: phase,
+    lastHandshakeAt: ctx.state.lastHandshakeAt ?? null,
+    lastCatalogSyncAt: ctx.state.lastCatalogSyncAt ?? null,
+    lastError: null,
+  })
+  await stdioEmitState(ctx)
+}
+
+function stdioRecordStderr(ctx: StdioContext, text: string): void {
+  for (const line of text.split(/\r?\n/gu)) {
+    const normalized = line.trim()
+    if (normalized === '') {
+      continue
+    }
+
+    ctx.stderrLines.push(normalized)
+    while (ctx.stderrLines.length > STDERR_SUMMARY_MAX_LINES) {
+      ctx.stderrLines.shift()
+    }
+  }
+}
+
+function stdioGetStderrSummary(ctx: StdioContext): string | null {
+  return ctx.stderrLines.length === 0 ? null : ctx.stderrLines.join(' | ')
+}
+
+function stdioGetWarnings(ctx: StdioContext): string[] {
+  const stderrSummary = stdioGetStderrSummary(ctx)
+  return stderrSummary === null ? [] : [stderrSummary]
+}
+
+function stdioEnrichFailureSummary(
+  ctx: StdioContext,
+  summary: ReturnType<typeof normalizeConnectorError>,
+): ReturnType<typeof normalizeConnectorError> {
+  const phase = ctx.currentPhase
+  const stderrSummary = stdioGetStderrSummary(ctx)
+  const diagnosticSummary = buildDiagnosticSummary(phase, stderrSummary, ctx)
+  const nextDetails = {
+    ...(summary.details ?? {}),
+    phase,
+    requestedCommand: ctx.resolvedCommand.requestedCommand,
+    resolutionKind: ctx.resolvedCommand.resolutionKind,
+    managedFamily: ctx.resolvedCommand.managedFamily ?? null,
+    command: ctx.transportConfig.command,
+    args: [...ctx.transportConfig.args],
+    cwd: ctx.transportConfig.cwd ?? null,
+    stderrSummary,
+    diagnosticSummary,
+  }
+
+  return {
+    ...summary,
+    message: createPhaseAwareMessage(summary, phase),
+    details: nextDetails,
+  }
+}
+
+function stdioReadManagedRuntimeFailure(ctx: StdioContext) {
+  const rawFailure = ctx.transportConfig.env?.CANDUE_MANAGED_RUNTIME_ERROR
+  if (typeof rawFailure !== 'string' || rawFailure.trim() === '') {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(rawFailure) as {
+      message?: unknown
+      observedAt?: unknown
+      details?: unknown
+    }
+    return createMcpErrorSummary(
+      'managed_runtime_unavailable',
+      typeof parsed.message === 'string' && parsed.message.trim() !== ''
+        ? parsed.message
+        : 'The managed runtime required by this MCP launcher is unavailable.',
+      {
+        retryable: false,
+        now: () => typeof parsed.observedAt === 'string' && parsed.observedAt.trim() !== ''
+          ? parsed.observedAt
+          : ctx.context.now(),
+        details: isRecord(parsed.details) ? parsed.details : null,
+      },
+    )
+  } catch {
+    return createMcpErrorSummary(
+      'managed_runtime_unavailable',
+      'The managed runtime required by this MCP launcher is unavailable.',
+      { retryable: false, now: ctx.context.now },
     )
   }
+}
 
-  async function emitState(): Promise<void> {
-    await context.onStateChange?.(cloneStateSummary(state))
-  }
+function buildDiagnosticSummary(
+  phase: McpConnectionPhase | null,
+  stderrSummary: string | null,
+  ctx: StdioContext,
+): string {
+  const parts = [
+    phase === null ? null : `phase=${phase}`,
+    `requestedCommand=${ctx.resolvedCommand.requestedCommand}`,
+    `resolution=${ctx.resolvedCommand.resolutionKind}`,
+    ctx.resolvedCommand.managedFamily ? `managedFamily=${ctx.resolvedCommand.managedFamily}` : null,
+    `command=${ctx.transportConfig.command}`,
+    ctx.transportConfig.args.length === 0 ? null : `args=${ctx.transportConfig.args.join(' ')}`,
+    ctx.transportConfig.cwd ? `cwd=${ctx.transportConfig.cwd}` : null,
+    stderrSummary === null ? null : `stderr=${stderrSummary}`,
+  ].filter((value): value is string => value !== null)
 
-  async function updatePhase(phase: McpConnectionPhase): Promise<void> {
-    currentPhase = phase
-    state = createConnectorState(server, 'connecting', tools.length, context.now, {
-      transportState: child === null
-        ? {
-            kind: 'stdio',
-            processStatus: 'starting',
-            pid: null,
-            lastExitCode,
-            lastExitSignal,
-          }
-        : {
-            kind: 'stdio',
-            processStatus: 'running',
-            pid: child.pid ?? null,
-            lastExitCode,
-            lastExitSignal,
-          },
-      lastPhase: phase,
-      lastHandshakeAt: state.lastHandshakeAt ?? null,
-      lastCatalogSyncAt: state.lastCatalogSyncAt ?? null,
-      lastError: null,
-    })
-    await emitState()
-  }
+  return parts.join('; ')
+}
 
-  function recordStderr(text: string): void {
-    for (const line of text.split(/\r?\n/gu)) {
-      const normalized = line.trim()
-      if (normalized === '') {
-        continue
-      }
-
-      stderrLines.push(normalized)
-      while (stderrLines.length > STDERR_SUMMARY_MAX_LINES) {
-        stderrLines.shift()
-      }
-    }
-  }
-
-  function getStderrSummary(): string | null {
-    return stderrLines.length === 0 ? null : stderrLines.join(' | ')
-  }
-
-  function getWarnings(): string[] {
-    const stderrSummary = getStderrSummary()
-    return stderrSummary === null ? [] : [stderrSummary]
-  }
-
-  function enrichFailureSummary(summary: ReturnType<typeof normalizeConnectorError>): ReturnType<typeof normalizeConnectorError> {
-    const phase = currentPhase
-    const stderrSummary = getStderrSummary()
-    const diagnosticSummary = buildDiagnosticSummary(phase, stderrSummary)
-    const nextDetails = {
-      ...(summary.details ?? {}),
-      phase,
-      requestedCommand: resolvedCommand.requestedCommand,
-      resolutionKind: resolvedCommand.resolutionKind,
-      managedFamily: resolvedCommand.managedFamily ?? null,
-      command: transportConfig.command,
-      args: [...transportConfig.args],
-      cwd: transportConfig.cwd ?? null,
-      stderrSummary,
-      diagnosticSummary,
-    }
-
-    return {
-      ...summary,
-      message: createPhaseAwareMessage(summary, phase),
-      details: nextDetails,
-    }
-  }
-
-  function readManagedRuntimeFailure() {
-    const rawFailure = transportConfig.env?.CANDUE_MANAGED_RUNTIME_ERROR
-    if (typeof rawFailure !== 'string' || rawFailure.trim() === '') {
-      return null
-    }
-
-    try {
-      const parsed = JSON.parse(rawFailure) as {
-        message?: unknown
-        observedAt?: unknown
-        details?: unknown
-      }
-      return createMcpErrorSummary(
-        'managed_runtime_unavailable',
-        typeof parsed.message === 'string' && parsed.message.trim() !== ''
-          ? parsed.message
-          : 'The managed runtime required by this MCP launcher is unavailable.',
-        false,
-        () => typeof parsed.observedAt === 'string' && parsed.observedAt.trim() !== ''
-          ? parsed.observedAt
-          : context.now(),
-        isRecord(parsed.details) ? parsed.details : null,
-      )
-    } catch {
-      return createMcpErrorSummary(
-        'managed_runtime_unavailable',
-        'The managed runtime required by this MCP launcher is unavailable.',
-        false,
-        context.now,
-      )
-    }
-  }
-
-  function buildDiagnosticSummary(phase: McpConnectionPhase | null, stderrSummary: string | null): string {
-    const parts = [
-      phase === null ? null : `phase=${phase}`,
-      `requestedCommand=${resolvedCommand.requestedCommand}`,
-      `resolution=${resolvedCommand.resolutionKind}`,
-      resolvedCommand.managedFamily ? `managedFamily=${resolvedCommand.managedFamily}` : null,
-      `command=${transportConfig.command}`,
-      transportConfig.args.length === 0 ? null : `args=${transportConfig.args.join(' ')}`,
-      transportConfig.cwd ? `cwd=${transportConfig.cwd}` : null,
-      stderrSummary === null ? null : `stderr=${stderrSummary}`,
-    ].filter((value): value is string => value !== null)
-
-    return parts.join('; ')
-  }
-
-  function createPhaseAwareMessage(
-    summary: ReturnType<typeof normalizeConnectorError>,
-    phase: McpConnectionPhase | null,
-  ): string {
-    if (phase === null) {
-      return summary.message
-    }
-
-    if (summary.code === 'timeout') {
-      return createPhaseTimeoutMessage(phase)
-    }
-
-    if (summary.code === 'protocol_parse_failed') {
-      return `The MCP stdio server returned unrecognized stdout output during ${phase}.`
-    }
-
-    if (summary.code === 'mcp_remote_error') {
-      return `The MCP stdio server returned an error during ${phase}: ${summary.message}`
-    }
-
+function createPhaseAwareMessage(
+  summary: ReturnType<typeof normalizeConnectorError>,
+  phase: McpConnectionPhase | null,
+): string {
+  if (phase === null) {
     return summary.message
   }
+
+  if (summary.code === 'timeout') {
+    return createPhaseTimeoutMessage(phase)
+  }
+
+  if (summary.code === 'protocol_parse_failed') {
+    return `The MCP stdio server returned unrecognized stdout output during ${phase}.`
+  }
+
+  if (summary.code === 'mcp_remote_error') {
+    return `The MCP stdio server returned an error during ${phase}: ${summary.message}`
+  }
+
+  return summary.message
 }
 
 function createPhaseTimeoutMessage(phase: McpConnectionPhase | null): string {

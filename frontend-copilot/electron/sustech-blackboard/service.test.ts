@@ -55,15 +55,15 @@ function createSettingsState(
 }
 
 function createIpcMainStub() {
-  const handlers = new Map<string, (...args: any[]) => any>()
+  const handlers = new Map<string, (...args: unknown[]) => unknown>()
   return {
-    handle(channel: string, listener: (...args: any[]) => any) {
+    handle(channel: string, listener: (...args: unknown[]) => unknown) {
       handlers.set(channel, listener)
     },
     removeHandler(channel: string) {
       handlers.delete(channel)
     },
-    invoke(channel: string, ...args: any[]) {
+    invoke(channel: string, ...args: unknown[]) {
       const handler = handlers.get(channel)
       if (handler === undefined) {
         throw new Error(`No handler registered for ${channel}`)

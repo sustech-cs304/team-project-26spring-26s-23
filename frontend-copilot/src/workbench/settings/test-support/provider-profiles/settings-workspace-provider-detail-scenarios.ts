@@ -15,11 +15,16 @@ import {
   waitForNextFrame,
 } from '../SettingsWorkspaceTestSupport'
 
+const MODEL_SERVICE_SECTION = 'model-service'
+const PROVIDER_BASE_URL_INPUT_ID = 'provider-base-url-input'
+const PROVIDER_DISPLAY_NAME_INPUT_ID = 'provider-display-name-input'
+const PROVIDER_CONTEXT_MENU_ID = 'provider-context-menu'
+
 export async function runProviderModelEditorFocusScenario() {
   installSettingsWorkspaceBridge()
 
   const rendered = renderSettingsWorkspace({
-    initialSection: 'model-service',
+    initialSection: MODEL_SERVICE_SECTION,
   })
 
   await flushAsyncEffects()
@@ -54,7 +59,7 @@ export async function runAddProviderFromEmptyStateScenario() {
   })
 
   const rendered = renderSettingsWorkspace({
-    initialSection: 'model-service',
+    initialSection: MODEL_SERVICE_SECTION,
   })
 
   await flushAsyncEffects()
@@ -77,9 +82,9 @@ export async function runAddProviderFromEmptyStateScenario() {
     addedProviderCard = rendered.container.querySelector('[data-testid="settings-provider-card-openai-1"]') as HTMLElement | null
   }
 
-  const baseUrlInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
+  const baseUrlInput = rendered.getByTestId(PROVIDER_BASE_URL_INPUT_ID) as HTMLInputElement
   expect(addedProviderCard?.textContent).toContain('OpenAI')
-  expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('OpenAI')
+  expect((rendered.getByTestId(PROVIDER_DISPLAY_NAME_INPUT_ID) as HTMLInputElement).value).toBe('OpenAI')
   expect(baseUrlInput.value).toBe('')
   expect(baseUrlInput.placeholder).toBe('https://api.openai.com/v1')
   expect(rendered.container.textContent).toContain('链接预览：未填写服务地址')
@@ -108,18 +113,18 @@ export async function runDuplicateProviderScenario() {
   })
 
   const rendered = renderSettingsWorkspace({
-    initialSection: 'model-service',
+    initialSection: MODEL_SERVICE_SECTION,
   })
 
   await flushAsyncEffects()
 
-  const providerNameInput = rendered.getByTestId('provider-display-name-input') as HTMLInputElement
+  const providerNameInput = rendered.getByTestId(PROVIDER_DISPLAY_NAME_INPUT_ID) as HTMLInputElement
   expect(providerNameInput.value).toBe('Persisted Router')
 
   await contextMenuElement(rendered.getByTestId('settings-provider-card-openrouter'))
-  expect(rendered.getByTestId('provider-context-menu')).not.toBeNull()
+  expect(rendered.getByTestId(PROVIDER_CONTEXT_MENU_ID)).not.toBeNull()
   await clickElement(rendered.getByText('复制服务商'))
-  expect(rendered.queryByTestId('provider-context-menu')).toBeNull()
+  expect(rendered.queryByTestId(PROVIDER_CONTEXT_MENU_ID)).toBeNull()
 
   expect(saveProfileApiKey).toHaveBeenCalledWith({
     profileId: 'persisted-router-1',
@@ -128,7 +133,7 @@ export async function runDuplicateProviderScenario() {
 
   const copiedProviderCard = rendered.getByTestId('settings-provider-card-persisted-router-1')
   expect(copiedProviderCard.textContent).toContain('Persisted Router 副本')
-  expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('Persisted Router 副本')
+  expect((rendered.getByTestId(PROVIDER_DISPLAY_NAME_INPUT_ID) as HTMLInputElement).value).toBe('Persisted Router 副本')
 
   rendered.unmount()
 }
@@ -170,7 +175,7 @@ export async function runOllamaGuidanceCleanupScenario() {
   })
 
   const rendered = renderSettingsWorkspace({
-    initialSection: 'model-service',
+    initialSection: MODEL_SERVICE_SECTION,
   })
 
   await flushAsyncEffects()
@@ -187,7 +192,7 @@ export async function runOllamaGuidanceCleanupScenario() {
   expect(rendered.container.textContent).not.toContain('本地 Ollama 默认无需 API Key')
   expect(rendered.container.textContent).not.toContain('可按需管理模型列表。')
   expect(rendered.container.textContent).toContain('链接预览：http://127.0.0.1:11434/v1/chat/completions')
-  expect((rendered.getByTestId('provider-base-url-input') as HTMLInputElement).value).toBe('http://127.0.0.1:11434/v1')
+  expect((rendered.getByTestId(PROVIDER_BASE_URL_INPUT_ID) as HTMLInputElement).value).toBe('http://127.0.0.1:11434/v1')
 
   rendered.unmount()
 }
@@ -220,12 +225,12 @@ export async function runExtensionBannerHiddenScenario() {
   })
 
   const rendered = renderSettingsWorkspace({
-    initialSection: 'model-service',
+    initialSection: MODEL_SERVICE_SECTION,
   })
 
   await flushAsyncEffects()
 
-  expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('Extended Provider')
+  expect((rendered.getByTestId(PROVIDER_DISPLAY_NAME_INPUT_ID) as HTMLInputElement).value).toBe('Extended Provider')
   expect(rendered.queryByTestId('provider-extension-banner')).toBeNull()
   expect(rendered.container.textContent).not.toContain('附加信息')
   expect(rendered.container.textContent).not.toContain('当前服务包含附加信息，保存时会一并保留。')
@@ -266,7 +271,7 @@ export async function runLegacyProviderWarningScenario() {
   })
 
   const rendered = renderSettingsWorkspace({
-    initialSection: 'model-service',
+    initialSection: MODEL_SERVICE_SECTION,
   })
 
   await flushAsyncEffects()
@@ -297,15 +302,15 @@ export async function runDeleteActiveProviderScenario() {
   })
 
   const rendered = renderSettingsWorkspace({
-    initialSection: 'model-service',
+    initialSection: MODEL_SERVICE_SECTION,
   })
 
   await flushAsyncEffects()
 
   await contextMenuElement(rendered.getByTestId('settings-provider-card-openrouter'))
-  expect(rendered.getByTestId('provider-context-menu')).not.toBeNull()
+  expect(rendered.getByTestId(PROVIDER_CONTEXT_MENU_ID)).not.toBeNull()
   await clickElement(rendered.getByText('删除服务商'))
-  expect(rendered.queryByTestId('provider-context-menu')).toBeNull()
+  expect(rendered.queryByTestId(PROVIDER_CONTEXT_MENU_ID)).toBeNull()
 
   expect(clearProfileApiKey).toHaveBeenCalledWith({
     profileId: 'openrouter',
@@ -330,12 +335,12 @@ export async function runProviderBaseUrlRequiredScenario() {
     })
 
     const rendered = renderSettingsWorkspace({
-      initialSection: 'model-service',
+      initialSection: MODEL_SERVICE_SECTION,
     })
 
     await flushAsyncEffects()
 
-    const apiAddressInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
+    const apiAddressInput = rendered.getByTestId(PROVIDER_BASE_URL_INPUT_ID) as HTMLInputElement
     await setFormControlValue(apiAddressInput, '')
 
     expect(apiAddressInput.value).toBe('')
@@ -355,6 +360,7 @@ export async function runProviderBaseUrlRequiredScenario() {
 }
 
 export async function runGeminiRequestPreviewScenario() {
+  const GEMINI_MODEL_ID = 'gemini-3.1-pro-preview'
   const geminiProvider = createProviderProfile({
     id: 'provider-gemini',
     profileId: 'provider-gemini',
@@ -365,9 +371,9 @@ export async function runGeminiRequestPreviewScenario() {
     endpoint: 'https://api.ikuncode.cc/v1beta',
     baseUrl: 'https://api.ikuncode.cc/v1beta',
     hasApiKey: false,
-    primaryModelId: 'gemini-3.1-pro-preview',
-    fastModel: 'gemini-3.1-pro-preview',
-    fallbackModel: 'gemini-3.1-pro-preview',
+    primaryModelId: GEMINI_MODEL_ID,
+    fastModel: GEMINI_MODEL_ID,
+    fallbackModel: GEMINI_MODEL_ID,
   })
 
   installSettingsWorkspaceBridge({
@@ -377,11 +383,11 @@ export async function runGeminiRequestPreviewScenario() {
       state: createPersistedWorkspaceState({
         providerProfiles: [geminiProvider],
         defaultModelRouting: {
-          primaryAssistantModel: 'gemini-3.1-pro-preview',
+          primaryAssistantModel: GEMINI_MODEL_ID,
           primaryAssistantModelRoute: {
             routeKind: 'provider-model',
             profileId: 'provider-gemini',
-            modelId: 'gemini-3.1-pro-preview',
+            modelId: GEMINI_MODEL_ID,
           },
         },
       }),
@@ -398,13 +404,13 @@ export async function runGeminiRequestPreviewScenario() {
   })
 
   const rendered = renderSettingsWorkspace({
-    initialSection: 'model-service',
+    initialSection: MODEL_SERVICE_SECTION,
   })
 
   await flushAsyncEffects()
 
   expect(rendered.container.textContent).toContain(
-    '链接预览：https://api.ikuncode.cc/v1beta/models/gemini-3.1-pro-preview:generateContent',
+    `链接预览：https://api.ikuncode.cc/v1beta/models/${GEMINI_MODEL_ID}:generateContent`,
   )
 
   rendered.unmount()
@@ -421,7 +427,7 @@ export async function runApiAddressFieldScenario() {
   })
 
   const rendered = renderSettingsWorkspace({
-    initialSection: 'model-service',
+    initialSection: MODEL_SERVICE_SECTION,
   })
 
   await flushAsyncEffects()
@@ -430,7 +436,7 @@ export async function runApiAddressFieldScenario() {
   expect(rendered.container.querySelector('input[placeholder="例如 openai/gpt-4.1"]')).toBeNull()
   expect(rendered.container.textContent).toContain('链接预览：https://persisted.example.com/v1/chat/completions')
 
-  const apiAddressInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
+  const apiAddressInput = rendered.getByTestId(PROVIDER_BASE_URL_INPUT_ID) as HTMLInputElement
   expect(apiAddressInput.placeholder).toBe('https://api.openai.com/v1')
   await setFormControlValue(apiAddressInput, 'https://editable.example.com/v2/chat/completions')
 

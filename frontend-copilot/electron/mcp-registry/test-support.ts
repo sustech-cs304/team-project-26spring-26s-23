@@ -20,6 +20,8 @@ import type {
 import { MCP_SNAPSHOT_VERSION } from './types'
 import { buildMcpToolId } from './snapshot'
 
+const MCP_TEST_TOOL_SEARCH_CAMPUS = 'search-campus'
+
 export const MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS = Object.freeze({
   stdio: 'mcp-stdio-stub',
   httpSse: 'mcp-http-sse-stub',
@@ -260,7 +262,7 @@ export function createMcpRegistrySubscriptionEventFixture(
 export function createMcpCapabilitySnapshotFixture(): McpCapabilitySnapshot {
   const stdioServer = createMcpStdioStubServerFixture()
   const httpSseServer = createMcpHttpSseStubServerFixture()
-  const searchCampusToolId = buildMcpToolId(stdioServer.serverId, 'search-campus')
+  const searchCampusToolId = buildMcpToolId(stdioServer.serverId, MCP_TEST_TOOL_SEARCH_CAMPUS)
   const calendarToolId = buildMcpToolId(httpSseServer.serverId, 'fetch-calendar')
 
   const servers: McpSnapshotServerSummary[] = [
@@ -290,7 +292,7 @@ export function createMcpCapabilitySnapshotFixture(): McpCapabilitySnapshot {
     {
       toolId: searchCampusToolId,
       serverId: stdioServer.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: MCP_TEST_TOOL_SEARCH_CAMPUS,
       displayName: 'Search Campus',
       description: 'Search the campus knowledge base.',
       inputSchema: {
@@ -351,12 +353,12 @@ export function createMcpCapabilitySnapshotFixture(): McpCapabilitySnapshot {
 }
 
 export function createMcpToolCallRequestFixture(): McpToolCallRequest {
-  const toolId = buildMcpToolId(MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio, 'search-campus')
+  const toolId = buildMcpToolId(MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio, MCP_TEST_TOOL_SEARCH_CAMPUS)
 
   return {
     toolId,
     serverId: MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS.stdio,
-    remoteToolName: 'search-campus',
+    remoteToolName: MCP_TEST_TOOL_SEARCH_CAMPUS,
     arguments: {
       keyword: 'library',
     },

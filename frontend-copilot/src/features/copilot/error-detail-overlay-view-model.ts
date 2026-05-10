@@ -406,6 +406,8 @@ function stringifyRecord(record: Record<string, unknown>): string | null {
   return serialized === undefined || serialized.trim() === '' ? null : serialized
 }
 
+const MCP_NOT_PROVIDED = '未提供' as const
+
 function readMcpFailureDetail(source: CopilotErrorDetailSource): {
   toolName: string
   toolId: string
@@ -436,36 +438,37 @@ function readMcpFailureDetail(source: CopilotErrorDetailSource): {
     return null
   }
 
-  const toolName = remoteToolName
-    ?? requestedRemoteToolName
-    ?? deriveToolNameFromToolId(toolId)
-    ?? '未提供'
-  const resolvedServerId = serverId ?? requestedServerId ?? '未提供'
-  const resolvedToolId = toolId ?? '未提供'
-  const resolvedToolCallId = readOptionalString(details.toolCallId) ?? '未提供'
-  const serverName = readOptionalString(details.serverName)
-    ?? readOptionalString(details.displayName)
-    ?? resolvedServerId
-  const phase = readOptionalString(details.phase)
-    ?? readOptionalString(details.stage)
-    ?? source.stage
-    ?? '未提供'
-  const diagnosticSummary = readOptionalString(details.diagnosticSummary)
-    ?? readOptionalString(details.errorSummary)
-    ?? readOptionalString(details.diagnostic)
-    ?? '未提供'
-  const stderrSummary = readOptionalString(details.stderrSummary) ?? '未提供'
+  const resolvedServerId = serverId ?? requestedServerId ?? MCP_NOT_PROVIDED
+  const resolvedToolId = toolId ?? MCP_NOT_PROVIDED
+  const resolvedToolCallId = readOptionalString(details.toolCallId) ?? MCP_NOT_PROVIDED
+  const toolName = readWithFallback(
+    [remoteToolName, requestedRemoteToolName, deriveToolNameFromToolId(toolId)],
+    MCP_NOT_PROVIDED,
+  )
+  const serverName = readWithFallback(
+    [readOptionalString(details.serverName), readOptionalString(details.displayName), resolvedServerId],
+    MCP_NOT_PROVIDED,
+  )
+  const phase = readWithFallback(
+    [readOptionalString(details.phase), readOptionalString(details.stage), source.stage],
+    MCP_NOT_PROVIDED,
+  )
+  const diagnosticSummary = readWithFallback(
+    [readOptionalString(details.diagnosticSummary), readOptionalString(details.errorSummary), readOptionalString(details.diagnostic)],
+    MCP_NOT_PROVIDED,
+  )
+  const stderrSummary = readOptionalString(details.stderrSummary) ?? MCP_NOT_PROVIDED
   const snapshotRevision = readOptionalIntegerText(details.snapshotRevision)
     ?? readOptionalIntegerText(details.requestedSnapshotRevision)
-    ?? '未提供'
+    ?? MCP_NOT_PROVIDED
   const catalogVersion = readOptionalIntegerText(details.catalogVersion)
     ?? readOptionalIntegerText(details.catalogRevision)
-    ?? '未提供'
+    ?? MCP_NOT_PROVIDED
   const targetSummary = summarizeDefinedEntries({
-    serverId: resolvedServerId === '未提供' ? null : resolvedServerId,
-    remoteToolName: toolName === '未提供' ? null : toolName,
-    toolCallId: resolvedToolCallId === '未提供' ? null : resolvedToolCallId,
-  }) ?? '未提供'
+    serverId: resolvedServerId === MCP_NOT_PROVIDED ? null : resolvedServerId,
+    remoteToolName: toolName === MCP_NOT_PROVIDED ? null : toolName,
+    toolCallId: resolvedToolCallId === MCP_NOT_PROVIDED ? null : resolvedToolCallId,
+  }) ?? MCP_NOT_PROVIDED
 
   return {
     toolName,
@@ -480,6 +483,18 @@ function readMcpFailureDetail(source: CopilotErrorDetailSource): {
     catalogVersion,
     targetSummary,
   }
+}
+
+function readWithFallback(
+  candidates: readonly (string | null)[],
+  fallback: string,
+): string {
+  for (const candidate of candidates) {
+    if (candidate !== null) {
+      return candidate
+    }
+  }
+  return fallback
 }
 
 function readOptionalIntegerText(value: unknown): string | null {

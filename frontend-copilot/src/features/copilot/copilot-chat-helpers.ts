@@ -696,37 +696,40 @@ export function parseRequestOptionsText(requestOptionsText: string): Record<stri
   return { ...(parsed as Record<string, unknown>) }
 }
 
+const SESSION_STALE_CODES = new Set(['agent_mismatch', 'capabilities_version_stale'])
+const TOOL_UNAVAILABLE_CODES = new Set(['tool_not_found', 'tool_unavailable'])
+const MODEL_UNAVAILABLE_CODES = new Set([
+  'provider_catalog_only', 'provider_legacy_unsupported', 'provider_runtime_not_enabled',
+  'adapter_missing', 'provider_adapter_mismatch', 'provider_profile_not_found',
+  'route_ref_snapshot_mismatch', 'host_model_route_unavailable', 'host_model_route_access_denied',
+])
+const PROVIDER_CONFIG_CODES = new Set([
+  'provider_auth_missing', 'provider_secret_missing',
+  'provider_auth_kind_unsupported', 'provider_base_url_missing',
+])
+
 export function formatRuntimeMessageSendError(error: unknown): string {
   if (error instanceof RuntimeRequestError) {
-    switch (error.code) {
-      case 'agent_mismatch':
-      case 'capabilities_version_stale':
-        return '当前会话已更新，请重新发送。'
-      case 'tool_not_found':
-      case 'tool_unavailable':
-        return '当前所选工具暂不可用，请调整后重试。'
-      case 'invalid_request':
-        return '当前消息暂时无法发送，请调整内容后重试。'
-      case 'thinking_not_supported_for_route':
-        return '当前模型暂不支持所选思考设置，请调整后重试。'
-      case 'provider_catalog_only':
-      case 'provider_legacy_unsupported':
-      case 'provider_runtime_not_enabled':
-      case 'adapter_missing':
-      case 'provider_adapter_mismatch':
-      case 'provider_profile_not_found':
-      case 'route_ref_snapshot_mismatch':
-      case 'host_model_route_unavailable':
-      case 'host_model_route_access_denied':
-        return '当前模型不可用，请重新选择模型。'
-      case 'provider_auth_missing':
-      case 'provider_secret_missing':
-      case 'provider_auth_kind_unsupported':
-      case 'provider_base_url_missing':
-        return '请先完成模型服务配置后再试。'
-      default:
-        return error.message
+    const code = error.code ?? ''
+    if (SESSION_STALE_CODES.has(code)) {
+      return '当前会话已更新，请重新发送。'
     }
+    if (TOOL_UNAVAILABLE_CODES.has(code)) {
+      return '当前所选工具暂不可用，请调整后重试。'
+    }
+    if (code === 'invalid_request') {
+      return '当前消息暂时无法发送，请调整内容后重试。'
+    }
+    if (code === 'thinking_not_supported_for_route') {
+      return '当前模型暂不支持所选思考设置，请调整后重试。'
+    }
+    if (MODEL_UNAVAILABLE_CODES.has(code)) {
+      return '当前模型不可用，请重新选择模型。'
+    }
+    if (PROVIDER_CONFIG_CODES.has(code)) {
+      return '请先完成模型服务配置后再试。'
+    }
+    return error.message
   }
 
   return error instanceof Error ? error.message : String(error)

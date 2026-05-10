@@ -99,348 +99,388 @@ interface ManagedConnectorEntry {
   restarting: boolean
 }
 
+interface HubContext {
+  now: () => string
+  timeoutMs: number
+  maxReconnectAttempts: number
+  reconnectDelayMs: number
+  entries: Map<string, ManagedConnectorEntry>
+  states: Map<string, McpServerStateSummary>
+  currentRevisions: McpConnectorHubRevisionState
+  options: CreateMcpConnectorHubOptions
+}
+
 export function createMcpConnectorHub(options: CreateMcpConnectorHubOptions = {}): McpConnectorHub {
-  const now = options.now ?? (() => new Date().toISOString())
-  const timeoutMs = options.timeoutMs ?? DEFAULT_CONNECTOR_TIMEOUT_MS
-  const maxReconnectAttempts = options.maxReconnectAttempts ?? DEFAULT_MAX_RECONNECT_ATTEMPTS
-  const reconnectDelayMs = options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS
-  const entries = new Map<string, ManagedConnectorEntry>()
-  const states = new Map<string, McpServerStateSummary>()
-  let currentRevisions: McpConnectorHubRevisionState = { registryRevision: 0, snapshotRevision: 0 }
-
-  const publishServerState = async (state: McpServerStateSummary): Promise<void> => {
-    states.set(state.serverId, cloneStateSummary(state))
-    await options.publishEvent?.({
-      kind: 'server-state',
-      registryRevision: currentRevisions.registryRevision,
-      snapshotRevision: currentRevisions.snapshotRevision,
-      serverId: state.serverId,
-      state: cloneStateSummary(state),
-    })
-  }
-
-  const createConnector = (server: McpServerRecord): McpServerConnector => {
-    if (options.createConnector !== undefined) {
-      return options.createConnector(server, {
-        timeoutMs,
-        now,
-        onStateChange: publishServerState,
-      })
-    }
-
-    const context = {
-      timeoutMs,
-      now,
-      onStateChange: publishServerState,
-    }
-    return server.transportKind === 'stdio'
-      ? createStdioMcpServerConnector({
-          server,
-          context,
-          resolvedCommand: options.getResolvedCommand?.(server) ?? undefined,
-        })
-      : createHttpSseMcpServerConnector({ server, context })
+  const ctx: HubContext = {
+    now: options.now ?? (() => new Date().toISOString()),
+    timeoutMs: options.timeoutMs ?? DEFAULT_CONNECTOR_TIMEOUT_MS,
+    maxReconnectAttempts: options.maxReconnectAttempts ?? DEFAULT_MAX_RECONNECT_ATTEMPTS,
+    reconnectDelayMs: options.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS,
+    entries: new Map(),
+    states: new Map(),
+    currentRevisions: { registryRevision: 0, snapshotRevision: 0 },
+    options,
   }
 
   return {
-    async reconcile(servers, revisions) {
-      currentRevisions = revisions
-      const activeServerIds = new Set(servers.map((server) => server.serverId))
-
-      await Promise.all(Array.from(entries.keys()).map(async (serverId) => {
-        if (activeServerIds.has(serverId)) {
-          return
-        }
-
-        await removeManagedServer(serverId, revisions, true)
-      }))
-
-      const reconcileResults = await Promise.all(servers.map(async (server) => {
-        if (!server.enabled) {
-          return await setDisabled(server, revisions)
-        }
-
-        return await ensureRunning(server, revisions)
-      }))
-
-      return {
-        states: reconcileResults.map(cloneStateSummary),
-      }
-    },
-    async removeServer(serverId, revisions) {
-      currentRevisions = revisions
-      await removeManagedServer(serverId, revisions, true)
-    },
-    async setServerDisabled(server, revisions) {
-      currentRevisions = revisions
-      return await setDisabled(server, revisions)
-    },
-    async testConnection(server) {
-      const startedAt = Date.now()
-      const capturedStates: McpServerStateSummary[] = []
-      const connector = options.createConnector !== undefined
-        ? options.createConnector(server, {
-            timeoutMs,
-            now,
-            onStateChange(state) {
-              capturedStates.push(cloneStateSummary(state))
-            },
-          })
-        : server.transportKind === 'stdio'
-          ? createStdioMcpServerConnector({
-              server,
-              context: {
-                timeoutMs,
-                now,
-                onStateChange(state) {
-                  capturedStates.push(cloneStateSummary(state))
-                },
-              },
-              resolvedCommand: options.getResolvedCommand?.(server) ?? undefined,
-            })
-          : createHttpSseMcpServerConnector({
-              server,
-              context: {
-                timeoutMs,
-                now,
-                onStateChange(state) {
-                  capturedStates.push(cloneStateSummary(state))
-                },
-              },
-            })
-
-      try {
-        const result = await connector.start()
-        const durationMs = Math.max(0, Date.now() - startedAt)
-        return {
-          success: result.ok,
-          transportKind: server.transportKind,
-          toolCount: result.tools.length,
-          durationMs,
-          phase: resolveTestConnectionPhase(result, capturedStates),
-          diagnosticSummary: resolveDiagnosticSummary(result),
-          error: result.ok ? null : result.error,
-          warnings: result.warnings,
-        }
-      } finally {
-        await connector.stop()
-      }
-    },
-    async refreshCatalog(serverIds, revisions) {
-      currentRevisions = revisions
-      const targetEntries = Array.from(entries.values()).filter((entry) => {
-        return serverIds === null || serverIds.includes(entry.server.serverId)
-      })
-
-      return await Promise.all(targetEntries.map(async (entry) => {
-        const result = await entry.connector.refreshCatalog()
-        const normalized = await applyConnectorResult(entry, result, revisions)
-        return {
-          serverId: entry.server.serverId,
-          success: result.ok,
-          toolCount: normalized.toolCount,
-          state: normalized,
-          error: result.ok ? null : result.error,
-        }
-      }))
-    },
-    async callTool(request) {
-      const entry = entries.get(request.serverId)
-      const state = states.get(request.serverId) ?? null
-
-      if (entry === undefined) {
-        return createToolCallFailure(
-          request,
-          'temporarily_unavailable',
-          'The MCP server is not ready to execute tools.',
-          true,
-          {
-            connectionState: state?.connectionState ?? 'missing',
-          },
-          now,
-        )
-      }
-
-      if (state !== null && state.connectionState !== 'connected' && state.connectionState !== 'degraded') {
-        return createToolCallFailure(
-          request,
-          'temporarily_unavailable',
-          'The MCP server is not ready to execute tools.',
-          true,
-          {
-            connectionState: state.connectionState,
-          },
-          now,
-        )
-      }
-
-      return await entry.connector.callTool(toConnectorToolCallRequest(request))
-    },
-    getState(serverId) {
-      const state = states.get(serverId)
+    reconcile: (servers, revisions) => hubReconcile(ctx, servers, revisions),
+    removeServer: (serverId, revisions) => hubRemoveServer(ctx, serverId, revisions),
+    setServerDisabled: (server, revisions) => hubSetDisabled(ctx, server, revisions),
+    testConnection: (server) => hubTestConnection(ctx, server),
+    refreshCatalog: (serverIds, revisions) => hubRefreshCatalog(ctx, serverIds, revisions),
+    callTool: (request) => hubCallTool(ctx, request),
+    getState: (serverId) => {
+      const state = ctx.states.get(serverId)
       return state === undefined ? null : cloneStateSummary(state)
     },
-    getAllStates(servers) {
+    getAllStates: (servers) => {
       if (servers === undefined) {
-        return Array.from(states.values()).map(cloneStateSummary)
+        return Array.from(ctx.states.values()).map(cloneStateSummary)
       }
-
       return servers.map((server) => {
-        const state = states.get(server.serverId)
-        return state === undefined ? createInitialState(server) : cloneStateSummary(state)
+        const state = ctx.states.get(server.serverId)
+        return state === undefined ? createInitialState(ctx, server) : cloneStateSummary(state)
       })
     },
-    getTools(serverId) {
-      const entry = entries.get(serverId)
+    getTools: (serverId) => {
+      const entry = ctx.entries.get(serverId)
       return entry === undefined ? [] : cloneRemoteTools(entry.connector.getTools())
     },
-    async stopAll() {
-      await Promise.all(Array.from(entries.values()).map(async (entry) => {
+    stopAll: async () => {
+      await Promise.all(Array.from(ctx.entries.values()).map(async (entry) => {
         await entry.connector.stop()
       }))
-      entries.clear()
-      states.clear()
+      ctx.entries.clear()
+      ctx.states.clear()
     },
   }
+}
 
-  async function ensureRunning(
-    server: McpServerRecord,
-    revisions: McpConnectorHubRevisionState,
-  ): Promise<McpServerStateSummary> {
-    currentRevisions = revisions
-    const existing = entries.get(server.serverId)
-    if (existing !== undefined && isSameServerConfig(existing.server, server)) {
-      return existing.connector.getState()
+async function hubReconcile(
+  ctx: HubContext,
+  servers: readonly McpServerRecord[],
+  revisions: McpConnectorHubRevisionState,
+): Promise<McpConnectorHubReconcileResult> {
+  ctx.currentRevisions = revisions
+  const activeServerIds = new Set(servers.map((server) => server.serverId))
+
+  await Promise.all(Array.from(ctx.entries.keys()).map(async (serverId) => {
+    if (activeServerIds.has(serverId)) {
+      return
     }
+    await hubRemoveManagedServer(ctx, serverId, revisions, true)
+  }))
 
-    if (existing !== undefined) {
-      await existing.connector.stop()
-      entries.delete(server.serverId)
+  const reconcileResults = await Promise.all(servers.map(async (server) => {
+    if (!server.enabled) {
+      return await hubSetDisabled(ctx, server, revisions)
     }
+    return await hubEnsureRunning(ctx, server, revisions)
+  }))
 
-    const entry: ManagedConnectorEntry = {
-      server: cloneServerRecord(server),
-      connector: createConnector(server),
-      reconnectAttempt: 0,
-      restarting: false,
-    }
-    entries.set(server.serverId, entry)
+  return {
+    states: reconcileResults.map(cloneStateSummary),
+  }
+}
 
-    const result = await entry.connector.start()
-    return await applyConnectorResult(entry, result, revisions)
+async function hubEnsureRunning(
+  ctx: HubContext,
+  server: McpServerRecord,
+  revisions: McpConnectorHubRevisionState,
+): Promise<McpServerStateSummary> {
+  ctx.currentRevisions = revisions
+  const existing = ctx.entries.get(server.serverId)
+  if (existing !== undefined && isSameServerConfig(existing.server, server)) {
+    return existing.connector.getState()
   }
 
-  async function setDisabled(
-    server: McpServerRecord,
-    revisions: McpConnectorHubRevisionState,
-  ): Promise<McpServerStateSummary> {
-    currentRevisions = revisions
-    const existing = entries.get(server.serverId)
-    if (existing !== undefined) {
-      await existing.connector.stop()
-      entries.delete(server.serverId)
-    }
+  if (existing !== undefined) {
+    await existing.connector.stop()
+    ctx.entries.delete(server.serverId)
+  }
 
-    const disabledState = createConnectorState(server, 'disabled', 0, now, {
-      transportState: createDefaultTransportState(server),
-      lastError: null,
-      reconnectAttempt: 0,
+  const entry: ManagedConnectorEntry = {
+    server: cloneServerRecord(server),
+    connector: hubCreateConnector(ctx, server),
+    reconnectAttempt: 0,
+    restarting: false,
+  }
+  ctx.entries.set(server.serverId, entry)
+
+  const result = await entry.connector.start()
+  return await hubApplyConnectorResult(ctx, entry, result, revisions)
+}
+
+async function hubSetDisabled(
+  ctx: HubContext,
+  server: McpServerRecord,
+  revisions: McpConnectorHubRevisionState,
+): Promise<McpServerStateSummary> {
+  ctx.currentRevisions = revisions
+  const existing = ctx.entries.get(server.serverId)
+  if (existing !== undefined) {
+    await existing.connector.stop()
+    ctx.entries.delete(server.serverId)
+  }
+
+  const disabledState = createConnectorState(server, 'disabled', 0, {
+    transportState: createDefaultTransportState(server),
+    lastError: null,
+    reconnectAttempt: 0,
+  })
+  ctx.states.set(server.serverId, cloneStateSummary(disabledState))
+  await hubPublishServerState(ctx, disabledState)
+  return cloneStateSummary(disabledState)
+}
+
+async function hubRemoveManagedServer(
+  ctx: HubContext,
+  serverId: string,
+  revisions: McpConnectorHubRevisionState,
+  publishRemoved: boolean,
+): Promise<void> {
+  ctx.currentRevisions = revisions
+  const existing = ctx.entries.get(serverId)
+  if (existing !== undefined) {
+    await existing.connector.stop()
+    ctx.entries.delete(serverId)
+  }
+
+  ctx.states.delete(serverId)
+  if (publishRemoved) {
+    await ctx.options.publishEvent?.({
+      kind: 'server-removed',
+      registryRevision: revisions.registryRevision,
+      snapshotRevision: revisions.snapshotRevision,
+      serverId,
     })
-    states.set(server.serverId, cloneStateSummary(disabledState))
-    await publishServerState(disabledState)
-    return cloneStateSummary(disabledState)
+  }
+}
+
+async function hubApplyConnectorResult(
+  ctx: HubContext,
+  entry: ManagedConnectorEntry,
+  result: McpConnectorOperationResult,
+  revisions: McpConnectorHubRevisionState,
+): Promise<McpServerStateSummary> {
+  ctx.currentRevisions = revisions
+  const state = cloneStateSummary(result.state)
+  ctx.states.set(entry.server.serverId, state)
+  await hubPublishServerState(ctx, state)
+
+  if (!result.ok && isRetryableError(result.error)) {
+    hubScheduleReconnect(ctx, entry, revisions, result.error)
   }
 
-  async function removeManagedServer(
-    serverId: string,
-    revisions: McpConnectorHubRevisionState,
-    publishRemoved: boolean,
-  ): Promise<void> {
-    currentRevisions = revisions
-    const existing = entries.get(serverId)
-    if (existing !== undefined) {
-      await existing.connector.stop()
-      entries.delete(serverId)
-    }
+  return state
+}
 
-    states.delete(serverId)
-    if (publishRemoved) {
-      await options.publishEvent?.({
-        kind: 'server-removed',
-        registryRevision: revisions.registryRevision,
-        snapshotRevision: revisions.snapshotRevision,
-        serverId,
-      })
-    }
+function hubScheduleReconnect(
+  ctx: HubContext,
+  entry: ManagedConnectorEntry,
+  revisions: McpConnectorHubRevisionState,
+  error: McpErrorSummary,
+): void {
+  if (entry.restarting || entry.reconnectAttempt >= ctx.maxReconnectAttempts) {
+    return
   }
 
-  async function applyConnectorResult(
-    entry: ManagedConnectorEntry,
-    result: McpConnectorOperationResult,
-    revisions: McpConnectorHubRevisionState,
-  ): Promise<McpServerStateSummary> {
-    currentRevisions = revisions
-    const state = cloneStateSummary(result.state)
-    states.set(entry.server.serverId, state)
-    await publishServerState(state)
+  entry.restarting = true
+  entry.reconnectAttempt += 1
+  const attempt = entry.reconnectAttempt
 
-    if (!result.ok && isRetryableError(result.error)) {
-      scheduleReconnect(entry, revisions, result.error)
-    }
-
-    return state
-  }
-
-  function scheduleReconnect(
-    entry: ManagedConnectorEntry,
-    revisions: McpConnectorHubRevisionState,
-    error: McpErrorSummary,
-  ): void {
-    if (entry.restarting || entry.reconnectAttempt >= maxReconnectAttempts) {
+  void (async () => {
+    await new Promise((resolve) => setTimeout(resolve, ctx.reconnectDelayMs * attempt))
+    entry.restarting = false
+    if (ctx.entries.get(entry.server.serverId) !== entry) {
       return
     }
 
-    entry.restarting = true
-    entry.reconnectAttempt += 1
-    const attempt = entry.reconnectAttempt
+    const connectingState = createConnectorState(entry.server, 'connecting', entry.connector.getTools().length, {
+      transportState: entry.connector.getState().transportState ?? createDefaultTransportState(entry.server),
+      lastError: error,
+      reconnectAttempt: attempt,
+      lastHandshakeAt: entry.connector.getState().lastHandshakeAt ?? null,
+      lastCatalogSyncAt: entry.connector.getState().lastCatalogSyncAt ?? null,
+    })
+    ctx.states.set(entry.server.serverId, connectingState)
+    await hubPublishServerState(ctx, connectingState)
+    const result = await entry.connector.start()
+    const nextState = result.ok
+      ? cloneStateSummary(result.state)
+      : {
+          ...cloneStateSummary(result.state),
+          reconnectAttempt: attempt,
+        }
+    ctx.states.set(entry.server.serverId, nextState)
+    await hubPublishServerState(ctx, nextState)
 
-    void (async () => {
-      await new Promise((resolve) => setTimeout(resolve, reconnectDelayMs * attempt))
-      entry.restarting = false
-      if (entries.get(entry.server.serverId) !== entry) {
-        return
-      }
+    if (!result.ok && result.error.retryable) {
+      hubScheduleReconnect(ctx, entry, revisions, result.error)
+    }
+  })()
+}
 
-      const connectingState = createConnectorState(entry.server, 'connecting', entry.connector.getTools().length, now, {
-        transportState: entry.connector.getState().transportState ?? createDefaultTransportState(entry.server),
-        lastError: error,
-        reconnectAttempt: attempt,
-        lastHandshakeAt: entry.connector.getState().lastHandshakeAt ?? null,
-        lastCatalogSyncAt: entry.connector.getState().lastCatalogSyncAt ?? null,
-      })
-      states.set(entry.server.serverId, connectingState)
-      await publishServerState(connectingState)
-      const result = await entry.connector.start()
-      const nextState = result.ok
-        ? cloneStateSummary(result.state)
-        : {
-            ...cloneStateSummary(result.state),
-            reconnectAttempt: attempt,
-          }
-      states.set(entry.server.serverId, nextState)
-      await publishServerState(nextState)
+async function hubRemoveServer(
+  ctx: HubContext,
+  serverId: string,
+  revisions: McpConnectorHubRevisionState,
+): Promise<void> {
+  ctx.currentRevisions = revisions
+  await hubRemoveManagedServer(ctx, serverId, revisions, true)
+}
 
-      if (!result.ok && result.error.retryable) {
-        scheduleReconnect(entry, revisions, result.error)
-      }
-    })()
+async function hubTestConnection(
+  ctx: HubContext,
+  server: McpServerRecord,
+): Promise<McpConnectorHubTestConnectionResult> {
+  const startedAt = Date.now()
+  const capturedStates: McpServerStateSummary[] = []
+  const onStateChange = (state: McpServerStateSummary) => {
+    capturedStates.push(cloneStateSummary(state))
   }
+  const connector = hubCreateConnector(ctx, server, onStateChange)
 
-  function createInitialState(server: McpServerRecord): McpServerStateSummary {
-    return createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, now, {
-      transportState: createDefaultTransportState(server),
+  try {
+    const result = await connector.start()
+    const durationMs = Math.max(0, Date.now() - startedAt)
+    return {
+      success: result.ok,
+      transportKind: server.transportKind,
+      toolCount: result.tools.length,
+      durationMs,
+      phase: resolveTestConnectionPhase(result, capturedStates),
+      diagnosticSummary: resolveDiagnosticSummary(result),
+      error: result.ok ? null : result.error,
+      warnings: result.warnings,
+    }
+  } finally {
+    await connector.stop()
+  }
+}
+
+async function hubRefreshCatalog(
+  ctx: HubContext,
+  serverIds: readonly string[] | null,
+  revisions: McpConnectorHubRevisionState,
+): Promise<McpConnectorHubRefreshCatalogResult[]> {
+  ctx.currentRevisions = revisions
+  const targetEntries = Array.from(ctx.entries.values()).filter((entry) => {
+    return serverIds === null || serverIds.includes(entry.server.serverId)
+  })
+
+  return await Promise.all(targetEntries.map(async (entry) => {
+    const result = await entry.connector.refreshCatalog()
+    const normalized = await hubApplyConnectorResult(ctx, entry, result, revisions)
+    return {
+      serverId: entry.server.serverId,
+      success: result.ok,
+      toolCount: normalized.toolCount,
+      state: normalized,
+      error: result.ok ? null : result.error,
+    }
+  }))
+}
+
+async function hubCallTool(
+  ctx: HubContext,
+  request: McpToolCallRequest,
+): Promise<McpToolCallResult> {
+  const entry = ctx.entries.get(request.serverId)
+  const state = ctx.states.get(request.serverId) ?? null
+
+  if (entry === undefined) {
+    return createHubToolCallFailure(request, {
+      code: 'temporarily_unavailable',
+      message: 'The MCP server is not ready to execute tools.',
+      retryable: true,
+      details: { connectionState: state?.connectionState ?? 'missing' },
     })
   }
+
+  if (state !== null && state.connectionState !== 'connected' && state.connectionState !== 'degraded') {
+    return createHubToolCallFailure(request, {
+      code: 'temporarily_unavailable',
+      message: 'The MCP server is not ready to execute tools.',
+      retryable: true,
+      details: { connectionState: state.connectionState },
+    })
+  }
+
+  return await entry.connector.callTool(toConnectorToolCallRequest(request))
+}
+
+function hubCreateConnector(
+  ctx: HubContext,
+  server: McpServerRecord,
+  onStateChangeOverride?: (state: McpServerStateSummary) => void,
+): McpServerConnector {
+  if (ctx.options.createConnector !== undefined) {
+    return ctx.options.createConnector(server, {
+      timeoutMs: ctx.timeoutMs,
+      now: ctx.now,
+      onStateChange: onStateChangeOverride ?? ((state) => { void hubPublishServerState(ctx, state) }),
+    })
+  }
+
+  const context = {
+    timeoutMs: ctx.timeoutMs,
+    now: ctx.now,
+    onStateChange: onStateChangeOverride ?? ((state: McpServerStateSummary) => { void hubPublishServerState(ctx, state) }),
+  }
+  return server.transportKind === 'stdio'
+    ? createStdioMcpServerConnector({
+        server,
+        context,
+        resolvedCommand: ctx.options.getResolvedCommand?.(server) ?? undefined,
+      })
+    : createHttpSseMcpServerConnector({ server, context })
+}
+
+async function hubPublishServerState(
+  ctx: HubContext,
+  state: McpServerStateSummary,
+): Promise<void> {
+  ctx.states.set(state.serverId, cloneStateSummary(state))
+  await ctx.options.publishEvent?.({
+    kind: 'server-state',
+    registryRevision: ctx.currentRevisions.registryRevision,
+    snapshotRevision: ctx.currentRevisions.snapshotRevision,
+    serverId: state.serverId,
+    state: cloneStateSummary(state),
+  })
+}
+
+function createHubToolCallFailure(
+  request: McpToolCallRequest,
+  errorOptions: {
+    code: string
+    message: string
+    retryable: boolean
+    details?: Record<string, unknown> | null
+  },
+): McpConnectorHubToolCallFailure {
+  return {
+    ok: false,
+    toolId: request.toolId,
+    serverId: request.serverId,
+    remoteToolName: request.remoteToolName,
+    snapshotRevision: request.snapshotRevision ?? null,
+    error: createMcpErrorSummary(errorOptions.code, errorOptions.message, {
+      retryable: errorOptions.retryable,
+      now: () => new Date().toISOString(),
+      details: errorOptions.details,
+    }),
+  }
+}
+
+function createInitialState(
+  ctx: HubContext,
+  server: McpServerRecord,
+): McpServerStateSummary {
+  return createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, {
+    transportState: createDefaultTransportState(server),
+  })
 }
 
 function resolveTestConnectionPhase(
@@ -505,24 +545,6 @@ function cloneServerRecord(server: McpServerRecord): McpServerRecord {
   }
 }
 
-function createToolCallFailure(
-  request: McpToolCallRequest,
-  code: string,
-  message: string,
-  retryable: boolean,
-  details: Record<string, unknown> | null = null,
-  now: () => string = () => new Date().toISOString(),
-): McpConnectorHubToolCallFailure {
-  return {
-    ok: false,
-    toolId: request.toolId,
-    serverId: request.serverId,
-    remoteToolName: request.remoteToolName,
-    snapshotRevision: request.snapshotRevision ?? null,
-    error: createMcpErrorSummary(code, message, retryable, now, details),
-  }
-}
-
 function toConnectorToolCallRequest(
   request: McpToolCallRequest,
 ): McpConnectorToolCallRequest {
@@ -536,8 +558,8 @@ function toConnectorToolCallRequest(
 }
 
 export function createConnectorUnavailableState(server: McpServerRecord, message: string, now: () => string): McpServerStateSummary {
-  return createConnectorState(server, server.enabled ? 'error' : 'disabled', 0, now, {
+  return createConnectorState(server, server.enabled ? 'error' : 'disabled', 0, {
     transportState: createDefaultTransportState(server),
-    lastError: createMcpErrorSummary('connector_unavailable', message, true, now),
+    lastError: createMcpErrorSummary('connector_unavailable', message, { retryable: true, now }),
   })
 }

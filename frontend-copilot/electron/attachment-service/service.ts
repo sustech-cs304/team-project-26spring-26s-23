@@ -100,6 +100,7 @@ function ensureWithinDirectory(candidatePath: string, directoryPath: string): bo
 }
 
 function sanitizeFileName(input: string): string {
+  // eslint-disable-next-line no-control-regex -- sanitizing filename control characters
   const baseName = path.basename(input).replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-').trim()
   return baseName.length > 0 ? baseName : 'attachment'
 }

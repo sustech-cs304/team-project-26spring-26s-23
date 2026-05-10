@@ -678,11 +678,6 @@ function deriveLegacyThinkingSelectionFields(
         budgetTokens: value.mode === 'budget' ? value.budgetTokens : null,
       }
     case 'fixed':
-      return {
-        mode: 'preset',
-        level: value.code,
-        budgetTokens: null,
-      }
     case 'code':
       return {
         mode: 'preset',

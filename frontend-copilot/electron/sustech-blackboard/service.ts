@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron'
 
 interface IpcMainLike {
-  handle(channel: string, listener: (...args: any[]) => any): void
+  handle(channel: string, listener: (...args: unknown[]) => unknown): void
   removeHandler(channel: string): void
 }
 
@@ -265,7 +265,7 @@ export function createElectronSustechBlackboardService(
     const startedAt = Date.now()
 
     try {
-      while (true) {
+      for (;;) {
         if (signal.aborted || disposed) {
           return
         }
@@ -280,7 +280,6 @@ export function createElectronSustechBlackboardService(
           return
         }
 
-        // eslint-disable-next-line no-await-in-loop
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, POLL_INTERVAL_MS)
           signal.addEventListener('abort', () => {
@@ -293,7 +292,6 @@ export function createElectronSustechBlackboardService(
           return
         }
 
-        // eslint-disable-next-line no-await-in-loop
         const status = await fetchBackendSyncStatus(options.getRuntimeBaseUrl())
 
         if (status === null) {

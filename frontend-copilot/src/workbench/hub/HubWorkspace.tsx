@@ -47,8 +47,8 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
         }
         const data = await response.json()
         setEvents(data)
-      } catch (err: any) {
-        setError(err.message)
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err))
       } finally {
         setIsLoading(false)
       }

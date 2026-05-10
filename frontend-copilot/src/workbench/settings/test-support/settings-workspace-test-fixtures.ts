@@ -56,42 +56,66 @@ export function createBootstrapController(): CopilotBootstrapController {
   }
 }
 
+const CREATE_PROVIDER_DEFAULTS = {
+  id: 'openrouter', name: 'Persisted Router', protocol: 'openai',
+  endpoint: 'https://persisted.example.com/v1', fastModel: 'openai/gpt-4.1-mini',
+  fallbackModel: 'anthropic/claude-3.7-sonnet', hasApiKey: true,
+  organization: 'persisted-org', region: 'Global', notes: 'persisted provider note',
+  compatibility: { status: 'active' as const, reason: '' }, extensions: {} as Record<string, unknown>,
+}
+
+/* eslint-disable-next-line complexity */
+function resolveCreateProviderProfileDefaults(
+  overrides: Partial<ProviderProfile> & { primaryModelId?: string },
+) {
+  const id = overrides.id ?? CREATE_PROVIDER_DEFAULTS.id
+  const name = overrides.name ?? CREATE_PROVIDER_DEFAULTS.name
+  const protocol = overrides.protocol ?? CREATE_PROVIDER_DEFAULTS.protocol
+  const endpoint = overrides.endpoint ?? CREATE_PROVIDER_DEFAULTS.endpoint
+  const primaryModelId = overrides.primaryModelId ?? overrides.availableModels?.[0]?.modelId ?? 'openai/gpt-4.1'
+  return {
+    id, name, protocol, endpoint, primaryModelId,
+    profileId: overrides.profileId ?? id,
+    providerId: overrides.providerId ?? protocol,
+    displayName: overrides.displayName ?? name,
+    baseUrl: overrides.baseUrl ?? endpoint,
+    hasApiKey: overrides.hasApiKey ?? CREATE_PROVIDER_DEFAULTS.hasApiKey,
+    fastModel: overrides.fastModel ?? CREATE_PROVIDER_DEFAULTS.fastModel,
+    fallbackModel: overrides.fallbackModel ?? CREATE_PROVIDER_DEFAULTS.fallbackModel,
+    organization: overrides.organization ?? CREATE_PROVIDER_DEFAULTS.organization,
+    region: overrides.region ?? CREATE_PROVIDER_DEFAULTS.region,
+    notes: overrides.notes ?? CREATE_PROVIDER_DEFAULTS.notes,
+    compatibility: overrides.compatibility ?? CREATE_PROVIDER_DEFAULTS.compatibility,
+    extensions: overrides.extensions ?? CREATE_PROVIDER_DEFAULTS.extensions,
+  }
+}
+
 export function createProviderProfile(
   overrides: Partial<ProviderProfile> & { primaryModelId?: string } = {},
 ): ProviderProfile {
-  const id = overrides.id ?? 'openrouter'
-  const name = overrides.name ?? 'Persisted Router'
-
-  const protocol = overrides.protocol ?? 'openai'
-  const endpoint = overrides.endpoint ?? 'https://persisted.example.com/v1'
-  const primaryModelId = overrides.primaryModelId ?? overrides.availableModels?.[0]?.modelId ?? 'openai/gpt-4.1'
-  const fastModel = overrides.fastModel ?? 'openai/gpt-4.1-mini'
-  const fallbackModel = overrides.fallbackModel ?? 'anthropic/claude-3.7-sonnet'
+  const d = resolveCreateProviderProfileDefaults(overrides)
 
   return {
-    id,
-    profileId: overrides.profileId ?? id,
-    providerId: overrides.providerId ?? protocol,
-    name,
-    displayName: overrides.displayName ?? name,
-    protocol,
-    endpoint,
-    baseUrl: overrides.baseUrl ?? endpoint,
-    hasApiKey: overrides.hasApiKey ?? true,
-    fastModel,
-    fallbackModel,
-    organization: overrides.organization ?? 'persisted-org',
-    region: overrides.region ?? 'Global',
-    notes: overrides.notes ?? 'persisted provider note',
-    compatibility: overrides.compatibility ?? {
-      status: 'active',
-      reason: '',
-    },
-    extensions: overrides.extensions ?? {},
+    id: d.id,
+    profileId: d.profileId,
+    providerId: d.providerId,
+    name: d.name,
+    displayName: d.displayName,
+    protocol: d.protocol,
+    endpoint: d.endpoint,
+    baseUrl: d.baseUrl,
+    hasApiKey: d.hasApiKey,
+    fastModel: d.fastModel,
+    fallbackModel: d.fallbackModel,
+    organization: d.organization,
+    region: d.region,
+    notes: d.notes,
+    compatibility: d.compatibility,
+    extensions: d.extensions,
     availableModels:
       overrides.availableModels
       ?? [
-        createProviderModelProfile(id, primaryModelId, name),
+        createProviderModelProfile(d.id, d.primaryModelId, d.name),
       ],
   }
 }

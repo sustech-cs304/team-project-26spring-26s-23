@@ -46,13 +46,14 @@ describe('settings workspace provider base url helpers', () => {
   })
 
   it('builds gemini-native previews from the selected model, then the first configured model, then an explicit placeholder', () => {
+    const GEMINI_ENDPOINT = 'https://api.ikuncode.cc/v1beta'
     const geminiProfile = createProviderProfile({
       id: 'gemini-preview',
       profileId: 'gemini-preview',
       providerId: 'gemini',
       protocol: 'gemini',
-      endpoint: 'https://api.ikuncode.cc/v1beta',
-      baseUrl: 'https://api.ikuncode.cc/v1beta',
+      endpoint: GEMINI_ENDPOINT,
+      baseUrl: GEMINI_ENDPOINT,
       primaryModelId: 'gemini-3.1-pro-preview',
       fastModel: 'gemini-3.1-pro-preview',
       fallbackModel: 'gemini-3.1-pro-preview',
@@ -71,21 +72,21 @@ describe('settings workspace provider base url helpers', () => {
       profileId: 'gemini-preview-empty',
       providerId: 'gemini',
       protocol: 'gemini',
-      endpoint: 'https://api.ikuncode.cc/v1beta',
-      baseUrl: 'https://api.ikuncode.cc/v1beta',
+      endpoint: GEMINI_ENDPOINT,
+      baseUrl: GEMINI_ENDPOINT,
       fastModel: '',
       fallbackModel: '',
       availableModels: [],
     })
 
     expect(resolveProviderBaseUrlPreviewText(geminiProfile, 'gemini-3.1-pro-preview')).toBe(
-      'https://api.ikuncode.cc/v1beta/models/gemini-3.1-pro-preview:generateContent',
+      `${GEMINI_ENDPOINT}/models/gemini-3.1-pro-preview:generateContent`,
     )
     expect(resolveProviderBaseUrlPreviewText(geminiProfile)).toBe(
-      'https://api.ikuncode.cc/v1beta/models/gemini-2.5-flash:generateContent',
+      `${GEMINI_ENDPOINT}/models/gemini-2.5-flash:generateContent`,
     )
     expect(resolveProviderBaseUrlPreviewText(geminiWithoutModels)).toBe(
-      'https://api.ikuncode.cc/v1beta/models/<model-id>:generateContent',
+      `${GEMINI_ENDPOINT}/models/<model-id>:generateContent`,
     )
   })
 

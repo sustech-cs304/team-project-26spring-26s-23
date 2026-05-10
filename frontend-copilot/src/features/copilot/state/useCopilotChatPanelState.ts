@@ -32,6 +32,8 @@ import {
 } from '../chat-contract'
 import { resolveRuntimeToolApproval } from '../tool-approval'
 import { appendCopilotDebugLog, isCopilotDebugModeEnabled } from '../debug-mode-log'
+
+const DEBUG_LOG_CATEGORY = 'copilot-chat-panel'
 import {
   expirePendingCopilotInlineFormSegments,
   markCopilotInlineFormSubmitted,
@@ -535,7 +537,7 @@ export function useCopilotChatPanelState({
         pendingHistorySyncLogKey: tracksPendingHistorySync ? null : sessionState.pendingHistorySyncLogKey,
       }))
 
-      appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'run-settled-pending-history-sync', {
+      appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'run-settled-pending-history-sync', {
         sessionId: settledSessionId,
         transientSessionId: sessionId,
         activeSessionId: sessionShell?.sessionId ?? null,
@@ -594,7 +596,7 @@ export function useCopilotChatPanelState({
           ...sessionState,
           pendingHistorySyncLogKey: logKey,
         }))
-        appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'pending-history-sync-waiting', {
+        appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'pending-history-sync-waiting', {
           sessionId,
           pendingRunId,
           selectedRunId: sessionHistory?.selectedRunId ?? null,
@@ -618,7 +620,7 @@ export function useCopilotChatPanelState({
       return
     }
 
-    appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'pending-history-sync-committed', {
+    appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'pending-history-sync-committed', {
       sessionId,
       pendingRunId,
       selectedRunId: readySessionHistory.selectedRunId,
@@ -797,7 +799,7 @@ export function useCopilotChatPanelState({
     const nextSessionId = sessionShell?.sessionId ?? null
     const nextTransientState = resolveCopilotSessionTransientState(transientStateBySessionIdRef.current, nextSessionId)
 
-    appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'session-switch-retained-transient', {
+    appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'session-switch-retained-transient', {
       previousSessionId,
       nextSessionId,
       previousTransientConversationLength: previousTransientState.conversation.length,
@@ -848,7 +850,7 @@ export function useCopilotChatPanelState({
           return
         }
 
-        appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'thinking-capability-query-failed', {
+        appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'thinking-capability-query-failed', {
           sessionId: sessionShell.sessionId,
           modelId: effectiveComposerDraft.selectedModelId,
           route: selectedModelRoute,
@@ -881,18 +883,18 @@ export function useCopilotChatPanelState({
 
   useEffect(() => {
     if (runtimeDebugSummary !== null) {
-      appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'runtime-summary', runtimeDebugSummary)
+      appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'runtime-summary', runtimeDebugSummary)
     }
   }, [debugModeEnabled, runtimeDebugSummary])
 
   useEffect(() => {
     if (sessionDebugSummary !== null) {
-      appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'session-summary', sessionDebugSummary)
+      appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'session-summary', sessionDebugSummary)
     }
   }, [debugModeEnabled, sessionDebugSummary])
 
   useEffect(() => {
-    appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'conversation-source-evaluated', {
+    appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'conversation-source-evaluated', {
       sessionId: sessionShell?.sessionId ?? null,
       selectedRunId: sessionHistory?.selectedRunId ?? null,
       pendingHistorySyncRunId,
