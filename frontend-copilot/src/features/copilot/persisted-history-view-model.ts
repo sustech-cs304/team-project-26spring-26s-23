@@ -402,11 +402,15 @@ function buildPersistedRunContextMap(
   const reasoningSuppressionBasis = cloneRuntimeReasoningSuppressionBasis(
     asRecord(historicalSnapshot?.reasoningSuppressionBasis) as Parameters<typeof cloneRuntimeReasoningSuppressionBasis>[0],
   )
+  const effectiveSelectedModelId = normalizeOptionalString(replay.run.resolvedModelId)
+    ?? normalizeOptionalString(readString(historicalSnapshot?.resolvedModelId))
+    ?? normalizeOptionalString(readString(historicalSnapshot?.selectedModelId))
+  const effectiveSelectedModelRoute = resolvedModelRoute
+    ?? asRuntimeRoute(historicalSnapshot?.selectedModelRoute)
 
   contextMap.set(replay.run.runId, {
-    resolvedModelId: normalizeOptionalString(replay.run.resolvedModelId)
-      ?? normalizeOptionalString(readString(historicalSnapshot?.resolvedModelId)),
-    resolvedModelRoute,
+    resolvedModelId: effectiveSelectedModelId,
+    resolvedModelRoute: effectiveSelectedModelRoute,
     resolvedToolIds,
     requestOptions,
     requestedThinkingSelection,

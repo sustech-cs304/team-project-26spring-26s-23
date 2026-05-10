@@ -14,6 +14,8 @@ import {
   createRuntimeThread,
   getRuntimeCapabilities,
   listRuntimeAgents,
+  type RuntimeModelRoute,
+  type RuntimeThinkingSelection,
 } from '../../features/copilot/chat-contract'
 import {
   deleteCopilotHistoryThread,
@@ -28,6 +30,7 @@ import {
   buildPersistedConversationFromHistory,
   getPersistedInlineFormRebuildability,
 } from '../../features/copilot/persisted-history-view-model'
+import { createComposerDraftFromPersistedHistoryRun } from '../../features/copilot/copilot-chat-helpers'
 import {
   isCopilotThreadRuntimeControllerLruCandidate,
   syncCopilotThreadRuntimeControllerStateRecord,
@@ -162,6 +165,93 @@ function summarizeAssistantHistoryStateForLog(
     timelineItemCount: historyState?.timelineItems.length ?? 0,
     replayRunId: historyState?.replay?.run.runId ?? null,
   }
+}
+
+function buildComposerDraftFromHistoryState(
+  historyState: AssistantSessionHistoryState | undefined,
+): ReturnType<typeof createComposerDraftFromPersistedHistoryRun> | null {
+  if (historyState === undefined) {
+    return null
+  }
+
+  const latestConfigurationSnapshot = historyState.latestConfigurationSnapshot
+  const latestDraft = buildComposerDraftFromPersistedHistorySnapshot(latestConfigurationSnapshot)
+  if (latestDraft === null) {
+    return null
+  }
+
+  return latestDraft
+}
+
+function buildComposerDraftFromPersistedHistorySnapshot(
+  latestConfigurationSnapshot: Record<string, unknown> | null,
+): ReturnType<typeof createComposerDraftFromPersistedHistoryRun> | null {
+  const modelSnapshot = isRecord(latestConfigurationSnapshot?.modelSnapshot)
+    ? latestConfigurationSnapshot.modelSnapshot
+    : null
+  const toolsSnapshot = isRecord(latestConfigurationSnapshot?.toolsSnapshot)
+    ? latestConfigurationSnapshot.toolsSnapshot
+    : null
+
+  if (modelSnapshot === null && toolsSnapshot === null) {
+    return null
+  }
+
+  return createComposerDraftFromPersistedHistoryRun({
+    selectedModelId: readOptionalString(modelSnapshot?.selectedModelId)
+      ?? readOptionalString(modelSnapshot?.resolvedModelId),
+    selectedModelRoute: asRuntimeModelRoute(modelSnapshot?.selectedModelRoute),
+    appliedThinkingSelection: asRuntimeThinkingSelection(modelSnapshot?.appliedThinkingSelection)
+      ?? asRuntimeThinkingSelection(modelSnapshot?.requestedThinkingSelection),
+    enabledTools: readStringArray(toolsSnapshot?.enabledToolIds ?? toolsSnapshot?.resolvedToolIds),
+    requestOptions: null,
+  })
+}
+
+function isDefaultComposerDraft(draft: {
+  messageText: string
+  selectedModelId: string
+  selectedModelRoute: RuntimeModelRoute | null
+  thinkingSelection: RuntimeThinkingSelection | null
+  enabledTools: readonly string[]
+  requestOptionsText: string
+}): boolean {
+  return draft.messageText.trim() === ''
+    && draft.selectedModelRoute === null
+    && draft.thinkingSelection === null
+    && draft.enabledTools.length === 0
+    && draft.requestOptionsText.trim() === '{}'
+}
+
+function asRuntimeModelRoute(value: unknown): RuntimeModelRoute | null {
+  return isRecord(value) ? ({ ...(value as Record<string, unknown>) } as unknown as RuntimeModelRoute) : null
+}
+
+function asRuntimeThinkingSelection(value: unknown): RuntimeThinkingSelection | null {
+  return isRecord(value) ? ({ ...(value as Record<string, unknown>) } as unknown as RuntimeThinkingSelection) : null
+}
+
+function readOptionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.flatMap((item) => {
+    if (typeof item !== 'string') {
+      return []
+    }
+
+    const normalized = item.trim()
+    return normalized === '' ? [] : [normalized]
+  })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export const COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY = 10
@@ -1491,13 +1581,37 @@ export function useAssistantWorkspaceState({
         runSummaryCount: detailResult.runSummaries.length,
         timelineItemCount: detailResult.timelineItems.length,
       })
-      setSessionHistoryById((current) => ({
-        ...current,
-        [sessionId]: applyAssistantSessionHistoryDetail(
+      setSessionHistoryById((current) => {
+        const nextHistoryState = applyAssistantSessionHistoryDetail(
           current[sessionId] ?? historyState,
           detailResult,
-        ),
-      }))
+        )
+
+        setRuntimeControllerBySessionId((runtimeCurrent) => {
+          const controllerState = runtimeCurrent[sessionId]
+          if (controllerState === undefined || !isDefaultComposerDraft(controllerState.composerDraft)) {
+            return runtimeCurrent
+          }
+
+          const nextComposerDraft = buildComposerDraftFromHistoryState(nextHistoryState)
+          if (nextComposerDraft === null) {
+            return runtimeCurrent
+          }
+
+          return {
+            ...runtimeCurrent,
+            [sessionId]: {
+              ...controllerState,
+              composerDraft: nextComposerDraft,
+            },
+          }
+        })
+
+        return {
+          ...current,
+          [sessionId]: nextHistoryState,
+        }
+      })
       setSessionListState((current) => ({
         ...current,
         sessions: current.sessions.map((sessionEntry) => sessionEntry.sessionId === sessionId
