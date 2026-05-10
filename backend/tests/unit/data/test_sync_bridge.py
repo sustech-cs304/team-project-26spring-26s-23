@@ -75,6 +75,13 @@ class TestMapBBEventToUnified:
 
         assert result.end_time is None
 
+    def test_done_maps_to_completed_status(self) -> None:
+        not_done = _make_bb_event_dto(done=False)
+        assert _map_bb_event_to_unified(not_done).status == "not_started"
+
+        done = _make_bb_event_dto(done=True)
+        assert _map_bb_event_to_unified(done).status == "completed"
+
 
 class TestSyncBlackboardToUnified:
     def test_sync_inserts_and_updates(self, tmp_path: Path) -> None:

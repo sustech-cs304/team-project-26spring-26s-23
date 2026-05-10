@@ -39,7 +39,7 @@ def _map_bb_event_to_unified(bb_event: CalendarEventDTO) -> UnifiedCalendarEvent
         description=bb_event.description,
         end_time=bb_event.end_at,
         is_all_day=bb_event.all_day,
-        status="not_started",
+        status="completed" if bb_event.done else "not_started",
         metadata_payload=metadata if metadata else None,
     )
 
