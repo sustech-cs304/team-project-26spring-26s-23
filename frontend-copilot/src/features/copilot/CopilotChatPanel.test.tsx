@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import type { CopilotHistoryRunReplaySuccess } from '../../../electron/copilot-history'
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
+import { createPersistedWorkspaceState } from '../../workbench/settings/test-support/settings-workspace-test-fixtures'
 import {
   buildPersistedConversationFromHistory,
   getPersistedInlineFormRebuildability,
@@ -204,6 +206,64 @@ describe('CopilotChatPanel', () => {
     expect(html).toContain('历史消息已恢复')
     expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
     expect(html).not.toContain('data-testid="chat-history-retry-button"')
+  })
+
+  it('shows the normal empty state for a ready persisted thread with no history messages', async () => {
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell({
+          capabilities: {
+            capabilitiesVersion: 'history-shell',
+          },
+        })}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        loadWorkspaceState={vi.fn(async () => ({
+          ok: true as const,
+          source: 'stored' as const,
+          state: createPersistedWorkspaceState(),
+        }))}
+        sessionHistory={createPersistedHistoryState({
+          summary: {
+            threadId: 'thread-empty',
+            boundAgentId: 'general',
+            title: '空会话',
+            titleSource: 'manual',
+            summary: null,
+            summarySource: null,
+            createdAt: '2026-04-13T16:00:00Z',
+            updatedAt: '2026-04-13T16:00:00Z',
+            lastActivityAt: '2026-04-13T16:00:00Z',
+            lastRunId: null,
+            lastRunStatus: null,
+            lastUserMessagePreview: null,
+            lastAssistantMessagePreview: null,
+            driftSummary: null,
+          },
+          hasLoadedDetail: true,
+          detailStatus: 'ready',
+          selectedRunId: null,
+          timelineItems: [],
+          runSummaries: [],
+        })}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(rendered.getByTestId('chat-empty-state').textContent).toContain('当前尚未发送消息')
+    expect(rendered.getByTestId('chat-message-scroll-region')).toBeTruthy()
+    expect(rendered.queryByTestId('chat-history-retry-button')).toBeNull()
+
+    rendered.unmount()
   })
 
   it('keeps canonical JSON tool summaries as persisted tool primary content for structured rendering', () => {

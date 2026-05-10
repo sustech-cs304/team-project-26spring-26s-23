@@ -116,11 +116,13 @@ export function createAssistantSessionHistoryState(
   selectedRunId: string | null,
   isPersistedThread = true,
 ): AssistantSessionHistoryState {
+  const isPersistedEmptyThread = isPersistedThread && isAssistantHistorySummaryEmptyThread(summary)
+
   return {
     summary: { ...summary },
     isPersistedThread,
-    hasLoadedDetail: false,
-    detailStatus: 'idle',
+    hasLoadedDetail: isPersistedEmptyThread,
+    detailStatus: isPersistedEmptyThread ? 'ready' : 'idle',
     detailError: null,
     timelineItems: [],
     runSummaries: [],
@@ -136,6 +138,13 @@ export function createAssistantSessionHistoryState(
     replay: null,
     replayByRunId: {},
   }
+}
+
+export function isAssistantHistorySummaryEmptyThread(summary: CopilotHistoryThreadSummary): boolean {
+  return normalizeOptionalString(summary.lastRunId) === null
+    && normalizeOptionalString(summary.lastRunStatus) === null
+    && normalizeOptionalString(summary.lastUserMessagePreview) === null
+    && normalizeOptionalString(summary.lastAssistantMessagePreview) === null
 }
 
 export function syncAssistantSessionHistorySummary(
@@ -426,6 +435,10 @@ function resolveAssistantHistorySessionTitle(summary: CopilotHistoryThreadSummar
   const assistantPreview = summary.lastAssistantMessagePreview?.trim()
   if (assistantPreview) {
     return assistantPreview
+  }
+
+  if (normalizeOptionalString(summary.lastRunId) === null) {
+    return '新话题'
   }
 
   return summary.boundAgentId.trim() || '历史会话'

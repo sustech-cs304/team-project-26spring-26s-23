@@ -2400,6 +2400,52 @@ describe('AssistantWorkspace render + interactions', () => {
 
     rendered.unmount()
   })
+
+  it('restores an empty persisted thread as ready empty state without requesting history detail', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const emptyHistoryFixture = createEmptyPersistedHistoryFixture()
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: [emptyHistoryFixture.summary],
+    })
+    const getCapabilities = vi.fn().mockResolvedValue(createCapabilitiesResponse({
+      sessionId: emptyHistoryFixture.summary.threadId,
+      capabilitiesVersion: 'cap-thread-empty-hydrated',
+    }))
+    const getHistoryThreadDetail = vi.fn().mockResolvedValue(emptyHistoryFixture.detail)
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getCapabilities={getCapabilities}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === emptyHistoryFixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+    ))
+
+    expect(getHistoryThreadDetail).not.toHaveBeenCalled()
+    expect(getLastMockCopilotChatPanelProps().sessionHistory).toMatchObject({
+      hasLoadedDetail: true,
+      detailStatus: 'ready',
+      timelineItems: [],
+      runSummaries: [],
+    })
+
+    rendered.unmount()
+  })
 })
 
 function createPersistedHistoryFixture() {
@@ -2498,6 +2544,40 @@ function createPersistedHistoryFixture() {
       availabilityInterpretation: {
         status: 'not_evaluated',
       },
+    },
+  }
+}
+
+function createEmptyPersistedHistoryFixture() {
+  const summary = {
+    threadId: 'thread-empty',
+    boundAgentId: 'general',
+    title: '空会话',
+    titleSource: 'manual',
+    summary: null,
+    summarySource: null,
+    createdAt: '2026-04-13T16:00:00Z',
+    updatedAt: '2026-04-13T16:00:00Z',
+    lastActivityAt: '2026-04-13T16:00:00Z',
+    lastRunId: null,
+    lastRunStatus: null,
+    lastUserMessagePreview: null,
+    lastAssistantMessagePreview: null,
+    driftSummary: null,
+  }
+
+  return {
+    summary,
+    detail: {
+      ok: true as const,
+      version: 'chat-history-v1',
+      thread: {
+        ...summary,
+      },
+      timelineItems: [],
+      runSummaries: [],
+      latestConfigurationSnapshot: null,
+      availabilityDrift: null,
     },
   }
 }
