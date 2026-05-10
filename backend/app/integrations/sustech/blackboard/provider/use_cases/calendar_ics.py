@@ -18,6 +18,8 @@ from app.integrations.sustech.blackboard.shared import (
     BlackboardLogSession,
     create_log_session,
 )
+from app.event_manager.sync_bridge import sync_blackboard_to_unified
+from app.event_manager.data.db_manager import DatabaseManager as EventDatabaseManager
 
 
 _ics_parser = BlackboardCalendarICSParser()
@@ -56,22 +58,6 @@ def _event_rows(events: list[CalendarEventDTO]) -> list[dict[str, Any]]:
     ]
 
 
-def _event_dto_from_row(row: dict[str, Any]) -> CalendarEventDTO:
-    start_at = row.get("start_at")
-    end_at = row.get("end_at")
-    return CalendarEventDTO(
-        uid=str(row.get("uid") or ""),
-        raw_uid=str(row.get("raw_uid") or "") or None,
-        title=str(row.get("title") or ""),
-        start_at=start_at if isinstance(start_at, datetime) else None,
-        end_at=end_at if isinstance(end_at, datetime) else None,
-        all_day=bool(row.get("all_day")),
-        description=str(row.get("description") or "") or None,
-        location=str(row.get("location") or "") or None,
-        course_id=str(row.get("course_id") or "") or None,
-    )
-
-
 def _build_result(
     db_manager: DatabaseManager,
     feed_url: str,
@@ -87,8 +73,8 @@ def _build_result(
         refresh_mode=refresh_mode,
         db_path=db_manager.db_path.resolve(),
         stats=stats,
-        active_events=[_event_dto_from_row(row) for row in active_event_rows],
-        all_events=[_event_dto_from_row(row) for row in all_event_rows],
+        active_events=active_event_rows,
+        all_events=all_event_rows,
         logs=[] if logs is None else logs,
     )
 
@@ -242,6 +228,28 @@ def refresh_calendar_ics_subscription_from_text(
         _event_rows(events),
         logger=logger.child("provider.use_cases.calendar_ics.data.calendar_events"),
     )
+
+    # 同步到统一日历
+    event_db: EventDatabaseManager | None = None
+    try:
+        event_db = EventDatabaseManager()
+        unified_stats = sync_blackboard_to_unified(db_manager, event_db)
+        logger.info(
+            "✅ 已同步至统一日历",
+            payload={"unified_stats": unified_stats},
+        )
+    except Exception as sync_ex:
+        logger.warning(
+            "⚠ 同步至统一日历失败",
+            payload={"error": str(sync_ex)},
+        )
+    finally:
+        if event_db is not None:
+            try:
+                event_db.engine.dispose()
+            except Exception:
+                pass
+
     now = utc_now_naive()
     db_manager.upsert_calendar_subscription(
         normalized_feed_url,

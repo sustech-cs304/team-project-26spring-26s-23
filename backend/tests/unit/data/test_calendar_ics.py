@@ -106,8 +106,8 @@ END:VCALENDAR
     refresh_calendar_ics_subscription_from_text(feed_url, ics_v2, db_path=db_path)
     events = manager.list_calendar_events(feed_url)
     _assert_equal(len(events), 1, "done 保留场景事件数量")
-    _assert_true(bool(events[0]["done"]), "刷新后应保留本地 done 状态")
-    _assert_equal(events[0]["title"], "Keep Done Event V2", "非 done 字段仍应更新")
+    _assert_true(events[0].done, "刷新后应保留本地 done 状态")
+    _assert_equal(events[0].title, "Keep Done Event V2", "非 done 字段仍应更新")
 
 
 def test_timezone_to_utc_normalization() -> None:
