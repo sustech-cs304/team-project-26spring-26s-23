@@ -247,8 +247,11 @@ def refresh_calendar_ics_subscription_from_text(
         if event_db is not None:
             try:
                 event_db.engine.dispose()
-            except Exception:
-                pass
+            except Exception as dispose_ex:
+                logger.warning(
+                    "⚠ 统一日历数据库引擎释放失败",
+                    payload={"error": str(dispose_ex)},
+                )
 
     now = utc_now_naive()
     db_manager.upsert_calendar_subscription(
