@@ -4,20 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
-from app.tooling import (
-    HostArtifact,
-    HostEvent,
-    ToolContract,
-    ToolHostCapabilities,
-    ToolInvocationContext,
-)
+from app.tooling import ToolContract, ToolHostCapabilities, ToolInvocationContext
 from app.tooling.host_capabilities import (
     ArtifactStore,
+    BrowserController,
     DatabaseResolver,
     EventSink,
+    HostArtifact,
+    HostBrowserPage,
+    HostBrowserScreenshot,
+    HostEvent,
     SecretProvider,
     StateStore,
     WorkspaceResolver,
@@ -214,6 +213,36 @@ class _BridgeBackedEventSink(EventSink):
         )
 
 
+class _BridgeBackedBrowserController(BrowserController):
+    def __init__(
+        self,
+        *,
+        bridge_client: DesktopCapabilityBridgeClient,
+        invocation_context: ToolInvocationContext,
+    ) -> None:
+        self._bridge_client = bridge_client
+        self._invocation_context = invocation_context
+
+    async def open_page(self, *, url: str, show_window: bool = False) -> HostBrowserPage:
+        bridge_client = cast(Any, self._bridge_client)
+        return await bridge_client.open_browser_page(
+            context=self._invocation_context,
+            url=url,
+            show_window=show_window,
+        )
+
+    async def capture_screenshot(
+        self,
+        *,
+        name: str | None = None,
+    ) -> HostBrowserScreenshot:
+        bridge_client = cast(Any, self._bridge_client)
+        return await bridge_client.capture_browser_screenshot(
+            context=self._invocation_context,
+            name=name,
+        )
+
+
 def build_desktop_bridge_host_capabilities_factory(
     *,
     bridge_client: DesktopCapabilityBridgeClient,
@@ -248,6 +277,10 @@ def build_desktop_bridge_host_capabilities_factory(
                 invocation_context=invocation_context,
             ),
             event_sink=_BridgeBackedEventSink(
+                bridge_client=bridge_client,
+                invocation_context=invocation_context,
+            ),
+            browser_controller=_BridgeBackedBrowserController(
                 bridge_client=bridge_client,
                 invocation_context=invocation_context,
             ),

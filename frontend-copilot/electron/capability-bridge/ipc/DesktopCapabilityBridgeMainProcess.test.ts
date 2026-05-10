@@ -74,16 +74,36 @@ function createSettingsWorkspaceServiceStub(): ElectronSettingsWorkspaceService 
 }
 
 describe('createElectronDesktopCapabilityBridgeService', () => {
-  it('routes requests across all six capability families and persists artifact/state data under host-controlled storage', async () => {
+  it('routes requests across all seven capability families and persists artifact/state data under host-controlled storage', async () => {
     const fixture = await createPreparedPaths('desktop-capability-bridge-routing')
     activeTempRoots.push(fixture.tempRoot)
 
     const appendLog = vi.fn()
     const settingsWorkspaceService = createSettingsWorkspaceServiceStub()
+    const capturePage = vi.fn(async () => ({
+      toPNG: () => Buffer.from('browser-image', 'utf8'),
+    }))
+    const browserWindow = {
+      isDestroyed: () => false,
+      isVisible: () => false,
+      show: vi.fn(),
+      hide: vi.fn(),
+      once: vi.fn(),
+      getTitle: () => 'CanDue Browser',
+      loadURL: vi.fn(async () => undefined),
+      webContents: {
+        isDestroyed: () => false,
+        getURL: () => 'https://example.com/',
+        getTitle: () => 'Example Domain',
+        capturePage,
+      },
+    } as unknown as Electron.BrowserWindow
+    const createBrowserWindow = vi.fn(() => browserWindow)
     const service = createElectronDesktopCapabilityBridgeService({
       prepareRuntimePaths: async () => fixture.hostedPaths,
       appendLog,
       getSettingsWorkspaceService: () => settingsWorkspaceService,
+      createBrowserWindow,
     })
     const bridgePaths = createDesktopCapabilityBridgePaths(fixture.hostedPaths)
 
@@ -331,6 +351,64 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
         },
       },
     })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'browser-open-1',
+      capability: 'browser',
+      operation: 'open',
+      payload: {
+        url: 'https://example.com/',
+      },
+    }))).resolves.toEqual({
+      requestId: 'browser-open-1',
+      ok: true,
+      result: {
+        tabId: 'browser-tab-1',
+        currentUrl: 'https://example.com/',
+        title: 'Example Domain',
+        windowVisible: false,
+      },
+    })
+    expect(createBrowserWindow).toHaveBeenCalledWith({ showWindow: false })
+    expect(browserWindow.loadURL).toHaveBeenCalledWith('https://example.com/')
+
+    const browserScreenshotResponse = await service.handleRequest(buildRequest({
+      requestId: 'browser-screenshot-1',
+      capability: 'browser',
+      operation: 'screenshot',
+      payload: {
+        name: 'page-capture',
+      },
+    }))
+    expect(browserScreenshotResponse).toMatchObject({
+      requestId: 'browser-screenshot-1',
+      ok: true,
+      result: {
+        tabId: 'browser-tab-1',
+        currentUrl: 'https://example.com/',
+        title: 'Example Domain',
+        windowVisible: false,
+        artifactId: expect.stringMatching(/^artifact-/),
+        uri: expect.stringMatching(/^artifact:\/\/desktop\/artifact-/),
+        name: 'page-capture.png',
+        contentType: 'image/png',
+        metadata: {
+          sourceOperation: 'browser.screenshot',
+          browser: {
+            tabId: 'browser-tab-1',
+            currentUrl: 'https://example.com/',
+            title: 'Example Domain',
+          },
+          __desktopCapabilityArtifact: {
+            storageKind: 'electron-desktop-capability-bridge',
+            byteLength: 13,
+            sha256: expect.any(String),
+            storedAt: expect.any(String),
+          },
+        },
+      },
+    })
+    expect(capturePage).toHaveBeenCalledTimes(1)
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'event-1',

@@ -204,6 +204,42 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                 },
                 request=request,
             )
+        if (capability, operation) == ("browser", "open"):
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {
+                        "tabId": "main-window",
+                        "currentUrl": payload["payload"]["url"],
+                        "title": "Example Domain",
+                        "windowVisible": payload["payload"].get("showWindow", False),
+                    },
+                },
+                request=request,
+            )
+        if (capability, operation) == ("browser", "screenshot"):
+            screenshot_name = payload["payload"].get("name") or "browser-screenshot.png"
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {
+                        "tabId": "main-window",
+                        "currentUrl": "https://example.com/",
+                        "title": "Example Domain",
+                        "windowVisible": True,
+                        "artifactId": "artifact-browser-screenshot",
+                        "uri": "artifact://desktop/browser-screenshot.png",
+                        "name": screenshot_name,
+                        "contentType": "image/png",
+                        "metadata": {"source": "browser.screenshot"},
+                    },
+                },
+                request=request,
+            )
 
         raise AssertionError(f"Unhandled bridge request {(capability, operation)!r}")
 
@@ -284,6 +320,16 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
             snapshot_revision=8,
         )
     )
+    browser_page = asyncio.run(
+        client.open_browser_page(
+            context=context,
+            url="https://example.com/",
+            show_window=True,
+        )
+    )
+    browser_screenshot = asyncio.run(
+        client.capture_browser_screenshot(context=context, name="browser-capture")
+    )
     asyncio.run(client.aclose())
 
     assert secret_value == "resolved-secret"
@@ -307,6 +353,23 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         "snapshotRevision": 8,
         "isError": False,
     }
+    assert browser_page == {
+        "tabId": "main-window",
+        "currentUrl": "https://example.com/",
+        "title": "Example Domain",
+        "windowVisible": True,
+    }
+    assert browser_screenshot == {
+        "tabId": "main-window",
+        "currentUrl": "https://example.com/",
+        "title": "Example Domain",
+        "windowVisible": True,
+        "artifactId": "artifact-browser-screenshot",
+        "uri": "artifact://desktop/browser-screenshot.png",
+        "name": "browser-capture",
+        "contentType": "image/png",
+        "metadata": {"source": "browser.screenshot"},
+    }
 
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_payloads] == [
@@ -323,9 +386,14 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         ("state", "delete_value"),
         ("event", "emit_event"),
         ("mcp", "call_tool"),
+        ("browser", "open"),
+        ("browser", "screenshot"),
     ]
     assert all(item["toolId"] == context.tool_id for item in captured_payloads[:-1])
-    assert captured_payloads[-1]["toolId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    assert captured_payloads[-2]["toolId"] == context.tool_id
+    assert captured_payloads[-2]["payload"] == {"url": "https://example.com/", "showWindow": True}
+    assert captured_payloads[-1]["toolId"] == context.tool_id
+    assert captured_payloads[-1]["payload"] == {"name": "browser-capture"}
     assert all(item["runId"] == context.run_id for item in captured_payloads)
     assert all(item["toolCallId"] == context.invocation_id for item in captured_payloads[:-1])
     assert captured_payloads[-1]["toolCallId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d:call-1"
@@ -337,7 +405,7 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     )
 
 
-    mcp_payload = captured_payloads[-1]["payload"]
+    mcp_payload = captured_payloads[-3]["payload"]
     assert mcp_payload == {
         "serverId": "mcp-stdio-stub",
         "remoteToolName": "search-campus",

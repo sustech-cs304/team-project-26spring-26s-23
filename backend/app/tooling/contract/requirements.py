@@ -14,6 +14,7 @@ HostCapabilityName = Literal[
     "state_store",
     "secret_provider",
     "event_sink",
+    "browser_controller",
 ]
 
 HOST_CAPABILITY_NAMES: tuple[HostCapabilityName, ...] = (
@@ -23,6 +24,7 @@ HOST_CAPABILITY_NAMES: tuple[HostCapabilityName, ...] = (
     "state_store",
     "secret_provider",
     "event_sink",
+    "browser_controller",
 )
 
 

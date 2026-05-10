@@ -21,7 +21,13 @@ from app.desktop_runtime.capability_bridge_protocol import (
 )
 from app.tooling.contract.metadata import ToolMetadata
 from app.tooling.contract.results import ToolResultEnvelope
-from app.tooling import HostEvent, ToolInvocationContext
+from app.tooling import (
+    HostArtifact,
+    HostBrowserPage,
+    HostBrowserScreenshot,
+    HostEvent,
+    ToolInvocationContext,
+)
 from app.tooling.runtime_adapter.copilot_runtime import (
     RuntimeToolExecutionContext,
     runtime_tool_execution_scope,
@@ -56,6 +62,8 @@ class _RecordingBridgeClient:
         self.state_writes: list[tuple[str, str, dict[str, Any]]] = []
         self.state_deletes: list[tuple[str, str]] = []
         self.events: list[dict[str, Any]] = []
+        self.browser_open_requests: list[tuple[str, str, bool]] = []
+        self.browser_screenshot_requests: list[tuple[str, str, str | None]] = []
 
     async def get_secret(
         self,
@@ -226,6 +234,43 @@ class _RecordingBridgeClient:
             }
         )
 
+    async def open_browser_page(
+        self,
+        *,
+        context: ToolInvocationContext,
+        url: str,
+        show_window: bool = False,
+    ) -> HostBrowserPage:
+        self.browser_open_requests.append((context.invocation_id, url, show_window))
+        return HostBrowserPage(
+            tab_id="main-window",
+            current_url=url,
+            title="Example Domain",
+            window_visible=show_window,
+        )
+
+    async def capture_browser_screenshot(
+        self,
+        *,
+        context: ToolInvocationContext,
+        name: str | None = None,
+    ) -> HostBrowserScreenshot:
+        self.browser_screenshot_requests.append((context.invocation_id, context.tool_id, name))
+        page = HostBrowserPage(
+            tab_id="main-window",
+            current_url="https://example.com/",
+            title="Example Domain",
+            window_visible=True,
+        )
+        artifact = HostArtifact(
+            artifact_id="artifact-browser-screenshot",
+            uri="artifact://desktop/browser-screenshot.png",
+            name=name or "browser-screenshot.png",
+            content_type="image/png",
+            metadata={"source": "browser.screenshot"},
+        )
+        return HostBrowserScreenshot(page=page, artifact=artifact)
+
     async def aclose(self) -> None:
         return None
 
@@ -273,6 +318,7 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
         "state_store",
         "secret_provider",
         "event_sink",
+        "browser_controller",
     )
 
     assert host.secret_provider is not None
@@ -281,6 +327,7 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
     assert host.artifact_store is not None
     assert host.state_store is not None
     assert host.event_sink is not None
+    assert host.browser_controller is not None
 
     secret_value = _run_awaitable(host.secret_provider.get_secret(name="cas.password"))
     has_secret = _run_awaitable(cast(Any, host.secret_provider).has_secret(name="cas.password"))

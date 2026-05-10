@@ -22,6 +22,7 @@ DesktopCapabilityName = Literal[
     "state",
     "event",
     "mcp",
+    "browser",
 ]
 
 DesktopCapabilityOperation = Literal[
@@ -37,6 +38,8 @@ DesktopCapabilityOperation = Literal[
     "delete_value",
     "emit_event",
     "call_tool",
+    "open",
+    "screenshot",
 ]
 
 DesktopCapabilityStateScope = Literal["tool", "run"]
@@ -71,6 +74,7 @@ DESKTOP_CAPABILITY_NAMES: tuple[DesktopCapabilityName, ...] = (
     "state",
     "event",
     "mcp",
+    "browser",
 )
 
 DESKTOP_CAPABILITY_OPERATIONS: tuple[DesktopCapabilityOperation, ...] = (
@@ -86,6 +90,8 @@ DESKTOP_CAPABILITY_OPERATIONS: tuple[DesktopCapabilityOperation, ...] = (
     "delete_value",
     "emit_event",
     "call_tool",
+    "open",
+    "screenshot",
 )
 
 DESKTOP_CAPABILITY_STATE_SCOPES: tuple[DesktopCapabilityStateScope, ...] = (
@@ -104,6 +110,7 @@ DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: dict[
     "state": ("get_value", "put_value", "delete_value"),
     "event": ("emit_event",),
     "mcp": ("call_tool",),
+    "browser": ("open", "screenshot"),
 }
 
 DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES: tuple[DesktopCapabilityBridgeErrorCode, ...] = (
@@ -137,6 +144,31 @@ _ARTIFACT_DESCRIPTOR_SCHEMA: dict[str, Any] = {
         "name": {"type": "string", "minLength": 1},
         "contentType": {"type": "string", "minLength": 1},
         "metadata": {"type": "object"},
+    },
+}
+
+_BROWSER_PAGE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["tabId", "currentUrl"],
+    "properties": {
+        "tabId": {"type": "string", "minLength": 1},
+        "currentUrl": {"type": "string"},
+        "title": {"type": "string", "minLength": 1},
+        "windowVisible": {"type": "boolean"},
+    },
+}
+
+_BROWSER_SCREENSHOT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["tabId", "currentUrl", "artifact"],
+    "properties": {
+        "tabId": {"type": "string", "minLength": 1},
+        "currentUrl": {"type": "string"},
+        "title": {"type": "string", "minLength": 1},
+        "windowVisible": {"type": "boolean"},
+        "artifact": deepcopy(_ARTIFACT_DESCRIPTOR_SCHEMA),
     },
 }
 
@@ -320,6 +352,22 @@ DESKTOP_CAPABILITY_BRIDGE_REQUEST_PAYLOAD_SCHEMAS: dict[
             "snapshotRevision": {"type": "integer", "minimum": 0},
         },
     },
+    ("browser", "open"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["url"],
+        "properties": {
+            "url": {"type": "string", "minLength": 1},
+            "showWindow": {"type": "boolean"},
+        },
+    },
+    ("browser", "screenshot"): {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "name": {"type": "string", "minLength": 1},
+        },
+    },
 }
 
 DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS: dict[
@@ -430,6 +478,8 @@ DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS: dict[
             },
         ],
     },
+    ("browser", "open"): deepcopy(_BROWSER_PAGE_SCHEMA),
+    ("browser", "screenshot"): deepcopy(_BROWSER_SCREENSHOT_SCHEMA),
 }
 
 

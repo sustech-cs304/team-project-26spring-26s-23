@@ -109,6 +109,7 @@ export function createMainProcessServiceAccessors(
         },
         getSettingsWorkspaceService,
         getMcpRegistryService: () => this.getMcpRegistryService(),
+        getMainWindow: options.getMainWindow,
       })
 
       return desktopCapabilityBridgeService
