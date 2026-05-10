@@ -2437,7 +2437,7 @@ describe('AssistantWorkspace render + interactions', () => {
     await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length >= 1)
     await waitForAssistantWorkspaceCondition(() => (
       getLastMockCopilotChatPanelProps().sessionShell?.sessionId === emptyHistoryFixture.summary.threadId
-      && getLastMockCopilotChatPanelProps().sessionShell?.title === '新话题'
+      && (getLastMockCopilotChatPanelProps().sessionShell as { sessionId?: string, title?: string } | undefined)?.title === '新话题'
       && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
       && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
     ))
