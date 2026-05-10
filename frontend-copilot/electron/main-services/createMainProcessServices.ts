@@ -3,6 +3,7 @@ import type {
   MainProcessServices,
 } from './MainProcessServiceTypes'
 import { createMainProcessServiceAccessors } from './MainProcessServiceAccessors'
+import { createElectronAttachmentService } from '../attachment-service/service'
 import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import { createElectronFileManagerService } from '../file-manager/service'
 
@@ -11,6 +12,11 @@ export function createMainProcessServices(
 ): MainProcessServices {
   const accessors = createMainProcessServiceAccessors(options)
   const copilotHistoryService = options.createCopilotHistoryService()
+  const attachmentService = createElectronAttachmentService({
+    appendLog(level, message, context) {
+      return options.appendMainRuntimeLog(level, `[attachment-service] ${message}`, context ?? null)
+    },
+  })
   const fileManagerService = createElectronFileManagerService({
     getMainWindow: options.getMainWindow,
     userDataPath: options.userDataPath,
@@ -127,6 +133,18 @@ export function createMainProcessServices(
     },
     async handleDesktopCapabilityBridgeRequest(request) {
       return await accessors.getDesktopCapabilityBridgeService().handleRequest(request)
+    },
+    async readClipboardAttachmentData() {
+      return await attachmentService.readClipboardData()
+    },
+    async writeAttachmentTempFile(request) {
+      return await attachmentService.writeTempFile(request)
+    },
+    async readAttachmentPreview(request) {
+      return await attachmentService.readPreview(request)
+    },
+    async cleanupAttachmentTempFiles(request) {
+      return await attachmentService.cleanupTempFiles(request)
     },
     async selectRootDirectory(request) {
       return request === undefined

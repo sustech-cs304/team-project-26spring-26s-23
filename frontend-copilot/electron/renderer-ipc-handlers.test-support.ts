@@ -2,6 +2,12 @@ import { vi } from 'vitest'
 
 import type { DesktopNotificationRequest } from './desktop-notification'
 import type { ManagedRuntimeLoadResponse } from './managed-runtime/ipc'
+import type {
+  CleanupTemporaryAttachmentFilesResult,
+  ReadAttachmentPreviewResult,
+  ReadClipboardAttachmentDataResult,
+  WriteAttachmentTempFileResult,
+} from './attachment-service/ipc'
 
 import type { ConfigCenterPublicPatchResult } from './config-center/public-patch'
 import type { ConfigCenterPublicSnapshotLoadResult } from './config-center/public-snapshot'
@@ -324,6 +330,48 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
     retryCopilotRuntime: vi.fn(async (): Promise<CopilotRuntimeLoadResult> => ({
       ok: true,
       snapshot: createCopilotRuntimeSnapshotFixture('starting', null),
+    })),
+    readClipboardAttachmentData: vi.fn(async (): Promise<ReadClipboardAttachmentDataResult> => ({
+      ok: true,
+      status: 'image',
+      availableFormats: ['image/png'],
+      data: {
+        mimeType: 'image/png',
+        base64Data: 'cG5nLWRhdGE=',
+        byteLength: 8,
+        width: 320,
+        height: 180,
+        suggestedName: 'pasted-image.png',
+      },
+    })),
+    writeAttachmentTempFile: vi.fn(async (): Promise<WriteAttachmentTempFileResult> => ({
+      ok: true,
+      file: {
+        path: '/tmp/candue-attachments/pasted-image.png',
+        name: 'pasted-image.png',
+        mimeType: 'image/png',
+        size: 8,
+        createdAt: '2026-05-09T06:00:00.000Z',
+        isTemporary: true,
+      },
+    })),
+    readAttachmentPreview: vi.fn(async (): Promise<ReadAttachmentPreviewResult> => ({
+      ok: true,
+      kind: 'text',
+      path: '/tmp/readme.txt',
+      name: 'readme.txt',
+      size: 16,
+      mimeType: 'text/plain',
+      text: 'hello attachment',
+      truncated: false,
+      maxBytes: 1024,
+      encoding: 'utf-8',
+    })),
+    cleanupAttachmentTempFiles: vi.fn(async (): Promise<CleanupTemporaryAttachmentFilesResult> => ({
+      ok: true,
+      deletedPaths: ['/tmp/candue-attachments/pasted-image.png'],
+      missingPaths: [],
+      skippedPaths: [],
     })),
     notifyDesktopNotification: vi.fn(async (request: DesktopNotificationRequest) => {
       void request

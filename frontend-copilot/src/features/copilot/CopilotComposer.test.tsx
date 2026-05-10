@@ -5,11 +5,13 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CopilotComposer } from './CopilotComposer'
+import { createEmptyComposerAttachmentsState } from './attachments/state'
 import { createEmptyComposerDraft, type CopilotChatComposerDraft } from './copilot-chat-helpers'
 import type { CopilotModelGroup, CopilotModelOption } from './model-picker'
 import type { RuntimeThinkingCapability, RuntimeThinkingValue } from './thread-run-contract'
 import { THINKING_LEVEL_LABELS } from '../../workbench/thinking-capabilities'
 import type { AssistantSessionCapabilities } from '../../workbench/types'
+import type { AttachmentManagerApi } from '../../../electron/attachment-service/ipc'
 
 vi.mock('./components/ModelPicker', () => ({
   ModelPicker: (props: {
@@ -172,6 +174,354 @@ describe('CopilotComposer thinking controls', () => {
   })
 })
 
+describe('CopilotComposer attachments', () => {
+  it('does not intercept pure text paste', async () => {
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const textarea = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const pasteEvent = createPasteEvent({
+        types: ['text/plain'],
+        items: [],
+        files: [],
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(pasteEvent)
+      })
+
+      expect(pasteEvent.defaultPrevented).toBe(false)
+      expect(rendered.container.querySelector('[data-testid="chat-composer-attachment-trigger"]')).toBeNull()
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('queues pasted files and shows the attachment count badge', async () => {
+    const file = new File(['hello'], 'note.txt', { type: 'text/plain' })
+    const resolveFilePath = vi.fn((candidate: File) => (candidate === file ? 'attachment-note.txt' : null))
+    installMockAttachmentManager({ resolveFilePath })
+
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const textarea = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const pasteEvent = createPasteEvent({
+        types: ['Files'],
+        items: [{ kind: 'file', type: 'text/plain' }],
+        files: [file],
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(pasteEvent)
+      })
+
+      expect(pasteEvent.defaultPrevented).toBe(true)
+      expect(resolveFilePath).toHaveBeenCalledWith(file)
+      expect(rendered.getByTestId('chat-composer-attachment-trigger-count').textContent).toBe('1')
+      expect(rendered.container.textContent).toContain('note.txt')
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('writes pasted clipboard image data to a temporary attachment when the clipboard file has no local path', async () => {
+    const imageFile = new File(['png-data'], 'pasted-image.png', { type: 'image/png' })
+    const readClipboardData = vi.fn(async () => ({
+      ok: true as const,
+      status: 'image' as const,
+      availableFormats: ['image/png'],
+      data: {
+        mimeType: 'image/png' as const,
+        base64Data: 'cG5nLWRhdGE=',
+        byteLength: 8,
+        width: 320,
+        height: 180,
+        suggestedName: 'pasted-image.png',
+      },
+    }))
+    const writeTempFile = vi.fn(async () => ({
+      ok: true as const,
+      file: {
+        path: 'temp-image.png',
+        name: 'temp-image.png',
+        mimeType: 'image/png',
+        size: 8,
+        createdAt: '2026-05-09T00:00:00.000Z',
+        isTemporary: true as const,
+      },
+    }))
+    installMockAttachmentManager({
+      resolveFilePath: vi.fn(() => null),
+      readClipboardData,
+      writeTempFile,
+    })
+
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const textarea = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const pasteEvent = createPasteEvent({
+        types: ['Files', 'image/png'],
+        items: [{ kind: 'file', type: 'image/png' }],
+        files: [imageFile],
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(pasteEvent)
+      })
+      await flushMicrotasks()
+
+      expect(pasteEvent.defaultPrevented).toBe(true)
+      expect(readClipboardData).toHaveBeenCalledTimes(1)
+      expect(writeTempFile).toHaveBeenCalledTimes(1)
+      expect(rendered.getByTestId('chat-composer-attachment-trigger-count').textContent).toBe('1')
+      expect(rendered.container.textContent).toContain('temp-image.png')
+      expect(rendered.container.querySelector('[data-testid="chat-composer-attachment-notice"]')).toBeNull()
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('keeps both local files and pathless clipboard images when a single paste contains both', async () => {
+    const localFile = createFileWithPath({
+      name: 'note.txt',
+      type: 'text/plain',
+      path: 'attachment-note.txt',
+      content: 'hello',
+    })
+    const imageFile = new File(['png-data'], 'pasted-image.png', { type: 'image/png' })
+    const readClipboardData = vi.fn(async () => ({
+      ok: true as const,
+      status: 'image' as const,
+      availableFormats: ['image/png'],
+      data: {
+        mimeType: 'image/png' as const,
+        base64Data: 'cG5nLWRhdGE=',
+        byteLength: 8,
+        width: 320,
+        height: 180,
+        suggestedName: 'pasted-image.png',
+      },
+    }))
+    const writeTempFile = vi.fn(async () => ({
+      ok: true as const,
+      file: {
+        path: 'temp-image.png',
+        name: 'temp-image.png',
+        mimeType: 'image/png',
+        size: 8,
+        createdAt: '2026-05-09T00:00:00.000Z',
+        isTemporary: true as const,
+      },
+    }))
+    installMockAttachmentManager({
+      resolveFilePath: vi.fn((candidate: File) => (candidate === localFile ? 'attachment-note.txt' : null)),
+      readClipboardData,
+      writeTempFile,
+    })
+
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const textarea = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const pasteEvent = createPasteEvent({
+        types: ['Files', 'image/png'],
+        items: [{ kind: 'file', type: 'text/plain' }, { kind: 'file', type: 'image/png' }],
+        files: [localFile, imageFile],
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(pasteEvent)
+      })
+      await flushMicrotasks()
+
+      expect(pasteEvent.defaultPrevented).toBe(true)
+      expect(readClipboardData).toHaveBeenCalledTimes(1)
+      expect(writeTempFile).toHaveBeenCalledTimes(1)
+      expect(rendered.getByTestId('chat-composer-attachment-trigger-count').textContent).toBe('2')
+      expect(rendered.container.textContent).toContain('note.txt')
+      expect(rendered.container.textContent).toContain('temp-image.png')
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('supports multi-file drag and drop with drag highlight', async () => {
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const composerSurface = rendered.getByTestId('chat-composer-surface') as HTMLDivElement
+      const files = [
+        createFileWithPath({ name: 'a.txt', type: 'text/plain', path: 'drag-a.txt', content: 'A' }),
+        createFileWithPath({ name: 'b.txt', type: 'text/plain', path: 'drag-b.txt', content: 'B' }),
+      ]
+
+      await act(async () => {
+        composerSurface.dispatchEvent(createDragEvent('dragenter', files))
+      })
+      expect(composerSurface.className).toContain('copilot-chat__composer-surface--drag-active')
+
+      await act(async () => {
+        composerSurface.dispatchEvent(createDragEvent('drop', files))
+      })
+
+      expect(composerSurface.className).not.toContain('copilot-chat__composer-surface--drag-active')
+      expect(rendered.getByTestId('chat-composer-attachment-trigger-count').textContent).toBe('2')
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('removes attachments from the panel list', async () => {
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const textarea = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const file = createFileWithPath({
+        name: 'remove.txt',
+        type: 'text/plain',
+        path: 'remove-target.txt',
+        content: 'remove me',
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(createPasteEvent({
+          types: ['Files'],
+          items: [],
+          files: [file],
+        }))
+      })
+
+      await clickElement(rendered.getByTestId('chat-composer-attachment-remove-remove-target.txt'))
+      expect(rendered.container.querySelector('[data-testid="chat-composer-attachment-trigger"]')).toBeNull()
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('opens image and text previews for supported attachments', async () => {
+    const createObjectUrl = vi.fn(() => 'blob:image-preview')
+    const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectUrl,
+    })
+
+    installMockAttachmentManager({
+      readPreview: vi.fn(async () => ({
+        ok: true as const,
+        kind: 'text' as const,
+        path: 'preview-note.txt',
+        name: 'preview-note.txt',
+        size: 12,
+        mimeType: 'text/plain' as const,
+        text: 'preview body',
+        truncated: false,
+        maxBytes: 262144,
+        encoding: 'utf-8' as const,
+      })),
+    })
+
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const textarea = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const imageFile = createFileWithPath({
+        name: 'preview.png',
+        type: 'image/png',
+        path: 'preview-image.png',
+        content: 'img',
+      })
+      const textFile = createFileWithPath({
+        name: 'preview-note.txt',
+        type: 'text/plain',
+        path: 'preview-note.txt',
+        content: 'text',
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(createPasteEvent({
+          types: ['Files'],
+          items: [],
+          files: [imageFile, textFile],
+        }))
+      })
+
+      await clickElement(rendered.getByTestId('chat-composer-attachment-open-preview-image.png'))
+      expect((rendered.getByTestId('chat-composer-attachment-preview-image') as HTMLImageElement).src).toContain('blob:image-preview')
+      await clickElement(rendered.getByTestId('chat-composer-attachment-preview-close'))
+
+      await clickElement(rendered.getByTestId('chat-composer-attachment-open-preview-note.txt'))
+      await flushMicrotasks()
+      expect(rendered.getByTestId('chat-composer-attachment-preview-text').textContent).toBe('preview body')
+    } finally {
+      rendered.unmount()
+      if (originalCreateObjectURL === undefined) {
+        Reflect.deleteProperty(URL, 'createObjectURL')
+      } else {
+        Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL)
+      }
+    }
+  })
+
+  it('shows a lightweight notice for unsupported clipboard binary data', async () => {
+    installMockAttachmentManager({
+      readClipboardData: vi.fn(async () => ({
+        ok: true as const,
+        status: 'unsupported' as const,
+        availableFormats: ['image/png'],
+        reason: 'non_image_data' as const,
+      })),
+    })
+
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const textarea = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      await act(async () => {
+        textarea.dispatchEvent(createPasteEvent({
+          types: ['image/png'],
+          items: [{ kind: 'file', type: 'image/png' }],
+          files: [],
+        }))
+      })
+      await flushMicrotasks()
+
+      expect(rendered.getByTestId('chat-composer-attachment-notice').textContent).toContain('暂不支持')
+    } finally {
+      rendered.unmount()
+    }
+  })
+
+  it('shows a lightweight notice for pathless non-image clipboard file data', async () => {
+    installMockAttachmentManager({
+      resolveFilePath: vi.fn(() => null),
+    })
+
+    const rendered = renderWithRoot(<ComposerHarness />)
+
+    try {
+      const textarea = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const pasteEvent = createPasteEvent({
+        types: ['Files'],
+        items: [{ kind: 'file', type: 'application/octet-stream' }],
+        files: [new File(['binary-data'], 'archive.bin', { type: 'application/octet-stream' })],
+      })
+
+      await act(async () => {
+        textarea.dispatchEvent(pasteEvent)
+      })
+
+      expect(pasteEvent.defaultPrevented).toBe(true)
+      expect(rendered.getByTestId('chat-composer-attachment-notice').textContent).toContain('暂不支持')
+      expect(rendered.container.querySelector('[data-testid="chat-composer-attachment-trigger"]')).toBeNull()
+    } finally {
+      rendered.unmount()
+    }
+  })
+})
+
 function ComposerHarness() {
   const modelGroups = useMemo<CopilotModelGroup[]>(() => [
     {
@@ -185,6 +535,7 @@ function ComposerHarness() {
     selectedModelId: modelGroups[0].models[0]?.selectionValue ?? '',
     selectedModelRoute: cloneRoute(modelGroups[0].models[0]?.route ?? null),
   }))
+  const [attachments, setAttachments] = useState(() => createEmptyComposerAttachmentsState())
   const selectedModelId = draft.selectedModelRoute?.routeRef?.modelId ?? 'none'
   const thinkingCapability = createThinkingCapability(selectedModelId)
 
@@ -196,7 +547,9 @@ function ComposerHarness() {
         modelGroups={modelGroups}
         thinkingCapability={thinkingCapability}
         draft={draft}
+        attachments={attachments}
         onDraftChange={setDraft}
+        onAttachmentsChange={setAttachments}
         onSubmit={(event: FormEvent<HTMLFormElement>) => {
           event.preventDefault()
         }}
@@ -378,5 +731,109 @@ async function pressKey(element: HTMLElement, key: string) {
   await act(async () => {
     element.focus()
     element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key }))
+  })
+}
+
+function createFileWithPath(input: {
+  name: string
+  type: string
+  path: string
+  content: string
+}) {
+  const file = new File([input.content], input.name, { type: input.type })
+  Object.defineProperty(file, 'path', {
+    configurable: true,
+    value: input.path,
+  })
+  return file
+}
+
+function createPasteEvent(input: {
+  types: string[]
+  items: Array<{ kind: string; type: string }>
+  files: File[]
+}) {
+  const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+    clipboardData: {
+      types: string[]
+      items: Array<{ kind: string; type: string }>
+      files: File[]
+    }
+  }
+  Object.defineProperty(event, 'clipboardData', {
+    configurable: true,
+    value: {
+      types: input.types,
+      items: input.items,
+      files: input.files,
+    },
+  })
+  return event
+}
+
+function createDragEvent(type: string, files: File[]) {
+  const event = new Event(type, { bubbles: true, cancelable: true }) as Event & {
+    dataTransfer: {
+      files: File[]
+      dropEffect: string
+    }
+  }
+  Object.defineProperty(event, 'dataTransfer', {
+    configurable: true,
+    value: {
+      files,
+      dropEffect: 'none',
+    },
+  })
+  return event
+}
+
+function installMockAttachmentManager(overrides: Partial<AttachmentManagerApi>) {
+  const value: AttachmentManagerApi = {
+    resolveFilePath: overrides.resolveFilePath ?? vi.fn(() => null),
+    readClipboardData: overrides.readClipboardData ?? vi.fn(async () => ({
+      ok: true as const,
+      status: 'empty' as const,
+      availableFormats: [],
+    })),
+    writeTempFile: overrides.writeTempFile ?? vi.fn(async () => ({
+      ok: true as const,
+      file: {
+        path: 'temp-image.png',
+        name: 'temp-image.png',
+        mimeType: 'image/png',
+        size: 3,
+        createdAt: '2026-05-09T00:00:00.000Z',
+        isTemporary: true as const,
+      },
+    })),
+    readPreview: overrides.readPreview ?? vi.fn(async () => ({
+      ok: true as const,
+      kind: 'unsupported' as const,
+      path: 'unknown.bin',
+      name: 'unknown.bin',
+      size: 0,
+      reason: 'unsupported_type' as const,
+    })),
+    cleanupTempFiles: overrides.cleanupTempFiles ?? vi.fn(async () => ({
+      ok: true as const,
+      deletedPaths: [],
+      missingPaths: [],
+      skippedPaths: [],
+    })),
+  }
+
+  Object.defineProperty(window, 'attachmentManager', {
+    configurable: true,
+    value,
+  })
+
+  return value
+}
+
+async function flushMicrotasks() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
   })
 }

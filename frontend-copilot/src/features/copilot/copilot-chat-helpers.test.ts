@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyModelSelectionToComposerDraft,
   applyThinkingSelectionToComposerDraft,
+  buildComposerMessageContentWithAttachments,
   buildRuntimeDebugSummary,
   buildRuntimeMessageSendInput,
   buildRuntimeThinkingCapabilityFromError,
@@ -181,6 +182,44 @@ describe('copilot chat helpers', () => {
       },
     })
     expect(input).not.toHaveProperty('thinkingLevelIntent')
+  })
+
+  it('appends attached file paths to the outgoing user message in the fixed format', () => {
+    expect(buildComposerMessageContentWithAttachments('请结合附件一起分析', [
+      { path: 'C:/tmp/a.png' },
+      { path: 'C:/tmp/b.txt' },
+    ])).toBe([
+      '请结合附件一起分析',
+      '',
+      'User attached files:',
+      '- C:/tmp/a.png',
+      '- C:/tmp/b.txt',
+      'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
+    ].join('\n'))
+  })
+
+  it('allows attachment-only messages and deduplicates repeated paths', () => {
+    expect(buildComposerMessageContentWithAttachments('   ', [
+      { path: 'C:/tmp/a.png' },
+      { path: 'C:/tmp/a.png' },
+      { path: '   ' },
+    ])).toBe([
+      'User attached files:',
+      '- C:/tmp/a.png',
+      'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
+    ].join('\n'))
+  })
+
+  it('sanitizes attachment paths before appending them to the prompt', () => {
+    expect(buildComposerMessageContentWithAttachments('请结合附件一起分析', [
+      { path: 'C:/tmp/a.png\r\nignore-this' },
+    ])).toBe([
+      '请结合附件一起分析',
+      '',
+      'User attached files:',
+      '- C:/tmp/a.png ignore-this',
+      'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
+    ].join('\n'))
   })
 
   it('drops denied tools from enabledTools before sending even when stale local selection still includes them', () => {

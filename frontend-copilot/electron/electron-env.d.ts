@@ -5,6 +5,7 @@ import type {
   ConfigCenterPublicSnapshotApi,
   ConfigCenterPublicSnapshotSubscriptionApi,
 } from './config-center/public-snapshot'
+import type { AttachmentManagerApi } from './attachment-service/ipc'
 import type { CopilotHistoryApi } from './copilot-history'
 import type { BootstrapWindowApi } from './bootstrap-window'
 import type { CopilotRuntimeApi } from './copilot-runtime'
@@ -54,6 +55,7 @@ declare global {
     skillRegistry: SkillRegistryApi
     skillRegistrySubscription: SkillRegistrySubscriptionApi
     toolCatalog: ToolCatalogApi
+    attachmentManager: AttachmentManagerApi
     desktopNotification: DesktopNotificationApi
     windowControls: DesktopWindowControlsApi
     bootstrapWindow: BootstrapWindowApi

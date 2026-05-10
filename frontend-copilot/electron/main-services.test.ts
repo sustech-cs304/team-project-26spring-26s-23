@@ -11,6 +11,7 @@ vi.mock('electron', () => ({
 }))
 
 const hoisted = vi.hoisted(() => {
+  const createElectronAttachmentService = vi.fn()
   const createElectronUnifiedConfigService = vi.fn()
   const createElectronSettingsWorkspaceService = vi.fn()
   const createElectronDesktopCapabilityBridgeService = vi.fn()
@@ -59,6 +60,12 @@ const hoisted = vi.hoisted(() => {
   const managedRuntimeService = {
     load: vi.fn(),
   }
+  const attachmentService = {
+    readClipboardData: vi.fn(),
+    writeTempFile: vi.fn(),
+    readPreview: vi.fn(),
+    cleanupTempFiles: vi.fn(),
+  }
   const fileManagerService = {
     selectRootDirectory: vi.fn(),
     listDirectory: vi.fn(),
@@ -90,6 +97,7 @@ const hoisted = vi.hoisted(() => {
   }
 
   return {
+    createElectronAttachmentService,
     createElectronUnifiedConfigService,
     createElectronSettingsWorkspaceService,
     createElectronDesktopCapabilityBridgeService,
@@ -98,6 +106,7 @@ const hoisted = vi.hoisted(() => {
     createElectronSkillRegistryService,
     createElectronManagedRuntimeService,
     createElectronFileManagerService: vi.fn(),
+    attachmentService,
     unifiedConfigService,
     settingsWorkspaceService,
     capabilityBridgeService,
@@ -136,6 +145,10 @@ vi.mock('./skill-registry/main-process', () => ({
 
 vi.mock('./managed-runtime/main-process', () => ({
   createElectronManagedRuntimeService: hoisted.createElectronManagedRuntimeService,
+}))
+
+vi.mock('./attachment-service/service', () => ({
+  createElectronAttachmentService: hoisted.createElectronAttachmentService,
 }))
 
 vi.mock('./file-manager/service', () => ({
@@ -395,6 +408,48 @@ describe('createMainProcessServices', () => {
       ok: true,
       restoredThreadCount: 3,
     } as const
+    const readClipboardAttachmentDataResult = {
+      ok: true as const,
+      status: 'image' as const,
+      availableFormats: ['image/png'],
+      data: {
+        mimeType: 'image/png' as const,
+        base64Data: 'cG5nLWRhdGE=',
+        byteLength: 8,
+        width: 320,
+        height: 180,
+        suggestedName: 'pasted-image.png',
+      },
+    }
+    const writeAttachmentTempFileResult = {
+      ok: true as const,
+      file: {
+        path: '/tmp/candue-attachments/pasted-image.png',
+        name: 'pasted-image.png',
+        mimeType: 'image/png',
+        size: 8,
+        createdAt: '2026-05-09T06:00:00.000Z',
+        isTemporary: true as const,
+      },
+    }
+    const readAttachmentPreviewResult = {
+      ok: true as const,
+      kind: 'text' as const,
+      path: '/tmp/readme.txt',
+      name: 'readme.txt',
+      size: 16,
+      mimeType: 'text/plain' as const,
+      text: 'hello attachment',
+      truncated: false,
+      maxBytes: 1024,
+      encoding: 'utf-8' as const,
+    }
+    const cleanupAttachmentTempFilesResult = {
+      ok: true as const,
+      deletedPaths: ['/tmp/candue-attachments/pasted-image.png'],
+      missingPaths: [],
+      skippedPaths: [],
+    }
 
     hoisted.unifiedConfigService.loadPublicSnapshot.mockResolvedValue(loadPublicSnapshotResult)
     hoisted.unifiedConfigService.applyPublicPatch.mockResolvedValue(applyPublicPatchResult)
@@ -430,6 +485,10 @@ describe('createMainProcessServices', () => {
     hoisted.copilotHistoryService.deleteThread.mockResolvedValue(deleteHistoryThreadResult)
     hoisted.copilotHistoryService.backupDatabase.mockResolvedValue(backupHistoryDatabaseResult)
     hoisted.copilotHistoryService.restoreDatabase.mockResolvedValue(restoreHistoryDatabaseResult)
+    hoisted.attachmentService.readClipboardData.mockResolvedValue(readClipboardAttachmentDataResult)
+    hoisted.attachmentService.writeTempFile.mockResolvedValue(writeAttachmentTempFileResult)
+    hoisted.attachmentService.readPreview.mockResolvedValue(readAttachmentPreviewResult)
+    hoisted.attachmentService.cleanupTempFiles.mockResolvedValue(cleanupAttachmentTempFilesResult)
 
     const selectRootDirectoryResult = { ok: true as const, rootPath: '/test/root', entries: [] }
     const listDirectoryResult = { ok: true as const, entries: [] }
@@ -469,6 +528,7 @@ describe('createMainProcessServices', () => {
     hoisted.createElectronMcpRegistryService.mockReturnValue(hoisted.mcpRegistryService)
     hoisted.createElectronSkillRegistryService.mockReturnValue(hoisted.skillRegistryService)
     hoisted.createElectronManagedRuntimeService.mockReturnValue(hoisted.managedRuntimeService)
+    hoisted.createElectronAttachmentService.mockReturnValue(hoisted.attachmentService)
     hoisted.createElectronFileManagerService.mockReturnValue(hoisted.fileManagerService)
 
     const hostedBackendService = { getLocalToken: vi.fn(() => 'runtime-token') }
@@ -555,6 +615,16 @@ describe('createMainProcessServices', () => {
     await expect(services.handleDesktopCapabilityBridgeRequest(capabilityRequest)).resolves.toEqual(
       capabilityResponse,
     )
+    await expect(services.readClipboardAttachmentData()).resolves.toEqual(readClipboardAttachmentDataResult)
+    await expect(services.writeAttachmentTempFile({ data: readClipboardAttachmentDataResult.data })).resolves.toEqual(
+      writeAttachmentTempFileResult,
+    )
+    await expect(
+      services.readAttachmentPreview({ path: '/tmp/readme.txt', maxTextBytes: 1024 }),
+    ).resolves.toEqual(readAttachmentPreviewResult)
+    await expect(
+      services.cleanupAttachmentTempFiles({ paths: ['/tmp/candue-attachments/pasted-image.png'] }),
+    ).resolves.toEqual(cleanupAttachmentTempFilesResult)
 
     await expect(services.selectRootDirectory()).resolves.toEqual(selectRootDirectoryResult)
     await expect(services.listDirectory({ rootPath: '/test/root', directoryPath: '/test/root/sub' })).resolves.toEqual(
@@ -618,6 +688,7 @@ describe('createMainProcessServices', () => {
     expect(hoisted.createElectronMcpRegistryService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronSkillRegistryService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronManagedRuntimeService).toHaveBeenCalledTimes(1)
+    expect(hoisted.createElectronAttachmentService).toHaveBeenCalledTimes(1)
     expect(hoisted.createElectronToolCatalogService).toHaveBeenCalledTimes(1)
     expect(createCopilotHistoryService).toHaveBeenCalledTimes(1)
     expect(hoisted.unifiedConfigService.loadPublicSnapshot).toHaveBeenCalledOnce()
@@ -640,6 +711,17 @@ describe('createMainProcessServices', () => {
     expect(hoisted.settingsWorkspaceService.clearSustechCasSecret).toHaveBeenCalledOnce()
     expect(hoisted.settingsWorkspaceService.resolveProviderRoute).toHaveBeenCalledWith(resolveProviderRouteRequest)
     expect(hoisted.capabilityBridgeService.handleRequest).toHaveBeenCalledWith(capabilityRequest)
+    expect(hoisted.attachmentService.readClipboardData).toHaveBeenCalledOnce()
+    expect(hoisted.attachmentService.writeTempFile).toHaveBeenCalledWith({
+      data: readClipboardAttachmentDataResult.data,
+    })
+    expect(hoisted.attachmentService.readPreview).toHaveBeenCalledWith({
+      path: '/tmp/readme.txt',
+      maxTextBytes: 1024,
+    })
+    expect(hoisted.attachmentService.cleanupTempFiles).toHaveBeenCalledWith({
+      paths: ['/tmp/candue-attachments/pasted-image.png'],
+    })
     expect(hoisted.mcpRegistryService.loadRegistry).toHaveBeenCalledOnce()
     expect(hoisted.mcpRegistryService.saveServer).toHaveBeenCalledWith(mcpServerDraft)
     expect(hoisted.mcpRegistryService.deleteServer).toHaveBeenCalledWith(mcpServerDraft.serverId)
