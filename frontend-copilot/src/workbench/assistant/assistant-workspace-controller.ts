@@ -60,7 +60,7 @@ export function createAssistantSessionShell(input: {
 }): AssistantSessionShell {
   return {
     sessionId: input.response.threadId,
-    title: input.selectedAgent.label,
+    title: '新话题',
     boundAgent: input.selectedAgent,
     createdAt: input.response.createdAt,
     updatedAt: input.response.updatedAt,

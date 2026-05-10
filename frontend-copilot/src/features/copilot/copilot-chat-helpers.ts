@@ -127,6 +127,42 @@ export function createComposerDraftFromSession(
   }
 }
 
+export function createComposerDraftFromPersistedHistoryRun(input: {
+  selectedModelId?: string | null
+  resolvedModelId?: string | null
+  selectedModelRoute?: RuntimeModelRoute | null
+  appliedThinkingSelection?: RuntimeThinkingSelection | null
+  enabledTools?: readonly string[] | null
+  requestOptions?: Record<string, unknown> | null
+}): CopilotChatComposerDraft {
+  const baseDraft = createEmptyComposerDraft()
+  const selectedModelRoute = input.selectedModelRoute === undefined || input.selectedModelRoute === null
+    ? null
+    : cloneRuntimeModelRoute(input.selectedModelRoute)
+  const thinkingSelection = input.appliedThinkingSelection === undefined
+    ? null
+    : cloneRuntimeThinkingSelection(input.appliedThinkingSelection)
+  const selectedModelId = input.selectedModelId?.trim()
+    || (selectedModelRoute === null || selectedModelRoute.routeRef === undefined || selectedModelRoute.routeRef === null
+      ? ''
+      : serializeModelRouteRef(selectedModelRoute.routeRef))
+    || input.resolvedModelId?.trim()
+    || ''
+
+  return {
+    ...baseDraft,
+    selectedModelId,
+    selectedModelRoute,
+    thinkingSelection,
+    enabledTools: Array.isArray(input.enabledTools)
+      ? dedupeToolIds([...input.enabledTools])
+      : [],
+    requestOptionsText: input.requestOptions === null || input.requestOptions === undefined
+      ? baseDraft.requestOptionsText
+      : JSON.stringify(input.requestOptions),
+  }
+}
+
 export function buildRuntimeMessageSendInput(input: {
   runtimeUrl: string
   sessionShell: AssistantSessionShell

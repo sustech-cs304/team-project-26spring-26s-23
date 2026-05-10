@@ -21,6 +21,10 @@ import {
   createAssistantAgentDirectoryState,
   createAssistantSessionShell,
 } from './assistant-workspace-controller'
+import {
+  createRuntimeModelRoute,
+  createRuntimeThinkingSelection,
+} from '../../features/copilot/thread-run-contract.test-support'
 import { runCreateSessionPendingScenario } from './test-support/assistant-workspace-creation-scenarios'
 import { ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY } from './assistant-workspace-shell-state'
 import { COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY } from './useAssistantWorkspaceState'
@@ -2400,6 +2404,53 @@ describe('AssistantWorkspace render + interactions', () => {
 
     rendered.unmount()
   })
+
+  it('restores an empty persisted thread through detail loading and keeps the new topic title', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const emptyHistoryFixture = createEmptyPersistedHistoryFixture()
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: [emptyHistoryFixture.summary],
+    })
+    const getCapabilities = vi.fn().mockResolvedValue(createCapabilitiesResponse({
+      sessionId: emptyHistoryFixture.summary.threadId,
+      capabilitiesVersion: 'cap-thread-empty-hydrated',
+    }))
+    const getHistoryThreadDetail = vi.fn().mockResolvedValue(emptyHistoryFixture.detail)
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getCapabilities={getCapabilities}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => getHistoryThreadDetail.mock.calls.length >= 1)
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === emptyHistoryFixture.summary.threadId
+      && (getLastMockCopilotChatPanelProps().sessionShell as { sessionId?: string, title?: string } | undefined)?.title === '新话题'
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+      && (getLastMockCopilotChatPanelProps().sessionHistory?.selectedRunId ?? null) === null
+    ))
+
+    expect(getHistoryThreadDetail).toHaveBeenCalledWith(emptyHistoryFixture.summary.threadId)
+    expect(getLastMockCopilotChatPanelProps().sessionHistory).toMatchObject({
+      detailStatus: 'ready',
+      timelineItems: [],
+      runSummaries: [],
+    })
+
+    rendered.unmount()
+  })
 })
 
 function createPersistedHistoryFixture() {
@@ -2456,6 +2507,14 @@ function createPersistedHistoryFixture() {
         runId: 'run-1',
         modelSnapshot: {
           resolvedModelId: 'openai/gpt-4.1',
+          selectedModelRoute: createRuntimeModelRoute({
+            providerProfileId: 'provider-openai',
+            modelId: 'openai/gpt-4.1',
+          }),
+          appliedThinkingSelection: createRuntimeThinkingSelection({
+            series: 'compat-discrete-levels-v1',
+            level: 'medium',
+          }),
         },
         toolsSnapshot: {
           resolvedToolIds: ['tool.remote-search'],
@@ -2498,6 +2557,40 @@ function createPersistedHistoryFixture() {
       availabilityInterpretation: {
         status: 'not_evaluated',
       },
+    },
+  }
+}
+
+function createEmptyPersistedHistoryFixture() {
+  const summary = {
+    threadId: 'thread-empty',
+    boundAgentId: 'general',
+    title: '新话题',
+    titleSource: 'deterministic',
+    summary: null,
+    summarySource: null,
+    createdAt: '2026-04-13T16:00:00Z',
+    updatedAt: '2026-04-13T16:00:00Z',
+    lastActivityAt: '2026-04-13T16:00:00Z',
+    lastRunId: null,
+    lastRunStatus: null,
+    lastUserMessagePreview: null,
+    lastAssistantMessagePreview: null,
+    driftSummary: null,
+  }
+
+  return {
+    summary,
+    detail: {
+      ok: true as const,
+      version: 'chat-history-v1',
+      thread: {
+        ...summary,
+      },
+      timelineItems: [],
+      runSummaries: [],
+      latestConfigurationSnapshot: null,
+      availabilityDrift: null,
     },
   }
 }
@@ -2972,13 +3065,144 @@ function createMultiRunPersistedHistoryFixture() {
     expect((inactiveProps.sessionShell as { sessionId?: string }).sessionId).toBe('thread-1')
     expect(inactiveProps.sessionHistory).toBeDefined()
     expect((inactiveProps.sessionHistory as { detailStatus?: string }).detailStatus).toBe('ready')
+    expect(inactiveProps.runtimeControllerBySessionId).toMatchObject({
+      'thread-1': expect.objectContaining({
+        composerDraft: expect.objectContaining({
+          selectedModelId: 'openai/gpt-4.1',
+          enabledTools: ['tool.remote-search'],
+        }),
+      }),
+    })
 
     rendered.unmount()
+  })
+
+  it('restores persisted composer model thinking and tools after switching away and back across remount', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const historyFixture = createPersistedHistoryFixture()
+    const secondFixture = {
+      ...createPersistedHistoryFixture(),
+      summary: {
+        ...createPersistedHistoryFixture().summary,
+        threadId: 'thread-2',
+        title: '第二个历史线程',
+      },
+      detail: {
+        ...createPersistedHistoryFixture().detail,
+        thread: {
+          ...createPersistedHistoryFixture().detail.thread,
+          threadId: 'thread-2',
+          title: '第二个历史线程',
+        },
+      },
+    }
+    secondFixture.replay = {
+      ...secondFixture.replay,
+      run: {
+        ...secondFixture.replay.run,
+        threadId: 'thread-2',
+      },
+    }
+
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const listHistoryThreads = vi.fn().mockResolvedValue({
+      ok: true as const,
+      version: 'chat-history-v1',
+      threads: [historyFixture.summary, secondFixture.summary],
+    })
+    const getHistoryThreadDetail = vi.fn().mockImplementation(async (threadId: string) => (
+      threadId === 'thread-2' ? secondFixture.detail : historyFixture.detail
+    ))
+    const getHistoryRunReplay = vi.fn().mockImplementation(async (runId: string) => {
+      if (runId === secondFixture.replay.run.runId) {
+        return secondFixture.replay
+      }
+      return historyFixture.replay
+    })
+
+    const firstRender = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === historyFixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+    ))
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const runtimeController = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId?.[historyFixture.summary.threadId]
+      return runtimeController?.composerDraft?.selectedModelId === 'openai/gpt-4.1'
+        && runtimeController?.composerDraft?.thinkingSelection !== null
+        && runtimeController?.composerDraft?.enabledTools?.includes('tool.remote-search') === true
+    })
+
+    await clickElement(firstRender.getByTestId('assistant-session-card-thread-2'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === secondFixture.summary.threadId
+    ))
+
+    const runtimeControllerBeforeRemount = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId?.[historyFixture.summary.threadId]
+    expect(runtimeControllerBeforeRemount).toMatchObject({
+      composerDraft: expect.objectContaining({
+        selectedModelId: 'openai/gpt-4.1',
+        thinkingSelection: expect.any(Object),
+        enabledTools: ['tool.remote-search'],
+      }),
+    })
+
+    firstRender.unmount()
+    mockCopilotChatPanel.mockClear()
+
+    const remounted = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        listHistoryThreads={listHistoryThreads}
+        getHistoryThreadDetail={getHistoryThreadDetail}
+        getHistoryRunReplay={getHistoryRunReplay}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === secondFixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+    ))
+
+    await clickElement(remounted.getByTestId('assistant-session-card-thread-1'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === historyFixture.summary.threadId
+      && getLastMockCopilotChatPanelProps().sessionHistory?.detailStatus === 'ready'
+    ))
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const runtimeController = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId?.[historyFixture.summary.threadId]
+      return runtimeController?.composerDraft?.selectedModelId === 'openai/gpt-4.1'
+        && runtimeController?.composerDraft?.thinkingSelection !== null
+        && runtimeController?.composerDraft?.enabledTools?.includes('tool.remote-search') === true
+    })
+
+    remounted.unmount()
   })
 
 type MockRuntimeControllerRecord = Record<string, {
   composerDraft?: {
     messageText?: string
+    selectedModelId?: string
+    selectedModelRoute?: Record<string, unknown> | null
+    thinkingSelection?: Record<string, unknown> | null
+    enabledTools?: string[]
+    requestOptionsText?: string
   }
   runState?: {
     phase?: string
