@@ -48,7 +48,7 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
           throw new Error('Failed to fetch events')
         }
         const data = await response.json()
-        setEvents(data)
+        setEvents(data.items || [])
       } catch (err: any) {
         setError(err.message)
       } finally {
@@ -87,10 +87,10 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
 
         <section className="workspace-main__content" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', height: '100%', overflow: 'hidden' }}>
           {/* 顶部：时间轴 (Timeline / Roadmap) 视图 */}
-          <TimelineView />
+          <TimelineView events={events} />
 
           {/* 底部：任务跟踪器 (Kanban) 视图 */}
-          <KanbanTracker />
+          <KanbanTracker events={events} />
 
           {/* 暂时保留原本获取的数据用于 debug 和对照，用一个折叠面板包起来 */}
           <details style={{ marginTop: 'auto', border: '1px solid var(--vscode-widget-border)', borderRadius: '4px', padding: '0.5rem' }}>

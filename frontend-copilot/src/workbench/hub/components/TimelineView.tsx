@@ -1,11 +1,29 @@
 import React from 'react';
 
-export function TimelineView() {
+interface UnifiedCalendarEvent {
+  id: string | number
+  source: string
+  source_id: string | null
+  title: string
+  description: string | null
+  start_time: string
+  end_time: string
+  is_all_day: boolean
+  location: string | null
+  status: string
+}
+
+interface TimelineViewProps {
+  events?: UnifiedCalendarEvent[]
+}
+
+export function TimelineView({ events = [] }: TimelineViewProps) {
   return (
     <section
       className="calendar-timeline-view"
       style={{
         flex: '1 1 50%',
+
         minHeight: '250px',
         backgroundColor: 'var(--vscode-editor-background)',
         borderRadius: '8px',
@@ -19,7 +37,7 @@ export function TimelineView() {
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h3 style={{ margin: 0, fontSize: '1.1em', fontWeight: 600 }}>时间轴 (Timeline)</h3>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.85em', color: 'var(--vscode-descriptionForeground)' }}>*静待接入甘特图/Timeline组件*</span>
+          <span style={{ fontSize: '0.85em', color: 'var(--vscode-descriptionForeground)' }}>*静待接入甘特图组件 / 共 {events.length} 个事件*</span>
         </div>
       </header>
       
