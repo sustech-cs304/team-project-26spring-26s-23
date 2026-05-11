@@ -386,53 +386,64 @@ function parseServerEntry(serverId: string, value: unknown): McpServerDraft | nu
 }
 
 function parseExplicitTransportConfig(value: Record<string, unknown>): McpTransportConfig | null {
-  if (value.kind === 'stdio') {
-    return {
-      kind: 'stdio',
-      command: typeof value.command === 'string' ? value.command : '',
-      args: Array.isArray(value.args) ? value.args.filter((entry): entry is string => typeof entry === 'string') : [],
-      cwd: typeof value.cwd === 'string' ? value.cwd : null,
-      ...(isPlainRecord(value.env) ? { env: mapStringRecord(value.env) } : {}),
-    }
+  return parseKnownTransportConfig(value, value.kind)
+}
+
+// eslint-disable-next-line sonarjs/cognitive-complexity
+function parseLegacyTransportConfig(value: Record<string, unknown>): McpTransportConfig | null {
+  const transport = typeof value.transport === 'string' ? value.transport.trim().toLowerCase() : ''
+  const resolvedKind = (transport === 'http' || transport === 'http-sse')
+    ? 'http-sse'
+    : transport === 'stdio'
+      ? 'stdio'
+      : typeof value.command === 'string'
+        ? 'stdio'
+        : (typeof value.url === 'string' || typeof value.baseUrl === 'string')
+          ? 'http-sse'
+          : null
+
+  if (resolvedKind === null) {
+    return null
   }
 
-  if (value.kind === 'http-sse') {
+  const config = parseKnownTransportConfig(value, resolvedKind)
+  if (config !== null && resolvedKind === 'http-sse') {
     return {
-      kind: 'http-sse',
-      baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl : '',
-      ...(isPlainRecord(value.headers) ? { headers: mapStringRecord(value.headers) } : {}),
-      ...(isPlainRecord(value.env) ? { env: mapStringRecord(value.env) } : {}),
-      ssePathOverride: typeof value.ssePathOverride === 'string' ? value.ssePathOverride : null,
+      ...config,
+      baseUrl: config.baseUrl || (typeof value.url === 'string' ? value.url : ''),
     }
   }
+  return config
+}
 
+function parseKnownTransportConfig(value: Record<string, unknown>, kind: unknown): McpTransportConfig | null {
+  if (kind === 'stdio') {
+    return buildStdioTransportConfig(value)
+  }
+  if (kind === 'http-sse') {
+    return buildHttpSseTransportConfig(value)
+  }
   return null
 }
 
-function parseLegacyTransportConfig(value: Record<string, unknown>): McpTransportConfig | null {
-  const transport = typeof value.transport === 'string' ? value.transport.trim().toLowerCase() : ''
-
-  if (transport === 'stdio' || typeof value.command === 'string') {
-    return {
-      kind: 'stdio',
-      command: typeof value.command === 'string' ? value.command : '',
-      args: Array.isArray(value.args) ? value.args.filter((entry): entry is string => typeof entry === 'string') : [],
-      cwd: typeof value.cwd === 'string' ? value.cwd : null,
-      ...(isPlainRecord(value.env) ? { env: mapStringRecord(value.env) } : {}),
-    }
+function buildStdioTransportConfig(value: Record<string, unknown>): McpTransportConfig {
+  return {
+    kind: 'stdio',
+    command: typeof value.command === 'string' ? value.command : '',
+    args: Array.isArray(value.args) ? value.args.filter((entry): entry is string => typeof entry === 'string') : [],
+    cwd: typeof value.cwd === 'string' ? value.cwd : null,
+    ...(isPlainRecord(value.env) ? { env: mapStringRecord(value.env) } : {}),
   }
+}
 
-  if (transport === 'http' || transport === 'http-sse' || typeof value.url === 'string' || typeof value.baseUrl === 'string') {
-    return {
-      kind: 'http-sse',
-      baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl : typeof value.url === 'string' ? value.url : '',
-      ...(isPlainRecord(value.headers) ? { headers: mapStringRecord(value.headers) } : {}),
-      ...(isPlainRecord(value.env) ? { env: mapStringRecord(value.env) } : {}),
-      ssePathOverride: typeof value.ssePathOverride === 'string' ? value.ssePathOverride : null,
-    }
+function buildHttpSseTransportConfig(value: Record<string, unknown>): McpTransportConfig {
+  return {
+    kind: 'http-sse',
+    baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl : '',
+    ...(isPlainRecord(value.headers) ? { headers: mapStringRecord(value.headers) } : {}),
+    ...(isPlainRecord(value.env) ? { env: mapStringRecord(value.env) } : {}),
+    ssePathOverride: typeof value.ssePathOverride === 'string' ? value.ssePathOverride : null,
   }
-
-  return null
 }
 
 function validateDraft(draft: McpServerDraft): McpServerValidationError[] {

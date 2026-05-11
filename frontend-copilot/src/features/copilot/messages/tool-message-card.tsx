@@ -87,65 +87,16 @@ export function ToolMessageCard({
 
   return (
     <div className="copilot-chat__tool-card" data-testid={`chat-message-tool-card-${index}`}>
-      {expanded
-        ? (
-            <div className="copilot-chat__tool-header-row">
-              <button
-                type="button"
-                className="copilot-chat__tool-toggle"
-                aria-controls={panelId}
-                aria-expanded="true"
-                data-expanded="true"
-                data-testid={`chat-message-tool-toggle-${index}`}
-                onClick={() => {
-                  setExpanded((current) => !current)
-                }}
-              >
-                <span className="copilot-chat__tool-toggle-main">
-                  {renderToolStepIcon(turn)}
-                  <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▾</span>
-                  <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
-                </span>
-                {turn.status === 'streaming' && (
-                  <span
-                    className="copilot-chat__tool-spinner"
-                    data-testid={`chat-message-tool-spinner-${index}`}
-                    aria-label="工具调用进行中"
-                  />
-                )}
-              </button>
-              {renderToolErrorDetailButton({ turn, index, errorDetail, onOpenErrorDetail, copy })}
-            </div>
-          )
-        : (
-            <div className="copilot-chat__tool-header-row">
-              <button
-                type="button"
-                className="copilot-chat__tool-toggle"
-                aria-controls={panelId}
-                aria-expanded="false"
-                data-expanded="false"
-                data-testid={`chat-message-tool-toggle-${index}`}
-                onClick={() => {
-                  setExpanded((current) => !current)
-                }}
-              >
-                <span className="copilot-chat__tool-toggle-main">
-                  {renderToolStepIcon(turn)}
-                  <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▸</span>
-                  <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
-                </span>
-                {turn.status === 'streaming' && (
-                  <span
-                    className="copilot-chat__tool-spinner"
-                    data-testid={`chat-message-tool-spinner-${index}`}
-                    aria-label="工具调用进行中"
-                  />
-                )}
-              </button>
-              {renderToolErrorDetailButton({ turn, index, errorDetail, onOpenErrorDetail, copy })}
-            </div>
-          )}
+      <div className="copilot-chat__tool-header-row">
+        <ToolToggleButton
+          turn={turn}
+          index={index}
+          expanded={expanded}
+          panelId={panelId}
+          onToggle={() => setExpanded((current) => !current)}
+        />
+        {renderToolErrorDetailButton({ turn, index, errorDetail, onOpenErrorDetail, copy })}
+      </div>
       {showApprovalActions && renderToolApprovalBar({
         turn,
         index,
@@ -174,59 +125,99 @@ export function ToolMessageCard({
             />
           ))}
           {inputSummary !== null && (
-            <div className="copilot-chat__tool-nested">
-              {inputExpanded
-                ? (
-                    <button
-                      type="button"
-                      className="copilot-chat__tool-nested-toggle"
-                      aria-controls={inputPanelId}
-                      aria-expanded="true"
-                      data-expanded="true"
-                      data-testid={`chat-message-tool-input-toggle-${index}`}
-                      onClick={() => {
-                        setInputExpanded((current) => !current)
-                      }}
-                    >
-                      <span className="copilot-chat__tool-toggle-main copilot-chat__tool-toggle-main--nested">
-                        <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▾</span>
-                        <span className="copilot-chat__tool-section-label">输入</span>
-                      </span>
-                    </button>
-                  )
-                : (
-                    <button
-                      type="button"
-                      className="copilot-chat__tool-nested-toggle"
-                      aria-controls={inputPanelId}
-                      aria-expanded="false"
-                      data-expanded="false"
-                      data-testid={`chat-message-tool-input-toggle-${index}`}
-                      onClick={() => {
-                        setInputExpanded((current) => !current)
-                      }}
-                    >
-                      <span className="copilot-chat__tool-toggle-main copilot-chat__tool-toggle-main--nested">
-                        <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▸</span>
-                        <span className="copilot-chat__tool-section-label">输入</span>
-                      </span>
-                    </button>
-                  )}
-              {inputExpanded && (
-                <div
-                  className="copilot-chat__tool-nested-panel"
-                  id={inputPanelId}
-                  data-testid={`chat-message-tool-input-panel-${index}`}
-                >
-                  <ToolStructuredContent
-                    value={inputSummary}
-                    kind="input"
-                    testIdPrefix={`chat-message-tool-input-${index}`}
-                  />
-                </div>
-              )}
-            </div>
+            <ToolInputSection
+              index={index}
+              inputSummary={inputSummary}
+              inputExpanded={inputExpanded}
+              inputPanelId={inputPanelId}
+              onToggleInput={() => setInputExpanded((current) => !current)}
+            />
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ToolToggleButton({
+  turn,
+  index,
+  expanded,
+  panelId,
+  onToggle,
+}: {
+  turn: CopilotToolMessageItem
+  index: number
+  expanded: boolean
+  panelId: string
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className="copilot-chat__tool-toggle"
+      aria-controls={panelId}
+      aria-expanded={expanded}
+      data-expanded={expanded}
+      data-testid={`chat-message-tool-toggle-${index}`}
+      onClick={onToggle}
+    >
+      <span className="copilot-chat__tool-toggle-main">
+        {renderToolStepIcon(turn)}
+        <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+        <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
+      </span>
+      {turn.status === 'streaming' && (
+        <span
+          className="copilot-chat__tool-spinner"
+          data-testid={`chat-message-tool-spinner-${index}`}
+          aria-label="工具调用进行中"
+        />
+      )}
+    </button>
+  )
+}
+
+function ToolInputSection({
+  index,
+  inputSummary,
+  inputExpanded,
+  inputPanelId,
+  onToggleInput,
+}: {
+  index: number
+  inputSummary: string
+  inputExpanded: boolean
+  inputPanelId: string
+  onToggleInput: () => void
+}) {
+  return (
+    <div className="copilot-chat__tool-nested">
+      <button
+        type="button"
+        className="copilot-chat__tool-nested-toggle"
+        aria-controls={inputPanelId}
+        aria-expanded={inputExpanded}
+        data-expanded={inputExpanded}
+        data-testid={`chat-message-tool-input-toggle-${index}`}
+        onClick={onToggleInput}
+      >
+        <span className="copilot-chat__tool-toggle-main copilot-chat__tool-toggle-main--nested">
+          <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">{inputExpanded ? '▾' : '▸'}</span>
+          <span className="copilot-chat__tool-section-label">输入</span>
+        </span>
+      </button>
+      {inputExpanded && (
+        <div
+          className="copilot-chat__tool-nested-panel"
+          id={inputPanelId}
+          data-testid={`chat-message-tool-input-panel-${index}`}
+        >
+          <ToolStructuredContent
+            value={inputSummary}
+            kind="input"
+            testIdPrefix={`chat-message-tool-input-${index}`}
+          />
         </div>
       )}
     </div>

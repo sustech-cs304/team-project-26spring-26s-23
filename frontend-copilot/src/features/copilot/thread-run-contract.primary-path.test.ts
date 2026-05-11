@@ -27,266 +27,204 @@ const __dirname = path.dirname(__filename)
 const frontendRoot = path.resolve(__dirname, '..', '..', '..')
 
 describe('thread run primary path', () => {
-  it('normalizes compat thinking input into structured run/start payload and returns stream plus cancel descriptors', async () => {
-    const fetchFn = createFetchFn(createRuntimeRunStartResponse({
-      run: {
-        runId: 'run-1',
+  describe('run/start payload construction', () => {
+    it('normalizes compat thinking input into structured run/start payload and returns stream plus cancel descriptors', async () => {
+      const fetchFn = createFetchFn(createRuntimeRunStartResponse({
+        run: {
+          runId: 'run-1',
+          threadId: sessionId,
+          status: 'pending',
+          createdAt: '2026-03-27T10:00:00Z',
+          updatedAt: '2026-03-27T10:00:00Z',
+          startedAt: null,
+          terminalAt: null,
+          cancelRequested: false,
+        },
+        assistantMessageId: 'run-1:assistant',
+      }), {
+        headers: {
+          'content-type': 'application/json',
+        },
+      })
+
+      const response = await startRuntimeRun({
+        runtimeUrl,
         threadId: sessionId,
-        status: 'pending',
-        createdAt: '2026-03-27T10:00:00Z',
-        updatedAt: '2026-03-27T10:00:00Z',
-        startedAt: null,
-        terminalAt: null,
-        cancelRequested: false,
-      },
-      assistantMessageId: 'run-1:assistant',
-    }), {
-      headers: {
-        'content-type': 'application/json',
-      },
-    })
+        agent: agentId,
+        message: createUserMessage(),
+        modelRoute: createRuntimeModelRoute(),
+        thinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
+        enabledTools: ['tool.remote-search'],
+        debugModeEnabled: true,
+        requestOptions: {
+          trace: true,
+        },
+        fetchFn,
+      })
 
-    const response = await startRuntimeRun({
-      runtimeUrl,
-      threadId: sessionId,
-      agent: agentId,
-      message: createUserMessage(),
-      modelRoute: createRuntimeModelRoute(),
-      thinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
-      enabledTools: ['tool.remote-search'],
-      debugModeEnabled: true,
-      requestOptions: {
-        trace: true,
-      },
-      fetchFn,
-    })
-
-    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        method: 'run/start',
-        body: {
-          threadId: 'session-1',
-          agent: 'general',
-          message: {
-            role: 'user',
-            content: '请总结这份文档',
-          },
-          policy: {
-            modelRoute: {
-              routeRef: {
-                routeKind: 'provider-model',
-                profileId: 'provider-openai',
-                modelId: 'qwen-plus',
-              },
-              catalogRevision: '2026-04-06-provider-catalog-v1',
+      expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          method: 'run/start',
+          body: {
+            threadId: 'session-1',
+            agent: 'general',
+            message: {
+              role: 'user',
+              content: '请总结这份文档',
             },
-            thinkingSelection: {
-              series: 'compat-discrete-selection-v1',
-              value: {
-                valueType: 'code',
-                code: 'auto',
-                labelZh: '自动',
+            policy: {
+              modelRoute: {
+                routeRef: {
+                  routeKind: 'provider-model',
+                  profileId: 'provider-openai',
+                  modelId: 'qwen-plus',
+                },
+                catalogRevision: '2026-04-06-provider-catalog-v1',
+              },
+              thinkingSelection: {
+                series: 'compat-discrete-selection-v1',
+                value: {
+                  valueType: 'code',
+                  code: 'auto',
+                  labelZh: '自动',
+                },
+              },
+              enabledTools: ['tool.remote-search'],
+              debugModeEnabled: true,
+              requestOptions: {
+                trace: true,
               },
             },
-            enabledTools: ['tool.remote-search'],
-            debugModeEnabled: true,
-            requestOptions: {
-              trace: true,
-            },
           },
-        },
-      }),
-      signal: undefined,
-    })
-    expect(response.stream).toEqual({
-      method: 'run/stream',
-      body: {
-        runId: 'run-1',
-      },
-    })
-    expect(response.cancel).toEqual({
-      method: 'run/cancel',
-      body: {
-        runId: 'run-1',
-      },
-    })
-  })
-
-  it('omits debugModeEnabled from run/start when the caller leaves it undefined', async () => {
-    const fetchFn = createFetchFn(createRuntimeRunStartResponse(), {
-      headers: {
-        'content-type': 'application/json',
-      },
-    })
-
-    await startRuntimeRun({
-      runtimeUrl,
-      threadId: sessionId,
-      agent: agentId,
-      message: createUserMessage(),
-      modelRoute: createRuntimeModelRoute(),
-      enabledTools: ['tool.remote-search'],
-      requestOptions: {
-        trace: true,
-      },
-      fetchFn,
-    })
-
-    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        method: 'run/start',
-        body: {
-          threadId: 'session-1',
-          agent: 'general',
-          message: {
-            role: 'user',
-            content: '请总结这份文档',
-          },
-          policy: {
-            modelRoute: {
-              routeRef: {
-                routeKind: 'provider-model',
-                profileId: 'provider-openai',
-                modelId: 'qwen-plus',
-              },
-              catalogRevision: '2026-04-06-provider-catalog-v1',
-            },
-            enabledTools: ['tool.remote-search'],
-            requestOptions: {
-              trace: true,
-            },
-          },
-        },
-      }),
-      signal: undefined,
-    })
-  })
-
-  it('preserves an explicit empty enabledTools array in run/start payloads', async () => {
-    const fetchFn = createFetchFn(createRuntimeRunStartResponse(), {
-      headers: {
-        'content-type': 'application/json',
-      },
-    })
-
-    await startRuntimeRun({
-      runtimeUrl,
-      threadId: sessionId,
-      agent: agentId,
-      message: createUserMessage(),
-      modelRoute: createRuntimeModelRoute(),
-      enabledTools: [],
-      requestOptions: {},
-      fetchFn,
-    })
-
-    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        method: 'run/start',
-        body: {
-          threadId: 'session-1',
-          agent: 'general',
-          message: {
-            role: 'user',
-            content: '请总结这份文档',
-          },
-          policy: {
-            modelRoute: {
-              routeRef: {
-                routeKind: 'provider-model',
-                profileId: 'provider-openai',
-                modelId: 'qwen-plus',
-              },
-              catalogRevision: '2026-04-06-provider-catalog-v1',
-            },
-            enabledTools: [],
-            requestOptions: {},
-          },
-        },
-      }),
-      signal: undefined,
-    })
-  })
-
-  it('streams ordered runtime events from run/stream', async () => {
-    const events: RuntimeRunEvent[] = [
-      {
-        type: 'run_started',
-        runId: 'run-1',
-        sessionId,
-        sequence: 1,
-        payload: {
-          assistantMessageId: 'run-1:assistant',
-        },
-      },
-      {
-        type: 'text_delta',
-        runId: 'run-1',
-        sessionId,
-        sequence: 2,
-        payload: {
-          assistantMessageId: 'run-1:assistant',
-          delta: '这是总结结果。',
-        },
-      },
-      createRuntimeRunCompletedEvent({
-        runId: 'run-1',
-        sessionId,
-        sequence: 3,
-      }),
-    ]
-    const fetchFn = createFetchFn({}, {
-      headers: {
-        'content-type': 'text/event-stream',
-      },
-      body: createSseEventStream(events),
-    })
-
-    const streamedEvents = await collectEvents(streamRuntimeRun({
-      runtimeUrl,
-      runId: 'run-1',
-      fetchFn,
-    }))
-
-    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
-      method: 'POST',
-      headers: {
-        Accept: 'text/event-stream',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+        }),
+        signal: undefined,
+      })
+      expect(response.stream).toEqual({
         method: 'run/stream',
         body: {
           runId: 'run-1',
         },
-      }),
-      signal: undefined,
+      })
+      expect(response.cancel).toEqual({
+        method: 'run/cancel',
+        body: {
+          runId: 'run-1',
+        },
+      })
     })
-    expect(streamedEvents.map((event) => event.type)).toEqual([
-      'run_started',
-      'text_delta',
-      'run_completed',
-    ])
+
+    it('omits debugModeEnabled from run/start when the caller leaves it undefined', async () => {
+      const fetchFn = createFetchFn(createRuntimeRunStartResponse(), {
+        headers: {
+          'content-type': 'application/json',
+        },
+      })
+
+      await startRuntimeRun({
+        runtimeUrl,
+        threadId: sessionId,
+        agent: agentId,
+        message: createUserMessage(),
+        modelRoute: createRuntimeModelRoute(),
+        enabledTools: ['tool.remote-search'],
+        requestOptions: {
+          trace: true,
+        },
+        fetchFn,
+      })
+
+      expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          method: 'run/start',
+          body: {
+            threadId: 'session-1',
+            agent: 'general',
+            message: {
+              role: 'user',
+              content: '请总结这份文档',
+            },
+            policy: {
+              modelRoute: {
+                routeRef: {
+                  routeKind: 'provider-model',
+                  profileId: 'provider-openai',
+                  modelId: 'qwen-plus',
+                },
+                catalogRevision: '2026-04-06-provider-catalog-v1',
+              },
+              enabledTools: ['tool.remote-search'],
+              requestOptions: {
+                trace: true,
+              },
+            },
+          },
+        }),
+        signal: undefined,
+      })
+    })
+
+    it('preserves an explicit empty enabledTools array in run/start payloads', async () => {
+      const fetchFn = createFetchFn(createRuntimeRunStartResponse(), {
+        headers: {
+          'content-type': 'application/json',
+        },
+      })
+
+      await startRuntimeRun({
+        runtimeUrl,
+        threadId: sessionId,
+        agent: agentId,
+        message: createUserMessage(),
+        modelRoute: createRuntimeModelRoute(),
+        enabledTools: [],
+        requestOptions: {},
+        fetchFn,
+      })
+
+      expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          method: 'run/start',
+          body: {
+            threadId: 'session-1',
+            agent: 'general',
+            message: {
+              role: 'user',
+              content: '请总结这份文档',
+            },
+            policy: {
+              modelRoute: {
+                routeRef: {
+                  routeKind: 'provider-model',
+                  profileId: 'provider-openai',
+                  modelId: 'qwen-plus',
+                },
+                catalogRevision: '2026-04-06-provider-catalog-v1',
+              },
+              enabledTools: [],
+              requestOptions: {},
+            },
+          },
+        }),
+        signal: undefined,
+      })
+    })
   })
 
-  it('rejects sequence regression in the run/stream event flow', async () => {
-    const fetchFn = createFetchFn({}, {
-      headers: {
-        'content-type': 'text/event-stream',
-      },
-      body: createSseEventStream([
+  describe('run/stream event processing', () => {
+    it('streams ordered runtime events from run/stream', async () => {
+      const events: RuntimeRunEvent[] = [
         {
           type: 'run_started',
           runId: 'run-1',
@@ -300,25 +238,91 @@ describe('thread run primary path', () => {
           type: 'text_delta',
           runId: 'run-1',
           sessionId,
-          sequence: 1,
+          sequence: 2,
           payload: {
             assistantMessageId: 'run-1:assistant',
-            delta: '重复序号',
+            delta: '这是总结结果。',
           },
         },
         createRuntimeRunCompletedEvent({
           runId: 'run-1',
           sessionId,
-          sequence: 2,
+          sequence: 3,
         }),
-      ]),
+      ]
+      const fetchFn = createFetchFn({}, {
+        headers: {
+          'content-type': 'text/event-stream',
+        },
+        body: createSseEventStream(events),
+      })
+
+      const streamedEvents = await collectEvents(streamRuntimeRun({
+        runtimeUrl,
+        runId: 'run-1',
+        fetchFn,
+      }))
+
+      expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+        method: 'POST',
+        headers: {
+          Accept: 'text/event-stream',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          method: 'run/stream',
+          body: {
+            runId: 'run-1',
+          },
+        }),
+        signal: undefined,
+      })
+      expect(streamedEvents.map((event) => event.type)).toEqual([
+        'run_started',
+        'text_delta',
+        'run_completed',
+      ])
     })
 
-    await expect(collectEvents(streamRuntimeRun({
-      runtimeUrl,
-      runId: 'run-1',
-      fetchFn,
-    }))).rejects.toThrow('Runtime event sequence regressed from 1 to 1.')
+    it('rejects sequence regression in the run/stream event flow', async () => {
+      const fetchFn = createFetchFn({}, {
+        headers: {
+          'content-type': 'text/event-stream',
+        },
+        body: createSseEventStream([
+          {
+            type: 'run_started',
+            runId: 'run-1',
+            sessionId,
+            sequence: 1,
+            payload: {
+              assistantMessageId: 'run-1:assistant',
+            },
+          },
+          {
+            type: 'text_delta',
+            runId: 'run-1',
+            sessionId,
+            sequence: 1,
+            payload: {
+              assistantMessageId: 'run-1:assistant',
+              delta: '重复序号',
+            },
+          },
+          createRuntimeRunCompletedEvent({
+            runId: 'run-1',
+            sessionId,
+            sequence: 2,
+          }),
+        ]),
+      })
+
+      await expect(collectEvents(streamRuntimeRun({
+        runtimeUrl,
+        runId: 'run-1',
+        fetchFn,
+      }))).rejects.toThrow('Runtime event sequence regressed from 1 to 1.')
+    })
   })
 
   it('keeps the canonical thread/run smoke entry point aligned with the runtime contract', async () => {

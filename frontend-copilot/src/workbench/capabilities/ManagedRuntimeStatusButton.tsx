@@ -29,35 +29,8 @@ export function ManagedRuntimeStatusButton({
   const [panelVisible, setPanelVisible] = useState(open)
   const [copiedFamily, setCopiedFamily] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (open) {
-      setRenderPanel(true)
-      const frame = window.requestAnimationFrame(() => {
-        setPanelVisible(true)
-      })
-
-      return () => window.cancelAnimationFrame(frame)
-    }
-
-    setPanelVisible(false)
-    const timeout = window.setTimeout(() => {
-      setRenderPanel(false)
-    }, 140)
-
-    return () => window.clearTimeout(timeout)
-  }, [open])
-
-  useEffect(() => {
-    if (copiedFamily === null) {
-      return undefined
-    }
-
-    const timeout = window.setTimeout(() => {
-      setCopiedFamily(null)
-    }, 1600)
-
-    return () => window.clearTimeout(timeout)
-  }, [copiedFamily])
+  usePanelAnimation(open, setRenderPanel, setPanelVisible)
+  useCopyFeedbackReset(copiedFamily, setCopiedFamily)
 
   const handleCopyPath = async (family: string, launcherPath: string) => {
     if (!navigator.clipboard?.writeText) {
@@ -74,94 +47,231 @@ export function ManagedRuntimeStatusButton({
 
   return (
     <div className="managed-runtime-status-shell">
-      <button
-        type="button"
-        className={`secondary-button secondary-button--subtle managed-runtime-status-button managed-runtime-status-button--${viewModel?.overallStatus ?? 'loading'}`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls="managed-runtime-status-panel"
-        onClick={onToggle}
-      >
-        <span className={`managed-runtime-status-indicator managed-runtime-status-indicator--${viewModel?.overallStatus ?? 'loading'}`}>
-          {loading || busy ? <LoaderCircle size={14} className="managed-runtime-status-button__spinner" /> : resolveStatusIcon(viewModel?.overallStatus)}
-        </span>
-        <span className="managed-runtime-status-button__copy">
-          <span className="managed-runtime-status-button__title">环境状态</span>
-          <span className="managed-runtime-status-button__summary">{label} · {buttonSummary}</span>
-        </span>
-      </button>
+      <ManagedRuntimeTriggerButton
+        viewModel={viewModel}
+        loading={loading}
+        busy={busy}
+        open={open}
+        label={label}
+        buttonSummary={buttonSummary}
+        onToggle={onToggle}
+      />
 
       {renderPanel ? (
-        <section
-          id="managed-runtime-status-panel"
-          className={`managed-runtime-status-panel ${panelVisible ? 'managed-runtime-status-panel--open' : 'managed-runtime-status-panel--closing'}`}
-          role="region"
-          aria-label="MCP 托管运行时状态"
-          data-testid="managed-runtime-status-panel"
-          aria-hidden={!open}
-        >
-          <header className="managed-runtime-status-panel__header">
-            <div>
-              <p className="managed-runtime-status-panel__eyebrow">MCP 托管环境</p>
-              <h3 className="managed-runtime-status-panel__title">{label}</h3>
-              <p className="managed-runtime-status-panel__description">{summary}</p>
-            </div>
-          </header>
-
-          {error ? (
-            <p className="managed-runtime-status-panel__error" role="alert">{error}</p>
-          ) : null}
-
-          <div className="managed-runtime-status-panel__cards">
-            {viewModel?.families.map((family) => (
-              <article
-                key={family.family}
-                className={`managed-runtime-family-card managed-runtime-family-card--${family.status}`}
-              >
-                <div className="managed-runtime-family-card__header">
-                  <div>
-                    <h4 className="managed-runtime-family-card__title">{family.title}</h4>
-                  </div>
-                  <span className={`managed-runtime-family-card__status managed-runtime-family-card__status--${family.status}`}>
-                    {family.statusLabel}
-                  </span>
-                </div>
-
-                <dl className="managed-runtime-family-card__details">
-                  <div>
-                    <dt>当前版本</dt>
-                    <dd>{family.activeVersion ?? '尚未激活'}</dd>
-                  </div>
-                </dl>
-
-                <div className="managed-runtime-family-card__actions">
-                  <button
-                    type="button"
-                    className="secondary-button secondary-button--subtle managed-runtime-family-card__action"
-                    disabled={busy}
-                    onClick={() => void onInstallOrRepair()}
-                  >
-                    {busy ? '处理中…' : (viewModel?.actionLabel ?? '一键安装/修复')}
-                  </button>
-
-                  {family.launcherPath ? (
-                    <button
-                      type="button"
-                      className="secondary-button secondary-button--subtle managed-runtime-family-card__copy"
-                      onClick={() => void handleCopyPath(family.family, family.launcherPath as string)}
-                      title={family.launcherPath}
-                      aria-label={`复制 ${family.title} 引用路径`}
-                    >
-                      {copiedFamily === family.family ? '已复制路径' : '复制路径'}
-                    </button>
-                  ) : null}
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
+        <RuntimeStatusPanel
+          open={open}
+          panelVisible={panelVisible}
+          viewModel={viewModel}
+          label={label}
+          summary={summary}
+          error={error}
+          busy={busy}
+          copiedFamily={copiedFamily}
+          onInstallOrRepair={onInstallOrRepair}
+          onCopyPath={handleCopyPath}
+        />
       ) : null}
     </div>
+  )
+}
+
+function usePanelAnimation(
+  open: boolean,
+  setRenderPanel: (value: boolean) => void,
+  setPanelVisible: (value: boolean) => void,
+) {
+  useEffect(() => {
+    if (open) {
+      setRenderPanel(true)
+      const frame = window.requestAnimationFrame(() => {
+        setPanelVisible(true)
+      })
+
+      return () => window.cancelAnimationFrame(frame)
+    }
+
+    setPanelVisible(false)
+    const timeout = window.setTimeout(() => {
+      setRenderPanel(false)
+    }, 140)
+
+    return () => window.clearTimeout(timeout)
+  }, [open, setRenderPanel, setPanelVisible])
+}
+
+function useCopyFeedbackReset(
+  copiedFamily: string | null,
+  setCopiedFamily: (value: string | null) => void,
+) {
+  useEffect(() => {
+    if (copiedFamily === null) {
+      return undefined
+    }
+
+    const timeout = window.setTimeout(() => {
+      setCopiedFamily(null)
+    }, 1600)
+
+    return () => window.clearTimeout(timeout)
+  }, [copiedFamily, setCopiedFamily])
+}
+
+function ManagedRuntimeTriggerButton({
+  viewModel,
+  loading,
+  busy,
+  open,
+  label,
+  buttonSummary,
+  onToggle,
+}: {
+  viewModel: ManagedRuntimeStatusViewModel | null
+  loading: boolean
+  busy: boolean
+  open: boolean
+  label: string
+  buttonSummary: string
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={`secondary-button secondary-button--subtle managed-runtime-status-button managed-runtime-status-button--${viewModel?.overallStatus ?? 'loading'}`}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-controls="managed-runtime-status-panel"
+      onClick={onToggle}
+    >
+      <span className={`managed-runtime-status-indicator managed-runtime-status-indicator--${viewModel?.overallStatus ?? 'loading'}`}>
+        {loading || busy ? <LoaderCircle size={14} className="managed-runtime-status-button__spinner" /> : resolveStatusIcon(viewModel?.overallStatus)}
+      </span>
+      <span className="managed-runtime-status-button__copy">
+        <span className="managed-runtime-status-button__title">环境状态</span>
+        <span className="managed-runtime-status-button__summary">{label} · {buttonSummary}</span>
+      </span>
+    </button>
+  )
+}
+
+function RuntimeStatusPanel({
+  open,
+  panelVisible,
+  viewModel,
+  label,
+  summary,
+  error,
+  busy,
+  copiedFamily,
+  onInstallOrRepair,
+  onCopyPath,
+}: {
+  open: boolean
+  panelVisible: boolean
+  viewModel: ManagedRuntimeStatusViewModel | null
+  label: string
+  summary: string
+  error: string | null
+  busy: boolean
+  copiedFamily: string | null
+  onInstallOrRepair: () => void | Promise<void>
+  onCopyPath: (family: string, launcherPath: string) => Promise<void>
+}) {
+  return (
+    <section
+      id="managed-runtime-status-panel"
+      className={`managed-runtime-status-panel ${panelVisible ? 'managed-runtime-status-panel--open' : 'managed-runtime-status-panel--closing'}`}
+      role="region"
+      aria-label="MCP 托管运行时状态"
+      data-testid="managed-runtime-status-panel"
+      aria-hidden={!open}
+    >
+      <header className="managed-runtime-status-panel__header">
+        <div>
+          <p className="managed-runtime-status-panel__eyebrow">MCP 托管环境</p>
+          <h3 className="managed-runtime-status-panel__title">{label}</h3>
+          <p className="managed-runtime-status-panel__description">{summary}</p>
+        </div>
+      </header>
+
+      {error ? (
+        <p className="managed-runtime-status-panel__error" role="alert">{error}</p>
+      ) : null}
+
+      <div className="managed-runtime-status-panel__cards">
+        {viewModel?.families.map((family) => (
+          <RuntimeFamilyCard
+            key={family.family}
+            family={family}
+            busy={busy}
+            copiedFamily={copiedFamily}
+            actionLabel={viewModel?.actionLabel}
+            onInstallOrRepair={onInstallOrRepair}
+            onCopyPath={onCopyPath}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function RuntimeFamilyCard({
+  family,
+  busy,
+  copiedFamily,
+  actionLabel,
+  onInstallOrRepair,
+  onCopyPath,
+}: {
+  family: ManagedRuntimeStatusViewModel['families'][number]
+  busy: boolean
+  copiedFamily: string | null
+  actionLabel: string | undefined
+  onInstallOrRepair: () => void | Promise<void>
+  onCopyPath: (family: string, launcherPath: string) => Promise<void>
+}) {
+  return (
+    <article
+      className={`managed-runtime-family-card managed-runtime-family-card--${family.status}`}
+    >
+      <div className="managed-runtime-family-card__header">
+        <div>
+          <h4 className="managed-runtime-family-card__title">{family.title}</h4>
+        </div>
+        <span className={`managed-runtime-family-card__status managed-runtime-family-card__status--${family.status}`}>
+          {family.statusLabel}
+        </span>
+      </div>
+
+      <dl className="managed-runtime-family-card__details">
+        <div>
+          <dt>当前版本</dt>
+          <dd>{family.activeVersion ?? '尚未激活'}</dd>
+        </div>
+      </dl>
+
+      <div className="managed-runtime-family-card__actions">
+        <button
+          type="button"
+          className="secondary-button secondary-button--subtle managed-runtime-family-card__action"
+          disabled={busy}
+          onClick={() => void onInstallOrRepair()}
+        >
+          {busy ? '处理中…' : (actionLabel ?? '一键安装/修复')}
+        </button>
+
+        {family.launcherPath ? (
+          <button
+            type="button"
+            className="secondary-button secondary-button--subtle managed-runtime-family-card__copy"
+            onClick={() => void onCopyPath(family.family, family.launcherPath as string)}
+            title={family.launcherPath}
+            aria-label={`复制 ${family.title} 引用路径`}
+          >
+            {copiedFamily === family.family ? '已复制路径' : '复制路径'}
+          </button>
+        ) : null}
+      </div>
+    </article>
   )
 }
 

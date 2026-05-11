@@ -427,29 +427,20 @@ export async function orchestrateCopilotSend(input: {
     return
   }
 
-  input.setConversation((current) => [
-    ...current,
-    ...buildCopilotRunSegmentViewModel(input.runState),
-    createUserMessageListItem({
-      content: buildComposerMessageContentWithAttachments(trimmedMessage, input.attachments ?? []),
-      structuredPayload: runtimeInput.message.structuredPayload ?? null,
-    }),
-  ])
-  input.setSendError(null)
-  input.setRunState(createStartingCopilotRunState({
-    threadId: input.sessionShell.sessionId,
-    activeModelRoute: runtimeInput.modelRoute,
+  commitSendState({
+    setConversation: input.setConversation,
+    runState: input.runState,
+    setSendError: input.setSendError,
+    setRunState: input.setRunState,
+    sessionId: input.sessionShell.sessionId,
+    runtimeInput,
+    trimmedMessage,
+    attachments: input.attachments ?? [],
     requestOptions,
-  }))
-  if (input.clearComposerOnSend !== false) {
-    input.setComposerDraft((current) => ({
-      ...current,
-      messageText: '',
-    }))
-    if (input.composerInputRef.current !== null) {
-      input.composerInputRef.current.value = ''
-    }
-  }
+    clearComposerOnSend: input.clearComposerOnSend,
+    setComposerDraft: input.setComposerDraft,
+    composerInputRef: input.composerInputRef,
+  })
 
   let runStarted = false
 
@@ -474,26 +465,85 @@ export async function orchestrateCopilotSend(input: {
       input.setRunState((current) => applyRuntimeRunEventToCopilotRunState(current, event))
     }
   } catch (error) {
-    if (isAbortError(error) || input.signal?.aborted === true) {
-      input.setSendError(null)
-      input.setRunState((current) => markCopilotRunCancelled(current, {
-        reason: 'cancelled',
-      }))
-    } else if (!runStarted) {
-      input.setSendError(createRunStartTransientErrorState({
-        error,
-        runtimeInput,
-        selectedModelOption: input.selectedModelOption,
-      }))
-      input.setRunState(createIdleCopilotRunState())
-    } else {
-      input.setSendError(null)
-      input.setRunState((current) => markCopilotRunTransportFailed(current, createTransportFailureInput(error)))
-    }
+    handleSendError({
+      error,
+      signal: input.signal,
+      runStarted,
+      setSendError: input.setSendError,
+      setRunState: input.setRunState,
+      runtimeInput,
+      selectedModelOption: input.selectedModelOption,
+    })
   } finally {
     requestAnimationFrame(() => {
       input.composerInputRef.current?.focus()
     })
+  }
+}
+
+function commitSendState(input: {
+  setConversation: Dispatch<SetStateAction<CopilotMessageListItem[]>>
+  runState: CopilotRunState
+  setSendError: Dispatch<SetStateAction<CopilotTransientErrorState | null>>
+  setRunState: Dispatch<SetStateAction<CopilotRunState>>
+  sessionId: string
+  runtimeInput: RuntimeMessageSendInput
+  trimmedMessage: string
+  attachments: readonly CopilotComposerAttachment[]
+  requestOptions: Record<string, unknown>
+  clearComposerOnSend?: boolean
+  setComposerDraft: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+  composerInputRef: RefObject<HTMLTextAreaElement>
+}) {
+  input.setConversation((current) => [
+    ...current,
+    ...buildCopilotRunSegmentViewModel(input.runState),
+    createUserMessageListItem({
+      content: buildComposerMessageContentWithAttachments(input.trimmedMessage, input.attachments),
+      structuredPayload: input.runtimeInput.message.structuredPayload ?? null,
+    }),
+  ])
+  input.setSendError(null)
+  input.setRunState(createStartingCopilotRunState({
+    threadId: input.sessionId,
+    activeModelRoute: input.runtimeInput.modelRoute,
+    requestOptions: input.requestOptions,
+  }))
+  if (input.clearComposerOnSend !== false) {
+    input.setComposerDraft((current) => ({
+      ...current,
+      messageText: '',
+    }))
+    if (input.composerInputRef.current !== null) {
+      input.composerInputRef.current.value = ''
+    }
+  }
+}
+
+function handleSendError(input: {
+  error: unknown
+  signal?: AbortSignal
+  runStarted: boolean
+  setSendError: Dispatch<SetStateAction<CopilotTransientErrorState | null>>
+  setRunState: Dispatch<SetStateAction<CopilotRunState>>
+  runtimeInput: RuntimeMessageSendInput
+  selectedModelOption: CopilotModelOption | null
+}) {
+  if (isAbortError(input.error) || input.signal?.aborted === true) {
+    input.setSendError(null)
+    input.setRunState((current) => markCopilotRunCancelled(current, {
+      reason: 'cancelled',
+    }))
+  } else if (!input.runStarted) {
+    input.setSendError(createRunStartTransientErrorState({
+      error: input.error,
+      runtimeInput: input.runtimeInput,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    input.setRunState(createIdleCopilotRunState())
+  } else {
+    input.setSendError(null)
+    input.setRunState((current) => markCopilotRunTransportFailed(current, createTransportFailureInput(input.error)))
   }
 }
 

@@ -37,6 +37,65 @@ import {
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { createPersistedWorkspaceState, createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const DESC_CN_019 = '请调用天气工具并处理 fatal 失败'
+const DESC_CN_022 = '正在获取 Shenzhen 的天气。'
+const DESC_CN_028 = '我可以解释工具失败并继续'
+const DESC_CN_038 = '当前模型暂不可用于聊天。'
+const DESC_CN_045 = 'Shenzhen：晴 / 24°C / 湿度 60%'
+const DESC_CN_048 = '当前响应失败，请重试。'
+const LABEL_2026 = '2026-04-06-provider-catalog-v1'
+const LABEL_2026_13T15 = '2026-04-13T15:05:00Z'
+const LABEL_2026_13T15_2 = '2026-04-13T15:00:00Z'
+const LABEL_2026_14T08 = '2026-04-14T08:00:03Z'
+const LABEL_2026_14T08_2 = '2026-04-14T08:00:00Z'
+const LABEL_2026_14T08_3 = '2026-04-14T08:00:01Z'
+const LABEL_CLAUDE = 'claude-3.7-sonnet'
+const LABEL_COURSE_FORM = 'course-form'
+const LABEL_ERROR_DETAIL_OVERLAY = 'error-detail-overlay'
+const LABEL_HTTPS_API_EXAMPLE = 'https://api.example.com/v1'
+const LABEL_HTTP_127 = 'http://127.0.0.1:8765'
+const LABEL_LEGACY_MODEL = 'legacy-model'
+const LABEL_LOCATION_SHENZHEN = '{"location":"Shenzhen"}'
+const LABEL_OPENAI_COMPATIBLE = 'OpenAI Compatible'
+const LABEL_OPENAI_COMPATIBLE_2 = 'openai-compatible'
+const LABEL_OPENAI_GPT = 'openai/gpt-4.1'
+const LABEL_PROVIDER_BETA = 'provider-beta'
+const LABEL_PROVIDER_MODEL = 'provider-model'
+const LABEL_PROVIDER_OPENAI = 'provider-openai'
+const LABEL_PROVIDER_OPENAI_OPENAI = 'provider-openai:openai/gpt-4.1'
+const LABEL_RUN_CANCEL = 'run-cancel'
+const LABEL_RUN_HISTORY = 'run-history-1'
+const LABEL_RUN_INLINE_FORM = 'run-inline-form-switch'
+const LABEL_RUN_INTERRUPTED_UNTIL = 'Run interrupted until the user submits the requested form.'
+const LABEL_RUN_TOOL_FAILED = 'run-tool-failed'
+const LABEL_RUN_TOOL_SUCCESS = 'run-tool-success'
+const LABEL_RUN_TOOL_THEN = 'run-tool-then-failed'
+const LABEL_SHARED_MODEL = 'shared-model'
+const LABEL_TEXTAREA_NAME_MESSAGETEXT = 'textarea[name="messageText"]'
+const LABEL_TOOL_READ = 'tool.fs.read'
+const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
+const LABEL_TOOL_REMOTE_SEARCH_2 = 'tool.remote-search:call-1'
+const LABEL_TOOL_REQUEST_USER = 'tool.request-user-form:call-1'
+const LABEL_TOOL_REQUEST_USER_2 = 'tool.request-user-form'
+const LABEL_UNKNOWN_MODEL = 'unknown-model'
+const LABEL_UNKNOWN_PROFILE = 'unknown-profile'
+const SELECTOR_ARIA_EXPANDED = 'aria-expanded'
+const SELECTOR_ARIA_PRESSED = 'aria-pressed'
+const SELECTOR_CHAT_ASSISTANT_PLACEHOLDER = 'chat-assistant-placeholder'
+const SELECTOR_CHAT_COMPOSER_DOCK = 'chat-composer-dock'
+const SELECTOR_CHAT_COMPOSER_SEND = 'chat-composer-send-button'
+const SELECTOR_CHAT_HISTORY_DRIFT = 'chat-history-drift-notice'
+const SELECTOR_CHAT_MESSAGE_INLINE = 'chat-message-inline-form-submit-1'
+const SELECTOR_CHAT_MESSAGE_SCROLL = 'chat-message-scroll-region'
+const SELECTOR_CHAT_MESSAGE_TOOL = 'chat-message-tool-panel-1'
+const SELECTOR_CHAT_MESSAGE_TOOL_2 = 'chat-message-tool-toggle-1'
+const SELECTOR_CHAT_MESSAGE_TOOL_3 = 'chat-message-tool-input-toggle-1'
+const SELECTOR_CHAT_MODEL_PICKER = 'chat-model-picker-trigger'
+const SELECTOR_CHAT_TOOL_OPTION = 'chat-tool-option-tool.remote-search'
+const SELECTOR_COPILOT_CHAT_PANEL = 'copilot-chat-panel'
+
+
 declare global {
   // eslint-disable-next-line no-var
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
@@ -56,6 +115,7 @@ afterEach(() => {
 })
 
 describe('CopilotChatPanel composer interactions', () => {
+  describe('model picker and routing', () => {
   it('sends messages with the updated model selected from the picker', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
@@ -64,12 +124,12 @@ describe('CopilotChatPanel composer interactions', () => {
       state: createPersistedWorkspaceState({
         providerProfiles: [
           createProviderProfile({
-            id: 'provider-openai',
-            name: 'OpenAI Compatible',
+            id: LABEL_PROVIDER_OPENAI,
+            name: LABEL_OPENAI_COMPATIBLE,
             availableModels: [
               {
-                id: 'provider-openai:openai/gpt-4.1',
-                modelId: 'openai/gpt-4.1',
+                id: LABEL_PROVIDER_OPENAI_OPENAI,
+                modelId: LABEL_OPENAI_GPT,
                 displayName: 'GPT 4.1',
                 groupName: 'OpenAI',
                 capabilities: ['reasoning', 'tools'],
@@ -81,7 +141,7 @@ describe('CopilotChatPanel composer interactions', () => {
             ],
           }),
           createProviderProfile({
-            id: 'provider-beta',
+            id: LABEL_PROVIDER_BETA,
             name: 'Beta Router',
             protocol: 'openai',
             availableModels: [
@@ -100,7 +160,7 @@ describe('CopilotChatPanel composer interactions', () => {
           }),
         ],
         defaultModelRouting: {
-          primaryAssistantModel: 'openai/gpt-4.1',
+          primaryAssistantModel: LABEL_OPENAI_GPT,
         },
       }),
     }))
@@ -124,15 +184,15 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+    const modelTrigger = rendered.getByTestId(SELECTOR_CHAT_MODEL_PICKER) as HTMLButtonElement
 
     expect(loadWorkspaceState).toHaveBeenCalledTimes(1)
     expect(modelTrigger.textContent).toContain('GPT 4.1')
     expect(getTriggerIconText(modelTrigger)).toBe('G')
 
     await clickElement(modelTrigger)
-    expect(rendered.container.textContent).toContain('OpenAI Compatible')
+    expect(rendered.container.textContent).toContain(LABEL_OPENAI_COMPATIBLE)
     expect(rendered.container.textContent).toContain('Beta Router')
     await clickElement(rendered.getByTestId('chat-model-option-provider-beta-provider-beta:openai/gpt-4.1-mini'))
 
@@ -140,14 +200,14 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(getTriggerIconText(modelTrigger)).toBe('G')
 
     await setFormControlValue(messageInput, '请总结刚才的内容')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
       modelRoute: {
         routeRef: {
-          routeKind: 'provider-model',
-          profileId: 'provider-beta',
+          routeKind: LABEL_PROVIDER_MODEL,
+          profileId: LABEL_PROVIDER_BETA,
           modelId: 'openai/gpt-4.1-mini',
         },
       },
@@ -172,13 +232,13 @@ describe('CopilotChatPanel composer interactions', () => {
             providerId: 'anthropic',
             protocol: 'anthropic',
             endpoint: 'https://api.anthropic.com/',
-            primaryModelId: 'claude-3.7-sonnet',
-            fastModel: 'claude-3.7-sonnet',
-            fallbackModel: 'claude-3.7-sonnet',
+            primaryModelId: LABEL_CLAUDE,
+            fastModel: LABEL_CLAUDE,
+            fallbackModel: LABEL_CLAUDE,
             availableModels: [
               {
                 id: 'provider-anthropic:claude-3.7-sonnet',
-                modelId: 'claude-3.7-sonnet',
+                modelId: LABEL_CLAUDE,
                 displayName: 'Claude 3.7 Sonnet',
                 groupName: 'Anthropic',
                 capabilities: ['reasoning', 'tools'],
@@ -191,7 +251,7 @@ describe('CopilotChatPanel composer interactions', () => {
           }),
         ],
         defaultModelRouting: {
-          primaryAssistantModel: 'claude-3.7-sonnet',
+          primaryAssistantModel: LABEL_CLAUDE,
         },
       }),
     }))
@@ -216,22 +276,22 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
-    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const modelTrigger = rendered.getByTestId(SELECTOR_CHAT_MODEL_PICKER) as HTMLButtonElement
+    const sendButton = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND) as HTMLButtonElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
 
     expect(modelTrigger.textContent).toContain('Claude 3.7 Sonnet')
     await setFormControlValue(messageInput, '请用 Anthropic 路由发送这条消息')
     expect(sendButton.disabled).toBe(false)
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
       modelRoute: {
         routeRef: {
-          routeKind: 'provider-model',
+          routeKind: LABEL_PROVIDER_MODEL,
           profileId: 'provider-anthropic',
-          modelId: 'claude-3.7-sonnet',
+          modelId: LABEL_CLAUDE,
         },
       },
       message: {
@@ -255,7 +315,7 @@ describe('CopilotChatPanel composer interactions', () => {
             availableModels: [
               {
                 id: 'provider-alpha:shared-model',
-                modelId: 'shared-model',
+                modelId: LABEL_SHARED_MODEL,
                 displayName: 'Shared Model Alpha',
                 groupName: 'Alpha',
                 capabilities: ['reasoning'],
@@ -267,14 +327,14 @@ describe('CopilotChatPanel composer interactions', () => {
             ],
           }),
           createProviderProfile({
-            id: 'provider-beta',
+            id: LABEL_PROVIDER_BETA,
             name: 'Beta Provider',
             providerId: 'groq',
             protocol: 'openai',
             availableModels: [
               {
                 id: 'provider-beta:shared-model',
-                modelId: 'shared-model',
+                modelId: LABEL_SHARED_MODEL,
                 displayName: 'Shared Model Beta',
                 groupName: 'Beta',
                 capabilities: ['reasoning', 'tools'],
@@ -287,11 +347,11 @@ describe('CopilotChatPanel composer interactions', () => {
           }),
         ],
         defaultModelRouting: {
-          primaryAssistantModel: 'shared-model',
+          primaryAssistantModel: LABEL_SHARED_MODEL,
           primaryAssistantModelRoute: {
-            routeKind: 'provider-model',
-            profileId: 'provider-beta',
-            modelId: 'shared-model',
+            routeKind: LABEL_PROVIDER_MODEL,
+            profileId: LABEL_PROVIDER_BETA,
+            modelId: LABEL_SHARED_MODEL,
           },
         },
       }),
@@ -316,21 +376,21 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+    const modelTrigger = rendered.getByTestId(SELECTOR_CHAT_MODEL_PICKER) as HTMLButtonElement
 
     expect(modelTrigger.textContent).toContain('Shared Model Beta')
 
     await setFormControlValue(messageInput, '请使用稳定 route ref 默认模型发送')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
       modelRoute: {
         routeRef: {
-          routeKind: 'provider-model',
-          profileId: 'provider-beta',
-          modelId: 'shared-model',
+          routeKind: LABEL_PROVIDER_MODEL,
+          profileId: LABEL_PROVIDER_BETA,
+          modelId: LABEL_SHARED_MODEL,
         },
       },
     })
@@ -338,6 +398,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('model state edge cases', () => {
   it('forwards enabled debug mode from bootstrap state into chat send requests', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
@@ -346,7 +408,7 @@ describe('CopilotChatPanel composer interactions', () => {
       <CopilotChatPanel
         state={createReadyState({
           bootstrapFields: {
-            runtimeUrl: 'http://127.0.0.1:8765',
+            runtimeUrl: LABEL_HTTP_127,
             agentName: null,
             debugModeEnabled: true,
           },
@@ -367,9 +429,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请总结刚才的内容')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0]?.[0].debugModeEnabled).toBe(true)
@@ -389,7 +451,7 @@ describe('CopilotChatPanel composer interactions', () => {
             availableModels: [
               {
                 id: 'provider-alpha:shared-model',
-                modelId: 'shared-model',
+                modelId: LABEL_SHARED_MODEL,
                 displayName: 'Shared Model Alpha',
                 groupName: 'Alpha',
                 capabilities: ['reasoning', 'tools'],
@@ -401,14 +463,14 @@ describe('CopilotChatPanel composer interactions', () => {
             ],
           }),
           createProviderProfile({
-            id: 'provider-beta',
+            id: LABEL_PROVIDER_BETA,
             name: 'Beta Provider',
             providerId: 'groq',
             protocol: 'openai',
             availableModels: [
               {
                 id: 'provider-beta:shared-model',
-                modelId: 'shared-model',
+                modelId: LABEL_SHARED_MODEL,
                 displayName: 'Shared Model Beta',
                 groupName: 'Beta',
                 capabilities: ['reasoning', 'tools'],
@@ -421,7 +483,7 @@ describe('CopilotChatPanel composer interactions', () => {
           }),
         ],
         defaultModelRouting: {
-          primaryAssistantModel: 'shared-model',
+          primaryAssistantModel: LABEL_SHARED_MODEL,
           primaryAssistantModelRoute: null,
         },
       }),
@@ -445,9 +507,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
-    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const modelTrigger = rendered.getByTestId(SELECTOR_CHAT_MODEL_PICKER) as HTMLButtonElement
+    const sendButton = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND) as HTMLButtonElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
 
     expect(modelTrigger.textContent).toContain('尚未配置模型')
     expect(rendered.queryByTestId('chat-model-picker-invalid-badge')).toBeNull()
@@ -495,13 +557,13 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const modelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
-    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const modelTrigger = rendered.getByTestId(SELECTOR_CHAT_MODEL_PICKER) as HTMLButtonElement
+    const sendButton = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND) as HTMLButtonElement
 
     expect(loadWorkspaceState).toHaveBeenCalledTimes(1)
     expect(modelTrigger.disabled).toBe(true)
     expect(modelTrigger.textContent).toContain('尚未配置模型')
-    expect(modelTrigger.textContent).not.toContain('openai/gpt-4.1')
+    expect(modelTrigger.textContent).not.toContain(LABEL_OPENAI_GPT)
     expect(sendButton.disabled).toBe(true)
     expect(sendButton.title).toBe('尚未配置模型，请先前往设置页完成模型配置。')
     expect(rendered.getByTestId('chat-no-model-empty-state').textContent).toContain('尚未配置模型')
@@ -510,6 +572,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('composer input handling', () => {
   it('submits on Enter and keeps newline behavior for Ctrl + Enter in the message composer', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
@@ -533,7 +597,7 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '第一行')
     messageInput.focus()
     messageInput.setSelectionRange(messageInput.value.length, messageInput.value.length)
@@ -578,9 +642,9 @@ describe('CopilotChatPanel composer interactions', () => {
         await Promise.resolve()
       })
 
-      const composerForm = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
-      const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
-      const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const composerForm = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement
+      const sendButton = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND) as HTMLButtonElement
+      const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
       const file = createFileWithPath({
         name: 'note.txt',
         type: 'text/plain',
@@ -604,13 +668,15 @@ describe('CopilotChatPanel composer interactions', () => {
       expect(sendMessage.mock.calls[0]?.[0].message.content).toBe([
         'User attached files:',
         '- attachment-only.txt',
-        'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
+        `Please process these files accordingly, for example, use \`${LABEL_TOOL_READ}\` tool to read the content of these files.`,
       ].join('\n'))
     } finally {
       rendered.unmount()
     }
   })
 
+  })
+  describe('attachments and composer resize', () => {
   it('clears attachments immediately after send is triggered even when the run later fails', async () => {
     const control = createDeferredSignal()
     const sendMessage = createFailedBeforeAssistantSendMessageSpy(control)
@@ -635,8 +701,8 @@ describe('CopilotChatPanel composer interactions', () => {
         await Promise.resolve()
       })
 
-      const composerForm = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
-      const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const composerForm = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement
+      const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
       const file = createFileWithPath({
         name: 'failed.txt',
         type: 'text/plain',
@@ -689,10 +755,10 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const scrollRegion = rendered.getByTestId('chat-message-scroll-region') as HTMLDivElement
+    const scrollRegion = rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL) as HTMLDivElement
     const resizeHandle = rendered.getByTestId('chat-composer-resize-handle') as HTMLDivElement
     const composerSurface = rendered.getByTestId('chat-composer-surface') as HTMLDivElement
-    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const sendButton = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND) as HTMLButtonElement
 
     expect(scrollRegion.dataset.scrollbarVisibility).toBe('hidden')
     expect(scrollRegion.className).toContain('copilot-chat__stream--scrollbarless')
@@ -711,6 +777,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('tool picker interactions', () => {
   it('supports searching and shortcut-updating message-level enabledTools through the tool picker', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
@@ -738,24 +806,24 @@ describe('CopilotChatPanel composer interactions', () => {
 
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
     await setFormControlValue(searchInput, '远程')
-    expect(rendered.queryByTestId('chat-tool-option-tool.remote-search')).not.toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION)).not.toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).toBeNull()
 
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-tool-picker-select-all'))
     await clickElement(rendered.getByTestId('chat-tool-picker-invert'))
     await clickElement(rendered.getByTestId('chat-tool-picker-select-recommended'))
-    await clickElement(rendered.getByTestId('chat-tool-option-tool.remote-search'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION))
 
     expect(rendered.container.querySelector('input[type="checkbox"]')).toBeNull()
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请使用当前工具集执行摘要')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      enabledTools: ['tool.fs.read', 'tool.remote-search'],
+      enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
       message: {
         content: '请使用当前工具集执行摘要',
       },
@@ -776,7 +844,7 @@ describe('CopilotChatPanel composer interactions', () => {
             version: 1,
             defaultMode: 'ask',
             toolPermissions: {
-              'tool.remote-search': { mode: 'deny' },
+              [LABEL_TOOL_REMOTE_SEARCH]: { mode: 'deny' },
             },
           },
         },
@@ -804,7 +872,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
 
-    const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
+    const deniedOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement
     const allowedOption = rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement
 
     expect(deniedOption.disabled).toBe(false)
@@ -814,18 +882,18 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(allowedOption.disabled).toBe(false)
 
     await clickElement(deniedOption)
-    expect(deniedOption.getAttribute('aria-pressed')).toBe('false')
+    expect(deniedOption.getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
 
     await clickElement(allowedOption)
-    expect(allowedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(allowedOption.getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请在清洗 deny 后发送')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      enabledTools: ['tool.fs.read'],
+      enabledTools: [LABEL_TOOL_READ],
       message: {
         content: '请在清洗 deny 后发送',
       },
@@ -844,17 +912,17 @@ describe('CopilotChatPanel composer interactions', () => {
         composerDraft: {
           ...staleState.composerDraft,
           messageText: '请清洗残留 deny 工具',
-          selectedModelId: 'provider-openai:openai/gpt-4.1',
+          selectedModelId: LABEL_PROVIDER_OPENAI_OPENAI,
           selectedModelRoute: createRuntimeModelRoute({
-            providerProfileId: 'provider-openai',
-            modelId: 'openai/gpt-4.1',
+            providerProfileId: LABEL_PROVIDER_OPENAI,
+            modelId: LABEL_OPENAI_GPT,
             routeRef: {
-              routeKind: 'provider-model',
-              profileId: 'provider-openai',
-              modelId: 'openai/gpt-4.1',
+              routeKind: LABEL_PROVIDER_MODEL,
+              profileId: LABEL_PROVIDER_OPENAI,
+              modelId: LABEL_OPENAI_GPT,
             },
           }),
-          enabledTools: ['tool.fs.read', 'tool.remote-search'],
+          enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
         },
       },
     }
@@ -864,12 +932,12 @@ describe('CopilotChatPanel composer interactions', () => {
       state: createPersistedWorkspaceState({
         providerProfiles: [
           createProviderProfile({
-            id: 'provider-openai',
-            name: 'OpenAI Compatible',
+            id: LABEL_PROVIDER_OPENAI,
+            name: LABEL_OPENAI_COMPATIBLE,
             availableModels: [
               {
-                id: 'provider-openai:openai/gpt-4.1',
-                modelId: 'openai/gpt-4.1',
+                id: LABEL_PROVIDER_OPENAI_OPENAI,
+                modelId: LABEL_OPENAI_GPT,
                 displayName: 'GPT 4.1',
                 groupName: 'OpenAI',
                 capabilities: ['reasoning', 'tools'],
@@ -882,14 +950,14 @@ describe('CopilotChatPanel composer interactions', () => {
           }),
         ],
         defaultModelRouting: {
-          primaryAssistantModel: 'openai/gpt-4.1',
+          primaryAssistantModel: LABEL_OPENAI_GPT,
         },
         mcp: {
           toolPermissionPolicy: {
             version: 1,
             defaultMode: 'ask',
             toolPermissions: {
-              'tool.remote-search': { mode: 'deny' },
+              [LABEL_TOOL_REMOTE_SEARCH]: { mode: 'deny' },
             },
           },
         },
@@ -918,21 +986,21 @@ describe('CopilotChatPanel composer interactions', () => {
 
     await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
 
-    const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
+    const deniedOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement
     const allowedOption = rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement
 
     expect(deniedOption.disabled).toBe(false)
-    expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(deniedOption.getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
     expect(deniedOption.getAttribute('aria-disabled')).toBe(null)
-    expect(allowedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(allowedOption.getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     expect(messageInput.value).toBe('请清洗残留 deny 工具')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      enabledTools: ['tool.fs.read'],
+      enabledTools: [LABEL_TOOL_READ],
       message: {
         content: '请清洗残留 deny 工具',
       },
@@ -941,6 +1009,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('message display and notifications', () => {
   it('echoes user and assistant messages after a successful send with model icon and model name in the assistant header', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
@@ -949,12 +1019,12 @@ describe('CopilotChatPanel composer interactions', () => {
       state: createPersistedWorkspaceState({
         providerProfiles: [
           createProviderProfile({
-            id: 'provider-openai',
-            name: 'OpenAI Compatible',
+            id: LABEL_PROVIDER_OPENAI,
+            name: LABEL_OPENAI_COMPATIBLE,
             availableModels: [
               {
-                id: 'provider-openai:openai/gpt-4.1',
-                modelId: 'openai/gpt-4.1',
+                id: LABEL_PROVIDER_OPENAI_OPENAI,
+                modelId: LABEL_OPENAI_GPT,
                 displayName: 'GPT 4.1',
                 groupName: 'OpenAI',
                 capabilities: ['reasoning', 'tools'],
@@ -967,7 +1037,7 @@ describe('CopilotChatPanel composer interactions', () => {
           }),
         ],
         defaultModelRouting: {
-          primaryAssistantModel: 'openai/gpt-4.1',
+          primaryAssistantModel: LABEL_OPENAI_GPT,
         },
       }),
     }))
@@ -991,9 +1061,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请回显本条消息')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     const assistantHeader = rendered.getByTestId('chat-message-assistant-label-1')
     const assistantIcon = rendered.getByTestId('chat-message-assistant-icon-1')
@@ -1043,9 +1113,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请完成后通知我')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForCondition(() => notification.records.length === 1, 'assistant success notification emitted')
 
     expect(notification.records[0]).toEqual({
@@ -1089,9 +1159,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '通知保持关闭')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '这是助手回显')
     await act(async () => {
       await Promise.resolve()
@@ -1135,14 +1205,14 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '失败后通知我')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForCondition(() => notification.records.length === 1, 'assistant failure notification emitted')
 
     expect(notification.records[0]).toEqual({
       title: '助手消息已完成',
-      body: '我可以解释工具失败并继续',
+      body: DESC_CN_028,
       tag: 'run-tool-failed:completed',
     })
 
@@ -1183,9 +1253,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '即使通知失败也继续完成')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '这是助手回显')
     await waitForCondition(() => warnSpy.mock.calls.length === 1, 'assistant notification failure handled')
 
@@ -1240,9 +1310,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '先关闭，完成后再开启')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '这是助手回显')
     expect(notification.records).toHaveLength(0)
 
@@ -1272,6 +1342,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('send feedback and assistant placeholder', () => {
   it('shows an assistant placeholder immediately after send with spinner feedback', async () => {
     const sendMessage = createStartOnlyPendingSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
@@ -1295,15 +1367,15 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请先准备响应')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) !== null,
       'assistant placeholder visible after send',
     )
 
-    const placeholder = rendered.getByTestId('chat-assistant-placeholder')
+    const placeholder = rendered.getByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER)
     expect(placeholder.getAttribute('data-dismiss-reason')).toBe('pending')
     expect(rendered.getByTestId('chat-assistant-placeholder-spinner')).not.toBeNull()
     expect(placeholder.textContent).toContain('助手正在准备响应')
@@ -1338,12 +1410,12 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '历史恢复前先显示即时反馈')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) !== null,
       'assistant placeholder visible while persisted detail still loading',
     )
     await waitForCondition(
@@ -1351,8 +1423,8 @@ describe('CopilotChatPanel composer interactions', () => {
       'persisted loading skeleton hidden when transient content exists',
     )
 
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('历史恢复前先显示即时反馈')
-    expect(rendered.getByTestId('chat-assistant-placeholder').textContent).toContain('助手正在准备响应')
+    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('历史恢复前先显示即时反馈')
+    expect(rendered.getByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER).textContent).toContain('助手正在准备响应')
 
     rendered.unmount()
   })
@@ -1382,13 +1454,13 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '你好')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '这是助手回显')
 
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('你好')
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('这是助手回显')
+    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('你好')
+    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('这是助手回显')
 
     rendered.rerender(
       <CopilotChatPanel
@@ -1408,11 +1480,11 @@ describe('CopilotChatPanel composer interactions', () => {
               runId: 'run-1',
               threadId: 'session-1',
               status: 'completed',
-              createdAt: '2026-04-14T08:00:00Z',
-              updatedAt: '2026-04-14T08:00:03Z',
-              startedAt: '2026-04-14T08:00:01Z',
-              terminalAt: '2026-04-14T08:00:03Z',
-              resolvedModelId: 'openai/gpt-4.1',
+              createdAt: LABEL_2026_14T08_2,
+              updatedAt: LABEL_2026_14T08,
+              startedAt: LABEL_2026_14T08_3,
+              terminalAt: LABEL_2026_14T08,
+              resolvedModelId: LABEL_OPENAI_GPT,
               requestedMessageText: '你好',
               assistantText: '这是助手回显',
             },
@@ -1430,7 +1502,7 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const scrollRegion = rendered.getByTestId('chat-message-scroll-region')
+    const scrollRegion = rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL)
     expect(scrollRegion.textContent).toContain('你好')
     expect(scrollRegion.textContent).toContain('这是助手回显')
     expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
@@ -1469,11 +1541,11 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '旧话题问题')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) !== null,
       'old session placeholder visible before switching topics',
     )
 
@@ -1509,7 +1581,7 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(onSessionRunSettled).toHaveBeenCalledWith('run-1', 'session-1')
     expect(rendered.container.textContent).not.toContain('旧话题问题')
     expect(rendered.container.textContent).not.toContain('旧话题回复')
-    expect(rendered.queryByTestId('chat-assistant-placeholder')).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER)).toBeNull()
 
     rendered.rerender(
       <CopilotChatPanel
@@ -1534,6 +1606,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('transient state and session switching', () => {
   it('keeps session-scoped transient conversation after switching away and back before persisted replay becomes renderable', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
@@ -1559,13 +1633,13 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '你好')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '这是助手回显')
 
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('你好')
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('这是助手回显')
+    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('你好')
+    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('这是助手回显')
 
     rendered.rerender(
       <CopilotChatPanel
@@ -1604,11 +1678,11 @@ describe('CopilotChatPanel composer interactions', () => {
               runId: 'run-1',
               threadId: 'session-1',
               status: 'completed',
-              createdAt: '2026-04-14T08:00:00Z',
-              updatedAt: '2026-04-14T08:00:03Z',
-              startedAt: '2026-04-14T08:00:01Z',
-              terminalAt: '2026-04-14T08:00:03Z',
-              resolvedModelId: 'openai/gpt-4.1',
+              createdAt: LABEL_2026_14T08_2,
+              updatedAt: LABEL_2026_14T08,
+              startedAt: LABEL_2026_14T08_3,
+              terminalAt: LABEL_2026_14T08,
+              resolvedModelId: LABEL_OPENAI_GPT,
               requestedMessageText: '你好',
               assistantText: '这是助手回显',
             },
@@ -1643,7 +1717,7 @@ describe('CopilotChatPanel composer interactions', () => {
       <CopilotChatPanel
         state={createReadyState({
           bootstrapFields: {
-            runtimeUrl: 'http://127.0.0.1:8765',
+            runtimeUrl: LABEL_HTTP_127,
             agentName: null,
             debugModeEnabled: true,
           },
@@ -1665,16 +1739,16 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '你好')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '这是助手回显')
 
     rendered.rerender(
       <CopilotChatPanel
         state={createReadyState({
           bootstrapFields: {
-            runtimeUrl: 'http://127.0.0.1:8765',
+            runtimeUrl: LABEL_HTTP_127,
             agentName: null,
             debugModeEnabled: true,
           },
@@ -1699,7 +1773,7 @@ describe('CopilotChatPanel composer interactions', () => {
       <CopilotChatPanel
         state={createReadyState({
           bootstrapFields: {
-            runtimeUrl: 'http://127.0.0.1:8765',
+            runtimeUrl: LABEL_HTTP_127,
             agentName: null,
             debugModeEnabled: true,
           },
@@ -1719,11 +1793,11 @@ describe('CopilotChatPanel composer interactions', () => {
               runId: 'run-1',
               threadId: 'session-1',
               status: 'completed',
-              createdAt: '2026-04-14T08:00:00Z',
-              updatedAt: '2026-04-14T08:00:03Z',
-              startedAt: '2026-04-14T08:00:01Z',
-              terminalAt: '2026-04-14T08:00:03Z',
-              resolvedModelId: 'openai/gpt-4.1',
+              createdAt: LABEL_2026_14T08_2,
+              updatedAt: LABEL_2026_14T08,
+              startedAt: LABEL_2026_14T08_3,
+              terminalAt: LABEL_2026_14T08,
+              resolvedModelId: LABEL_OPENAI_GPT,
               requestedMessageText: '你好',
               assistantText: '这是助手回显',
             },
@@ -1746,35 +1820,35 @@ describe('CopilotChatPanel composer interactions', () => {
       .map((call) => call[1] as Record<string, unknown>)
 
     const matchingSettledLog = emittedDebugEntries.find((entry) => (
-      entry.scope === 'copilot-chat-panel'
+      entry.scope === SELECTOR_COPILOT_CHAT_PANEL
       && entry.event === 'run-settled-pending-history-sync'
       && entry.sessionId === 'session-1'
       && entry.transientSessionId === 'session-1'
       && entry.runId === 'run-1'
     ))
     const matchingForwardSwitchLog = emittedDebugEntries.find((entry) => (
-      entry.scope === 'copilot-chat-panel'
+      entry.scope === SELECTOR_COPILOT_CHAT_PANEL
       && entry.event === 'session-switch-retained-transient'
       && entry.previousSessionId === 'session-1'
       && entry.nextSessionId === 'session-2'
       && entry.previousTransientConversationLength === 1
     ))
     const matchingCommittedSyncLog = emittedDebugEntries.find((entry) => (
-      entry.scope === 'copilot-chat-panel'
+      entry.scope === SELECTOR_COPILOT_CHAT_PANEL
       && entry.event === 'pending-history-sync-committed'
       && entry.sessionId === 'session-1'
       && entry.pendingRunId === 'run-1'
       && entry.persistedConversationSource === 'summary'
     ))
     const matchingReturnSwitchLog = emittedDebugEntries.find((entry) => (
-      entry.scope === 'copilot-chat-panel'
+      entry.scope === SELECTOR_COPILOT_CHAT_PANEL
       && entry.event === 'session-switch-retained-transient'
       && entry.previousSessionId === 'session-2'
       && entry.nextSessionId === 'session-1'
       && entry.nextTransientConversationLength === 1
     ))
     const matchingWaitingLog = emittedDebugEntries.find((entry) => (
-      entry.scope === 'copilot-chat-panel'
+      entry.scope === SELECTOR_COPILOT_CHAT_PANEL
       && entry.event === 'pending-history-sync-waiting'
       && entry.sessionId === 'session-1'
       && entry.pendingRunId === 'run-1'
@@ -1790,6 +1864,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('assistant placeholder lifecycle', () => {
   it('removes the assistant placeholder when a tool card arrives before assistant text', async () => {
     const toolEventControl = createDeferredSignal()
     const sendMessage = createToolFirstPendingSendMessageSpy(toolEventControl)
@@ -1814,11 +1890,11 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请先查天气再继续')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) !== null,
       'assistant placeholder visible before tool card',
     )
 
@@ -1826,13 +1902,13 @@ describe('CopilotChatPanel composer interactions', () => {
 
     await waitForText(rendered.container, '天气工具调用中')
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) === null,
       'assistant placeholder removed after tool card',
     )
 
     expect(rendered.getByTestId('chat-message-tool-spinner-1')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-message-tool-panel-1')).toBeNull()
-    expect(rendered.container.textContent).not.toContain('正在获取 Shenzhen 的天气。')
+    expect(rendered.queryByTestId(SELECTOR_CHAT_MESSAGE_TOOL)).toBeNull()
+    expect(rendered.container.textContent).not.toContain(DESC_CN_022)
 
     rendered.unmount()
   })
@@ -1860,20 +1936,20 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请直接回答')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) !== null,
       'assistant placeholder visible before assistant text',
     )
     await waitForText(rendered.container, '这是助手回显')
     await waitForCondition(() => {
-      const placeholder = rendered.queryByTestId('chat-assistant-placeholder') as HTMLElement | null
+      const placeholder = rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) as HTMLElement | null
       return placeholder?.className.includes('copilot-chat__message--placeholder-fading') ?? false
     }, 'assistant placeholder fading after assistant text')
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) === null,
       'assistant placeholder removed after assistant text',
     )
 
@@ -1904,11 +1980,11 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请在失败前开始')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) !== null,
       'assistant placeholder visible before failure',
     )
 
@@ -1916,7 +1992,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     await waitForText(rendered.container, '发送失败')
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) === null,
       'assistant placeholder removed after failed run',
     )
 
@@ -1926,6 +2002,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('tool approval interactions', () => {
   it('renders tool approval buttons without waiting callout in manual approval mode', async () => {
     const toolApprovalControl = createDeferredSignal()
     const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl, {
@@ -1957,9 +2035,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请人工审批天气工具')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     toolApprovalControl.release()
 
@@ -1999,9 +2077,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请审批天气工具')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     toolApprovalControl.release()
 
@@ -2048,9 +2126,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请限时审批天气工具')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     toolApprovalControl.release()
 
@@ -2066,6 +2144,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('cancel and tool lifecycle', () => {
   it('does not keep the assistant placeholder after cancelling before any assistant text arrives', async () => {
     const sendMessage = createStartOnlyPendingSendMessageSpy()
     const cancelRun = vi.fn(async (): ReturnType<typeof cancelRuntimeRun> => createRuntimeRunCancelResponse({
@@ -2103,23 +2183,23 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请先开始然后取消')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') !== null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) !== null,
       'assistant placeholder visible before cancellation',
     )
 
-    await clickElement(rendered.getByTestId('chat-composer-send-button'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND))
     await waitForText(rendered.container, '已取消')
     await waitForCondition(
-      () => rendered.queryByTestId('chat-assistant-placeholder') === null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_ASSISTANT_PLACEHOLDER) === null,
       'assistant placeholder removed after cancellation',
     )
 
     expect(cancelRun).toHaveBeenCalledWith({
-      runtimeUrl: 'http://127.0.0.1:8765',
+      runtimeUrl: LABEL_HTTP_127,
       runId: 'run-placeholder-pending',
     })
 
@@ -2149,46 +2229,46 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请先查询天气再回答')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '天气工具被调用')
 
     const textContent = rendered.container.textContent ?? ''
     expect(textContent).toContain('这是助手回显')
-    expect(textContent).not.toContain('正在获取 Shenzhen 的天气。')
-    expect(textContent).not.toContain('Shenzhen：晴 / 24°C / 湿度 60%')
-    expect(textContent).not.toContain('{"location":"Shenzhen"}')
+    expect(textContent).not.toContain(DESC_CN_022)
+    expect(textContent).not.toContain(DESC_CN_045)
+    expect(textContent).not.toContain(LABEL_LOCATION_SHENZHEN)
     expect(textContent.indexOf('天气工具被调用')).toBeLessThan(textContent.indexOf('这是助手回显'))
-    expect(rendered.queryByTestId('chat-message-tool-panel-1')).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_MESSAGE_TOOL)).toBeNull()
     expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--completed')).toHaveLength(1)
-    expect(rendered.getByTestId('chat-message-tool-toggle-1').getAttribute('aria-expanded')).toBe('false')
+    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_TOOL_2).getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('false')
 
-    await clickElement(rendered.getByTestId('chat-message-tool-toggle-1'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_TOOL_2))
     await waitForCondition(
-      () => rendered.queryByTestId('chat-message-tool-panel-1') !== null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_MESSAGE_TOOL) !== null,
       'tool panel visible after expanding card',
     )
 
-    expect(rendered.getByTestId('chat-message-tool-toggle-1').getAttribute('aria-expanded')).toBe('true')
+    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_TOOL_2).getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('true')
     const outputJson = rendered.getByTestId('chat-message-tool-output-1-json')
     expect(outputJson.getAttribute('data-json-viewer')).toMatch(/react18-json-view|fallback/)
     expect(outputJson.getAttribute('data-json-collapsed')).toBe('true')
-    expect(outputJson.textContent).not.toContain('Shenzhen：晴 / 24°C / 湿度 60%')
+    expect(outputJson.textContent).not.toContain(DESC_CN_045)
     expect(rendered.queryByTestId('chat-message-tool-extra-1-1-text')).toBeNull()
     expect(rendered.container.textContent).not.toContain('结果摘要')
-    expect(rendered.container.textContent).not.toContain('Shenzhen：晴 / 24°C / 湿度 60%')
-    expect(rendered.getByTestId('chat-message-tool-input-toggle-1').textContent).toContain('输入')
-    expect(rendered.getByTestId('chat-message-tool-input-toggle-1').getAttribute('aria-expanded')).toBe('false')
+    expect(rendered.container.textContent).not.toContain(DESC_CN_045)
+    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_TOOL_3).textContent).toContain('输入')
+    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_TOOL_3).getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('false')
     expect(rendered.queryByTestId('chat-message-tool-input-panel-1')).toBeNull()
 
-    await clickElement(rendered.getByTestId('chat-message-tool-input-toggle-1'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_TOOL_3))
     await waitForCondition(
       () => rendered.queryByTestId('chat-message-tool-input-panel-1') !== null,
       'tool input panel visible after expanding nested input section',
     )
 
-    expect(rendered.getByTestId('chat-message-tool-input-toggle-1').getAttribute('aria-expanded')).toBe('true')
+    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_TOOL_3).getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('true')
 
     const inputJson = rendered.getByTestId('chat-message-tool-input-1-json')
     expect(inputJson.getAttribute('data-json-viewer')).toMatch(/react18-json-view|fallback/)
@@ -2197,6 +2277,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('tool failure handling', () => {
   it('keeps a failed tool step visible when the runtime emits tool_event failed before run_completed', async () => {
     const sendMessage = createToolFailureSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
@@ -2220,20 +2302,20 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请调用天气工具')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '工具调用失败')
-    await waitForText(rendered.container, '我可以解释工具失败并继续')
+    await waitForText(rendered.container, DESC_CN_028)
 
     expect(rendered.container.textContent).not.toContain('工具执行失败。')
     expect(rendered.container.textContent).not.toContain('发送失败')
-    expect(rendered.container.textContent).toContain('我可以解释工具失败并继续')
+    expect(rendered.container.textContent).toContain(DESC_CN_028)
     expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--failed')).toHaveLength(1)
 
-    await clickElement(rendered.getByTestId('chat-message-tool-toggle-1'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_TOOL_2))
     await waitForCondition(
-      () => rendered.queryByTestId('chat-message-tool-panel-1') !== null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_MESSAGE_TOOL) !== null,
       'failed tool panel visible after expanding card',
     )
 
@@ -2266,19 +2348,19 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    await setFormControlValue(messageInput, '请调用天气工具并处理 fatal 失败')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+    await setFormControlValue(messageInput, DESC_CN_019)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '工具调用失败')
     await waitForText(rendered.container, '发送失败')
-    await waitForText(rendered.container, '当前响应失败，请重试。')
+    await waitForText(rendered.container, DESC_CN_048)
 
     expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--failed')).toHaveLength(1)
-    expect(rendered.container.textContent).not.toContain('我可以解释工具失败并继续')
+    expect(rendered.container.textContent).not.toContain(DESC_CN_028)
 
-    await clickElement(rendered.getByTestId('chat-message-tool-toggle-1'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_TOOL_2))
     await waitForCondition(
-      () => rendered.queryByTestId('chat-message-tool-panel-1') !== null,
+      () => rendered.queryByTestId(SELECTOR_CHAT_MESSAGE_TOOL) !== null,
       'failed tool panel visible after fatal run',
     )
 
@@ -2296,7 +2378,7 @@ describe('CopilotChatPanel composer interactions', () => {
       <CopilotChatPanel
         state={createReadyState({
           bootstrapFields: {
-            runtimeUrl: 'http://127.0.0.1:8765',
+            runtimeUrl: LABEL_HTTP_127,
             agentName: null,
             debugModeEnabled: true,
           },
@@ -2318,17 +2400,17 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    await setFormControlValue(messageInput, '请调用天气工具并处理 fatal 失败')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+    await setFormControlValue(messageInput, DESC_CN_019)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '发送失败')
-    await waitForText(rendered.container, '当前响应失败，请重试。')
+    await waitForText(rendered.container, DESC_CN_048)
 
     rendered.rerender(
       <CopilotChatPanel
         state={createReadyState({
           bootstrapFields: {
-            runtimeUrl: 'http://127.0.0.1:8765',
+            runtimeUrl: LABEL_HTTP_127,
             agentName: null,
             debugModeEnabled: true,
           },
@@ -2343,24 +2425,24 @@ describe('CopilotChatPanel composer interactions', () => {
         sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
           runSummaries: [
             {
-              runId: 'run-tool-then-failed',
+              runId: LABEL_RUN_TOOL_THEN,
               threadId: 'session-1',
               status: 'failed',
-              createdAt: '2026-04-14T08:00:00Z',
-              updatedAt: '2026-04-14T08:00:03Z',
-              startedAt: '2026-04-14T08:00:01Z',
-              terminalAt: '2026-04-14T08:00:03Z',
-              resolvedModelId: 'openai/gpt-4.1',
-              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              createdAt: LABEL_2026_14T08_2,
+              updatedAt: LABEL_2026_14T08,
+              startedAt: LABEL_2026_14T08_3,
+              terminalAt: LABEL_2026_14T08,
+              resolvedModelId: LABEL_OPENAI_GPT,
+              requestedMessageText: DESC_CN_019,
               assistantText: null,
             },
           ],
-          selectedRunId: 'run-tool-then-failed',
+          selectedRunId: LABEL_RUN_TOOL_THEN,
           summary: {
             ...createLiveReadyButEmptyPersistedHistoryState().summary,
-            lastRunId: 'run-tool-then-failed',
+            lastRunId: LABEL_RUN_TOOL_THEN,
             lastRunStatus: 'failed',
-            lastUserMessagePreview: '请调用天气工具并处理 fatal 失败',
+            lastUserMessagePreview: DESC_CN_019,
             lastAssistantMessagePreview: '',
           },
           replayStatus: 'idle',
@@ -2377,13 +2459,13 @@ describe('CopilotChatPanel composer interactions', () => {
     })
 
     expect(rendered.container.textContent).toContain('发送失败')
-    expect(rendered.container.textContent).toContain('当前响应失败，请重试。')
+    expect(rendered.container.textContent).toContain(DESC_CN_048)
 
     rendered.rerender(
       <CopilotChatPanel
         state={createReadyState({
           bootstrapFields: {
-            runtimeUrl: 'http://127.0.0.1:8765',
+            runtimeUrl: LABEL_HTTP_127,
             agentName: null,
             debugModeEnabled: true,
           },
@@ -2398,24 +2480,24 @@ describe('CopilotChatPanel composer interactions', () => {
         sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
           runSummaries: [
             {
-              runId: 'run-tool-then-failed',
+              runId: LABEL_RUN_TOOL_THEN,
               threadId: 'session-1',
               status: 'failed',
-              createdAt: '2026-04-14T08:00:00Z',
-              updatedAt: '2026-04-14T08:00:03Z',
-              startedAt: '2026-04-14T08:00:01Z',
-              terminalAt: '2026-04-14T08:00:03Z',
-              resolvedModelId: 'openai/gpt-4.1',
-              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              createdAt: LABEL_2026_14T08_2,
+              updatedAt: LABEL_2026_14T08,
+              startedAt: LABEL_2026_14T08_3,
+              terminalAt: LABEL_2026_14T08,
+              resolvedModelId: LABEL_OPENAI_GPT,
+              requestedMessageText: DESC_CN_019,
               assistantText: null,
             },
           ],
-          selectedRunId: 'run-tool-then-failed',
+          selectedRunId: LABEL_RUN_TOOL_THEN,
           summary: {
             ...createLiveReadyButEmptyPersistedHistoryState().summary,
-            lastRunId: 'run-tool-then-failed',
+            lastRunId: LABEL_RUN_TOOL_THEN,
             lastRunStatus: 'failed',
-            lastUserMessagePreview: '请调用天气工具并处理 fatal 失败',
+            lastUserMessagePreview: DESC_CN_019,
             lastAssistantMessagePreview: '',
           },
           replayStatus: 'ready',
@@ -2423,26 +2505,26 @@ describe('CopilotChatPanel composer interactions', () => {
             ok: true,
             version: 'chat-history-v1',
             run: {
-              runId: 'run-tool-then-failed',
+              runId: LABEL_RUN_TOOL_THEN,
               threadId: 'session-1',
               status: 'failed',
-              createdAt: '2026-04-14T08:00:00Z',
-              updatedAt: '2026-04-14T08:00:03Z',
-              startedAt: '2026-04-14T08:00:01Z',
-              terminalAt: '2026-04-14T08:00:03Z',
-              resolvedModelId: 'openai/gpt-4.1',
-              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              createdAt: LABEL_2026_14T08_2,
+              updatedAt: LABEL_2026_14T08,
+              startedAt: LABEL_2026_14T08_3,
+              terminalAt: LABEL_2026_14T08,
+              resolvedModelId: LABEL_OPENAI_GPT,
+              requestedMessageText: DESC_CN_019,
               assistantText: null,
             },
             historicalSnapshot: {
-              resolvedModelId: 'openai/gpt-4.1',
+              resolvedModelId: LABEL_OPENAI_GPT,
               resolvedModelRoute: createRuntimeResolvedModelRoute({
                 routeRef: {
-                  routeKind: 'provider-model',
-                  profileId: 'provider-openai',
-                  modelId: 'openai/gpt-4.1',
+                  routeKind: LABEL_PROVIDER_MODEL,
+                  profileId: LABEL_PROVIDER_OPENAI,
+                  modelId: LABEL_OPENAI_GPT,
                 },
-                providerProfileId: 'provider-openai',
+                providerProfileId: LABEL_PROVIDER_OPENAI,
                 provider: 'openai',
                 providerId: 'openai',
                 adapterId: 'openai-chat',
@@ -2450,10 +2532,10 @@ describe('CopilotChatPanel composer interactions', () => {
                 endpointFamily: 'openai',
                 endpointType: 'responses',
                 baseUrl: 'https://api.openai.com/v1',
-                modelId: 'openai/gpt-4.1',
+                modelId: LABEL_OPENAI_GPT,
                 authKind: 'api-key',
               }),
-              resolvedToolIds: ['tool.remote-search'],
+              resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
               requestOptions: {},
             },
             orderedEvents: [
@@ -2462,16 +2544,16 @@ describe('CopilotChatPanel composer interactions', () => {
                 sequence: 2,
                 createdAt: '2026-04-14T08:00:02Z',
                 payload: {
-                  toolCallId: 'tool.remote-search:call-1',
-                  toolId: 'tool.remote-search',
+                  toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+                  toolId: LABEL_TOOL_REMOTE_SEARCH,
                   phase: 'failed',
                   title: '工具调用失败',
                   summary: '工具执行失败。',
-                  inputSummary: '{"location":"Shenzhen"}',
+                  inputSummary: LABEL_LOCATION_SHENZHEN,
                   errorSummary: 'boom',
                 },
-                toolCallId: 'tool.remote-search:call-1',
-                toolId: 'tool.remote-search',
+                toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+                toolId: LABEL_TOOL_REMOTE_SEARCH,
                 phase: 'failed',
                 isRedacted: false,
                 redactionVersion: 0,
@@ -2479,7 +2561,7 @@ describe('CopilotChatPanel composer interactions', () => {
               {
                 eventType: 'run_failed',
                 sequence: 3,
-                createdAt: '2026-04-14T08:00:03Z',
+                createdAt: LABEL_2026_14T08,
                 payload: {
                   code: 'agent_execution_failed',
                   message: 'Model stream collapsed.',
@@ -2500,30 +2582,30 @@ describe('CopilotChatPanel composer interactions', () => {
             availabilityInterpretation: null,
           },
           replayByRunId: {
-            'run-tool-then-failed': {
+            [LABEL_RUN_TOOL_THEN]: {
               ok: true,
               version: 'chat-history-v1',
               run: {
-                runId: 'run-tool-then-failed',
+                runId: LABEL_RUN_TOOL_THEN,
                 threadId: 'session-1',
                 status: 'failed',
-                createdAt: '2026-04-14T08:00:00Z',
-                updatedAt: '2026-04-14T08:00:03Z',
-                startedAt: '2026-04-14T08:00:01Z',
-                terminalAt: '2026-04-14T08:00:03Z',
-                resolvedModelId: 'openai/gpt-4.1',
-                requestedMessageText: '请调用天气工具并处理 fatal 失败',
+                createdAt: LABEL_2026_14T08_2,
+                updatedAt: LABEL_2026_14T08,
+                startedAt: LABEL_2026_14T08_3,
+                terminalAt: LABEL_2026_14T08,
+                resolvedModelId: LABEL_OPENAI_GPT,
+                requestedMessageText: DESC_CN_019,
                 assistantText: null,
               },
               historicalSnapshot: {
-                resolvedModelId: 'openai/gpt-4.1',
+                resolvedModelId: LABEL_OPENAI_GPT,
                 resolvedModelRoute: createRuntimeResolvedModelRoute({
                   routeRef: {
-                    routeKind: 'provider-model',
-                    profileId: 'provider-openai',
-                    modelId: 'openai/gpt-4.1',
+                    routeKind: LABEL_PROVIDER_MODEL,
+                    profileId: LABEL_PROVIDER_OPENAI,
+                    modelId: LABEL_OPENAI_GPT,
                   },
-                  providerProfileId: 'provider-openai',
+                  providerProfileId: LABEL_PROVIDER_OPENAI,
                   provider: 'openai',
                   providerId: 'openai',
                   adapterId: 'openai-chat',
@@ -2531,10 +2613,10 @@ describe('CopilotChatPanel composer interactions', () => {
                   endpointFamily: 'openai',
                   endpointType: 'responses',
                   baseUrl: 'https://api.openai.com/v1',
-                  modelId: 'openai/gpt-4.1',
+                  modelId: LABEL_OPENAI_GPT,
                   authKind: 'api-key',
                 }),
-                resolvedToolIds: ['tool.remote-search'],
+                resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
                 requestOptions: {},
               },
               orderedEvents: [
@@ -2543,16 +2625,16 @@ describe('CopilotChatPanel composer interactions', () => {
                   sequence: 2,
                   createdAt: '2026-04-14T08:00:02Z',
                   payload: {
-                    toolCallId: 'tool.remote-search:call-1',
-                    toolId: 'tool.remote-search',
+                    toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+                    toolId: LABEL_TOOL_REMOTE_SEARCH,
                     phase: 'failed',
                     title: '工具调用失败',
                     summary: '工具执行失败。',
-                    inputSummary: '{"location":"Shenzhen"}',
+                    inputSummary: LABEL_LOCATION_SHENZHEN,
                     errorSummary: 'boom',
                   },
-                  toolCallId: 'tool.remote-search:call-1',
-                  toolId: 'tool.remote-search',
+                  toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+                  toolId: LABEL_TOOL_REMOTE_SEARCH,
                   phase: 'failed',
                   isRedacted: false,
                   redactionVersion: 0,
@@ -2560,7 +2642,7 @@ describe('CopilotChatPanel composer interactions', () => {
                 {
                   eventType: 'run_failed',
                   sequence: 3,
-                  createdAt: '2026-04-14T08:00:03Z',
+                  createdAt: LABEL_2026_14T08,
                   payload: {
                     code: 'agent_execution_failed',
                     message: 'Model stream collapsed.',
@@ -2592,11 +2674,13 @@ describe('CopilotChatPanel composer interactions', () => {
     })
 
     expect(rendered.container.textContent).toContain('发送失败')
-    expect(rendered.container.textContent).toContain('当前响应失败，请重试。')
+    expect(rendered.container.textContent).toContain(DESC_CN_048)
 
     rendered.unmount()
   })
 
+  })
+  describe('send error handling', () => {
   it('keeps failed sends as echoed user messages plus an error turn', async () => {
     const sendMessage = vi.fn(async function* () {
       yield* []
@@ -2626,9 +2710,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请使用不存在的工具')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     expect(rendered.container.textContent).toContain('请使用不存在的工具')
     expect(rendered.container.textContent).toContain('发送失败')
@@ -2636,13 +2720,15 @@ describe('CopilotChatPanel composer interactions', () => {
 
     await clickElement(rendered.getByTestId('chat-message-error-detail-button-1'))
 
-    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('当前所选工具暂不可用，请调整后重试。')
-    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('tool_not_found')
-    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('run/start')
+    expect(rendered.getByTestId(LABEL_ERROR_DETAIL_OVERLAY).textContent).toContain('当前所选工具暂不可用，请调整后重试。')
+    expect(rendered.getByTestId(LABEL_ERROR_DETAIL_OVERLAY).textContent).toContain('tool_not_found')
+    expect(rendered.getByTestId(LABEL_ERROR_DETAIL_OVERLAY).textContent).toContain('run/start')
 
     rendered.unmount()
   })
 
+  })
+  describe('inline form validation and submission', () => {
   it('prevents inline form submission when local validation fails', async () => {
     const sendMessage = vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
       {
@@ -2659,13 +2745,13 @@ describe('CopilotChatPanel composer interactions', () => {
         sessionId: input.sessionId,
         sequence: 2,
         payload: {
-          toolCallId: 'tool.request-user-form:call-1',
-          toolId: 'tool.request-user-form',
+          toolCallId: LABEL_TOOL_REQUEST_USER,
+          toolId: LABEL_TOOL_REQUEST_USER_2,
           phase: 'completed',
           title: '请求课程表单',
           summary: '请填写课程编码。',
           formRequest: {
-            formId: 'course-form',
+            formId: LABEL_COURSE_FORM,
             title: '请求课程表单',
             submitLabel: '提交',
             fields: [{
@@ -2684,10 +2770,10 @@ describe('CopilotChatPanel composer interactions', () => {
         sequence: 3,
         payload: {
           code: 'awaiting_user_input',
-          message: 'Run interrupted until the user submits the requested form.',
+          message: LABEL_RUN_INTERRUPTED_UNTIL,
           details: {
-            toolId: 'tool.request-user-form',
-            toolCallId: 'tool.request-user-form:call-1',
+            toolId: LABEL_TOOL_REQUEST_USER_2,
+            toolCallId: LABEL_TOOL_REQUEST_USER,
           },
         },
       },
@@ -2711,11 +2797,11 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '需要课程筛选条件')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
-    await clickElement(rendered.getByTestId('chat-message-inline-form-submit-1'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_INLINE))
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(rendered.getByTestId('chat-message-inline-form-error-courseCode-1').textContent).toContain('此项为必填。')
@@ -2739,13 +2825,13 @@ describe('CopilotChatPanel composer interactions', () => {
           sessionId: input.sessionId,
           sequence: 2,
           payload: {
-            toolCallId: 'tool.request-user-form:call-1',
-            toolId: 'tool.request-user-form',
+            toolCallId: LABEL_TOOL_REQUEST_USER,
+            toolId: LABEL_TOOL_REQUEST_USER_2,
             phase: 'completed',
             title: '请求课程表单',
             summary: '请填写课程编码。',
             formRequest: {
-              formId: 'course-form',
+              formId: LABEL_COURSE_FORM,
               title: '请求课程表单',
               submitLabel: '提交',
               fields: [{
@@ -2764,10 +2850,10 @@ describe('CopilotChatPanel composer interactions', () => {
           sequence: 3,
           payload: {
             code: 'awaiting_user_input',
-            message: 'Run interrupted until the user submits the requested form.',
+            message: LABEL_RUN_INTERRUPTED_UNTIL,
             details: {
-              toolId: 'tool.request-user-form',
-              toolCallId: 'tool.request-user-form:call-1',
+              toolId: LABEL_TOOL_REQUEST_USER_2,
+              toolCallId: LABEL_TOOL_REQUEST_USER,
             },
           },
         },
@@ -2800,7 +2886,7 @@ describe('CopilotChatPanel composer interactions', () => {
           payload: {
             assistantMessageId: 'run-inline-form-second:assistant',
             assistantText: '已收到课程编码。',
-            resolvedModelId: 'openai/gpt-4.1',
+            resolvedModelId: LABEL_OPENAI_GPT,
             resolvedModelRoute: createRuntimeResolvedModelRoute(),
             resolvedToolIds: [],
             requestOptions: {},
@@ -2827,22 +2913,22 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '需要课程筛选条件')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     const field = rendered.getByTestId('chat-message-inline-form-field-courseCode-1').querySelector('input') as HTMLInputElement
     await setFormControlValue(field, 'CS304')
-    await clickElement(rendered.getByTestId('chat-message-inline-form-submit-1'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_INLINE))
 
     expect(sendMessage).toHaveBeenCalledTimes(2)
     expect(sendMessage.mock.calls[1]?.[0].message).toMatchObject({
       content: '已提交表单：请求课程表单\n课程编码: CS304',
       structuredPayload: {
         type: 'inline_form_submission',
-        toolId: 'tool.request-user-form',
-        toolCallId: 'tool.request-user-form:call-1',
-        formId: 'course-form',
+        toolId: LABEL_TOOL_REQUEST_USER_2,
+        toolCallId: LABEL_TOOL_REQUEST_USER,
+        formId: LABEL_COURSE_FORM,
         values: {
           courseCode: 'CS304',
         },
@@ -2850,10 +2936,12 @@ describe('CopilotChatPanel composer interactions', () => {
     })
     expect(rendered.queryByTestId('chat-message-inline-form-readonly-1')).toBeNull()
     expect(rendered.getByTestId('chat-message-inline-form-value-courseCode-1').textContent).toContain('CS304')
-    expect(rendered.queryByTestId('chat-message-inline-form-submit-1')).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_MESSAGE_INLINE)).toBeNull()
     rendered.unmount()
   })
 
+  })
+  describe('inline form state management', () => {
   it('keeps the composer enabled while an inline form is pending and expires the old form after a normal send', async () => {
     const sendMessage = vi.fn()
       .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
@@ -2871,13 +2959,13 @@ describe('CopilotChatPanel composer interactions', () => {
           sessionId: input.sessionId,
           sequence: 2,
           payload: {
-            toolCallId: 'tool.request-user-form:call-1',
-            toolId: 'tool.request-user-form',
+            toolCallId: LABEL_TOOL_REQUEST_USER,
+            toolId: LABEL_TOOL_REQUEST_USER_2,
             phase: 'completed',
             title: '请求课程表单',
             summary: '请填写课程编码。',
             formRequest: {
-              formId: 'course-form',
+              formId: LABEL_COURSE_FORM,
               title: '请求课程表单',
               submitLabel: '提交',
               fields: [{
@@ -2896,10 +2984,10 @@ describe('CopilotChatPanel composer interactions', () => {
           sequence: 3,
           payload: {
             code: 'awaiting_user_input',
-            message: 'Run interrupted until the user submits the requested form.',
+            message: LABEL_RUN_INTERRUPTED_UNTIL,
             details: {
-              toolId: 'tool.request-user-form',
-              toolCallId: 'tool.request-user-form:call-1',
+              toolId: LABEL_TOOL_REQUEST_USER_2,
+              toolCallId: LABEL_TOOL_REQUEST_USER,
             },
           },
         },
@@ -2932,7 +3020,7 @@ describe('CopilotChatPanel composer interactions', () => {
           payload: {
             assistantMessageId: 'run-inline-form-bypass:assistant',
             assistantText: '收到说明，继续普通对话。',
-            resolvedModelId: 'openai/gpt-4.1',
+            resolvedModelId: LABEL_OPENAI_GPT,
             resolvedModelRoute: createRuntimeResolvedModelRoute(),
             resolvedToolIds: [],
             requestOptions: {},
@@ -2958,12 +3046,12 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+    const composer = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement
     await setFormControlValue(messageInput, '需要课程筛选条件')
     await submitForm(composer)
 
-    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const sendButton = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND) as HTMLButtonElement
     expect(rendered.getByTestId('chat-message-inline-form-card-1').textContent).toContain('填写后继续')
     expect(messageInput.disabled).toBe(false)
     expect(rendered.container.textContent).toContain('需要你补充信息')
@@ -2977,7 +3065,7 @@ describe('CopilotChatPanel composer interactions', () => {
       content: '先不用表单，直接说明原因',
     })
     expect(rendered.getByTestId('chat-message-inline-form-expired-1').textContent).toContain('该表单已过期，不能继续提交。')
-    expect(rendered.queryByTestId('chat-message-inline-form-submit-1')).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_MESSAGE_INLINE)).toBeNull()
     rendered.unmount()
   })
 
@@ -2996,11 +3084,11 @@ describe('CopilotChatPanel composer interactions', () => {
           selectedModelId: 'provider-model|openrouter|openai%2Fgpt-4.1',
           selectedModelRoute: createRuntimeModelRoute({
             providerProfileId: 'openrouter',
-            modelId: 'openai/gpt-4.1',
+            modelId: LABEL_OPENAI_GPT,
             routeRef: {
-              routeKind: 'provider-model',
+              routeKind: LABEL_PROVIDER_MODEL,
               profileId: 'openrouter',
-              modelId: 'openai/gpt-4.1',
+              modelId: LABEL_OPENAI_GPT,
             },
           }),
         },
@@ -3014,26 +3102,26 @@ describe('CopilotChatPanel composer interactions', () => {
         runState: {
           ...firstSessionState.runState,
           phase: 'awaiting_input',
-          runId: 'run-inline-form-switch',
+          runId: LABEL_RUN_INLINE_FORM,
           threadId: firstSessionShell.sessionId,
           failure: {
             code: 'awaiting_user_input',
-            message: 'Run interrupted until the user submits the requested form.',
+            message: LABEL_RUN_INTERRUPTED_UNTIL,
             details: {
-              toolId: 'tool.request-user-form',
-              toolCallId: 'tool.request-user-form:call-1',
+              toolId: LABEL_TOOL_REQUEST_USER_2,
+              toolCallId: LABEL_TOOL_REQUEST_USER,
             },
           },
           segments: [{
             id: 'inline-form:run-inline-form-switch:tool.request-user-form:call-1',
             kind: 'inline-form',
-            runId: 'run-inline-form-switch',
+            runId: LABEL_RUN_INLINE_FORM,
             startedSequence: 1,
             lastSequence: 1,
             status: 'completed',
-            toolCallId: 'tool.request-user-form:call-1',
-            toolId: 'tool.request-user-form',
-            formId: 'course-form',
+            toolCallId: LABEL_TOOL_REQUEST_USER,
+            toolId: LABEL_TOOL_REQUEST_USER_2,
+            formId: LABEL_COURSE_FORM,
             title: '请求课程表单',
             summary: '请填写课程编码。',
             description: null,
@@ -3059,11 +3147,11 @@ describe('CopilotChatPanel composer interactions', () => {
           selectedModelId: 'provider-model|openrouter|openai%2Fgpt-4.1',
           selectedModelRoute: createRuntimeModelRoute({
             providerProfileId: 'openrouter',
-            modelId: 'openai/gpt-4.1',
+            modelId: LABEL_OPENAI_GPT,
             routeRef: {
-              routeKind: 'provider-model',
+              routeKind: LABEL_PROVIDER_MODEL,
               profileId: 'openrouter',
-              modelId: 'openai/gpt-4.1',
+              modelId: LABEL_OPENAI_GPT,
             },
           }),
         },
@@ -3084,21 +3172,21 @@ describe('CopilotChatPanel composer interactions', () => {
           summary: {
             ...createLiveReadyButEmptyPersistedHistoryState().summary,
             threadId: firstSessionShell.sessionId,
-            lastRunId: 'run-inline-form-switch',
+            lastRunId: LABEL_RUN_INLINE_FORM,
             lastRunStatus: 'failed',
             lastUserMessagePreview: '需要课程筛选条件',
             lastAssistantMessagePreview: '请填写课程编码。',
           },
-          selectedRunId: 'run-inline-form-switch',
+          selectedRunId: LABEL_RUN_INLINE_FORM,
           runSummaries: [{
-            runId: 'run-inline-form-switch',
+            runId: LABEL_RUN_INLINE_FORM,
             threadId: firstSessionShell.sessionId,
             status: 'failed',
-            createdAt: '2026-04-14T08:00:00Z',
-            updatedAt: '2026-04-14T08:00:03Z',
-            startedAt: '2026-04-14T08:00:01Z',
-            terminalAt: '2026-04-14T08:00:03Z',
-            resolvedModelId: 'openai/gpt-4.1',
+            createdAt: LABEL_2026_14T08_2,
+            updatedAt: LABEL_2026_14T08,
+            startedAt: LABEL_2026_14T08_3,
+            terminalAt: LABEL_2026_14T08,
+            resolvedModelId: LABEL_OPENAI_GPT,
             requestedMessageText: '需要课程筛选条件',
             assistantText: '请填写课程编码。',
           }],
@@ -3160,21 +3248,21 @@ describe('CopilotChatPanel composer interactions', () => {
           summary: {
             ...createLiveReadyButEmptyPersistedHistoryState().summary,
             threadId: firstSessionShell.sessionId,
-            lastRunId: 'run-inline-form-switch',
+            lastRunId: LABEL_RUN_INLINE_FORM,
             lastRunStatus: 'failed',
             lastUserMessagePreview: '需要课程筛选条件',
             lastAssistantMessagePreview: '请填写课程编码。',
           },
-          selectedRunId: 'run-inline-form-switch',
+          selectedRunId: LABEL_RUN_INLINE_FORM,
           runSummaries: [{
-            runId: 'run-inline-form-switch',
+            runId: LABEL_RUN_INLINE_FORM,
             threadId: firstSessionShell.sessionId,
             status: 'failed',
-            createdAt: '2026-04-14T08:00:00Z',
-            updatedAt: '2026-04-14T08:00:03Z',
-            startedAt: '2026-04-14T08:00:01Z',
-            terminalAt: '2026-04-14T08:00:03Z',
-            resolvedModelId: 'openai/gpt-4.1',
+            createdAt: LABEL_2026_14T08_2,
+            updatedAt: LABEL_2026_14T08,
+            startedAt: LABEL_2026_14T08_3,
+            terminalAt: LABEL_2026_14T08,
+            resolvedModelId: LABEL_OPENAI_GPT,
             requestedMessageText: '需要课程筛选条件',
             assistantText: '请填写课程编码。',
           }],
@@ -3189,7 +3277,7 @@ describe('CopilotChatPanel composer interactions', () => {
     })
 
     const fieldAfterReturn = rendered.container.querySelector('[data-testid^="chat-message-inline-form-field-courseCode-"] input') as HTMLInputElement
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     expect(fieldAfterReturn).not.toBeNull()
     expect(fieldAfterReturn.disabled).toBe(false)
     expect(messageInput.disabled).toBe(false)
@@ -3216,13 +3304,13 @@ describe('CopilotChatPanel composer interactions', () => {
         sessionId: input.sessionId,
         sequence: 2,
         payload: {
-          toolCallId: 'tool.request-user-form:call-1',
-          toolId: 'tool.request-user-form',
+          toolCallId: LABEL_TOOL_REQUEST_USER,
+          toolId: LABEL_TOOL_REQUEST_USER_2,
           phase: 'completed',
           title: '请求课程表单',
           summary: '请填写课程编码。',
           formRequest: {
-            formId: 'course-form',
+            formId: LABEL_COURSE_FORM,
             title: '请求课程表单',
             fields: [{
               name: 'courseCode',
@@ -3240,7 +3328,7 @@ describe('CopilotChatPanel composer interactions', () => {
         sequence: 3,
         payload: {
           code: 'awaiting_user_input',
-          message: 'Run interrupted until the user submits the requested form.',
+          message: LABEL_RUN_INTERRUPTED_UNTIL,
           details: {},
         },
       },
@@ -3264,9 +3352,9 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '需要课程筛选条件')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     const cardText = rendered.getByTestId('chat-message-inline-form-card-1').textContent ?? ''
     expect(cardText).not.toContain('fieldCount')
@@ -3275,6 +3363,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('thread drift and rebinding', () => {
   it('displays legacy-unsupported provider validation in the chat area without a composer error bar', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
@@ -3329,26 +3419,26 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
-    const scrollRegion = rendered.getByTestId('chat-message-scroll-region') as HTMLDivElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+    const sendButton = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND) as HTMLButtonElement
+    const scrollRegion = rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL) as HTMLDivElement
     await setFormControlValue(messageInput, '请执行一次真实流式对话')
 
     expect(sendButton.disabled).toBe(true)
-    expect(sendButton.title).toBe('当前模型暂不可用于聊天。')
+    expect(sendButton.title).toBe(DESC_CN_038)
 
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
 
     expect(sendMessage).toHaveBeenCalledTimes(0)
-    expect(scrollRegion.textContent).toContain('当前模型暂不可用于聊天。')
+    expect(scrollRegion.textContent).toContain(DESC_CN_038)
     expect(rendered.container.querySelector('.copilot-chat__composer .copilot-panel__error')).toBeNull()
 
     await clickElement(rendered.getByTestId('chat-message-error-detail-button-0'))
 
-    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('当前模型暂不可用于聊天。')
-    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('selected_model_unavailable')
-    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('工具 / 模型上下文')
-    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('模型gpt-5.4')
+    expect(rendered.getByTestId(LABEL_ERROR_DETAIL_OVERLAY).textContent).toContain(DESC_CN_038)
+    expect(rendered.getByTestId(LABEL_ERROR_DETAIL_OVERLAY).textContent).toContain('selected_model_unavailable')
+    expect(rendered.getByTestId(LABEL_ERROR_DETAIL_OVERLAY).textContent).toContain('工具 / 模型上下文')
+    expect(rendered.getByTestId(LABEL_ERROR_DETAIL_OVERLAY).textContent).toContain('模型gpt-5.4')
 
     rendered.unmount()
   })
@@ -3379,17 +3469,17 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const composer = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+    const sendButton = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND) as HTMLButtonElement
     await setFormControlValue(messageInput, '继续这个历史线程')
 
-    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('当前配置与历史线程存在差异')
-    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史模型')
-    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('legacy-model')
-    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史工具')
-    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('tool.remote-search')
-    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史思考')
+    expect(rendered.getByTestId(SELECTOR_CHAT_HISTORY_DRIFT).textContent).toContain('当前配置与历史线程存在差异')
+    expect(rendered.getByTestId(SELECTOR_CHAT_HISTORY_DRIFT).textContent).toContain('历史模型')
+    expect(rendered.getByTestId(SELECTOR_CHAT_HISTORY_DRIFT).textContent).toContain(LABEL_LEGACY_MODEL)
+    expect(rendered.getByTestId(SELECTOR_CHAT_HISTORY_DRIFT).textContent).toContain('历史工具')
+    expect(rendered.getByTestId(SELECTOR_CHAT_HISTORY_DRIFT).textContent).toContain(LABEL_TOOL_REMOTE_SEARCH)
+    expect(rendered.getByTestId(SELECTOR_CHAT_HISTORY_DRIFT).textContent).toContain('历史思考')
     expect(rendered.getByTestId('chat-history-drift-warning-list').textContent).toContain('历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。')
     expect(sendButton.disabled).toBe(true)
     expect(sendButton.title).toBe('历史线程依赖已变化，请先显式重新绑定当前配置后再继续。')
@@ -3409,9 +3499,9 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
       modelRoute: {
         routeRef: {
-          routeKind: 'provider-model',
+          routeKind: LABEL_PROVIDER_MODEL,
           profileId: 'openrouter',
-          modelId: 'openai/gpt-4.1',
+          modelId: LABEL_OPENAI_GPT,
         },
       },
       message: {
@@ -3454,12 +3544,12 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const composer = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+    const sendButton = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND) as HTMLButtonElement
     await setFormControlValue(messageInput, '恢复后直接继续聊天')
 
-    expect(rendered.queryByTestId('chat-history-drift-notice')).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_HISTORY_DRIFT)).toBeNull()
     expect(rendered.queryByTestId('chat-history-run-selector-label')).toBeNull()
     expect(sendButton.disabled).toBe(false)
     expect(sendButton.title).toBe('发送消息')
@@ -3477,6 +3567,8 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  })
+  describe('history continuation and cancel', () => {
   it('allows a subsequent successful send after a legacy-provider validation failure and clears the stale error message', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = vi.fn(async () => ({
@@ -3505,12 +3597,12 @@ describe('CopilotChatPanel composer interactions', () => {
             ],
           }),
           createProviderProfile({
-            id: 'provider-openai',
-            name: 'OpenAI Compatible',
+            id: LABEL_PROVIDER_OPENAI,
+            name: LABEL_OPENAI_COMPATIBLE,
             availableModels: [
               {
-                id: 'provider-openai:openai/gpt-4.1',
-                modelId: 'openai/gpt-4.1',
+                id: LABEL_PROVIDER_OPENAI_OPENAI,
+                modelId: LABEL_OPENAI_GPT,
                 displayName: 'GPT 4.1',
                 groupName: 'OpenAI',
                 capabilities: ['reasoning', 'tools'],
@@ -3548,23 +3640,23 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    const scrollRegion = rendered.getByTestId('chat-message-scroll-region') as HTMLDivElement
+    const composer = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+    const scrollRegion = rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL) as HTMLDivElement
     await setFormControlValue(messageInput, '第一次先触发不支持路由错误')
     await submitForm(composer)
 
-    expect(scrollRegion.textContent).toContain('当前模型暂不可用于聊天。')
+    expect(scrollRegion.textContent).toContain(DESC_CN_038)
     expect(rendered.container.querySelector('.copilot-chat__composer .copilot-panel__error')).toBeNull()
 
-    await clickElement(rendered.getByTestId('chat-model-picker-trigger'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_MODEL_PICKER))
     await clickElement(rendered.getByTestId('chat-model-option-provider-openai-provider-openai:openai/gpt-4.1'))
     await setFormControlValue(messageInput, '第二次发送应恢复成功')
     await submitForm(composer)
     await waitForText(rendered.container, '这是助手回显')
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
-    expect(scrollRegion.textContent).not.toContain('当前模型暂不可用于聊天。')
+    expect(scrollRegion.textContent).not.toContain(DESC_CN_038)
     expect(scrollRegion.textContent).toContain('第二次发送应恢复成功')
     expect(scrollRegion.textContent).toContain('这是助手回显')
 
@@ -3575,7 +3667,7 @@ describe('CopilotChatPanel composer interactions', () => {
     const sendMessage = createAbortableSendMessageSpy()
     const cancelRun = vi.fn(async (): ReturnType<typeof cancelRuntimeRun> => createRuntimeRunCancelResponse({
       run: {
-        runId: 'run-cancel',
+        runId: LABEL_RUN_CANCEL,
         threadId: 'session-1',
         status: 'cancelling',
         createdAt: '2026-03-27T10:00:00Z',
@@ -3608,13 +3700,13 @@ describe('CopilotChatPanel composer interactions', () => {
       await Promise.resolve()
     })
 
-    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请开始并允许我取消')
 
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
     await waitForText(rendered.container, '第一段')
 
-    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    const sendButton = rendered.getByTestId(SELECTOR_CHAT_COMPOSER_SEND) as HTMLButtonElement
     expect(sendButton.title).toBe('取消当前响应')
     expect(sendButton.type).toBe('button')
     expect(messageInput.disabled).toBe(false)
@@ -3638,8 +3730,8 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(cancelRun).toHaveBeenCalledWith({
-      runtimeUrl: 'http://127.0.0.1:8765',
-      runId: 'run-cancel',
+      runtimeUrl: LABEL_HTTP_127,
+      runId: LABEL_RUN_CANCEL,
     })
     expect(sendMessage.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal)
     expect(rendered.container.textContent).toContain('已取消')
@@ -3651,6 +3743,8 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(rendered.container.querySelectorAll('.copilot-chat__message--tool.copilot-chat__message--cancelled')).toHaveLength(1)
 
     rendered.unmount()
+  })
+
   })
 })
 
@@ -3693,11 +3787,11 @@ function createToolFirstPendingSendMessageSpy(control: DeferredSignal) {
       sequence: 2,
       payload: {
         toolCallId: 'tool.remote-search:call-placeholder',
-        toolId: 'tool.remote-search',
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         phase: 'started',
         title: '调用天气工具',
-        summary: '正在获取 Shenzhen 的天气。',
-        inputSummary: '{"location":"Shenzhen"}',
+        summary: DESC_CN_022,
+        inputSummary: LABEL_LOCATION_SHENZHEN,
       },
     })
 
@@ -3759,7 +3853,7 @@ function createFailedBeforeAssistantSendMessageSpy(control: DeferredSignal) {
         code: 'tool_execution_failed',
         message: 'Tool failed: boom',
         details: {
-          toolId: 'tool.remote-search',
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
         },
       },
     }
@@ -3769,9 +3863,9 @@ function createFailedBeforeAssistantSendMessageSpy(control: DeferredSignal) {
 function createResolvedSendMessageSpy() {
   return vi.fn((input: CopilotMessageDispatchInput) => {
     const routeRef = input.modelRoute.routeRef ?? {
-      routeKind: 'provider-model' as const,
-      profileId: 'unknown-profile',
-      modelId: 'unknown-model',
+      routeKind: LABEL_PROVIDER_MODEL as const,
+      profileId: LABEL_UNKNOWN_PROFILE,
+      modelId: LABEL_UNKNOWN_MODEL,
     }
 
     return createRuntimeMessageEventStream([
@@ -3810,10 +3904,10 @@ function createResolvedSendMessageSpy() {
             providerId: 'openai',
             adapterId: 'openai',
             endpointFamily: 'openai',
-            endpointType: 'openai-compatible',
-            baseUrl: 'https://api.example.com/v1',
+            endpointType: LABEL_OPENAI_COMPATIBLE_2,
+            baseUrl: LABEL_HTTPS_API_EXAMPLE,
             modelId: routeRef.modelId,
-            catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+            catalogRevision: input.modelRoute.catalogRevision ?? LABEL_2026,
           }),
           resolvedToolIds: input.enabledTools,
           requestOptions: input.requestOptions ?? {},
@@ -3834,9 +3928,9 @@ function createDeferredResolvedSendMessageSpy(
     input: CopilotMessageDispatchInput,
   ): AsyncGenerator<RuntimeRunEvent> {
     const routeRef = input.modelRoute.routeRef ?? {
-      routeKind: 'provider-model' as const,
-      profileId: 'unknown-profile',
-      modelId: 'unknown-model',
+      routeKind: LABEL_PROVIDER_MODEL as const,
+      profileId: LABEL_UNKNOWN_PROFILE,
+      modelId: LABEL_UNKNOWN_MODEL,
     }
     const runId = overrides.runId ?? 'run-1'
     const assistantText = overrides.assistantText ?? '这是助手回显'
@@ -3878,10 +3972,10 @@ function createDeferredResolvedSendMessageSpy(
           providerId: 'openai',
           adapterId: 'openai',
           endpointFamily: 'openai',
-          endpointType: 'openai-compatible',
-          baseUrl: 'https://api.example.com/v1',
+          endpointType: LABEL_OPENAI_COMPATIBLE_2,
+          baseUrl: LABEL_HTTPS_API_EXAMPLE,
           modelId: routeRef.modelId,
-          catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+          catalogRevision: input.modelRoute.catalogRevision ?? LABEL_2026,
         }),
         resolvedToolIds: input.enabledTools,
         requestOptions: input.requestOptions ?? {},
@@ -3893,15 +3987,15 @@ function createDeferredResolvedSendMessageSpy(
 function createToolLifecycleSendMessageSpy() {
   return vi.fn((input: CopilotMessageDispatchInput) => {
     const routeRef = input.modelRoute.routeRef ?? {
-      routeKind: 'provider-model' as const,
-      profileId: 'unknown-profile',
-      modelId: 'unknown-model',
+      routeKind: LABEL_PROVIDER_MODEL as const,
+      profileId: LABEL_UNKNOWN_PROFILE,
+      modelId: LABEL_UNKNOWN_MODEL,
     }
 
     return createRuntimeMessageEventStream([
       {
         type: 'run_started',
-        runId: 'run-tool-success',
+        runId: LABEL_RUN_TOOL_SUCCESS,
         sessionId: input.sessionId,
         sequence: 1,
         payload: {
@@ -3909,35 +4003,35 @@ function createToolLifecycleSendMessageSpy() {
         },
       },
       createRuntimeToolEvent({
-        runId: 'run-tool-success',
+        runId: LABEL_RUN_TOOL_SUCCESS,
         sessionId: input.sessionId,
         sequence: 2,
         payload: {
-          toolCallId: 'tool.remote-search:call-1',
-          toolId: 'tool.remote-search',
+          toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
           phase: 'started',
           title: '调用天气工具',
-          summary: '正在获取 Shenzhen 的天气。',
-          inputSummary: '{"location":"Shenzhen"}',
+          summary: DESC_CN_022,
+          inputSummary: LABEL_LOCATION_SHENZHEN,
         },
       }),
       createRuntimeToolEvent({
-        runId: 'run-tool-success',
+        runId: LABEL_RUN_TOOL_SUCCESS,
         sessionId: input.sessionId,
         sequence: 3,
         payload: {
-          toolCallId: 'tool.remote-search:call-1',
-          toolId: 'tool.remote-search',
+          toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
           phase: 'completed',
           title: '天气工具已返回结果',
           summary: '{\n  "condition": "晴",\n  "humidity": 60,\n  "location": "Shenzhen",\n  "summary": "体感舒适，适合外出。",\n  "temperatureC": 24\n}',
-          inputSummary: '{"location":"Shenzhen"}',
-          resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+          inputSummary: LABEL_LOCATION_SHENZHEN,
+          resultSummary: DESC_CN_045,
         },
       }),
       {
         type: 'text_delta',
-        runId: 'run-tool-success',
+        runId: LABEL_RUN_TOOL_SUCCESS,
         sessionId: input.sessionId,
         sequence: 4,
         payload: {
@@ -3947,7 +4041,7 @@ function createToolLifecycleSendMessageSpy() {
       },
       {
         type: 'run_completed',
-        runId: 'run-tool-success',
+        runId: LABEL_RUN_TOOL_SUCCESS,
         sessionId: input.sessionId,
         sequence: 5,
         payload: {
@@ -3961,12 +4055,12 @@ function createToolLifecycleSendMessageSpy() {
             providerId: 'openai',
             adapterId: 'openai',
             endpointFamily: 'openai',
-            endpointType: 'openai-compatible',
-            baseUrl: 'https://api.example.com/v1',
+            endpointType: LABEL_OPENAI_COMPATIBLE_2,
+            baseUrl: LABEL_HTTPS_API_EXAMPLE,
             modelId: routeRef.modelId,
-            catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+            catalogRevision: input.modelRoute.catalogRevision ?? LABEL_2026,
           }),
-          resolvedToolIds: ['tool.remote-search'],
+          resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
           requestOptions: input.requestOptions ?? {},
         },
       },
@@ -3977,15 +4071,15 @@ function createToolLifecycleSendMessageSpy() {
 function createToolFailureSendMessageSpy() {
   return vi.fn((input: CopilotMessageDispatchInput) => {
     const routeRef = input.modelRoute.routeRef ?? {
-      routeKind: 'provider-model' as const,
-      profileId: 'unknown-profile',
-      modelId: 'unknown-model',
+      routeKind: LABEL_PROVIDER_MODEL as const,
+      profileId: LABEL_UNKNOWN_PROFILE,
+      modelId: LABEL_UNKNOWN_MODEL,
     }
 
     return createRuntimeMessageEventStream([
       {
         type: 'run_started',
-        runId: 'run-tool-failed',
+        runId: LABEL_RUN_TOOL_FAILED,
         sessionId: input.sessionId,
         sequence: 1,
         payload: {
@@ -3993,50 +4087,50 @@ function createToolFailureSendMessageSpy() {
         },
       },
       createRuntimeToolEvent({
-        runId: 'run-tool-failed',
+        runId: LABEL_RUN_TOOL_FAILED,
         sessionId: input.sessionId,
         sequence: 2,
         payload: {
-          toolCallId: 'tool.remote-search:call-1',
-          toolId: 'tool.remote-search',
+          toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
           phase: 'started',
           title: '调用天气工具',
-          summary: '正在获取 Shenzhen 的天气。',
-          inputSummary: '{"location":"Shenzhen"}',
+          summary: DESC_CN_022,
+          inputSummary: LABEL_LOCATION_SHENZHEN,
         },
       }),
       createRuntimeToolEvent({
-        runId: 'run-tool-failed',
+        runId: LABEL_RUN_TOOL_FAILED,
         sessionId: input.sessionId,
         sequence: 3,
         payload: {
-          toolCallId: 'tool.remote-search:call-1',
-          toolId: 'tool.remote-search',
+          toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
           phase: 'failed',
           title: '工具调用失败',
           summary: '工具执行失败。',
-          inputSummary: '{"location":"Shenzhen"}',
+          inputSummary: LABEL_LOCATION_SHENZHEN,
           errorSummary: 'boom',
         },
       }),
       {
         type: 'text_delta',
-        runId: 'run-tool-failed',
+        runId: LABEL_RUN_TOOL_FAILED,
         sessionId: input.sessionId,
         sequence: 4,
         payload: {
           assistantMessageId: 'run-tool-failed:assistant',
-          delta: '我可以解释工具失败并继续',
+          delta: DESC_CN_028,
         },
       },
       {
         type: 'run_completed',
-        runId: 'run-tool-failed',
+        runId: LABEL_RUN_TOOL_FAILED,
         sessionId: input.sessionId,
         sequence: 5,
         payload: {
           assistantMessageId: 'run-tool-failed:assistant',
-          assistantText: '我可以解释工具失败并继续',
+          assistantText: DESC_CN_028,
           resolvedModelId: routeRef.modelId,
           resolvedModelRoute: createRuntimeResolvedModelRoute({
             routeRef,
@@ -4045,12 +4139,12 @@ function createToolFailureSendMessageSpy() {
             providerId: 'openai',
             adapterId: 'openai',
             endpointFamily: 'openai',
-            endpointType: 'openai-compatible',
-            baseUrl: 'https://api.example.com/v1',
+            endpointType: LABEL_OPENAI_COMPATIBLE_2,
+            baseUrl: LABEL_HTTPS_API_EXAMPLE,
             modelId: routeRef.modelId,
-            catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
+            catalogRevision: input.modelRoute.catalogRevision ?? LABEL_2026,
           }),
-          resolvedToolIds: ['tool.remote-search'],
+          resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
           requestOptions: input.requestOptions ?? {},
         },
       },
@@ -4062,7 +4156,7 @@ function createToolFailureThenFatalSendMessageSpy() {
   return vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
     {
       type: 'run_started',
-      runId: 'run-tool-then-failed',
+      runId: LABEL_RUN_TOOL_THEN,
       sessionId: input.sessionId,
       sequence: 1,
       payload: {
@@ -4070,35 +4164,35 @@ function createToolFailureThenFatalSendMessageSpy() {
       },
     },
     createRuntimeToolEvent({
-      runId: 'run-tool-then-failed',
+      runId: LABEL_RUN_TOOL_THEN,
       sessionId: input.sessionId,
       sequence: 2,
       payload: {
-        toolCallId: 'tool.remote-search:call-1',
-        toolId: 'tool.remote-search',
+        toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         phase: 'started',
         title: '调用天气工具',
-        summary: '正在获取 Shenzhen 的天气。',
-        inputSummary: '{"location":"Shenzhen"}',
+        summary: DESC_CN_022,
+        inputSummary: LABEL_LOCATION_SHENZHEN,
       },
     }),
     createRuntimeToolEvent({
-      runId: 'run-tool-then-failed',
+      runId: LABEL_RUN_TOOL_THEN,
       sessionId: input.sessionId,
       sequence: 3,
       payload: {
-        toolCallId: 'tool.remote-search:call-1',
-        toolId: 'tool.remote-search',
+        toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         phase: 'failed',
         title: '工具调用失败',
         summary: '工具执行失败。',
-        inputSummary: '{"location":"Shenzhen"}',
+        inputSummary: LABEL_LOCATION_SHENZHEN,
         errorSummary: 'boom',
       },
     }),
     {
       type: 'run_failed',
-      runId: 'run-tool-then-failed',
+      runId: LABEL_RUN_TOOL_THEN,
       sessionId: input.sessionId,
       sequence: 4,
       payload: {
@@ -4144,11 +4238,11 @@ function createToolWaitingApprovalSendMessageSpy(
       sequence: 2,
       payload: {
         toolCallId: 'tool.remote-search:call-approve',
-        toolId: 'tool.remote-search',
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         phase: 'waiting_approval',
         title: '工具等待审批',
         summary: '工具调用正在等待审批决议。',
-        inputSummary: '{"location":"Shenzhen"}',
+        inputSummary: LABEL_LOCATION_SHENZHEN,
         security: {
           riskLevel: 'high',
           approvalMethod: 'accept_reject',
@@ -4183,9 +4277,9 @@ function createLoadingPersistedHistoryState(): AssistantSessionHistoryState {
       titleSource: 'deterministic',
       summary: '历史摘要',
       summarySource: 'deterministic',
-      createdAt: '2026-04-13T15:00:00Z',
-      updatedAt: '2026-04-13T15:05:00Z',
-      lastActivityAt: '2026-04-13T15:05:00Z',
+      createdAt: LABEL_2026_13T15_2,
+      updatedAt: LABEL_2026_13T15,
+      lastActivityAt: LABEL_2026_13T15,
       lastRunId: 'run-loading-1',
       lastRunStatus: 'completed',
       lastUserMessagePreview: '你好',
@@ -4221,9 +4315,9 @@ function createLiveReadyButEmptyPersistedHistoryState(
       titleSource: 'deterministic',
       summary: '最新摘要',
       summarySource: 'deterministic',
-      createdAt: '2026-04-14T08:00:00Z',
-      updatedAt: '2026-04-14T08:00:03Z',
-      lastActivityAt: '2026-04-14T08:00:03Z',
+      createdAt: LABEL_2026_14T08_2,
+      updatedAt: LABEL_2026_14T08,
+      lastActivityAt: LABEL_2026_14T08,
       lastRunId: 'run-1',
       lastRunStatus: 'completed',
       lastUserMessagePreview: '你好',
@@ -4252,8 +4346,8 @@ function createLiveReadyButEmptyPersistedHistoryState(
 function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
   const driftPayload = {
     status: 'historical_provider_removed',
-    historicalModelId: 'legacy-model',
-    historicalToolIds: ['tool.remote-search'],
+    historicalModelId: LABEL_LEGACY_MODEL,
+    historicalToolIds: [LABEL_TOOL_REMOTE_SEARCH],
     historicalThinkingSummary: 'unified-4-level-v1 / 中 / medium / preset',
     warnings: [{
       code: 'historical_provider_removed',
@@ -4270,10 +4364,10 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
       titleSource: 'deterministic',
       summary: '历史摘要',
       summarySource: 'deterministic',
-      createdAt: '2026-04-13T15:00:00Z',
-      updatedAt: '2026-04-13T15:05:00Z',
-      lastActivityAt: '2026-04-13T15:05:00Z',
-      lastRunId: 'run-history-1',
+      createdAt: LABEL_2026_13T15_2,
+      updatedAt: LABEL_2026_13T15,
+      lastActivityAt: LABEL_2026_13T15,
+      lastRunId: LABEL_RUN_HISTORY,
       lastRunStatus: 'completed',
       lastUserMessagePreview: '你好',
       lastAssistantMessagePreview: '历史摘要',
@@ -4285,7 +4379,7 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
     timelineItems: [
       {
         kind: 'assistant_message',
-        runId: 'run-history-1',
+        runId: LABEL_RUN_HISTORY,
         sequenceStart: 1,
         sequenceEnd: 1,
         text: '历史摘要',
@@ -4293,48 +4387,48 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
     ],
     runSummaries: [
       {
-        runId: 'run-history-1',
+        runId: LABEL_RUN_HISTORY,
         threadId: 'session-1',
         status: 'completed',
-        createdAt: '2026-04-13T15:00:00Z',
-        updatedAt: '2026-04-13T15:05:00Z',
+        createdAt: LABEL_2026_13T15_2,
+        updatedAt: LABEL_2026_13T15,
         startedAt: '2026-04-13T15:00:01Z',
-        terminalAt: '2026-04-13T15:05:00Z',
-        resolvedModelId: 'legacy-model',
+        terminalAt: LABEL_2026_13T15,
+        resolvedModelId: LABEL_LEGACY_MODEL,
         requestedMessageText: '你好',
         assistantText: '历史摘要',
       },
     ],
     latestConfigurationSnapshot: null,
     availabilityDrift: driftPayload,
-    selectedRunId: 'run-history-1',
+    selectedRunId: LABEL_RUN_HISTORY,
     replayStatus: 'ready',
     replayError: null,
     replay: {
       ok: true,
       version: 'chat-history-v1',
       run: {
-        runId: 'run-history-1',
+        runId: LABEL_RUN_HISTORY,
         threadId: 'session-1',
         status: 'completed',
-        createdAt: '2026-04-13T15:00:00Z',
-        updatedAt: '2026-04-13T15:05:00Z',
+        createdAt: LABEL_2026_13T15_2,
+        updatedAt: LABEL_2026_13T15,
         startedAt: '2026-04-13T15:00:01Z',
-        terminalAt: '2026-04-13T15:05:00Z',
-        resolvedModelId: 'legacy-model',
+        terminalAt: LABEL_2026_13T15,
+        resolvedModelId: LABEL_LEGACY_MODEL,
         requestedMessageText: '你好',
         assistantText: '历史摘要',
       },
       historicalSnapshot: {
-        resolvedModelId: 'legacy-model',
+        resolvedModelId: LABEL_LEGACY_MODEL,
         resolvedModelRoute: {
           routeRef: {
-            routeKind: 'provider-model',
+            routeKind: LABEL_PROVIDER_MODEL,
             profileId: 'provider-legacy',
-            modelId: 'legacy-model',
+            modelId: LABEL_LEGACY_MODEL,
           },
         },
-        resolvedToolIds: ['tool.remote-search'],
+        resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
         appliedThinkingSelection: {
           series: 'unified-4-level-v1',
           mode: 'preset',
@@ -4361,7 +4455,7 @@ function createAbortableSendMessageSpy() {
   ): AsyncGenerator<RuntimeRunEvent> {
     yield {
       type: 'run_started',
-      runId: 'run-cancel',
+      runId: LABEL_RUN_CANCEL,
       sessionId: input.sessionId,
       sequence: 1,
       payload: {
@@ -4371,23 +4465,23 @@ function createAbortableSendMessageSpy() {
 
     await Promise.resolve()
     yield createRuntimeToolEvent({
-      runId: 'run-cancel',
+      runId: LABEL_RUN_CANCEL,
       sessionId: input.sessionId,
       sequence: 2,
       payload: {
-        toolCallId: 'tool.remote-search:call-1',
-        toolId: 'tool.remote-search',
+        toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         phase: 'started',
         title: '调用天气工具',
-        summary: '正在获取 Shenzhen 的天气。',
-        inputSummary: '{"location":"Shenzhen"}',
+        summary: DESC_CN_022,
+        inputSummary: LABEL_LOCATION_SHENZHEN,
       },
     })
 
     await Promise.resolve()
     yield {
       type: 'text_delta',
-      runId: 'run-cancel',
+      runId: LABEL_RUN_CANCEL,
       sessionId: input.sessionId,
       sequence: 3,
       payload: {
@@ -4413,7 +4507,7 @@ function createAbortableSendMessageSpy() {
 
     yield {
       type: 'text_delta',
-      runId: 'run-cancel',
+      runId: LABEL_RUN_CANCEL,
       sessionId: input.sessionId,
       sequence: 4,
       payload: {

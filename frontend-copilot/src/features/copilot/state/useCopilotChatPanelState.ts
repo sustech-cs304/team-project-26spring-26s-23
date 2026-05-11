@@ -209,7 +209,7 @@ export function useCopilotChatPanelState({
     }
 
     setTransientStateBySessionId((current) => updateCopilotSessionTransientState(current, normalizedSessionId, updater))
-  }, [])
+  }, [setTransientStateBySessionId])
 
   const setActiveSessionTransientState = useCallback((
     updater: (state: CopilotSessionTransientState) => CopilotSessionTransientState,
@@ -501,11 +501,11 @@ export function useCopilotChatPanelState({
       sessionShell.sessionId,
       (sessionState) => sessionState,
     ))
-  }, [sessionIdentity, sessionShell])
+  }, [sessionIdentity, sessionShell, setTransientStateBySessionId])
 
   useEffect(() => {
     setHistoryRebindAcknowledged(false)
-  }, [historyDriftResetKey])
+  }, [historyDriftResetKey, setHistoryRebindAcknowledged])
 
   useEffect(() => {
     transientStateBySessionIdRef.current = transientStateBySessionId
@@ -556,6 +556,7 @@ export function useCopilotChatPanelState({
     sessionHistory?.selectedRunId,
     sessionShell?.sessionId,
     transientStateBySessionId,
+    updateSessionTransientStateById,
   ])
 
   useEffect(() => {
@@ -791,6 +792,7 @@ export function useCopilotChatPanelState({
     preferredWorkspaceModel,
     workspacePrimaryModelRoute,
     workspaceStateLoaded,
+    setComposerDraft,
   ])
 
   useEffect(() => {
@@ -819,7 +821,7 @@ export function useCopilotChatPanelState({
         (sessionState) => sessionState,
       ))
     }
-  }, [debugModeEnabled, sessionShell?.sessionId])
+  }, [debugModeEnabled, sessionShell?.sessionId, setTransientStateBySessionId])
 
   useEffect(() => {
     const selectedModelRoute = selectedModelRouteFromDraft
@@ -879,6 +881,7 @@ export function useCopilotChatPanelState({
     state,
     selectedModelRouteFromDraft,
     workspaceStateLoaded,
+    setThinkingCapability,
   ])
 
   useEffect(() => {

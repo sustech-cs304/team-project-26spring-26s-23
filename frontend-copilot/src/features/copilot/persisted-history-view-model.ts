@@ -453,157 +453,239 @@ function mapPersistedRunEventToRuntimeRunEvent(
 
   switch (event.eventType) {
     case 'run_started':
-      return {
-        type: 'run_started',
-        runId,
-        sessionId: threadId,
-        sequence: event.sequence,
-        payload: {
-          ...payload,
-          assistantMessageId,
-        },
-      }
+      return mapReplayRunStartedEvent(runId, threadId, event, payload, assistantMessageId)
     case 'run_metadata':
-      return {
-        type: 'run_metadata',
-        runId,
-        sessionId: threadId,
-        sequence: event.sequence,
-        payload: buildRuntimeRunThinkingMetadataPayload(payload),
-      }
-    case 'text_delta': {
-      const delta = normalizeOptionalString(readString(payload.delta))
-      if (delta === null) {
-        return null
-      }
-
-      return {
-        type: 'text_delta',
-        runId,
-        sessionId: threadId,
-        sequence: event.sequence,
-        payload: {
-          assistantMessageId,
-          delta,
-        },
-      }
-    }
-    case 'reasoning_delta': {
-      const delta = normalizeOptionalString(readString(payload.delta))
-      if (delta === null) {
-        return null
-      }
-
-      return {
-        type: 'reasoning_delta',
-        runId,
-        sessionId: threadId,
-        sequence: event.sequence,
-        payload: {
-          delta,
-        },
-      }
-    }
-    case 'tool_event': {
-      const phase = normalizeOptionalString(readString(payload.phase)) ?? normalizeOptionalString(event.phase)
-      if (phase !== 'started' && phase !== 'completed' && phase !== 'failed') {
-        return null
-      }
-
-      const title = normalizeOptionalString(readString(payload.title)) ?? '工具调用'
-      const summary = normalizeOptionalString(readString(payload.summary))
-        ?? normalizeOptionalString(readString(payload.resultSummary))
-        ?? normalizeOptionalString(readString(payload.errorSummary))
-        ?? title
-
-      return {
-        type: 'tool_event',
-        runId,
-        sessionId: threadId,
-        sequence: event.sequence,
-        payload: {
-          toolCallId: normalizeOptionalString(readString(payload.toolCallId)) ?? normalizeOptionalString(event.toolCallId) ?? `history-tool-call-${event.sequence}`,
-          toolId: normalizeOptionalString(readString(payload.toolId)) ?? normalizeOptionalString(event.toolId) ?? 'unknown-tool',
-          phase,
-          title,
-            summary,
-            inputSummary: normalizeOptionalString(readString(payload.inputSummary)) ?? undefined,
-            resultSummary: normalizeOptionalString(readString(payload.resultSummary)) ?? undefined,
-            errorSummary: normalizeOptionalString(readString(payload.errorSummary)) ?? undefined,
-            ...(parsePersistedInlineFormRequest(payload.formRequest) === undefined
-              ? {}
-              : { formRequest: parsePersistedInlineFormRequest(payload.formRequest) }),
-          },
-      }
-    }
+      return mapReplayRunMetadataEvent(runId, threadId, event, payload)
+    case 'text_delta':
+      return mapReplayTextDeltaEvent(runId, threadId, event, payload, assistantMessageId)
+    case 'reasoning_delta':
+      return mapReplayReasoningDeltaEvent(runId, threadId, event, payload)
+    case 'tool_event':
+      return mapReplayToolEvent(runId, threadId, event, payload)
     case 'run_diagnostic':
-      return {
-        type: 'run_diagnostic',
-        runId,
-        sessionId: threadId,
-        sequence: event.sequence,
-        payload: {
-          code: normalizeOptionalString(readString(payload.code)) ?? 'history_diagnostic',
-          message: normalizeOptionalString(readString(payload.message)) ?? '历史运行诊断',
-          details: cloneRecord(payload.details),
-          stage: normalizeOptionalString(readString(payload.stage)) ?? 'history',
-        },
-      }
-    case 'run_completed': {
-      const resolvedModelId = normalizeOptionalString(readString(payload.resolvedModelId))
-        ?? normalizeOptionalString(readString(historicalRecord?.resolvedModelId))
-        ?? 'history-model'
-      const resolvedModelRoute = asRuntimeResolvedRoute(payload.resolvedModelRoute)
-        ?? asRuntimeResolvedRoute(historicalRecord?.resolvedModelRoute)
-        ?? buildFallbackRuntimeResolvedModelRoute(resolvedModelId)
-      const resolvedToolIds = readStringArray(payload.resolvedToolIds)
-      const fallbackToolIds = readStringArray(historicalRecord?.resolvedToolIds)
-
-      return {
-        type: 'run_completed',
-        runId,
-        sessionId: threadId,
-        sequence: event.sequence,
-        payload: {
-          assistantMessageId,
-          assistantText: normalizeOptionalString(readString(payload.assistantText))
-            ?? normalizeOptionalString(readString(payload.delta))
-            ?? normalizeOptionalString(readString(payload.text))
-            ?? normalizeOptionalString(readString(payload.message))
-            ?? normalizeOptionalString(readString(historicalRecord?.assistantText))
-            ?? '',
-          resolvedModelId,
-          resolvedModelRoute,
-          resolvedToolIds: resolvedToolIds.length > 0 ? resolvedToolIds : fallbackToolIds,
-          requestOptions: cloneRecord(payload.requestOptions ?? historicalRecord?.requestOptions),
-        },
-      }
-    }
+      return mapReplayRunDiagnosticEvent(runId, threadId, event, payload)
+    case 'run_completed':
+      return mapReplayRunCompletedEvent(runId, threadId, event, payload, assistantMessageId, historicalRecord)
     case 'run_failed':
-      return {
-        type: 'run_failed',
-        runId,
-        sessionId: threadId,
-        sequence: event.sequence,
-        payload: {
-          code: normalizeOptionalString(readString(payload.code)) ?? 'history_failed',
-          message: normalizeOptionalString(readString(payload.message)) ?? '当前响应失败，请重试。',
-          details: cloneRecord(payload.details),
-        },
-      }
+      return mapReplayRunFailedEvent(runId, threadId, event, payload)
     case 'run_cancelled':
-      return {
-        type: 'run_cancelled',
-        runId,
-        sessionId: threadId,
-        sequence: event.sequence,
-        payload: {
-          assistantMessageId,
-          reason: normalizeOptionalString(readString(payload.reason)) ?? 'cancelled',
-        },
-      }
+      return mapReplayRunCancelledEvent(runId, threadId, event, payload, assistantMessageId)
     default:
       return null
+  }
+}
+
+function mapReplayRunStartedEvent(
+  runId: string,
+  threadId: string,
+  event: CopilotHistoryRunEvent,
+  payload: Record<string, unknown>,
+  assistantMessageId: string,
+): RuntimeRunEvent {
+  return {
+    type: 'run_started',
+    runId,
+    sessionId: threadId,
+    sequence: event.sequence,
+    payload: {
+      ...payload,
+      assistantMessageId,
+    },
+  }
+}
+
+function mapReplayRunMetadataEvent(
+  runId: string,
+  threadId: string,
+  event: CopilotHistoryRunEvent,
+  payload: Record<string, unknown>,
+): RuntimeRunEvent {
+  return {
+    type: 'run_metadata',
+    runId,
+    sessionId: threadId,
+    sequence: event.sequence,
+    payload: buildRuntimeRunThinkingMetadataPayload(payload),
+  }
+}
+
+function mapReplayTextDeltaEvent(
+  runId: string,
+  threadId: string,
+  event: CopilotHistoryRunEvent,
+  payload: Record<string, unknown>,
+  assistantMessageId: string,
+): RuntimeRunEvent | null {
+  const delta = normalizeOptionalString(readString(payload.delta))
+  if (delta === null) {
+    return null
+  }
+
+  return {
+    type: 'text_delta',
+    runId,
+    sessionId: threadId,
+    sequence: event.sequence,
+    payload: {
+      assistantMessageId,
+      delta,
+    },
+  }
+}
+
+function mapReplayReasoningDeltaEvent(
+  runId: string,
+  threadId: string,
+  event: CopilotHistoryRunEvent,
+  payload: Record<string, unknown>,
+): RuntimeRunEvent | null {
+  const delta = normalizeOptionalString(readString(payload.delta))
+  if (delta === null) {
+    return null
+  }
+
+  return {
+    type: 'reasoning_delta',
+    runId,
+    sessionId: threadId,
+    sequence: event.sequence,
+    payload: {
+      delta,
+    },
+  }
+}
+
+function mapReplayToolEvent(
+  runId: string,
+  threadId: string,
+  event: CopilotHistoryRunEvent,
+  payload: Record<string, unknown>,
+): RuntimeRunEvent | null {
+  const phase = normalizeOptionalString(readString(payload.phase)) ?? normalizeOptionalString(event.phase)
+  if (phase !== 'started' && phase !== 'completed' && phase !== 'failed') {
+    return null
+  }
+
+  const title = normalizeOptionalString(readString(payload.title)) ?? '工具调用'
+  const summary = normalizeOptionalString(readString(payload.summary))
+    ?? normalizeOptionalString(readString(payload.resultSummary))
+    ?? normalizeOptionalString(readString(payload.errorSummary))
+    ?? title
+
+  return {
+    type: 'tool_event',
+    runId,
+    sessionId: threadId,
+    sequence: event.sequence,
+    payload: {
+      toolCallId: normalizeOptionalString(readString(payload.toolCallId)) ?? normalizeOptionalString(event.toolCallId) ?? `history-tool-call-${event.sequence}`,
+      toolId: normalizeOptionalString(readString(payload.toolId)) ?? normalizeOptionalString(event.toolId) ?? 'unknown-tool',
+      phase,
+      title,
+      summary,
+      inputSummary: normalizeOptionalString(readString(payload.inputSummary)) ?? undefined,
+      resultSummary: normalizeOptionalString(readString(payload.resultSummary)) ?? undefined,
+      errorSummary: normalizeOptionalString(readString(payload.errorSummary)) ?? undefined,
+      ...(parsePersistedInlineFormRequest(payload.formRequest) === undefined
+        ? {}
+        : { formRequest: parsePersistedInlineFormRequest(payload.formRequest) }),
+    },
+  }
+}
+
+function mapReplayRunDiagnosticEvent(
+  runId: string,
+  threadId: string,
+  event: CopilotHistoryRunEvent,
+  payload: Record<string, unknown>,
+): RuntimeRunEvent {
+  return {
+    type: 'run_diagnostic',
+    runId,
+    sessionId: threadId,
+    sequence: event.sequence,
+    payload: {
+      code: normalizeOptionalString(readString(payload.code)) ?? 'history_diagnostic',
+      message: normalizeOptionalString(readString(payload.message)) ?? '历史运行诊断',
+      details: cloneRecord(payload.details),
+      stage: normalizeOptionalString(readString(payload.stage)) ?? 'history',
+    },
+  }
+}
+
+function mapReplayRunCompletedEvent(
+  runId: string,
+  threadId: string,
+  event: CopilotHistoryRunEvent,
+  payload: Record<string, unknown>,
+  assistantMessageId: string,
+  historicalRecord: Record<string, unknown> | null,
+): RuntimeRunEvent {
+  const resolvedModelId = normalizeOptionalString(readString(payload.resolvedModelId))
+    ?? normalizeOptionalString(readString(historicalRecord?.resolvedModelId))
+    ?? 'history-model'
+  const resolvedModelRoute = asRuntimeResolvedRoute(payload.resolvedModelRoute)
+    ?? asRuntimeResolvedRoute(historicalRecord?.resolvedModelRoute)
+    ?? buildFallbackRuntimeResolvedModelRoute(resolvedModelId)
+  const resolvedToolIds = readStringArray(payload.resolvedToolIds)
+  const fallbackToolIds = readStringArray(historicalRecord?.resolvedToolIds)
+
+  return {
+    type: 'run_completed',
+    runId,
+    sessionId: threadId,
+    sequence: event.sequence,
+    payload: {
+      assistantMessageId,
+      assistantText: normalizeOptionalString(readString(payload.assistantText))
+        ?? normalizeOptionalString(readString(payload.delta))
+        ?? normalizeOptionalString(readString(payload.text))
+        ?? normalizeOptionalString(readString(payload.message))
+        ?? normalizeOptionalString(readString(historicalRecord?.assistantText))
+        ?? '',
+      resolvedModelId,
+      resolvedModelRoute,
+      resolvedToolIds: resolvedToolIds.length > 0 ? resolvedToolIds : fallbackToolIds,
+      requestOptions: cloneRecord(payload.requestOptions ?? historicalRecord?.requestOptions),
+    },
+  }
+}
+
+function mapReplayRunFailedEvent(
+  runId: string,
+  threadId: string,
+  event: CopilotHistoryRunEvent,
+  payload: Record<string, unknown>,
+): RuntimeRunEvent {
+  return {
+    type: 'run_failed',
+    runId,
+    sessionId: threadId,
+    sequence: event.sequence,
+    payload: {
+      code: normalizeOptionalString(readString(payload.code)) ?? 'history_failed',
+      message: normalizeOptionalString(readString(payload.message)) ?? '当前响应失败，请重试。',
+      details: cloneRecord(payload.details),
+    },
+  }
+}
+
+function mapReplayRunCancelledEvent(
+  runId: string,
+  threadId: string,
+  event: CopilotHistoryRunEvent,
+  payload: Record<string, unknown>,
+  assistantMessageId: string,
+): RuntimeRunEvent {
+  return {
+    type: 'run_cancelled',
+    runId,
+    sessionId: threadId,
+    sequence: event.sequence,
+    payload: {
+      assistantMessageId,
+      reason: normalizeOptionalString(readString(payload.reason)) ?? 'cancelled',
+    },
   }
 }
 

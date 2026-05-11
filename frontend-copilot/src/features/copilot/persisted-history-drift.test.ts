@@ -3,8 +3,14 @@ import { describe, expect, it } from 'vitest'
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { evaluatePersistedHistoryDrift, resolvePersistedHistoryDrift } from './persisted-history-drift'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_2026_13T15 = '2026-04-13T15:05:00Z'
+const LABEL_SUMMARY_MODEL = 'summary-model'
+
+
 describe('persisted history drift evaluation', () => {
-  it('returns null when history or backend drift conclusions are unavailable', () => {
+  describe('null and legacy results', () => {
+    it('returns null when history or backend drift conclusions are unavailable', () => {
     expect(evaluatePersistedHistoryDrift(null)).toBeNull()
     expect(resolvePersistedHistoryDrift(createHistoryState())).toBeNull()
   })
@@ -21,12 +27,14 @@ describe('persisted history drift evaluation', () => {
         status: 'historical_provider_removed',
       },
     }))).toBeNull()
+    })
   })
 
-  it('prefers replay availability interpretation over detail and summary drift payloads', () => {
+  describe('drift resolution priority', () => {
+    it('prefers replay availability interpretation over detail and summary drift payloads', () => {
     const summaryDrift = createDriftRecord({
       status: 'historical_tool_unregistered',
-      historicalModelId: 'summary-model',
+      historicalModelId: LABEL_SUMMARY_MODEL,
       historicalToolIds: ['tool.summary'],
       warnings: [{
         code: 'historical_tool_unregistered',
@@ -88,7 +96,7 @@ describe('persisted history drift evaluation', () => {
     const drift = resolvePersistedHistoryDrift(createHistoryState({
       summaryDrift: createDriftRecord({
         status: 'historical_tool_unregistered',
-        historicalModelId: 'summary-model',
+        historicalModelId: LABEL_SUMMARY_MODEL,
       }),
       availabilityDrift: detailDrift,
       replayStatus: 'idle',
@@ -113,7 +121,7 @@ describe('persisted history drift evaluation', () => {
     const drift = evaluatePersistedHistoryDrift(createHistoryState({
       summaryDrift: createDriftRecord({
         status: 'historical_provider_removed',
-        historicalModelId: 'summary-model',
+        historicalModelId: LABEL_SUMMARY_MODEL,
         historicalToolIds: ['tool.summary'],
         historicalThinkingSelection: {
           series: 'unified-4-level-v1',
@@ -134,7 +142,7 @@ describe('persisted history drift evaluation', () => {
     }))
 
     expect(drift).toEqual({
-      historicalModelId: 'summary-model',
+      historicalModelId: LABEL_SUMMARY_MODEL,
       historicalToolIds: ['tool.summary'],
       historicalThinkingSummary: 'unified-4-level-v1 / 中 / medium / preset',
       warnings: [{
@@ -143,6 +151,7 @@ describe('persisted history drift evaluation', () => {
       }],
       requiresExplicitRebind: true,
     })
+  })
   })
 })
 
@@ -171,9 +180,9 @@ function createHistoryState(input: {
     threadId: 'session-1',
     status: 'completed',
     createdAt: '2026-04-13T15:00:00Z',
-    updatedAt: '2026-04-13T15:05:00Z',
+    updatedAt: LABEL_2026_13T15,
     startedAt: '2026-04-13T15:00:01Z',
-    terminalAt: '2026-04-13T15:05:00Z',
+    terminalAt: LABEL_2026_13T15,
     resolvedModelId: 'legacy-model',
     requestedMessageText: '你好',
     assistantText: '历史摘要',
@@ -189,8 +198,8 @@ function createHistoryState(input: {
       summary: '历史摘要',
       summarySource: 'deterministic',
       createdAt: '2026-04-13T15:00:00Z',
-      updatedAt: '2026-04-13T15:05:00Z',
-      lastActivityAt: '2026-04-13T15:05:00Z',
+      updatedAt: LABEL_2026_13T15,
+      lastActivityAt: LABEL_2026_13T15,
       lastRunId: 'run-history-1',
       lastRunStatus: 'completed',
       lastUserMessagePreview: '你好',

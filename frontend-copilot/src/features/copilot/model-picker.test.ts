@@ -8,18 +8,27 @@ import {
   resolveCopilotPreferredModelId,
 } from './model-picker'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_ALPHA_PROVIDER = 'Alpha Provider'
+const LABEL_OPENAI_GPT = 'openai/gpt-4.1'
+const LABEL_PROVIDER_ALPHA = 'provider-alpha'
+const LABEL_PROVIDER_MODEL = 'provider-model'
+const LABEL_SHARED_MODEL = 'shared-model'
+
+
 describe('copilot model picker bridge', () => {
-  it('maps persisted provider profiles into provider-backed groups and model options', () => {
+  describe('model catalog construction', () => {
+    it('maps persisted provider profiles into provider-backed groups and model options', () => {
     const catalog = createCopilotModelCatalog([
       createProviderProfile({
-        id: 'provider-alpha',
-        name: 'Alpha Provider',
+        id: LABEL_PROVIDER_ALPHA,
+        name: LABEL_ALPHA_PROVIDER,
         protocol: 'openai',
         endpoint: 'https://alpha.example.com/v1/',
         availableModels: [
           {
             id: 'provider-alpha:openai/gpt-4.1',
-            modelId: 'openai/gpt-4.1',
+            modelId: LABEL_OPENAI_GPT,
             displayName: 'GPT 4.1',
             groupName: 'OpenAI',
             capabilities: ['reasoning', 'tools'],
@@ -50,8 +59,8 @@ describe('copilot model picker bridge', () => {
 
     expect(catalog.groups).toHaveLength(2)
     expect(catalog.groups[0]).toMatchObject({
-      key: 'provider-alpha',
-      title: 'Alpha Provider',
+      key: LABEL_PROVIDER_ALPHA,
+      title: LABEL_ALPHA_PROVIDER,
     })
     expect(catalog.groups[1]).toMatchObject({
       key: 'provider-empty',
@@ -62,22 +71,22 @@ describe('copilot model picker bridge', () => {
       id: 'provider-alpha:openai/gpt-4.1',
       selectionValue: 'provider-model|provider-alpha|openai%2Fgpt-4.1',
       routeRef: {
-        routeKind: 'provider-model',
-        profileId: 'provider-alpha',
-        modelId: 'openai/gpt-4.1',
+        routeKind: LABEL_PROVIDER_MODEL,
+        profileId: LABEL_PROVIDER_ALPHA,
+        modelId: LABEL_OPENAI_GPT,
       },
-      modelId: 'openai/gpt-4.1',
+      modelId: LABEL_OPENAI_GPT,
       name: 'GPT 4.1',
-      provider: 'Alpha Provider',
-      group: 'Alpha Provider',
+      provider: LABEL_ALPHA_PROVIDER,
+      group: LABEL_ALPHA_PROVIDER,
       tags: ['推理', '工具'],
       available: true,
       unavailableReason: null,
       route: {
         routeRef: {
-          routeKind: 'provider-model',
-          profileId: 'provider-alpha',
-          modelId: 'openai/gpt-4.1',
+          routeKind: LABEL_PROVIDER_MODEL,
+          profileId: LABEL_PROVIDER_ALPHA,
+          modelId: LABEL_OPENAI_GPT,
         },
         catalogRevision: '2026-04-06-provider-catalog-v1',
       },
@@ -86,23 +95,23 @@ describe('copilot model picker bridge', () => {
       id: 'provider-alpha:google/gemini-2.5-pro',
       modelId: 'google/gemini-2.5-pro',
       name: 'Gemini 2.5 Pro',
-      provider: 'Alpha Provider',
-      group: 'Alpha Provider',
+      provider: LABEL_ALPHA_PROVIDER,
+      group: LABEL_ALPHA_PROVIDER,
       tags: ['视觉', '联网', '推理'],
     })
     expect(catalog.models[0]?.icon.label).toBe('G')
     expect(catalog.models[0]?.icon.label).not.toBe('A')
     expect(catalog.models[1]?.icon.label).toBe('G')
     expect(resolveCopilotPreferredModelId({
-      preferredModelId: 'openai/gpt-4.1',
+      preferredModelId: LABEL_OPENAI_GPT,
       models: catalog.models,
     })).toBe('')
     expect(resolveCopilotPreferredModelId({
-      preferredModelId: 'openai/gpt-4.1',
+      preferredModelId: LABEL_OPENAI_GPT,
       preferredModelRouteRef: {
-        routeKind: 'provider-model',
-        profileId: 'provider-alpha',
-        modelId: 'openai/gpt-4.1',
+        routeKind: LABEL_PROVIDER_MODEL,
+        profileId: LABEL_PROVIDER_ALPHA,
+        modelId: LABEL_OPENAI_GPT,
       },
       models: catalog.models,
     })).toBe('provider-model|provider-alpha|openai%2Fgpt-4.1')
@@ -167,18 +176,20 @@ describe('copilot model picker bridge', () => {
     expect(catalog.models[0]?.unavailableReason).toBeNull()
     expect(isRuntimeModelRouteSupportedForStreamingChat(catalog.models[0]?.route ?? null)).toBe(true)
     expect(getRuntimeModelRouteStreamingSupportReason(catalog.models[0]?.route ?? null)).toBeNull()
+    })
   })
 
-  it('uses route refs to distinguish duplicate model ids across provider profiles and invalidates ambiguous legacy strings', () => {
+  describe('model resolution', () => {
+    it('uses route refs to distinguish duplicate model ids across provider profiles and invalidates ambiguous legacy strings', () => {
     const catalog = createCopilotModelCatalog([
       createProviderProfile({
-        id: 'provider-alpha',
-        name: 'Alpha Provider',
+        id: LABEL_PROVIDER_ALPHA,
+        name: LABEL_ALPHA_PROVIDER,
         protocol: 'openai',
         availableModels: [
           {
             id: 'provider-alpha:shared-model',
-            modelId: 'shared-model',
+            modelId: LABEL_SHARED_MODEL,
             displayName: 'Shared Model Alpha',
             groupName: 'Alpha',
             capabilities: ['reasoning'],
@@ -197,7 +208,7 @@ describe('copilot model picker bridge', () => {
         availableModels: [
           {
             id: 'provider-beta:shared-model',
-            modelId: 'shared-model',
+            modelId: LABEL_SHARED_MODEL,
             displayName: 'Shared Model Beta',
             groupName: 'Beta',
             capabilities: ['reasoning', 'tools'],
@@ -230,15 +241,15 @@ describe('copilot model picker bridge', () => {
     ])
 
     expect(resolveCopilotPreferredModelId({
-      preferredModelId: 'shared-model',
+      preferredModelId: LABEL_SHARED_MODEL,
       models: catalog.models,
     })).toBe('')
     expect(resolveCopilotPreferredModelId({
-      preferredModelId: 'shared-model',
+      preferredModelId: LABEL_SHARED_MODEL,
       preferredModelRouteRef: {
-        routeKind: 'provider-model',
+        routeKind: LABEL_PROVIDER_MODEL,
         profileId: 'provider-beta',
-        modelId: 'shared-model',
+        modelId: LABEL_SHARED_MODEL,
       },
       models: catalog.models,
     })).toBe('provider-model|provider-beta|shared-model')
@@ -246,7 +257,8 @@ describe('copilot model picker bridge', () => {
     const catalogOnlyModel = catalog.models.find((model) => model.id === 'provider-openrouter:router-model')
     expect(catalogOnlyModel?.available).toBe(false)
     expect(catalogOnlyModel?.unavailableReason).toBe('当前模型暂不可用于聊天。')
-  })
+    })
+    })
 
   it('returns an empty preferred model id when no configured models exist', () => {
     const catalog = createCopilotModelCatalog([])
@@ -254,7 +266,7 @@ describe('copilot model picker bridge', () => {
     expect(catalog.groups).toEqual([])
     expect(catalog.models).toEqual([])
     expect(resolveCopilotPreferredModelId({
-      preferredModelId: 'openai/gpt-4.1',
+      preferredModelId: LABEL_OPENAI_GPT,
       models: catalog.models,
     })).toBe('')
   })

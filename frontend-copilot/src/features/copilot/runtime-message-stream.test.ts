@@ -9,428 +9,444 @@ import {
 import { parseRuntimeRunEventStream } from './runtime-message-stream'
 
 describe('parseRuntimeRunEventStream', () => {
-  it('parses real tool_event payloads and keeps optional summaries', async () => {
-    const events = await collectEvents(createSseEventStream([
-      {
-        type: 'run_started',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 1,
-        payload: {
-          assistantMessageId: 'run-1:assistant',
-        },
-      },
-      {
-        type: 'tool_event',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 2,
-        payload: {
-          toolCallId: 'tool.remote-search:call-1',
-          toolId: 'tool.remote-search',
-          phase: 'completed',
-          title: '天气工具已返回结果',
-          summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
-          inputSummary: '{"location":"Shenzhen"}',
-          resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
-        },
-      },
-      {
-        type: 'run_completed',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 3,
-        payload: {
-          assistantMessageId: 'run-1:assistant',
-          assistantText: '这是助手回显',
-          resolvedModelId: 'qwen-plus',
-          resolvedModelRoute: createRuntimeResolvedModelRoute({
-            providerProfileId: 'provider-openai',
-            modelId: 'qwen-plus',
-          }),
-          resolvedToolIds: ['tool.remote-search'],
-          requestOptions: {},
-        },
-      },
-    ]))
+  describe('successful parsing', () => {
+    describe('tool_event', () => {
+      it('parses real tool_event payloads and keeps optional summaries', async () => {
+        const events = await collectEvents(createSseEventStream([
+          {
+            type: 'run_started',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            payload: {
+              assistantMessageId: 'run-1:assistant',
+            },
+          },
+          {
+            type: 'tool_event',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 2,
+            payload: {
+              toolCallId: 'tool.remote-search:call-1',
+              toolId: 'tool.remote-search',
+              phase: 'completed',
+              title: '天气工具已返回结果',
+              summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+              inputSummary: '{"location":"Shenzhen"}',
+              resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+            },
+          },
+          {
+            type: 'run_completed',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 3,
+            payload: {
+              assistantMessageId: 'run-1:assistant',
+              assistantText: '这是助手回显',
+              resolvedModelId: 'qwen-plus',
+              resolvedModelRoute: createRuntimeResolvedModelRoute({
+                providerProfileId: 'provider-openai',
+                modelId: 'qwen-plus',
+              }),
+              resolvedToolIds: ['tool.remote-search'],
+              requestOptions: {},
+            },
+          },
+        ]))
 
-    expect(events).toHaveLength(3)
-    expect(events[1]).toEqual({
-      type: 'tool_event',
-      runId: 'run-1',
-      sessionId: 'session-1',
-      sequence: 2,
-      payload: {
-        toolCallId: 'tool.remote-search:call-1',
-        toolId: 'tool.remote-search',
-        phase: 'completed',
-        title: '天气工具已返回结果',
-        summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
-        inputSummary: '{"location":"Shenzhen"}',
-        resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
-      },
-    })
-  })
+        expect(events).toHaveLength(3)
+        expect(events[1]).toEqual({
+          type: 'tool_event',
+          runId: 'run-1',
+          sessionId: 'session-1',
+          sequence: 2,
+          payload: {
+            toolCallId: 'tool.remote-search:call-1',
+            toolId: 'tool.remote-search',
+            phase: 'completed',
+            title: '天气工具已返回结果',
+            summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+            inputSummary: '{"location":"Shenzhen"}',
+            resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+          },
+        })
+      })
 
-  it('parses standalone reasoning_delta payloads', async () => {
-    const events = await collectEvents(createSseEventStream([
-      {
-        type: 'run_started',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 1,
-        payload: {
-          assistantMessageId: 'run-1:assistant',
-        },
-      },
-      {
-        type: 'reasoning_delta',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 2,
-        payload: {
-          delta: '先思考。',
-        },
-      },
-      {
-        type: 'run_completed',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 3,
-        payload: {
-          assistantMessageId: 'run-1:assistant',
-          assistantText: '最终答案',
-          resolvedModelId: 'qwen-plus',
-          resolvedModelRoute: createRuntimeResolvedModelRoute({
-            providerProfileId: 'provider-openai',
-            modelId: 'qwen-plus',
-          }),
-          resolvedToolIds: [],
-          requestOptions: {},
-        },
-      },
-    ]))
+      it('parses waiting_approval and cancelled phases with security payloads', async () => {
+        const stream = createSseEventStream([
+          {
+            type: 'tool_event',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            payload: {
+              toolCallId: 'tool.remote-search:call-1',
+              toolId: 'tool.remote-search',
+              phase: 'waiting_approval',
+              title: '等待批准',
+              summary: '等待批准',
+              security: {
+                riskLevel: 'high',
+                approvalMethod: 'accept_reject',
+              },
+              approval: {
+                mode: 'delay',
+                timeoutAt: '2026-04-17T16:00:30Z',
+                timeoutSeconds: 30,
+                timeoutAction: 'deny',
+              },
+            },
+          },
+          {
+            type: 'tool_event',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 2,
+            payload: {
+              toolCallId: 'tool.remote-search:call-2',
+              toolId: 'tool.remote-search',
+              phase: 'cancelled',
+              title: '已取消',
+              summary: '已取消',
+            },
+          },
+        ])
 
-    expect(events[1]).toEqual({
-      type: 'reasoning_delta',
-      runId: 'run-1',
-      sessionId: 'session-1',
-      sequence: 2,
-      payload: {
-        delta: '先思考。',
-      },
-    })
-  })
+        const events = await collectEvents(stream)
+        expect(events).toHaveLength(2)
 
-  it('parses run_metadata payloads with canonical thinking snapshot', async () => {
-    const capability = createRuntimeThinkingCapability({
-      status: 'unknown-with-override',
-      source: 'override',
-      supportedLevels: ['off', 'auto', 'low'],
-      defaultLevel: 'auto',
-      reasonCode: 'override_levels_applied',
-      providerHint: null,
-      overrideLevels: ['off', 'auto', 'low'],
-    })
-
-    const events = await collectEvents(createSseEventStream([
-      createRuntimeRunMetadataEvent({
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 2,
-        payload: {
-          requestedThinkingSelection: createRuntimeThinkingSelection({ level: 'low' }),
-          appliedThinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
-          requestedThinkingLevel: 'low',
-          appliedThinkingLevel: 'auto',
-          thinkingCapabilitySnapshot: capability,
-          thinkingSeriesDecision: null,
-          reasoningSuppressionBasis: null,
-        },
-      }),
-    ]))
-
-    expect(events).toEqual([
-      {
-        type: 'run_metadata',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 2,
-        payload: {
-          requestedThinkingSelection: createRuntimeThinkingSelection({ level: 'low' }),
-          appliedThinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
-          requestedThinkingLevel: 'low',
-          appliedThinkingLevel: 'auto',
-          thinkingCapabilitySnapshot: capability,
-          thinkingSeriesDecision: null,
-          reasoningSuppressionBasis: null,
-        },
-      },
-    ])
-  })
-
-  it('parses waiting_approval and cancelled phases with security payloads', async () => {
-    const stream = createSseEventStream([
-      {
-        type: 'tool_event',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 1,
-        payload: {
-          toolCallId: 'tool.remote-search:call-1',
-          toolId: 'tool.remote-search',
-          phase: 'waiting_approval',
-          title: '等待批准',
-          summary: '等待批准',
-          security: {
+        const event0 = events[0]
+        expect(event0.type).toBe('tool_event')
+        if (event0.type === 'tool_event') {
+          expect(event0.payload.phase).toBe('waiting_approval')
+          expect(event0.payload.security).toEqual({
             riskLevel: 'high',
             approvalMethod: 'accept_reject',
-          },
-          approval: {
+          })
+          expect(event0.payload.approval).toEqual({
             mode: 'delay',
             timeoutAt: '2026-04-17T16:00:30Z',
             timeoutSeconds: 30,
             timeoutAction: 'deny',
+          })
+        }
+
+        const event1 = events[1]
+        expect(event1.type).toBe('tool_event')
+        if (event1.type === 'tool_event') {
+          expect(event1.payload.phase).toBe('cancelled')
+        }
+      })
+
+      it('parses waiting_approval approval payloads without timeoutAt', async () => {
+        const stream = createSseEventStream([
+          {
+            type: 'tool_event',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            payload: {
+              toolCallId: 'tool.remote-search:call-1',
+              toolId: 'tool.remote-search',
+              phase: 'waiting_approval',
+              title: '等待批准',
+              summary: '等待批准',
+              approval: {
+                mode: 'ask',
+                timeoutSeconds: null,
+                timeoutAction: null,
+              },
+            },
           },
-        },
-      },
-      {
-        type: 'tool_event',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 2,
-        payload: {
-          toolCallId: 'tool.remote-search:call-2',
-          toolId: 'tool.remote-search',
-          phase: 'cancelled',
-          title: '已取消',
-          summary: '已取消',
-        },
-      },
-    ])
+        ])
 
-    const events = await collectEvents(stream)
-    expect(events).toHaveLength(2)
+        const events = await collectEvents(stream)
+        expect(events).toHaveLength(1)
 
-    const event0 = events[0]
-    expect(event0.type).toBe('tool_event')
-    if (event0.type === 'tool_event') {
-      expect(event0.payload.phase).toBe('waiting_approval')
-      expect(event0.payload.security).toEqual({
-        riskLevel: 'high',
-        approvalMethod: 'accept_reject',
-      })
-      expect(event0.payload.approval).toEqual({
-        mode: 'delay',
-        timeoutAt: '2026-04-17T16:00:30Z',
-        timeoutSeconds: 30,
-        timeoutAction: 'deny',
-      })
-    }
-
-    const event1 = events[1]
-    expect(event1.type).toBe('tool_event')
-    if (event1.type === 'tool_event') {
-      expect(event1.payload.phase).toBe('cancelled')
-    }
-  })
-
-  it('parses waiting_approval approval payloads without timeoutAt', async () => {
-    const stream = createSseEventStream([
-      {
-        type: 'tool_event',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 1,
-        payload: {
-          toolCallId: 'tool.remote-search:call-1',
-          toolId: 'tool.remote-search',
-          phase: 'waiting_approval',
-          title: '等待批准',
-          summary: '等待批准',
-          approval: {
+        const event0 = events[0]
+        expect(event0.type).toBe('tool_event')
+        if (event0.type === 'tool_event') {
+          expect(event0.payload.phase).toBe('waiting_approval')
+          expect(event0.payload.approval).toEqual({
             mode: 'ask',
             timeoutSeconds: null,
             timeoutAction: null,
-          },
-        },
-      },
-    ])
-
-    const events = await collectEvents(stream)
-    expect(events).toHaveLength(1)
-
-    const event0 = events[0]
-    expect(event0.type).toBe('tool_event')
-    if (event0.type === 'tool_event') {
-      expect(event0.payload.phase).toBe('waiting_approval')
-      expect(event0.payload.approval).toEqual({
-        mode: 'ask',
-        timeoutSeconds: null,
-        timeoutAction: null,
+          })
+        }
       })
-    }
-  })
+    })
 
-  it('rejects inline form requests with an empty fields array', async () => {
-    const stream = createSseEventStream([
-      {
-        type: 'tool_event',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 1,
-        payload: {
-          toolCallId: 'tool.request-user-form:call-1',
-          toolId: 'tool.request-user-form',
-          phase: 'completed',
-          title: '请求表单',
-          summary: '请填写表单。',
-          formRequest: {
-            formId: 'empty-form',
-            title: '空表单',
-            fields: [],
+    describe('reasoning_delta', () => {
+      it('parses standalone reasoning_delta payloads', async () => {
+        const events = await collectEvents(createSseEventStream([
+          {
+            type: 'run_started',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            payload: {
+              assistantMessageId: 'run-1:assistant',
+            },
           },
-        },
-      },
-    ])
-
-    await expect(collectEvents(stream)).rejects.toThrow('runtime event payload.formRequest.fields must contain at least one field')
-  })
-
-  it('rejects select inline form fields without options', async () => {
-    const stream = createSseEventStream([
-      {
-        type: 'tool_event',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 1,
-        payload: {
-          toolCallId: 'tool.request-user-form:call-1',
-          toolId: 'tool.request-user-form',
-          phase: 'completed',
-          title: '请求表单',
-          summary: '请选择一个选项。',
-          formRequest: {
-            formId: 'missing-select-options',
-            title: '缺少选项',
-            fields: [{
-              name: 'semester',
-              label: '学期',
-              type: 'select',
-            }],
+          {
+            type: 'reasoning_delta',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 2,
+            payload: {
+              delta: '先思考。',
+            },
           },
-        },
-      },
-    ])
-
-    await expect(collectEvents(stream)).rejects.toThrow(
-      'runtime event payload.formRequest.fields[0].options must contain at least one option for select fields',
-    )
-  })
-
-  it('rejects select inline form fields with an empty options array', async () => {
-    const stream = createSseEventStream([
-      {
-        type: 'tool_event',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 1,
-        payload: {
-          toolCallId: 'tool.request-user-form:call-1',
-          toolId: 'tool.request-user-form',
-          phase: 'completed',
-          title: '请求表单',
-          summary: '请选择一个选项。',
-          formRequest: {
-            formId: 'empty-select-options',
-            title: '空选项',
-            fields: [{
-              name: 'semester',
-              label: '学期',
-              type: 'select',
-              options: [],
-            }],
+          {
+            type: 'run_completed',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 3,
+            payload: {
+              assistantMessageId: 'run-1:assistant',
+              assistantText: '最终答案',
+              resolvedModelId: 'qwen-plus',
+              resolvedModelRoute: createRuntimeResolvedModelRoute({
+                providerProfileId: 'provider-openai',
+                modelId: 'qwen-plus',
+              }),
+              resolvedToolIds: [],
+              requestOptions: {},
+            },
           },
-        },
-      },
-    ])
+        ]))
 
-    await expect(collectEvents(stream)).rejects.toThrow(
-      'runtime event payload.formRequest.fields[0].options must contain at least one option for select fields',
-    )
-  })
-
-  it('rejects checkbox inline form fields that carry options', async () => {
-    const stream = createSseEventStream([
-      {
-        type: 'tool_event',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 1,
-        payload: {
-          toolCallId: 'tool.request-user-form:call-1',
-          toolId: 'tool.request-user-form',
-          phase: 'completed',
-          title: '请求表单',
-          summary: '请确认。',
-          formRequest: {
-            formId: 'checkbox-with-options',
-            title: '布尔确认',
-            fields: [{
-              name: 'confirm',
-              label: '我已确认',
-              type: 'checkbox',
-              options: [{ value: 'yes', label: '是' }],
-            }],
+        expect(events[1]).toEqual({
+          type: 'reasoning_delta',
+          runId: 'run-1',
+          sessionId: 'session-1',
+          sequence: 2,
+          payload: {
+            delta: '先思考。',
           },
-        },
-      },
-    ])
+        })
+      })
+    })
 
-    await expect(collectEvents(stream)).rejects.toThrow(
-      'runtime event payload.formRequest.fields[0].options is not supported for checkbox fields',
-    )
+    describe('run_metadata', () => {
+      it('parses run_metadata payloads with canonical thinking snapshot', async () => {
+        const capability = createRuntimeThinkingCapability({
+          status: 'unknown-with-override',
+          source: 'override',
+          supportedLevels: ['off', 'auto', 'low'],
+          defaultLevel: 'auto',
+          reasonCode: 'override_levels_applied',
+          providerHint: null,
+          overrideLevels: ['off', 'auto', 'low'],
+        })
+
+        const events = await collectEvents(createSseEventStream([
+          createRuntimeRunMetadataEvent({
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 2,
+            payload: {
+              requestedThinkingSelection: createRuntimeThinkingSelection({ level: 'low' }),
+              appliedThinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
+              requestedThinkingLevel: 'low',
+              appliedThinkingLevel: 'auto',
+              thinkingCapabilitySnapshot: capability,
+              thinkingSeriesDecision: null,
+              reasoningSuppressionBasis: null,
+            },
+          }),
+        ]))
+
+        expect(events).toEqual([
+          {
+            type: 'run_metadata',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 2,
+            payload: {
+              requestedThinkingSelection: createRuntimeThinkingSelection({ level: 'low' }),
+              appliedThinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
+              requestedThinkingLevel: 'low',
+              appliedThinkingLevel: 'auto',
+              thinkingCapabilitySnapshot: capability,
+              thinkingSeriesDecision: null,
+              reasoningSuppressionBasis: null,
+            },
+          },
+        ])
+      })
+    })
   })
 
-  it('rejects unsupported tool_event phases', async () => {
-    const stream = createSseEventStream([
-      {
-        type: 'tool_event',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 1,
-        payload: {
-          toolCallId: 'tool.remote-search:call-1',
-          toolId: 'tool.remote-search',
-          phase: 'unknown_phase_xyz',
-          title: '天气工具已取消',
-          summary: '已取消',
-        },
-      },
-    ])
+  describe('rejection', () => {
+    describe('inline form validation', () => {
+      it('rejects inline form requests with an empty fields array', async () => {
+        const stream = createSseEventStream([
+          {
+            type: 'tool_event',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            payload: {
+              toolCallId: 'tool.request-user-form:call-1',
+              toolId: 'tool.request-user-form',
+              phase: 'completed',
+              title: '请求表单',
+              summary: '请填写表单。',
+              formRequest: {
+                formId: 'empty-form',
+                title: '空表单',
+                fields: [],
+              },
+            },
+          },
+        ])
 
-    await expect(collectEvents(stream)).rejects.toThrow('Unsupported runtime tool event phase: unknown_phase_xyz')
-  })
+        await expect(collectEvents(stream)).rejects.toThrow('runtime event payload.formRequest.fields must contain at least one field')
+      })
 
-  it('rejects invalid security payloads', async () => {
-    const stream = createSseEventStream([
-      {
-        type: 'tool_event',
-        runId: 'run-1',
-        sessionId: 'session-1',
-        sequence: 1,
-        payload: {
-          toolCallId: 'tool.remote-search:call-1',
-          toolId: 'tool.remote-search',
-          phase: 'waiting_approval',
-          title: '等待批准',
-          summary: '等待批准',
-          security: 'not_an_object',
-        },
-      },
-    ])
+      it('rejects select inline form fields without options', async () => {
+        const stream = createSseEventStream([
+          {
+            type: 'tool_event',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            payload: {
+              toolCallId: 'tool.request-user-form:call-1',
+              toolId: 'tool.request-user-form',
+              phase: 'completed',
+              title: '请求表单',
+              summary: '请选择一个选项。',
+              formRequest: {
+                formId: 'missing-select-options',
+                title: '缺少选项',
+                fields: [{
+                  name: 'semester',
+                  label: '学期',
+                  type: 'select',
+                }],
+              },
+            },
+          },
+        ])
 
-    await expect(collectEvents(stream)).rejects.toThrow('runtime event payload.security must be an object')
+        await expect(collectEvents(stream)).rejects.toThrow(
+          'runtime event payload.formRequest.fields[0].options must contain at least one option for select fields',
+        )
+      })
+
+      it('rejects select inline form fields with an empty options array', async () => {
+        const stream = createSseEventStream([
+          {
+            type: 'tool_event',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            payload: {
+              toolCallId: 'tool.request-user-form:call-1',
+              toolId: 'tool.request-user-form',
+              phase: 'completed',
+              title: '请求表单',
+              summary: '请选择一个选项。',
+              formRequest: {
+                formId: 'empty-select-options',
+                title: '空选项',
+                fields: [{
+                  name: 'semester',
+                  label: '学期',
+                  type: 'select',
+                  options: [],
+                }],
+              },
+            },
+          },
+        ])
+
+        await expect(collectEvents(stream)).rejects.toThrow(
+          'runtime event payload.formRequest.fields[0].options must contain at least one option for select fields',
+        )
+      })
+
+      it('rejects checkbox inline form fields that carry options', async () => {
+        const stream = createSseEventStream([
+          {
+            type: 'tool_event',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            payload: {
+              toolCallId: 'tool.request-user-form:call-1',
+              toolId: 'tool.request-user-form',
+              phase: 'completed',
+              title: '请求表单',
+              summary: '请确认。',
+              formRequest: {
+                formId: 'checkbox-with-options',
+                title: '布尔确认',
+                fields: [{
+                  name: 'confirm',
+                  label: '我已确认',
+                  type: 'checkbox',
+                  options: [{ value: 'yes', label: '是' }],
+                }],
+              },
+            },
+          },
+        ])
+
+        await expect(collectEvents(stream)).rejects.toThrow(
+          'runtime event payload.formRequest.fields[0].options is not supported for checkbox fields',
+        )
+      })
+    })
+
+    describe('phase validation', () => {
+      it('rejects unsupported tool_event phases', async () => {
+        const stream = createSseEventStream([
+          {
+            type: 'tool_event',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            payload: {
+              toolCallId: 'tool.remote-search:call-1',
+              toolId: 'tool.remote-search',
+              phase: 'unknown_phase_xyz',
+              title: '天气工具已取消',
+              summary: '已取消',
+            },
+          },
+        ])
+
+        await expect(collectEvents(stream)).rejects.toThrow('Unsupported runtime tool event phase: unknown_phase_xyz')
+      })
+    })
+
+    describe('security validation', () => {
+      it('rejects invalid security payloads', async () => {
+        const stream = createSseEventStream([
+          {
+            type: 'tool_event',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            payload: {
+              toolCallId: 'tool.remote-search:call-1',
+              toolId: 'tool.remote-search',
+              phase: 'waiting_approval',
+              title: '等待批准',
+              summary: '等待批准',
+              security: 'not_an_object',
+            },
+          },
+        ])
+
+        await expect(collectEvents(stream)).rejects.toThrow('runtime event payload.security must be an object')
+      })
+    })
   })
 })
 
