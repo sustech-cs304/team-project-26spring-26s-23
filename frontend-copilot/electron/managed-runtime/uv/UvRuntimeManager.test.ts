@@ -2,6 +2,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+/* eslint-disable sonarjs/no-duplicate-string -- Timestamp constants like "2026-04-22T09:00:00.000Z" and "2026-04-23T08:00:00.000Z" are expected repetitions in writeState fixtures that each set up a distinct repair/verification scenario. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createManagedRuntimeFamilyPaths } from '../ManagedRuntimePaths'
 import { createVersionDirectoryName } from '../RuntimeInstallShared'
@@ -148,6 +149,7 @@ describe('UvRuntimeManager - fresh install', () => {
   })
 })
 
+// eslint-disable-next-line max-lines-per-function -- This describe groups UvRuntimeManager repair tests around shared writeState/launcher fixtures; splitting would scatter repair lifecycle setup.
 describe('UvRuntimeManager - repair', () => {
   it('supports repair retry after a failed verification without losing the previous active version', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), `${TEMP_PREFIX}repair-`))

@@ -1,3 +1,4 @@
+/* eslint-disable sonarjs/no-duplicate-string -- Fixture data like "search-campus" and "2026-04-21T12:00:00.000Z" repeat across independent mcp-registry-service test cases; extracting every literal would fragment the test narrative without adding clarity. */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -18,18 +19,21 @@ import type { McpConnectorHub } from './connector-hub'
 import type { McpCapabilitySnapshot, McpServerRecord, McpServerStateSummary, McpToolCallRequest } from './types'
 import type { McpRemoteToolSummary } from './connectors/protocol'
 
+const MCP_FIXED_NOW = '2026-04-21T12:00:00.000Z'
+const STUB_TOOL_INPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    keyword: { type: 'string' },
+  },
+}
+
 const activeTempRoots: string[] = []
 
 const STUB_TOOLS: McpRemoteToolSummary[] = [{
   name: 'search-campus',
   displayName: 'Search Campus',
   description: 'Search the campus knowledge base.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      keyword: { type: 'string' },
-    },
-  },
+  inputSchema: STUB_TOOL_INPUT_SCHEMA,
 }]
 
 afterEach(async () => {
@@ -72,7 +76,7 @@ async function createRegistryServiceFixture(testName: string, hubOptions: FakeCo
     connectorHub,
     snapshotSink,
     publishEvent,
-    now: () => '2026-04-21T12:00:00.000Z',
+    now: () => MCP_FIXED_NOW,
   })
 
   return {
@@ -100,6 +104,7 @@ function createManagedRuntimeServiceStub(
   }
 }
 
+// eslint-disable-next-line max-lines-per-function -- This helper constructs a full fake connector hub with realistic state transitions; keeping it colocated avoids indirection for test readers.
 function createFakeConnectorHub(options: FakeConnectorHubOptions = {}): FakeConnectorHub {
   const reconcileHydratesCatalog = options.reconcileHydratesCatalog ?? true
   const refreshCatalogSucceeds = options.refreshCatalogSucceeds ?? true
@@ -289,6 +294,8 @@ function createStateForServer(server: McpServerRecord): McpServerStateSummary {
   })
 }
 
+/* eslint-disable sonarjs/no-duplicate-string -- Fixture data like "2026-04-21T12:00:00.000Z" and tool names appear across independent test cases that each exercise distinct mcp-registry-service flows; extracting every shared literal would fragment the test narrative. */
+// eslint-disable-next-line max-lines-per-function -- This describe groups the full mcp-registry service test suite; each it() already exercises an isolated flow, and splitting into sub-describes would scatter fixture setup and duplicate orchestration.
 describe('createMcpRegistryService', () => {
   it('loads, saves, toggles, and deletes persisted registry records while reconciling connector state', async () => {
     const fixture = await createRegistryServiceFixture('crud')

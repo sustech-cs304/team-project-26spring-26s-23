@@ -2,6 +2,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+/* eslint-disable sonarjs/no-duplicate-string -- Timestamps and launcher paths like "2026-04-22T09:00:00.000Z" are shared across independent test cases that each verify a distinct NodeRuntimeManager lifecycle state. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createManagedRuntimeFamilyPaths } from '../ManagedRuntimePaths'
 import { getManagedRuntimeFamilyManifest, resolveManagedRuntimeComponents } from '../runtime-manifest'
@@ -142,6 +143,7 @@ describe('NodeRuntimeManager - staged activation', () => {
   })
 })
 
+// eslint-disable-next-line max-lines-per-function -- This describe groups repair/error-handling tests that share manager and tempRoot setup; splitting would duplicate fixture management.
 describe('NodeRuntimeManager - repair and error handling', () => {
   it('keeps the current active version when download fails during repair', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-node-runtime-fail-'))

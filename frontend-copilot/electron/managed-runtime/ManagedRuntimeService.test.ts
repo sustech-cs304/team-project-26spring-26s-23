@@ -70,6 +70,8 @@ function makeMissingUvFields() {
   }
 }
 
+/* eslint-disable sonarjs/no-duplicate-string -- Timestamp and path constants like "2026-04-22T08:00:00.000Z" and "/managed/uv/old/uvx" are expected repetitions in independent test cases that each set up a distinct runtime snapshot scenario. */
+// eslint-disable-next-line max-lines-per-function -- This describe groups ManagedRuntimeService tests that share fixture builders; splitting would scatter helper factories across sub-describes.
 describe('createManagedRuntimeService', () => {
   describe('loadSnapshot', () => {
     it('builds a missing snapshot rooted in the application private runtime directories', async () => {
@@ -176,6 +178,7 @@ describe('createManagedRuntimeService', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function -- This describe groups install/repair orchestration tests around shared manager factories; splitting would duplicate factory setup.
   describe('installOrRepairAll', () => {
     it('installs Node on macOS while leaving Python/uv missing until the runtime manager persists ready state', async () => {
       const hostedRuntimePaths = createHostedRuntimePaths(path.resolve('D:/workspace/candue-user-data-managed-node-only'))

@@ -156,6 +156,7 @@ function buildUvManagerFactory(
   }
 }
 
+// eslint-disable-next-line max-lines-per-function -- This describe groups the full install-orchestration suite; each sub-describe already isolates a phase, and splitting further would duplicate test-root setup.
 describe('ManagedRuntimeService install orchestration', () => {
   describe('fresh install', () => {
     it('returns a ready snapshot with launcher paths after first install on an empty machine', async () => {
@@ -445,6 +446,7 @@ describe('ManagedRuntimeService install orchestration', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function -- This describe groups offline/error-handling tests that share manager factories; splitting would duplicate factory and tempRoot setup.
   describe('offline and error handling', () => {
     it('keeps an existing active runtime usable while offline and still reports missing when never installed', async () => {
       const tempRoot = await mkdtemp(path.join(tmpdir(), `${TEMP_PREFIX}offline-`))

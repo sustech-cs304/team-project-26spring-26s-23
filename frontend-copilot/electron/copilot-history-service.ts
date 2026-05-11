@@ -252,36 +252,55 @@ async function appendHistoryDebugLog(
   }
 }
 
-// eslint-disable-next-line sonarjs/cognitive-complexity
+type HistorySuccessPayloadSummary = (payload: Record<string, unknown>) => Record<string, unknown>
+
+const HISTORY_SUCCESS_PAYLOAD_SUMMARIZERS: Record<string, HistorySuccessPayloadSummary> = {
+  'list-threads': summarizeHistoryThreadListPayload,
+  'get-thread-detail': summarizeHistoryThreadDetailPayload,
+  'get-run-replay': summarizeHistoryRunReplayPayload,
+  'rename-thread': summarizeHistoryThreadMutationPayload,
+  'duplicate-thread': summarizeHistoryThreadMutationPayload,
+}
+
 function summarizeHistorySuccessPayload(
   operation: string,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
-  switch (operation) {
-    case 'list-threads':
-      return {
-        threadCount: Array.isArray(payload.threads) ? payload.threads.length : null,
-      }
-    case 'get-thread-detail':
-      return {
-        threadId: readOptionalString(isPlainRecord(payload.thread) ? payload.thread.threadId : null),
-        runCount: Array.isArray(payload.runSummaries) ? payload.runSummaries.length : null,
-        timelineItemCount: Array.isArray(payload.timelineItems) ? payload.timelineItems.length : null,
-      }
-    case 'get-run-replay':
-      return {
-        runId: readOptionalString(isPlainRecord(payload.run) ? payload.run.runId : null),
-        orderedEventCount: Array.isArray(payload.orderedEvents) ? payload.orderedEvents.length : null,
-        toolCallBlockCount: Array.isArray(payload.toolCallBlocks) ? payload.toolCallBlocks.length : null,
-        diagnosticBlockCount: Array.isArray(payload.diagnosticBlocks) ? payload.diagnosticBlocks.length : null,
-      }
-    case 'rename-thread':
-    case 'duplicate-thread':
-      return {
-        threadId: readOptionalString(isPlainRecord(payload.thread) ? payload.thread.threadId : null),
-      }
-    default:
-      return {}
+  return HISTORY_SUCCESS_PAYLOAD_SUMMARIZERS[operation]?.(payload) ?? {}
+}
+
+function summarizeHistoryThreadListPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    threadCount: Array.isArray(payload.threads) ? payload.threads.length : null,
+  }
+}
+
+function summarizeHistoryThreadDetailPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const thread = isPlainRecord(payload.thread) ? payload.thread : null
+
+  return {
+    threadId: readOptionalString(thread?.threadId),
+    runCount: Array.isArray(payload.runSummaries) ? payload.runSummaries.length : null,
+    timelineItemCount: Array.isArray(payload.timelineItems) ? payload.timelineItems.length : null,
+  }
+}
+
+function summarizeHistoryRunReplayPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const run = isPlainRecord(payload.run) ? payload.run : null
+
+  return {
+    runId: readOptionalString(run?.runId),
+    orderedEventCount: Array.isArray(payload.orderedEvents) ? payload.orderedEvents.length : null,
+    toolCallBlockCount: Array.isArray(payload.toolCallBlocks) ? payload.toolCallBlocks.length : null,
+    diagnosticBlockCount: Array.isArray(payload.diagnosticBlocks) ? payload.diagnosticBlocks.length : null,
+  }
+}
+
+function summarizeHistoryThreadMutationPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const thread = isPlainRecord(payload.thread) ? payload.thread : null
+
+  return {
+    threadId: readOptionalString(thread?.threadId),
   }
 }
 

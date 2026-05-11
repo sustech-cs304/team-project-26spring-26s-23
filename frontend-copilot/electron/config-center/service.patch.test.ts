@@ -16,6 +16,9 @@ import {
   writeRawDomainDocuments,
 } from './test-support/ConfigCenterTestSupport'
 
+const HOST_RUNTIME_URL = 'http://localhost:4400'
+const ASSISTANT_BEHAVIOR_AGENT_NAME = 'planner'
+
 function createExpectedPublicSnapshot(debugModeEnabled = false): ConfigCenterPublicSnapshot {
   return {
     version: 1,
@@ -25,11 +28,11 @@ function createExpectedPublicSnapshot(debugModeEnabled = false): ConfigCenterPub
         animationsEnabled: false,
       },
       assistantBehavior: {
-        agentName: 'planner',
+        agentName: ASSISTANT_BEHAVIOR_AGENT_NAME,
         debugModeEnabled,
       },
       hostConfig: {
-        runtimeUrl: 'http://localhost:4400',
+        runtimeUrl: HOST_RUNTIME_URL,
       },
       backendExposed: {
         model: 'qwen-plus',
@@ -63,7 +66,7 @@ describe('createUnifiedConfigCenter patching', () => {
           version: 0,
           domain: UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG,
           values: {
-            runtimeUrl: '  http://localhost:9000  ',
+            runtimeUrl: `  ${HOST_RUNTIME_URL}  `,
           },
         },
       })
@@ -85,7 +88,7 @@ describe('createUnifiedConfigCenter patching', () => {
       )
       expect(loaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG]).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG, {
-          runtimeUrl: 'http://localhost:9000',
+          runtimeUrl: HOST_RUNTIME_URL,
         }),
       )
 
@@ -146,11 +149,11 @@ describe('createUnifiedConfigCenter patching', () => {
             animationsEnabled: false,
           },
           assistantBehavior: {
-            agentName: '  planner  ',
+            agentName: `  ${ASSISTANT_BEHAVIOR_AGENT_NAME}  `,
             debugModeEnabled: true,
           },
           hostConfig: {
-            runtimeUrl: '  http://localhost:4400  ',
+            runtimeUrl: `  ${HOST_RUNTIME_URL}  `,
           },
           backendExposed: {
             model: '  qwen-plus  ',
@@ -173,13 +176,13 @@ describe('createUnifiedConfigCenter patching', () => {
         await readStoredDomainDocument(fixture, UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR),
       ).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
-          agentName: 'planner',
+          agentName: ASSISTANT_BEHAVIOR_AGENT_NAME,
           debugModeEnabled: true,
         }),
       )
       expect(await readStoredDomainDocument(fixture, UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG)).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG, {
-          runtimeUrl: 'http://localhost:4400',
+          runtimeUrl: HOST_RUNTIME_URL,
         }),
       )
       expect(
@@ -217,8 +220,8 @@ describe('createUnifiedConfigCenter patching', () => {
       const updated = await fixture.configCenter.applyFieldPatch({
         theme: 'dark',
         animationsEnabled: false,
-        runtimeUrl: '  http://localhost:4400  ',
-        agentName: '  planner  ',
+        runtimeUrl: `  ${HOST_RUNTIME_URL}  `,
+        agentName: `  ${ASSISTANT_BEHAVIOR_AGENT_NAME}  `,
         debugModeEnabled: false,
         model: '  qwen-plus  ',
       })

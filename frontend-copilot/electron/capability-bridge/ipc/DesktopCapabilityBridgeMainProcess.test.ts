@@ -95,6 +95,8 @@ function createSettingsWorkspaceServiceStub(): ElectronSettingsWorkspaceService 
   } as unknown as ElectronSettingsWorkspaceService
 }
 
+/* eslint-disable sonarjs/no-duplicate-string -- Fixture names like "desktop-capability-bridge-routing" are shared across the routing describe; extracting them to module constants would scatter related test fixture identifiers away from their usage sites. */
+// eslint-disable-next-line max-lines-per-function -- This describe groups routing tests that share capability-bridge fixture setup; splitting would duplicate createPreparedPaths boilerplate across multiple blocks.
 describe('createElectronDesktopCapabilityBridgeService - routing', () => {
   it('routes secret requests correctly', async () => {
     const fixture = await createPreparedPaths('desktop-capability-bridge-routing')
@@ -352,6 +354,8 @@ describe('createElectronDesktopCapabilityBridgeService - routing', () => {
   })
 })
 
+/* eslint-disable sonarjs/no-duplicate-string -- MCP error messages like "MCP bridge should not request runtime paths." and tool-call arguments are expected repetitions in separate independent test cases that each verify a distinct error/call path. */
+// eslint-disable-next-line max-lines-per-function -- This describe groups MCP bridge tests that share mock registry setup; splitting would scatter stubbing across unnecessary describe boundaries.
 describe('createElectronDesktopCapabilityBridgeService - MCP', () => {
   it('routes MCP tool execution through the restricted registry bridge', async () => {
     const executeTool = vi.fn(async () => ({
@@ -556,6 +560,8 @@ describe('createElectronDesktopCapabilityBridgeService - MCP', () => {
   })
 })
 
+/* eslint-disable sonarjs/no-duplicate-string -- Error messages and fixture path patterns like "../outside" are shared across independent error-handling tests that each verify a distinct rejection path. */
+// eslint-disable-next-line max-lines-per-function -- This describe groups error-handling tests that share fixture setup; each it() already tests a distinct error scenario.
 describe('createElectronDesktopCapabilityBridgeService - error handling', () => {
   it('returns structured failures when workspace paths escape the approved root', async () => {
     const fixture = await createPreparedPaths('desktop-capability-bridge-workspace-denied')
