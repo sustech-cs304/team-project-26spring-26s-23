@@ -39,13 +39,25 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    // 决定实际要用的 Base URL
+    let actualRuntimeUrl = 'http://127.0.0.1:8765'
+    if (bootstrap) {
+      if (bootstrap.state.status === 'ready' || bootstrap.state.status === 'degraded') {
+        actualRuntimeUrl = bootstrap.state.runtimeUrl
+      } else {
+        // Electron 环境下，系统还在初始化或者异常状态，暂不请求
+        return
+      }
+    }
+
     async function fetchEvents() {
       setIsLoading(true)
       setError(null)
       try {
-        const response = await fetch(`${runtimeBaseUrl}/calendar/events`)
+        const response = await fetch(`${actualRuntimeUrl}/calendar/events`)
         if (!response.ok) {
-          throw new Error('Failed to fetch events')
+          const errText = await response.text().catch(() => 'No text')
+          throw new Error(`Failed to fetch events: ${response.status} ${response.statusText} ${errText}`)
         }
         const data = await response.json()
         setEvents(data.items || [])
@@ -56,7 +68,7 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       }
     }
     fetchEvents()
-  }, [runtimeBaseUrl])
+  }, [bootstrap?.state])
 
   return (
     <section className="workspace-stage hub-workspace" aria-label={`${content.title}工作区`}>
