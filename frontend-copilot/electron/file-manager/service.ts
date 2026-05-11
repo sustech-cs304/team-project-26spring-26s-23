@@ -335,97 +335,46 @@ function clearLastRootDirectoryFromDisk(filePath: string): void {
   }
 }
 
-export function createElectronFileManagerService(
-  options: ElectronFileManagerServiceOptions = {},
-): ElectronFileManagerService {
-  const { appendLog, getMainWindow, userDataPath } = options
+// ===== IPC channel list for batch deregistration =====
 
-  function log(level: 'info' | 'warn' | 'error', message: string, context?: Record<string, unknown>): void {
-    appendLog?.(level, message, context)
-  }
+const FILE_MANAGER_IPC_CHANNELS: readonly string[] = [
+  FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+  FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+  FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
+  FILE_MANAGER_RENAME_ENTRY_CHANNEL,
+  FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
+  FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
+  FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
+  FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+  FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+]
 
-  // ---- watcher state ----
-  const watchers = new Map<string, fs.FSWatcher>()
-  const directoryChangedListeners = new Set<(event: DirectoryChangedEvent) => void>()
+// ===== Service deps shared across builder functions =====
 
-  function normalizeWatchFilename(filename: string | Buffer | null | undefined): string | undefined {
-    if (filename === null || filename === undefined) {
-      return undefined
-    }
+interface FileManagerServiceDeps {
+  log: (level: 'info' | 'warn' | 'error', message: string, context?: Record<string, unknown>) => void
+  getMainWindow: (() => Electron.BrowserWindow | null) | undefined
+  userDataPath: string | undefined
+  startWatching: (directoryPath: string) => void
+  stopWatching: (directoryPath: string) => void
+  watchers: Map<string, fs.FSWatcher>
+  directoryChangedListeners: Set<(event: DirectoryChangedEvent) => void>
+}
 
-    const normalized = Buffer.isBuffer(filename) ? filename.toString('utf-8') : filename
-    return normalized.length > 0 ? normalized : undefined
-  }
+// ===== Builder functions for service API methods =====
 
-  function notifyDirectoryChanged(directoryPath: string, eventType: 'rename' | 'change', filename?: string): void {
-    const event: DirectoryChangedEvent = {
-      directoryPath: normalizePath(directoryPath),
-      eventType,
-      ...(filename !== undefined ? { filename } : {}),
-      observedAt: new Date().toISOString(),
-    }
-    for (const listener of directoryChangedListeners) {
-      try {
-        listener(event)
-      } catch {
-        // swallow listener errors to avoid breaking other listeners
-      }
-    }
+function buildDirectoryOps(deps: FileManagerServiceDeps) {
+  const { log, getMainWindow } = deps
 
-    // forward to renderer via IPC if a window is available
-    try {
-      const win = getMainWindow?.()
-      if (win !== null && win !== undefined && !win.isDestroyed()) {
-        win.webContents.send(FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL, event)
-      }
-    } catch {
-      // ignore forwarding errors (e.g. window closed)
-    }
-  }
-
-  function startWatching(directoryPath: string): void {
-    const resolved = normalizePath(directoryPath)
-    if (watchers.has(resolved)) return
-
-    try {
-      const watcher = fs.watch(resolved, (eventType, filename) => {
-        notifyDirectoryChanged(resolved, eventType, normalizeWatchFilename(filename))
-      })
-      watcher.on('error', () => {
-        // watcher errors (e.g. directory deleted) are silently tolerated;
-        // the frontend will clean up stale watchers on the next sync cycle
-      })
-      watchers.set(resolved, watcher)
-    } catch {
-      // directory may not exist or be unwatchable; skip silently
-    }
-  }
-
-  function stopWatching(directoryPath: string): void {
-    const resolved = normalizePath(directoryPath)
-    const watcher = watchers.get(resolved)
-    if (watcher !== undefined) {
-      try {
-        watcher.close()
-      } catch {
-        // ignore close errors
-      }
-      watchers.delete(resolved)
-    }
-  }
-
-  function stopAllWatchers(): void {
-    for (const watcher of watchers.values()) {
-      try {
-        watcher.close()
-      } catch {
-        // ignore close errors
-      }
-    }
-    watchers.clear()
-  }
-
-  const service: ElectronFileManagerService = {
+  return {
     async selectRootDirectory(request?: SelectRootDirectoryRequest): Promise<SelectDirectorySuccess | FileManagerError> {
       const win = getMainWindow?.() ?? null
       const dialogOptions: Electron.OpenDialogOptions = {
@@ -514,7 +463,13 @@ export function createElectronFileManagerService(
         return createFileManagerError('io_error', '创建文件夹失败', message)
       }
     },
+  }
+}
 
+function buildCopyEntriesOp(deps: FileManagerServiceDeps) {
+  const { log } = deps
+
+  return {
     async copyEntries(request: CopyEntriesRequest) {
       const destDir = normalizePath(request.destinationDirectory)
       const destError = validateDirectoryExists(destDir, '目标目录')
@@ -580,7 +535,13 @@ export function createElectronFileManagerService(
         ...(failedItems.length > 0 ? { failedItems } : {}),
       }
     },
+  }
+}
 
+function buildMoveAndRenameOps(deps: FileManagerServiceDeps) {
+  const { log } = deps
+
+  return {
     async moveEntries(request: MoveEntriesRequest) {
       const destDir = normalizePath(request.destinationDirectory)
       const destError = validateDirectoryExists(destDir, '目标目录')
@@ -666,7 +627,13 @@ export function createElectronFileManagerService(
         return createFileManagerError('io_error', '重命名失败', message)
       }
     },
+  }
+}
 
+function buildDeleteOps(deps: FileManagerServiceDeps) {
+  const { log } = deps
+
+  return {
     async trashEntries(request: TrashEntriesRequest) {
       const affectedPaths: string[] = []
       const failedItems: { path: string; reason: string }[] = []
@@ -744,9 +711,13 @@ export function createElectronFileManagerService(
         ...(failedItems.length > 0 ? { failedItems } : {}),
       }
     },
+  }
+}
 
-    // ---- watcher API ----
+function buildWatcherOps(deps: FileManagerServiceDeps) {
+  const { log, startWatching, stopWatching, watchers, directoryChangedListeners } = deps
 
+  return {
     async watchDirectories(request: WatchDirectoriesRequest) {
       const requested = new Set(request.paths.map((p) => normalizePath(p)))
 
@@ -790,9 +761,13 @@ export function createElectronFileManagerService(
         directoryChangedListeners.delete(listener)
       }
     },
+  }
+}
 
-    // ---- root directory persistence ----
+function buildPersistenceOps(deps: FileManagerServiceDeps) {
+  const { log, userDataPath } = deps
 
+  return {
     async loadLastRootDirectory(): Promise<LoadLastRootDirectoryResult> {
       const filePath = getLastRootDirectoryFilePath(userDataPath)
       if (filePath === null) {
@@ -836,7 +811,13 @@ export function createElectronFileManagerService(
       log('info', '文件管理器: 已清除已保存的根目录')
       return { ok: true as const, affectedPaths: [] }
     },
+  }
+}
 
+function buildShellOps(deps: FileManagerServiceDeps) {
+  const { log } = deps
+
+  return {
     async openEntryWithSystem(request: OpenEntryWithSystemRequest) {
       const rawPath = String(request.path ?? '').trim()
       try {
@@ -893,146 +874,219 @@ export function createElectronFileManagerService(
       log('info', '文件管理器: 已复制到剪贴板', { textLength: request.text.length })
       return { ok: true, affectedPaths: [] }
     },
+  }
+}
 
-    registerIpcHandlers(ipcMain: IpcMainLike): void {
-      ipcMain.handle(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, async (_event, request?: SelectRootDirectoryRequest) => {
-        return request === undefined
-          ? await service.selectRootDirectory()
-          : await service.selectRootDirectory(request)
-      })
+function buildFileManagerApi(deps: FileManagerServiceDeps): FileManagerApi {
+  return {
+    ...buildDirectoryOps(deps),
+    ...buildCopyEntriesOp(deps),
+    ...buildMoveAndRenameOps(deps),
+    ...buildDeleteOps(deps),
+    ...buildWatcherOps(deps),
+    ...buildPersistenceOps(deps),
+    ...buildShellOps(deps),
+  }
+}
 
-      ipcMain.handle(
-        FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
-        async (_event, request: ListDirectoryRequest) => {
-          return await service.listDirectory(request)
-        },
-      )
+// ===== IPC handler registration / deregistration =====
 
-      ipcMain.handle(
-        FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
-        async (_event, request: ProbeDirectoryRequest) => {
-          return await service.probeDirectory(request)
-        },
-      )
+function registerFileManagerIpcHandlers(ipcMain: IpcMainLike, api: FileManagerApi): void {
+  ipcMain.handle(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, async (_event, request?: SelectRootDirectoryRequest) => {
+    return request === undefined ? await api.selectRootDirectory() : await api.selectRootDirectory(request)
+  })
 
-      ipcMain.handle(
-        FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
-        async (_event, request: CreateDirectoryRequest) => {
-          return await service.createDirectory(request)
-        },
-      )
+  ipcMain.handle(
+    FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+    async (_event, request: ListDirectoryRequest) => await api.listDirectory(request),
+  )
 
-      ipcMain.handle(
-        FILE_MANAGER_COPY_ENTRIES_CHANNEL,
-        async (_event, request: CopyEntriesRequest) => {
-          return await service.copyEntries(request)
-        },
-      )
+  ipcMain.handle(
+    FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
+    async (_event, request: ProbeDirectoryRequest) => await api.probeDirectory(request),
+  )
 
-      ipcMain.handle(
-        FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
-        async (_event, request: MoveEntriesRequest) => {
-          return await service.moveEntries(request)
-        },
-      )
+  ipcMain.handle(
+    FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
+    async (_event, request: CreateDirectoryRequest) => await api.createDirectory(request),
+  )
 
-      ipcMain.handle(
-        FILE_MANAGER_RENAME_ENTRY_CHANNEL,
-        async (_event, request: RenameEntryRequest) => {
-          return await service.renameEntry(request)
-        },
-      )
+  ipcMain.handle(
+    FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+    async (_event, request: CopyEntriesRequest) => await api.copyEntries(request),
+  )
 
-      ipcMain.handle(
-        FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
-        async (_event, request: TrashEntriesRequest) => {
-          return await service.trashEntries(request)
-        },
-      )
+  ipcMain.handle(
+    FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
+    async (_event, request: MoveEntriesRequest) => await api.moveEntries(request),
+  )
 
-      ipcMain.handle(
-        FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
-        async (_event, request: DeleteEntriesRequest) => {
-          return await service.deleteEntriesPermanently(request)
-        },
-      )
+  ipcMain.handle(
+    FILE_MANAGER_RENAME_ENTRY_CHANNEL,
+    async (_event, request: RenameEntryRequest) => await api.renameEntry(request),
+  )
 
-      ipcMain.handle(
-        FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
-        async (_event, request: WatchDirectoriesRequest) => {
-          return await service.watchDirectories(request)
-        },
-      )
+  ipcMain.handle(
+    FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
+    async (_event, request: TrashEntriesRequest) => await api.trashEntries(request),
+  )
 
-      ipcMain.handle(
-        FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
-        async (_event, request: UnwatchDirectoriesRequest) => {
-          return await service.unwatchDirectories(request)
-        },
-      )
+  ipcMain.handle(
+    FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
+    async (_event, request: DeleteEntriesRequest) => await api.deleteEntriesPermanently(request),
+  )
 
-      ipcMain.handle(FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL, async () => {
-        return await service.loadLastRootDirectory()
-      })
+  ipcMain.handle(
+    FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
+    async (_event, request: WatchDirectoriesRequest) => await api.watchDirectories(request),
+  )
 
-      ipcMain.handle(
-        FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
-        async (_event, request: SaveLastRootDirectoryRequest) => {
-          return await service.saveLastRootDirectory(request)
-        },
-      )
+  ipcMain.handle(
+    FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
+    async (_event, request: UnwatchDirectoriesRequest) => await api.unwatchDirectories(request),
+  )
 
-      ipcMain.handle(FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL, async () => {
-        return await service.clearLastRootDirectory()
-      })
+  ipcMain.handle(FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL, async () => await api.loadLastRootDirectory())
 
-      ipcMain.handle(
-        FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
-        async (_event, request: OpenEntryWithSystemRequest) => {
-          return await service.openEntryWithSystem(request)
-        },
-      )
+  ipcMain.handle(
+    FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+    async (_event, request: SaveLastRootDirectoryRequest) => await api.saveLastRootDirectory(request),
+  )
 
-      ipcMain.handle(
-        FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
-        async (_event, request: RevealEntryInFolderRequest) => {
-          return await service.revealEntryInFolder(request)
-        },
-      )
+  ipcMain.handle(FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL, async () => await api.clearLastRootDirectory())
 
-      ipcMain.handle(
-        FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
-        async (_event, request: CopyTextToClipboardRequest) => {
-          return await service.copyTextToClipboard(request)
-        },
-      )
-    },
+  ipcMain.handle(
+    FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
+    async (_event, request: OpenEntryWithSystemRequest) => await api.openEntryWithSystem(request),
+  )
 
-    removeIpcHandlers(ipcMain: IpcMainLike): void {
-      ipcMain.removeHandler(FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_LIST_DIRECTORY_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_PROBE_DIRECTORY_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_CREATE_DIRECTORY_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_COPY_ENTRIES_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_MOVE_ENTRIES_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_RENAME_ENTRY_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_TRASH_ENTRIES_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL)
-      ipcMain.removeHandler(FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL)
+  ipcMain.handle(
+    FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+    async (_event, request: RevealEntryInFolderRequest) => await api.revealEntryInFolder(request),
+  )
 
-      // clean up all active watchers when handlers are removed
-      stopAllWatchers()
-    },
+  ipcMain.handle(
+    FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+    async (_event, request: CopyTextToClipboardRequest) => await api.copyTextToClipboard(request),
+  )
+}
+
+function unregisterFileManagerIpcHandlers(ipcMain: IpcMainLike, stopAllWatchers: () => void): void {
+  for (const channel of FILE_MANAGER_IPC_CHANNELS) {
+    ipcMain.removeHandler(channel)
+  }
+  stopAllWatchers()
+}
+
+// ===== Main factory function =====
+
+export function createElectronFileManagerService(
+  options: ElectronFileManagerServiceOptions = {},
+): ElectronFileManagerService {
+  const { appendLog, getMainWindow, userDataPath } = options
+
+  function log(level: 'info' | 'warn' | 'error', message: string, context?: Record<string, unknown>): void {
+    appendLog?.(level, message, context)
   }
 
-  return service
+  // ---- watcher state ----
+  const watchers = new Map<string, fs.FSWatcher>()
+  const directoryChangedListeners = new Set<(event: DirectoryChangedEvent) => void>()
+
+  function normalizeWatchFilename(filename: string | Buffer | null | undefined): string | undefined {
+    if (filename === null || filename === undefined) return undefined
+    const normalized = Buffer.isBuffer(filename) ? filename.toString('utf-8') : filename
+    return normalized.length > 0 ? normalized : undefined
+  }
+
+  function notifyDirectoryChanged(directoryPath: string, eventType: 'rename' | 'change', filename?: string): void {
+    const event: DirectoryChangedEvent = {
+      directoryPath: normalizePath(directoryPath),
+      eventType,
+      ...(filename !== undefined ? { filename } : {}),
+      observedAt: new Date().toISOString(),
+    }
+    for (const listener of directoryChangedListeners) {
+      try {
+        listener(event)
+      } catch {
+        // swallow listener errors to avoid breaking other listeners
+      }
+    }
+
+    // forward to renderer via IPC if a window is available
+    try {
+      const win = getMainWindow?.()
+      if (win !== null && win !== undefined && !win.isDestroyed()) {
+        win.webContents.send(FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL, event)
+      }
+    } catch {
+      // ignore forwarding errors (e.g. window closed)
+    }
+  }
+
+  function startWatching(directoryPath: string): void {
+    const resolved = normalizePath(directoryPath)
+    if (watchers.has(resolved)) return
+
+    try {
+      const watcher = fs.watch(resolved, (eventType, filename) => {
+        notifyDirectoryChanged(resolved, eventType, normalizeWatchFilename(filename))
+      })
+      watcher.on('error', () => {
+        // silently tolerated; frontend cleans up stale watchers on next sync
+      })
+      watchers.set(resolved, watcher)
+    } catch {
+      // directory may not exist or be unwatchable; skip silently
+    }
+  }
+
+  function stopWatching(directoryPath: string): void {
+    const resolved = normalizePath(directoryPath)
+    const watcher = watchers.get(resolved)
+    if (watcher !== undefined) {
+      try {
+        watcher.close()
+      } catch {
+        // ignore close errors
+      }
+      watchers.delete(resolved)
+    }
+  }
+
+  function stopAllWatchers(): void {
+    for (const watcher of watchers.values()) {
+      try {
+        watcher.close()
+      } catch {
+        // ignore close errors
+      }
+    }
+    watchers.clear()
+  }
+
+  const deps: FileManagerServiceDeps = {
+    log,
+    getMainWindow,
+    userDataPath,
+    startWatching,
+    stopWatching,
+    watchers,
+    directoryChangedListeners,
+  }
+
+  const api = buildFileManagerApi(deps)
+
+  return {
+    ...api,
+    registerIpcHandlers(ipcMain: IpcMainLike): void {
+      registerFileManagerIpcHandlers(ipcMain, api)
+    },
+    removeIpcHandlers(ipcMain: IpcMainLike): void {
+      unregisterFileManagerIpcHandlers(ipcMain, stopAllWatchers)
+    },
+  }
 }
 
 function performTwoLevelProbe(rootPath: string): {

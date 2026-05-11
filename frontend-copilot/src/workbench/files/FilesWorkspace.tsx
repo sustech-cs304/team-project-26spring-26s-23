@@ -106,7 +106,6 @@ export function FilesWorkspace() {
         void fm.unwatchDirectories({ paths: watchedPathsRef.current }).catch(() => {})
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flushDebounceTimers])
 
   // ── 组件卸载时清理 debounce 定时器 ────────────────────

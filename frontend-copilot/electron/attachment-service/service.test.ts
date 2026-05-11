@@ -1,3 +1,4 @@
+/* eslint-disable max-lines-per-function */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'

@@ -180,7 +180,6 @@ describe('ProviderModelEditorDialog', () => {
     })
   })
 
-  /* eslint-disable-next-line max-lines-per-function */
   describe('budget mode interaction', () => {
     it('renders budget pills and writes structured override edits back through state changes', async () => {
       const handleStateChange = vi.fn()

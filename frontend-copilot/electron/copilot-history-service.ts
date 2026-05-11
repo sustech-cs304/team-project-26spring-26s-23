@@ -252,6 +252,7 @@ async function appendHistoryDebugLog(
   }
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity
 function summarizeHistorySuccessPayload(
   operation: string,
   payload: Record<string, unknown>,

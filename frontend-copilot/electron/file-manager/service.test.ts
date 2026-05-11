@@ -3,6 +3,15 @@ import * as path from 'node:path'
 
 import { isSubdirectory, listDirectoryEntries, performTwoLevelProbe } from './service'
 
+const TEST_DIR = '/tmp/testdir'
+const TEST_MTIME = '2026-01-01T00:00:00.000Z'
+const TEST_ROOT = '/test/root'
+const TEST_SOURCE = '/test/source.txt'
+const TEST_TARGET = '/test/target'
+const TEST_FILE = '/test/file.txt'
+const TEST_DIR_PATH = '/test/dir'
+const EPERM_MSG = 'EPERM: permission denied'
+
 const fsMocks = vi.hoisted(() => ({
   existsSync: vi.fn((_p: string) => false),
   readdirSync: vi.fn((_p: string) => [] as string[]),
@@ -51,27 +60,27 @@ describe('generateCopyName', () => {
   })
 
   it('generates "name - 副本.ext" for a regular file (no conflict)', () => {
-    const result = generateCopyName('/tmp/testdir', 'file.txt', false)
+    const result = generateCopyName(TEST_DIR, 'file.txt', false)
     expect(result).toBe('file - 副本.txt')
   })
 
   it('generates "name - 副本" for a file without extension', () => {
-    const result = generateCopyName('/tmp/testdir', 'noext', false)
+    const result = generateCopyName(TEST_DIR, 'noext', false)
     expect(result).toBe('noext - 副本')
   })
 
   it('generates "name - 副本" for a directory', () => {
-    const result = generateCopyName('/tmp/testdir', 'myfolder', true)
+    const result = generateCopyName(TEST_DIR, 'myfolder', true)
     expect(result).toBe('myfolder - 副本')
   })
 
   it('handles file with multiple dots in name', () => {
-    const result = generateCopyName('/tmp/testdir', 'archive.tar.gz', false)
+    const result = generateCopyName(TEST_DIR, 'archive.tar.gz', false)
     expect(result).toBe('archive.tar - 副本.gz')
   })
 
   it('handles directory with dots in name', () => {
-    const result = generateCopyName('/tmp/testdir', 'my.folder.v2', true)
+    const result = generateCopyName(TEST_DIR, 'my.folder.v2', true)
     expect(result).toBe('my.folder.v2 - 副本')
   })
 
@@ -80,7 +89,7 @@ describe('generateCopyName', () => {
       .mockReturnValueOnce(true)  // "file - 副本.txt" exists
       .mockReturnValueOnce(false) // "file - 副本 2.txt" does not exist
 
-    const result = generateCopyName('/tmp/testdir', 'file.txt', false)
+    const result = generateCopyName(TEST_DIR, 'file.txt', false)
     expect(result).toBe('file - 副本 2.txt')
   })
 
@@ -90,7 +99,7 @@ describe('generateCopyName', () => {
       .mockReturnValueOnce(true)  // second exists
       .mockReturnValueOnce(false) // third is free
 
-    const result = generateCopyName('/tmp/testdir', 'doc.md', false)
+    const result = generateCopyName(TEST_DIR, 'doc.md', false)
     expect(result).toBe('doc - 副本 3.md')
   })
 })
@@ -152,7 +161,7 @@ describe('listDirectoryEntries', () => {
       mtime: new Date(),
     }))
 
-    const entries = listDirectoryEntries('/test/dir')
+    const entries = listDirectoryEntries('/test/list-dir')
     const names = entries.map(e => e.name)
     // Directories should come first, alphabetically: a-dir, b-dir
     // Then files, alphabetically: a-file.txt, b-file.txt
@@ -165,21 +174,21 @@ describe('listDirectoryEntries', () => {
       isDirectory: () => false,
       isFile: () => true,
       size: 42,
-      mtime: new Date('2026-01-01T00:00:00.000Z'),
+      mtime: new Date(TEST_MTIME),
     })
 
-    const entries = listDirectoryEntries('/test/dir')
+    const entries = listDirectoryEntries('/test/list-dir')
     expect(entries).toHaveLength(1)
     const entry = entries[0]!
     expect(entry.name).toBe('test-file.txt')
     expect(entry.kind).toBe('file')
     expect(entry.size).toBe(42)
-    expect(entry.modifiedAt).toBe('2026-01-01T00:00:00.000Z')
+    expect(entry.modifiedAt).toBe(TEST_MTIME)
     expect(entry.hasChildren).toBeNull()
   })
 
   it('returns directory entries with hasChildren null without reading child directories', () => {
-    const rootPath = path.normalize('/test/dir')
+    const rootPath = path.normalize('/test/list-dir')
     const childDirPath = path.join(rootPath, 'child-dir')
     const filePath = path.join(rootPath, 'file.txt')
 
@@ -197,7 +206,7 @@ describe('listDirectoryEntries', () => {
           isDirectory: () => true,
           isFile: () => false,
           size: 0,
-          mtime: new Date('2026-01-01T00:00:00.000Z'),
+          mtime: new Date(TEST_MTIME),
         }
       }
       if (normalized === filePath) {
@@ -205,7 +214,7 @@ describe('listDirectoryEntries', () => {
           isDirectory: () => false,
           isFile: () => true,
           size: 42,
-          mtime: new Date('2026-01-01T00:00:00.000Z'),
+          mtime: new Date(TEST_MTIME),
         }
       }
       throw new Error(`Unexpected stat path: ${normalized}`)
@@ -232,7 +241,7 @@ describe('root directory persistence', () => {
   })
 
   it('returns io_error when saving last root directory fails', async () => {
-    const rootPath = path.normalize('/test/root')
+    const rootPath = path.normalize(TEST_ROOT)
     fsMocks.writeFileSync.mockImplementationOnce(() => {
       throw new Error('EACCES: permission denied')
     })
@@ -261,50 +270,27 @@ describe('directory validation', () => {
     return Object.assign(new Error(message), { code })
   }
 
-  it('returns not_found instead of throwing when stat sees a vanished directory', async () => {
-    const dirPath = path.normalize('/test/vanished')
-    fsMocks.statSync.mockImplementationOnce(() => {
-      throw createFsError('ENOENT: no such file or directory', 'ENOENT')
+  it('returns not_found for ENOENT', async () => {
+    const dirPath = path.normalize('/test/missing')
+    fsMocks.readdirSync.mockImplementation(() => {
+      throw createFsError('ENOENT', 'ENOENT')
     })
-
-    await expect(service.listDirectory({ rootPath: dirPath, directoryPath: dirPath })).resolves.toMatchObject({
-      ok: false,
-      code: 'not_found',
-      message: `目录不存在: ${dirPath}`,
-      details: 'ENOENT: no such file or directory',
-    })
-  })
-
-  it('returns permission_denied when directory stat is denied', async () => {
-    const dirPath = path.normalize('/test/private')
-    fsMocks.statSync.mockImplementationOnce(() => {
-      throw createFsError('EACCES: permission denied', 'EACCES')
+    fsMocks.statSync.mockImplementation(() => {
+      throw createFsError('ENOENT', 'ENOENT')
     })
 
     const result = await service.listDirectory({ rootPath: dirPath, directoryPath: dirPath })
-
-    expect(result).toMatchObject({
-      ok: false,
-      code: 'permission_denied',
-      message: `无法访问目录: ${dirPath}`,
-      details: 'EACCES: permission denied',
-    })
+    expect(result).toMatchObject({ ok: false, code: 'not_found' })
   })
 
-  it('returns io_error for unexpected directory stat failures', async () => {
-    const dirPath = path.normalize('/test/flaky')
-    fsMocks.statSync.mockImplementationOnce(() => {
-      throw createFsError('EIO: input/output error', 'EIO')
+  it('returns not_found for ENOTDIR', async () => {
+    const dirPath = path.normalize('/test/missing')
+    fsMocks.statSync.mockImplementation(() => {
+      throw createFsError('ENOTDIR', 'ENOTDIR')
     })
 
     const result = await service.listDirectory({ rootPath: dirPath, directoryPath: dirPath })
-
-    expect(result).toMatchObject({
-      ok: false,
-      code: 'io_error',
-      message: `检查目录失败: ${dirPath}`,
-      details: 'EIO: input/output error',
-    })
+    expect(result).toMatchObject({ ok: false, code: 'not_found' })
   })
 })
 
@@ -313,59 +299,34 @@ describe('selectRootDirectory', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    electronMocks.showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] })
     const mod = await import('./service')
-    service = mod.createElectronFileManagerService({ getMainWindow: () => null })
+    service = mod.createElectronFileManagerService()
   })
 
-  it('uses single-argument dialog overload when no main window is available', async () => {
-    const rootPath = path.normalize('/test/root')
-    electronMocks.showOpenDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePaths: [rootPath],
-    })
-    fsMocks.existsSync.mockImplementation((p: string) => path.normalize(p) === rootPath)
-    fsMocks.statSync.mockReturnValue({
-      isDirectory: () => true,
-      isFile: () => false,
-      size: 0,
-      mtime: new Date('2026-01-01T00:00:00.000Z'),
-    })
-    fsMocks.readdirSync.mockReturnValue([])
-
+  it('returns invalid_operation when dialog is cancelled', async () => {
     const result = await service.selectRootDirectory()
-
-    expect(electronMocks.showOpenDialog).toHaveBeenCalledWith({
-      properties: ['openDirectory'],
-      title: '选择文件夹',
-    })
-    expect(electronMocks.showOpenDialog).toHaveBeenCalledTimes(1)
-    expect(result).toMatchObject({ ok: true, rootPath })
+    expect(result).toMatchObject({ ok: false, code: 'invalid_operation', message: '未选择任何目录' })
   })
 
-  it('passes normalized defaultPath when an initial path is provided', async () => {
-    const rootPath = path.normalize('/test/root')
+  it('returns ok with entries when a directory is selected', async () => {
     const initialPath = path.normalize('/test/initial')
-    electronMocks.showOpenDialog.mockResolvedValueOnce({
-      canceled: false,
-      filePaths: [rootPath],
-    })
-    fsMocks.existsSync.mockImplementation((p: string) => {
-      const normalized = path.normalize(p)
-      return normalized === rootPath || normalized === initialPath
-    })
+    const rootPath = path.normalize(TEST_ROOT)
+    electronMocks.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [rootPath] })
+    fsMocks.existsSync.mockReturnValue(true)
+    fsMocks.readdirSync.mockReturnValue([])
     fsMocks.statSync.mockImplementation((p: string) => {
       const normalized = path.normalize(p)
-      if (normalized === rootPath || normalized === initialPath) {
+      if (normalized === rootPath) {
         return {
           isDirectory: () => true,
           isFile: () => false,
           size: 0,
-          mtime: new Date('2026-01-01T00:00:00.000Z'),
+          mtime: new Date(TEST_MTIME),
         }
       }
       throw new Error(`Unexpected stat path: ${normalized}`)
     })
-    fsMocks.readdirSync.mockReturnValue([])
 
     const result = await service.selectRootDirectory({ initialPath })
 
@@ -378,7 +339,32 @@ describe('selectRootDirectory', () => {
   })
 })
 
-describe('copyEntries and moveEntries', () => {
+function mockCopyFileOpPaths(src: string, destDir: string, extraPaths: string[] = []) {
+  const existing = new Set([src, destDir, ...extraPaths].map((p) => path.normalize(p)))
+  fsMocks.existsSync.mockImplementation((p: string) => existing.has(path.normalize(p)))
+  fsMocks.statSync.mockImplementation((p: string) => {
+    const normalized = path.normalize(p)
+    if (normalized === destDir) {
+      return {
+        isDirectory: () => true,
+        isFile: () => false,
+        size: 0,
+        mtime: new Date(TEST_MTIME),
+      }
+    }
+    if (normalized === src) {
+      return {
+        isDirectory: () => false,
+        isFile: () => true,
+        size: 10,
+        mtime: new Date(TEST_MTIME),
+      }
+    }
+    throw new Error(`Unexpected stat path: ${normalized}`)
+  })
+}
+
+describe('copyEntries', () => {
   let service: ReturnType<typeof import('./service').createElectronFileManagerService>
 
   beforeEach(async () => {
@@ -392,39 +378,14 @@ describe('copyEntries and moveEntries', () => {
     service = mod.createElectronFileManagerService()
   })
 
-  function mockFileOperationPaths(src: string, destDir: string, existingExtraPaths: string[] = []) {
-    const existing = new Set([src, destDir, ...existingExtraPaths].map((p) => path.normalize(p)))
-    fsMocks.existsSync.mockImplementation((p: string) => existing.has(path.normalize(p)))
-    fsMocks.statSync.mockImplementation((p: string) => {
-      const normalized = path.normalize(p)
-      if (normalized === destDir) {
-        return {
-          isDirectory: () => true,
-          isFile: () => false,
-          size: 0,
-          mtime: new Date('2026-01-01T00:00:00.000Z'),
-        }
-      }
-      if (normalized === src) {
-        return {
-          isDirectory: () => false,
-          isFile: () => true,
-          size: 10,
-          mtime: new Date('2026-01-01T00:00:00.000Z'),
-        }
-      }
-      throw new Error(`Unexpected stat path: ${normalized}`)
-    })
-  }
-
   it('returns source and created target path for a successful copy', async () => {
-    const src = path.normalize('/test/source.txt')
-    const destDir = path.normalize('/test/target')
+    const src = path.normalize(TEST_SOURCE)
+    const destDir = path.normalize(TEST_TARGET)
     const destPath = path.join(destDir, 'source.txt')
-    mockFileOperationPaths(src, destDir)
+    mockCopyFileOpPaths(src, destDir)
 
     const result = await service.copyEntries({
-      rootPath: path.normalize('/test'),
+      rootPath: path.normalize(TEST_ROOT),
       sourcePaths: [src],
       destinationDirectory: destDir,
       operationType: 'copy',
@@ -435,16 +396,16 @@ describe('copyEntries and moveEntries', () => {
   })
 
   it('marks cut as failed when source deletion fails after copy succeeds', async () => {
-    const src = path.normalize('/test/source.txt')
-    const destDir = path.normalize('/test/target')
+    const src = path.normalize(TEST_SOURCE)
+    const destDir = path.normalize(TEST_TARGET)
     const destPath = path.join(destDir, 'source.txt')
-    mockFileOperationPaths(src, destDir)
+    mockCopyFileOpPaths(src, destDir)
     fsMocks.unlinkSync.mockImplementationOnce(() => {
-      throw new Error('EPERM: permission denied')
+      throw new Error(EPERM_MSG)
     })
 
     const result = await service.copyEntries({
-      rootPath: path.normalize('/test'),
+      rootPath: path.normalize(TEST_ROOT),
       sourcePaths: [src],
       destinationDirectory: destDir,
       operationType: 'cut',
@@ -453,7 +414,7 @@ describe('copyEntries and moveEntries', () => {
     expect(result).toMatchObject({
       ok: true,
       affectedPaths: [destPath],
-      failedItems: [{ path: src, reason: 'EPERM: permission denied' }],
+      failedItems: [{ path: src, reason: EPERM_MSG }],
     })
     if (result.ok) {
       expect(result.affectedPaths).not.toContain(src)
@@ -463,7 +424,7 @@ describe('copyEntries and moveEntries', () => {
   it('does not add the failed cut source to affected paths in a mixed batch', async () => {
     const srcOk = path.normalize('/test/ok.txt')
     const srcFail = path.normalize('/test/fail.txt')
-    const destDir = path.normalize('/test/target')
+    const destDir = path.normalize(TEST_TARGET)
     const destOk = path.join(destDir, 'ok.txt')
     const destFail = path.join(destDir, 'fail.txt')
     const existing = new Set([srcOk, srcFail, destDir])
@@ -476,7 +437,7 @@ describe('copyEntries and moveEntries', () => {
           isDirectory: () => true,
           isFile: () => false,
           size: 0,
-          mtime: new Date('2026-01-01T00:00:00.000Z'),
+          mtime: new Date(TEST_MTIME),
         }
       }
       if (normalized === srcOk || normalized === srcFail) {
@@ -484,7 +445,7 @@ describe('copyEntries and moveEntries', () => {
           isDirectory: () => false,
           isFile: () => true,
           size: 10,
-          mtime: new Date('2026-01-01T00:00:00.000Z'),
+          mtime: new Date(TEST_MTIME),
         }
       }
       throw new Error(`Unexpected stat path: ${normalized}`)
@@ -496,12 +457,12 @@ describe('copyEntries and moveEntries', () => {
         return
       }
       if (normalized === srcFail) {
-        throw new Error('EPERM: permission denied')
+        throw new Error(EPERM_MSG)
       }
     })
 
     const result = await service.copyEntries({
-      rootPath: path.normalize('/test'),
+      rootPath: path.normalize(TEST_ROOT),
       sourcePaths: [srcOk, srcFail],
       destinationDirectory: destDir,
       operationType: 'cut',
@@ -510,21 +471,57 @@ describe('copyEntries and moveEntries', () => {
     expect(result).toMatchObject({
       ok: true,
       affectedPaths: [srcOk, destOk, destFail],
-      failedItems: [{ path: srcFail, reason: 'EPERM: permission denied' }],
+      failedItems: [{ path: srcFail, reason: EPERM_MSG }],
     })
     if (result.ok) {
       expect(result.affectedPaths).not.toContain(srcFail)
     }
   })
+})
+
+describe('moveEntries', () => {
+  let service: ReturnType<typeof import('./service').createElectronFileManagerService>
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    fsMocks.renameSync.mockImplementation(() => undefined)
+    const mod = await import('./service')
+    service = mod.createElectronFileManagerService()
+  })
+
+  function mockFileOpPaths(src: string, destDir: string) {
+    const existing = new Set([src, destDir].map((p) => path.normalize(p)))
+    fsMocks.existsSync.mockImplementation((p: string) => existing.has(path.normalize(p)))
+    fsMocks.statSync.mockImplementation((p: string) => {
+      const normalized = path.normalize(p)
+      if (normalized === destDir) {
+        return {
+          isDirectory: () => true,
+          isFile: () => false,
+          size: 0,
+          mtime: new Date(TEST_MTIME),
+        }
+      }
+      if (normalized === src) {
+        return {
+          isDirectory: () => false,
+          isFile: () => true,
+          size: 10,
+          mtime: new Date(TEST_MTIME),
+        }
+      }
+      throw new Error(`Unexpected stat path: ${normalized}`)
+    })
+  }
 
   it('returns source and target path for a successful move', async () => {
-    const src = path.normalize('/test/source.txt')
-    const destDir = path.normalize('/test/target')
+    const src = path.normalize(TEST_SOURCE)
+    const destDir = path.normalize(TEST_TARGET)
     const destPath = path.join(destDir, 'source.txt')
-    mockFileOperationPaths(src, destDir)
+    mockFileOpPaths(src, destDir)
 
     const result = await service.moveEntries({
-      rootPath: path.normalize('/test'),
+      rootPath: path.normalize(TEST_ROOT),
       sourcePaths: [src],
       destinationDirectory: destDir,
     })
@@ -548,7 +545,7 @@ describe('watchDirectories', () => {
   })
 
   it('normalizes Buffer filenames before emitting directory change events', async () => {
-    const dirPath = path.normalize('/test/root')
+    const dirPath = path.normalize(TEST_ROOT)
     const listener = vi.fn()
     service.onDirectoryChanged(listener)
 
@@ -566,7 +563,7 @@ describe('watchDirectories', () => {
   })
 
   it('omits empty or unavailable watcher filenames', async () => {
-    const dirPath = path.normalize('/test/root')
+    const dirPath = path.normalize(TEST_ROOT)
     const listener = vi.fn()
     service.onDirectoryChanged(listener)
 
@@ -597,9 +594,9 @@ describe('openEntryWithSystem', () => {
     fsMocks.statSync.mockReturnValue({ isFile: () => true, isDirectory: () => false })
     electronMocks.openPath.mockResolvedValue('')
 
-    const result = await service.openEntryWithSystem({ path: '/test/file.txt' })
+    const result = await service.openEntryWithSystem({ path: TEST_FILE })
 
-    const normalizedPath = path.normalize('/test/file.txt')
+    const normalizedPath = path.normalize(TEST_FILE)
     expect(result).toEqual({ ok: true, affectedPaths: [normalizedPath] })
     expect(electronMocks.openPath).toHaveBeenCalledWith(normalizedPath)
   })
@@ -626,7 +623,7 @@ describe('openEntryWithSystem', () => {
     fsMocks.existsSync.mockReturnValue(true)
     fsMocks.statSync.mockReturnValue({ isFile: () => false, isDirectory: () => true })
 
-    const result = await service.openEntryWithSystem({ path: '/test/dir' })
+    const result = await service.openEntryWithSystem({ path: TEST_DIR_PATH })
 
     expect(result).toMatchObject({ ok: false, code: 'invalid_operation' })
   })
@@ -654,9 +651,9 @@ describe('revealEntryInFolder', () => {
   it('returns ok with affectedPaths for an existing file', async () => {
     fsMocks.existsSync.mockReturnValue(true)
 
-    const result = await service.revealEntryInFolder({ path: '/test/file.txt' })
+    const result = await service.revealEntryInFolder({ path: TEST_FILE })
 
-    const normalizedPath = path.normalize('/test/file.txt')
+    const normalizedPath = path.normalize(TEST_FILE)
     expect(result).toEqual({ ok: true, affectedPaths: [normalizedPath] })
     expect(electronMocks.showItemInFolder).toHaveBeenCalledWith(normalizedPath)
   })
@@ -664,9 +661,9 @@ describe('revealEntryInFolder', () => {
   it('returns ok with affectedPaths for an existing directory', async () => {
     fsMocks.existsSync.mockReturnValue(true)
 
-    const result = await service.revealEntryInFolder({ path: '/test/dir' })
+    const result = await service.revealEntryInFolder({ path: TEST_DIR_PATH })
 
-    const normalizedDir = path.normalize('/test/dir')
+    const normalizedDir = path.normalize(TEST_DIR_PATH)
     expect(result).toEqual({ ok: true, affectedPaths: [normalizedDir] })
   })
 

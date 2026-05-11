@@ -778,7 +778,6 @@ export function useFileManagerState(): FileManagerState {
     } finally {
       setBusyOperation('idle')
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rootPath, selectedPaths, focusedPath, rootEntries, entriesCache])
 
   const confirmPermanentDelete = useCallback(async () => {
