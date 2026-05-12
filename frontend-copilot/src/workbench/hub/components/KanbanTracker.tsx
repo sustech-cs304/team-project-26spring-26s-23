@@ -1,6 +1,8 @@
-import React from 'react';
-
 // 这里为了通用，可以直接引入外部定义，先暂时在内部简单声明
+const EDITOR_BACKGROUND = 'var(--vscode-editor-background)'
+const WIDGET_BORDER = '1px solid var(--vscode-widget-border)'
+const DESCRIPTION_FOREGROUND = 'var(--vscode-descriptionForeground)'
+
 interface UnifiedCalendarEvent {
   id: string | number
   source: string
@@ -31,9 +33,9 @@ export function KanbanTracker({ events = [] }: KanbanTrackerProps) {
         flex: '1 1 50%',
         minHeight: '300px',
 
-        backgroundColor: 'var(--vscode-editor-background)',
+        backgroundColor: EDITOR_BACKGROUND,
         borderRadius: '8px',
-        border: '1px solid var(--vscode-widget-border)',
+        border: WIDGET_BORDER,
         padding: '1rem',
         display: 'flex',
         flexDirection: 'column',
@@ -51,9 +53,9 @@ export function KanbanTracker({ events = [] }: KanbanTrackerProps) {
             <span style={{ color: 'var(--vscode-list-warningForeground)' }}>●</span> 未开始 ({notStartedEvents.length})
           </div>
           {notStartedEvents.map((evt) => (
-            <div key={evt.id} style={{ backgroundColor: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-widget-border)', borderRadius: '4px', padding: '0.5rem', fontSize: '0.85em' }}>
+            <div key={evt.id} style={{ backgroundColor: EDITOR_BACKGROUND, border: WIDGET_BORDER, borderRadius: '4px', padding: '0.5rem', fontSize: '0.85em' }}>
               <div style={{ fontWeight: 500, marginBottom: '0.25rem' }}>{evt.title}</div>
-              <div style={{ color: 'var(--vscode-descriptionForeground)' }}>{evt.source.toUpperCase()}</div>
+              <div style={{ color: DESCRIPTION_FOREGROUND }}>{evt.source.toUpperCase()}</div>
             </div>
           ))}
           <button style={{ background: 'none', border: '1px dashed var(--vscode-widget-border)', color: 'var(--vscode-textLink-foreground)', borderRadius: '4px', padding: '0.25rem', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'center' }}>+ 新建任务</button>
@@ -65,9 +67,9 @@ export function KanbanTracker({ events = [] }: KanbanTrackerProps) {
             <span style={{ color: 'var(--vscode-list-activeSelectionBackground)' }}>●</span> 进行中 ({inProgressEvents.length})
           </div>
           {inProgressEvents.map((evt) => (
-            <div key={evt.id} style={{ backgroundColor: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-widget-border)', borderRadius: '4px', padding: '0.5rem', fontSize: '0.85em' }}>
+            <div key={evt.id} style={{ backgroundColor: EDITOR_BACKGROUND, border: WIDGET_BORDER, borderRadius: '4px', padding: '0.5rem', fontSize: '0.85em' }}>
               <div style={{ fontWeight: 500, marginBottom: '0.25rem' }}>{evt.title}</div>
-              <div style={{ color: 'var(--vscode-descriptionForeground)' }}>{evt.source.toUpperCase()}</div>
+              <div style={{ color: DESCRIPTION_FOREGROUND }}>{evt.source.toUpperCase()}</div>
             </div>
           ))}
           <button style={{ background: 'none', border: '1px dashed var(--vscode-widget-border)', color: 'var(--vscode-textLink-foreground)', borderRadius: '4px', padding: '0.25rem', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'center' }}>+ 新建任务</button>
@@ -79,9 +81,9 @@ export function KanbanTracker({ events = [] }: KanbanTrackerProps) {
             <span style={{ color: 'var(--vscode-testing-iconPassed)' }}>●</span> 已完成 ({completedEvents.length})
           </div>
           {completedEvents.map((evt) => (
-            <div key={evt.id} style={{ backgroundColor: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-widget-border)', borderRadius: '4px', padding: '0.5rem', fontSize: '0.85em' }}>
-              <div style={{ fontWeight: 500, marginBottom: '0.25rem', textDecoration: 'line-through', color: 'var(--vscode-descriptionForeground)' }}>{evt.title}</div>
-              <div style={{ color: 'var(--vscode-descriptionForeground)' }}>{evt.source.toUpperCase()}</div>
+            <div key={evt.id} style={{ backgroundColor: EDITOR_BACKGROUND, border: WIDGET_BORDER, borderRadius: '4px', padding: '0.5rem', fontSize: '0.85em' }}>
+              <div style={{ fontWeight: 500, marginBottom: '0.25rem', textDecoration: 'line-through', color: DESCRIPTION_FOREGROUND }}>{evt.title}</div>
+              <div style={{ color: DESCRIPTION_FOREGROUND }}>{evt.source.toUpperCase()}</div>
             </div>
           ))}
         </div>

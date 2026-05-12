@@ -42,72 +42,95 @@ import {
 } from './CopilotChatPanel.test-support'
 import type { CopilotBootstrapState } from './types'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const DESC_CN_009 = 'Shenzhen：晴 / 24°C / 湿度 60%'
+const LABEL_COMPAT_BUDGET_TOKENS = 'compat-budget-tokens-v1'
+const LABEL_COMPAT_DISCRETE_LEVELS = 'compat-discrete-levels-v1'
+const LABEL_HTTP_127 = 'http://127.0.0.1:8765'
+const LABEL_OPENAI_COMPATIBLE = 'openai-compatible'
+const LABEL_OPENROUTER_AUTO = 'openrouter/auto'
+const LABEL_PROVIDER_CATALOG_ONLY = 'provider_catalog_only: not enabled'
+const LABEL_RUN_ASSISTANT = 'run-1:assistant'
+const LABEL_TOOL_READ = 'tool.fs.read'
+const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
+const LABEL_TOOL_REMOTE_SEARCH_2 = 'tool.remote-search:call-1'
+
+
+// 顶层测试 describe，包含 7+ 子 describe，覆盖 chat helpers 全场景，无法安全拆分
+/* eslint-disable-next-line max-lines-per-function */
 describe('copilot chat helpers', () => {
-  it('builds runtime and session debug summaries for console logging', () => {
-    expect(buildRuntimeDebugSummary({
-      state: createReadyState() as Extract<CopilotBootstrapState, { status: 'ready' }>,
-      directoryState: createDirectoryState(),
-      selectedAgent: createSelectedAgent(),
-    })).toEqual({
-      runtimeSource: 'hosted',
-      connectionSummary: '宿主管理 · http://127.0.0.1:8765 · development（已解析）',
-      runtimeUrl: 'http://127.0.0.1:8765',
-      hostedStatus: 'ready',
-      directoryStatus: 'ready',
-      selectedAgent: {
-        id: 'general',
-        label: '通用智能体',
-      },
-    })
+  describe('debug summaries', () => {
+    it('builds runtime and session debug summaries for console logging', () => {
+      expect(buildRuntimeDebugSummary({
+        state: createReadyState() as Extract<CopilotBootstrapState, { status: 'ready' }>,
+        directoryState: createDirectoryState(),
+        selectedAgent: createSelectedAgent(),
+      })).toEqual({
+        runtimeSource: 'hosted',
+        connectionSummary: '宿主管理 · http://127.0.0.1:8765 · development（已解析）',
+        runtimeUrl: LABEL_HTTP_127,
+        hostedStatus: 'ready',
+        directoryStatus: 'ready',
+        selectedAgent: {
+          id: 'general',
+          label: '通用智能体',
+        },
+      })
 
-    expect(buildSessionDebugSummary(createSessionShell())).toEqual({
-      sessionId: 'session-1',
-      boundAgent: 'general',
-      capabilitiesVersion: 'cap-v12',
-      allAvailableTools: ['tool.fs.read', 'tool.remote-search'],
-      recommendedTools: ['tool.fs.read'],
-      defaultEnabledTools: ['tool.fs.read'],
-      defaultEnabledSource: {
+      expect(buildSessionDebugSummary(createSessionShell())).toEqual({
+        sessionId: 'session-1',
         boundAgent: 'general',
-        toolSelectionMode: 'recommendation-only',
-      },
+        capabilitiesVersion: 'cap-v12',
+        allAvailableTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
+        recommendedTools: [LABEL_TOOL_READ],
+        defaultEnabledTools: [LABEL_TOOL_READ],
+        defaultEnabledSource: {
+          boundAgent: 'general',
+          toolSelectionMode: 'recommendation-only',
+        },
+      })
     })
   })
 
-  it('creates composer defaults from empty state and keeps model selection empty until route-based restoration happens elsewhere', () => {
-    expect(createEmptyComposerDraft()).toEqual({
-      messageText: '',
-      selectedModelId: '',
-      selectedModelRoute: null,
-      thinkingSelection: null,
-      thinkingSelectionByModelKey: {},
-      enabledTools: [],
-      requestOptionsText: '{}',
-    })
+  describe('composer draft', () => {
+    it('creates composer defaults from empty state and keeps model selection empty until route-based restoration happens elsewhere', () => {
+      expect(createEmptyComposerDraft()).toEqual({
+        messageText: '',
+        selectedModelId: '',
+        selectedModelRoute: null,
+        thinkingSelection: null,
+        thinkingSelectionByModelKey: {},
+        enabledTools: [],
+        requestOptionsText: '{}',
+      })
 
-    const draft = createComposerDraftFromSession(createSessionShell())
+      const draft = createComposerDraftFromSession(createSessionShell())
 
-    expect(draft).toEqual({
-      messageText: '',
-      selectedModelId: '',
-      selectedModelRoute: null,
-      thinkingSelection: null,
-      thinkingSelectionByModelKey: {},
-      enabledTools: [],
-      requestOptionsText: '{}',
+      expect(draft).toEqual({
+        messageText: '',
+        selectedModelId: '',
+        selectedModelRoute: null,
+        thinkingSelection: null,
+        thinkingSelectionByModelKey: {},
+        enabledTools: [],
+        requestOptionsText: '{}',
+      })
     })
   })
 
-  it('builds request-scoped message input around structured thinking selection without legacy payload aliases', () => {
+  // 包含 4 个嵌套 describe（attachments/enabled tools/tool permission/thinking selection），无法进一步拆分
+  /* eslint-disable-next-line max-lines-per-function */
+  describe('message send input', () => {
+    it('builds request-scoped message input around structured thinking selection without legacy payload aliases', () => {
     const sessionShell = createSessionShell()
     const thinkingSelection = createRuntimeThinkingSelection({
-      series: 'compat-discrete-levels-v1',
+      series: LABEL_COMPAT_DISCRETE_LEVELS,
       mode: 'preset',
       level: 'auto',
       budgetTokens: null,
     })
     const input = buildRuntimeMessageSendInput({
-      runtimeUrl: 'http://127.0.0.1:8765',
+      runtimeUrl: LABEL_HTTP_127,
       sessionShell,
       draft: {
         messageText: '请总结这份文档',
@@ -116,7 +139,7 @@ describe('copilot chat helpers', () => {
           providerProfileId: 'provider-openai',
           snapshot: {
             provider: 'openai',
-            endpointType: 'openai-compatible',
+            endpointType: LABEL_OPENAI_COMPATIBLE,
             baseUrl: 'https://api.example.com/v1',
             modelId: 'qwen-plus',
           },
@@ -125,15 +148,15 @@ describe('copilot chat helpers', () => {
         thinkingSelectionByModelKey: {
           'provider-openai|openai|openai-compatible|https://api.example.com/v1|qwen-plus': thinkingSelection,
         },
-        enabledTools: ['tool.fs.read', 'tool.remote-search', 'tool.remote-search'],
+        enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH, LABEL_TOOL_REMOTE_SEARCH],
         requestOptionsText: '{"trace":true}',
       },
       toolPermissionPolicy: {
         version: 1,
         defaultMode: 'ask',
         toolPermissions: {
-          'tool.fs.read': { mode: 'allow' },
-          'tool.remote-search': { mode: 'ask' },
+          [LABEL_TOOL_READ]: { mode: 'allow' },
+          [LABEL_TOOL_REMOTE_SEARCH]: { mode: 'ask' },
           'tool.hidden': { mode: 'deny' },
         },
       },
@@ -143,7 +166,7 @@ describe('copilot chat helpers', () => {
     })
 
     expect(input).toEqual({
-      runtimeUrl: 'http://127.0.0.1:8765',
+      runtimeUrl: LABEL_HTTP_127,
       sessionId: 'session-1',
       agent: 'general',
       message: {
@@ -159,7 +182,7 @@ describe('copilot chat helpers', () => {
         catalogRevision: '2026-04-06-provider-catalog-v1',
       },
       thinkingSelection: {
-        series: 'compat-discrete-levels-v1',
+        series: LABEL_COMPAT_DISCRETE_LEVELS,
         value: {
           valueType: 'code',
           code: 'auto',
@@ -169,12 +192,12 @@ describe('copilot chat helpers', () => {
         level: 'auto',
         budgetTokens: null,
       },
-      enabledTools: ['tool.fs.read', 'tool.remote-search'],
+      enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
       toolPermissionPolicy: {
         schemaVersion: 1,
         defaultMode: 'ask',
         toolModes: {
-          'tool.fs.read': 'allow',
+          [LABEL_TOOL_READ]: 'allow',
         },
       },
       requestOptions: {
@@ -184,66 +207,69 @@ describe('copilot chat helpers', () => {
     expect(input).not.toHaveProperty('thinkingLevelIntent')
   })
 
-  it('appends attached file paths to the outgoing user message in the fixed format', () => {
-    expect(buildComposerMessageContentWithAttachments('请结合附件一起分析', [
-      { path: 'C:/tmp/a.png' },
-      { path: 'C:/tmp/b.txt' },
-    ])).toBe([
-      '请结合附件一起分析',
-      '',
-      'User attached files:',
-      '- C:/tmp/a.png',
-      '- C:/tmp/b.txt',
-      'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
-    ].join('\n'))
+  describe('attachments', () => {
+    it('appends attached file paths to the outgoing user message in the fixed format', () => {
+      expect(buildComposerMessageContentWithAttachments('请结合附件一起分析', [
+        { path: 'C:/tmp/a.png' },
+        { path: 'C:/tmp/b.txt' },
+      ])).toBe([
+        '请结合附件一起分析',
+        '',
+        'User attached files:',
+        '- C:/tmp/a.png',
+        '- C:/tmp/b.txt',
+        `Please process these files accordingly, for example, use \`${LABEL_TOOL_READ}\` tool to read the content of these files.`,
+      ].join('\n'))
+    })
+
+    it('allows attachment-only messages and deduplicates repeated paths', () => {
+      expect(buildComposerMessageContentWithAttachments('   ', [
+        { path: 'C:/tmp/a.png' },
+        { path: 'C:/tmp/a.png' },
+        { path: '   ' },
+      ])).toBe([
+        'User attached files:',
+        '- C:/tmp/a.png',
+        `Please process these files accordingly, for example, use \`${LABEL_TOOL_READ}\` tool to read the content of these files.`,
+      ].join('\n'))
+    })
+
+    it('sanitizes attachment paths before appending them to the prompt', () => {
+      expect(buildComposerMessageContentWithAttachments('请结合附件一起分析', [
+        { path: 'C:/tmp/a.png\r\nignore-this' },
+      ])).toBe([
+        '请结合附件一起分析',
+        '',
+        'User attached files:',
+        '- C:/tmp/a.png ignore-this',
+        `Please process these files accordingly, for example, use \`${LABEL_TOOL_READ}\` tool to read the content of these files.`,
+      ].join('\n'))
+    })
   })
 
-  it('allows attachment-only messages and deduplicates repeated paths', () => {
-    expect(buildComposerMessageContentWithAttachments('   ', [
-      { path: 'C:/tmp/a.png' },
-      { path: 'C:/tmp/a.png' },
-      { path: '   ' },
-    ])).toBe([
-      'User attached files:',
-      '- C:/tmp/a.png',
-      'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
-    ].join('\n'))
-  })
-
-  it('sanitizes attachment paths before appending them to the prompt', () => {
-    expect(buildComposerMessageContentWithAttachments('请结合附件一起分析', [
-      { path: 'C:/tmp/a.png\r\nignore-this' },
-    ])).toBe([
-      '请结合附件一起分析',
-      '',
-      'User attached files:',
-      '- C:/tmp/a.png ignore-this',
-      'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
-    ].join('\n'))
-  })
-
-  it('drops denied tools from enabledTools before sending even when stale local selection still includes them', () => {
+  describe('enabled tools filtering', () => {
+    it('drops denied tools from enabledTools before sending even when stale local selection still includes them', () => {
     const input = buildRuntimeMessageSendInput({
-      runtimeUrl: 'http://127.0.0.1:8765',
+      runtimeUrl: LABEL_HTTP_127,
       sessionShell: createSessionShell(),
       draft: {
         ...createEmptyComposerDraft(),
         messageText: 'deny cleanup',
         selectedModelId: 'provider-openai:openai/gpt-4.1',
         selectedModelRoute: createRuntimeModelRoute(),
-        enabledTools: ['tool.fs.read', 'tool.remote-search', 'tool.remote-search'],
+        enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH, LABEL_TOOL_REMOTE_SEARCH],
       },
       toolPermissionPolicy: {
         version: 1,
         defaultMode: 'ask',
         toolPermissions: {
-          'tool.remote-search': { mode: 'deny' },
+          [LABEL_TOOL_REMOTE_SEARCH]: { mode: 'deny' },
         },
       },
       requestOptions: {},
     })
 
-    expect(input.enabledTools).toEqual(['tool.fs.read'])
+    expect(input.enabledTools).toEqual([LABEL_TOOL_READ])
     expect(input.toolPermissionPolicy).toEqual({
       schemaVersion: 1,
       defaultMode: 'ask',
@@ -253,14 +279,14 @@ describe('copilot chat helpers', () => {
 
   it('keeps budget selections structured without reviving compat intent aliases', () => {
     const budgetSelection = createRuntimeThinkingSelection({
-      series: 'compat-budget-tokens-v1',
+      series: LABEL_COMPAT_BUDGET_TOKENS,
       mode: 'budget',
       level: null,
       budgetTokens: 8192,
     })
 
     const input = buildRuntimeMessageSendInput({
-      runtimeUrl: 'http://127.0.0.1:8765',
+      runtimeUrl: LABEL_HTTP_127,
       sessionShell: createSessionShell(),
       draft: {
         ...createEmptyComposerDraft(),
@@ -270,7 +296,7 @@ describe('copilot chat helpers', () => {
           providerProfileId: 'provider-budget',
           snapshot: {
             provider: 'openai',
-            endpointType: 'openai-compatible',
+            endpointType: LABEL_OPENAI_COMPATIBLE,
             baseUrl: 'https://budget.example.com/v1',
             modelId: 'model-budget',
           },
@@ -286,58 +312,62 @@ describe('copilot chat helpers', () => {
     expect(input.thinkingSelection).toEqual(budgetSelection)
     expect(input).not.toHaveProperty('thinkingLevelIntent')
   })
+  })
 
-  it('reduces persisted settings policy to request-scoped runtime tool permission policy', () => {
-    expect(buildRuntimeToolPermissionPolicy({
-      enabledTools: ['tool.fs.read', 'tool.remote-search', 'tool.remote-search'],
-      policy: {
-        version: 1,
-        defaultMode: 'ask',
-        toolPermissions: {
-          'tool.fs.read': { mode: 'allow' },
-          'tool.hidden': { mode: 'deny' },
-          'tool.remote-search': { mode: 'delay', timeoutAction: 'approve', timeoutSeconds: 27 },
+  describe('tool permission policy', () => {
+    it('reduces persisted settings policy to request-scoped runtime tool permission policy', () => {
+      expect(buildRuntimeToolPermissionPolicy({
+        enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH, LABEL_TOOL_REMOTE_SEARCH],
+        policy: {
+          version: 1,
+          defaultMode: 'ask',
+          toolPermissions: {
+            [LABEL_TOOL_READ]: { mode: 'allow' },
+            'tool.hidden': { mode: 'deny' },
+            [LABEL_TOOL_REMOTE_SEARCH]: { mode: 'delay', timeoutAction: 'approve', timeoutSeconds: 27 },
+          },
         },
-      },
-    })).toEqual({
-      schemaVersion: 1,
-      defaultMode: 'ask',
-      toolModes: {
-          'tool.fs.read': 'allow',
-          'tool.remote-search': 'delay',
-      },
-      toolTimeoutSeconds: {
-        'tool.remote-search': 27,
-      },
-      toolTimeoutActions: {
-        'tool.remote-search': 'approve',
-      },
+      })).toEqual({
+        schemaVersion: 1,
+        defaultMode: 'ask',
+        toolModes: {
+            [LABEL_TOOL_READ]: 'allow',
+            [LABEL_TOOL_REMOTE_SEARCH]: 'delay',
+        },
+        toolTimeoutSeconds: {
+          [LABEL_TOOL_REMOTE_SEARCH]: 27,
+        },
+        toolTimeoutActions: {
+          [LABEL_TOOL_REMOTE_SEARCH]: 'approve',
+        },
+      })
+    })
+
+    it('sanitizes denied and unknown tool ids while preserving allowed selectable tools', () => {
+      expect(sanitizeEnabledToolIds({
+        selectedToolIds: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH, 'tool.unknown', LABEL_TOOL_REMOTE_SEARCH],
+        tools: [
+          { toolId: LABEL_TOOL_READ, kind: 'builtin', availability: 'available', displayName: '读取文件', description: '读取文件' },
+          { toolId: LABEL_TOOL_REMOTE_SEARCH, kind: 'builtin', availability: 'available', displayName: '联网搜索', description: '文件格式转换' },
+        ],
+        policy: {
+          version: 1,
+          defaultMode: 'ask',
+          toolPermissions: {
+            [LABEL_TOOL_REMOTE_SEARCH]: { mode: 'deny' },
+          },
+        },
+      })).toEqual([LABEL_TOOL_READ])
     })
   })
 
-  it('sanitizes denied and unknown tool ids while preserving allowed selectable tools', () => {
-    expect(sanitizeEnabledToolIds({
-      selectedToolIds: ['tool.fs.read', 'tool.remote-search', 'tool.unknown', 'tool.remote-search'],
-      tools: [
-        { toolId: 'tool.fs.read', kind: 'builtin', availability: 'available', displayName: '读取文件', description: '读取文件' },
-        { toolId: 'tool.remote-search', kind: 'builtin', availability: 'available', displayName: '联网搜索', description: '文件格式转换' },
-      ],
-      policy: {
-        version: 1,
-        defaultMode: 'ask',
-        toolPermissions: {
-          'tool.remote-search': { mode: 'deny' },
-        },
-      },
-    })).toEqual(['tool.fs.read'])
-  })
-
-  it('remembers structured selections per model and normalizes them against the current capability shape', () => {
+  describe('thinking selection by model', () => {
+    it('remembers structured selections per model and normalizes them against the current capability shape', () => {
     const budgetRoute = createRuntimeModelRoute({
       providerProfileId: 'provider-budget',
       snapshot: {
         provider: 'openai',
-        endpointType: 'openai-compatible',
+        endpointType: LABEL_OPENAI_COMPATIBLE,
         baseUrl: 'https://budget.example.com/v1',
         modelId: 'budget-model',
       },
@@ -346,13 +376,13 @@ describe('copilot chat helpers', () => {
       providerProfileId: 'provider-discrete',
       snapshot: {
         provider: 'openai',
-        endpointType: 'openai-compatible',
+        endpointType: LABEL_OPENAI_COMPATIBLE,
         baseUrl: 'https://discrete.example.com/v1',
         modelId: 'discrete-model',
       },
     })
     const budgetCapability = createRuntimeThinkingCapability({
-      series: 'compat-budget-tokens-v1',
+      series: LABEL_COMPAT_BUDGET_TOKENS,
       controlSpec: createRuntimeThinkingControlSpec({
         kind: 'budget',
         selectionKind: 'budget',
@@ -368,7 +398,7 @@ describe('copilot chat helpers', () => {
       defaultLevel: null,
     })
     const discreteCapability = createRuntimeThinkingCapability({
-      series: 'compat-discrete-levels-v1',
+      series: LABEL_COMPAT_DISCRETE_LEVELS,
       controlSpec: createRuntimeThinkingControlSpec({
         kind: 'discrete',
         selectionKind: 'preset',
@@ -394,7 +424,7 @@ describe('copilot chat helpers', () => {
     draft = applyThinkingSelectionToComposerDraft(draft, {
       modelRoute: budgetRoute,
       thinkingSelection: createRuntimeThinkingSelection({
-        series: 'compat-budget-tokens-v1',
+        series: LABEL_COMPAT_BUDGET_TOKENS,
         mode: 'budget',
         level: null,
         budgetTokens: 12288,
@@ -412,7 +442,7 @@ describe('copilot chat helpers', () => {
       thinkingCapability: discreteCapability,
     })
     expect(draft.thinkingSelection).toEqual({
-      series: 'compat-discrete-levels-v1',
+      series: LABEL_COMPAT_DISCRETE_LEVELS,
       value: {
         valueType: 'code',
         code: 'auto',
@@ -428,7 +458,7 @@ describe('copilot chat helpers', () => {
       modelRoute: budgetRoute,
     })
     expect(draft.thinkingSelection).toEqual({
-      series: 'compat-budget-tokens-v1',
+      series: LABEL_COMPAT_BUDGET_TOKENS,
       value: {
         valueType: 'budget',
         mode: 'budget',
@@ -439,21 +469,27 @@ describe('copilot chat helpers', () => {
       level: null,
       budgetTokens: 12288,
     })
+    })
   })
 
-  it('parses minimal requestOptions json object and rejects non-object payloads', () => {
-    expect(parseRequestOptionsText('{"trace":true}')).toEqual({ trace: true })
-    expect(() => parseRequestOptionsText('[]')).toThrow('requestOptions 必须是 JSON 对象。')
+  describe('request options', () => {
+    it('parses minimal requestOptions json object and rejects non-object payloads', () => {
+      expect(parseRequestOptionsText('{"trace":true}')).toEqual({ trace: true })
+      expect(() => parseRequestOptionsText('[]')).toThrow('requestOptions 必须是 JSON 对象。')
+    })
   })
 
-  it('inserts tool steps ahead of the pending assistant turn and updates the same step on completion/failure', () => {
+  // 包含 2 个 tool step turn 测试，覆盖 insert/update/cancel 完整流程
+  /* eslint-disable-next-line max-lines-per-function */
+  describe('tool step turns', () => {
+    it('inserts tool steps ahead of the pending assistant turn and updates the same step on completion/failure', () => {
     const assistantTurn = createPendingAssistantTurn({
-      assistantMessageId: 'run-1:assistant',
+      assistantMessageId: LABEL_RUN_ASSISTANT,
     })
     const startedEvent = createRuntimeToolEvent({
       payload: {
-        toolCallId: 'tool.remote-search:call-1',
-        toolId: 'tool.remote-search',
+        toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         phase: 'started',
         title: '调用天气工具',
         summary: '正在获取 Shenzhen 的天气。',
@@ -463,20 +499,20 @@ describe('copilot chat helpers', () => {
     const completedEvent = createRuntimeToolEvent({
       sequence: 3,
       payload: {
-        toolCallId: 'tool.remote-search:call-1',
-        toolId: 'tool.remote-search',
+        toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         phase: 'completed',
         title: '天气工具已返回结果',
-        summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        summary: DESC_CN_009,
         inputSummary: '{"location": "Shenzhen"}',
-        resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        resultSummary: DESC_CN_009,
       },
     })
     const failedEvent = createRuntimeToolEvent({
       sequence: 4,
       payload: {
-        toolCallId: 'tool.remote-search:call-1',
-        toolId: 'tool.remote-search',
+        toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         phase: 'failed',
         title: '工具调用失败',
         summary: '工具执行失败。',
@@ -486,12 +522,12 @@ describe('copilot chat helpers', () => {
     })
 
     const withStarted = upsertToolStepTurn([assistantTurn], startedEvent, {
-      assistantMessageId: 'run-1:assistant',
+      assistantMessageId: LABEL_RUN_ASSISTANT,
     })
     expect(withStarted).toHaveLength(2)
     expect(withStarted[0]).toMatchObject({
       kind: 'tool',
-      toolCallId: 'tool.remote-search:call-1',
+      toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
       toolPhase: 'started',
       status: 'streaming',
       content: '正在获取 Shenzhen 的天气。',
@@ -499,25 +535,25 @@ describe('copilot chat helpers', () => {
     expect(withStarted[1].kind).toBe('assistant')
 
     const withCompleted = upsertToolStepTurn(withStarted, completedEvent, {
-      assistantMessageId: 'run-1:assistant',
+      assistantMessageId: LABEL_RUN_ASSISTANT,
     })
     expect(withCompleted).toHaveLength(2)
     expect(withCompleted[0]).toMatchObject({
       kind: 'tool',
-      toolCallId: 'tool.remote-search:call-1',
+      toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
       toolPhase: 'completed',
       status: 'completed',
       title: '天气工具已返回结果',
-      resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+      resultSummary: DESC_CN_009,
     })
 
     const withFailed = upsertToolStepTurn(withStarted, failedEvent, {
-      assistantMessageId: 'run-1:assistant',
+      assistantMessageId: LABEL_RUN_ASSISTANT,
     })
     expect(withFailed).toHaveLength(2)
     expect(withFailed[0]).toMatchObject({
       kind: 'tool',
-      toolCallId: 'tool.remote-search:call-1',
+      toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
       toolPhase: 'failed',
       status: 'failed',
       title: '工具调用失败',
@@ -533,18 +569,18 @@ describe('copilot chat helpers', () => {
         title: '调用天气工具',
         content: '正在获取 Shenzhen 的天气。',
         status: 'streaming',
-        toolCallId: 'tool.remote-search:call-1',
-        toolId: 'tool.remote-search',
+        toolCallId: LABEL_TOOL_REMOTE_SEARCH_2,
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         toolPhase: 'started',
       },
       {
         id: 'tool:done',
         kind: 'tool',
         title: '天气工具已返回结果',
-        content: 'Shenzhen：晴 / 24°C / 湿度 60%',
+        content: DESC_CN_009,
         status: 'completed',
         toolCallId: 'tool.remote-search:call-2',
-        toolId: 'tool.remote-search',
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         toolPhase: 'completed',
       },
       {
@@ -571,8 +607,12 @@ describe('copilot chat helpers', () => {
       status: 'streaming',
     })
   })
+  })
 
-  it('formats structured backend errors into explicit user-facing messages', () => {
+  // 包含 4 个 error handling 测试，覆盖格式化、capability 构建、transient 状态和 preflight 详情
+  /* eslint-disable-next-line max-lines-per-function */
+  describe('error handling', () => {
+    it('formats structured backend errors into explicit user-facing messages', () => {
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('agent_mismatch: session bound agent differs', {
       code: 'agent_mismatch',
       status: 409,
@@ -593,7 +633,7 @@ describe('copilot chat helpers', () => {
       status: 400,
     }))).toBe('当前模型暂不支持所选思考设置，请调整后重试。')
 
-    expect(formatRuntimeMessageSendError(new RuntimeRequestError('provider_catalog_only: not enabled', {
+    expect(formatRuntimeMessageSendError(new RuntimeRequestError(LABEL_PROVIDER_CATALOG_ONLY, {
       code: 'provider_catalog_only',
       status: 409,
     }))).toBe('当前模型不可用，请重新选择模型。')
@@ -601,7 +641,7 @@ describe('copilot chat helpers', () => {
 
   it('builds a stable unsupported thinking capability snapshot from runtime request errors', () => {
     const capability = buildRuntimeThinkingCapabilityFromError({
-      error: new RuntimeRequestError('provider_catalog_only: not enabled', {
+      error: new RuntimeRequestError(LABEL_PROVIDER_CATALOG_ONLY, {
         code: 'provider_catalog_only',
         status: 409,
         details: {
@@ -610,7 +650,7 @@ describe('copilot chat helpers', () => {
       }),
       modelRoute: createRuntimeModelRoute({
         providerProfileId: 'provider-openrouter',
-        modelId: 'openrouter/auto',
+        modelId: LABEL_OPENROUTER_AUTO,
       }),
     })
 
@@ -637,36 +677,36 @@ describe('copilot chat helpers', () => {
         provider: 'openrouter',
         endpointType: '',
         baseUrl: '',
-        modelId: 'openrouter/auto',
+        modelId: LABEL_OPENROUTER_AUTO,
       },
       overrideLevels: [],
     })
     expect(describeThinkingCapabilityUnavailableReason(capability)).toBe('当前无法调整思考设置')
-  })
+    })
 
-  it('creates a minimal transient error state with normalized fallback text', () => {
+    it('creates a minimal transient error state with normalized fallback text', () => {
     expect(createCopilotTransientErrorState({
       message: '   ',
     })).toEqual({
       message: '当前响应失败，请重试。',
       errorDetail: null,
     })
-  })
+    })
 
-  it('builds preflight error details with request and model context preserved', () => {
+    it('builds preflight error details with request and model context preserved', () => {
     const detail = createPreflightErrorDetail({
       summaryMessage: '当前模型不可用，请重新选择模型。',
-      rawMessage: 'provider_catalog_only: not enabled',
+      rawMessage: LABEL_PROVIDER_CATALOG_ONLY,
       code: 'provider_catalog_only',
       details: {
         providerId: 'openrouter',
       },
-      resolvedModelId: 'openrouter/auto',
+      resolvedModelId: LABEL_OPENROUTER_AUTO,
       resolvedModelRoute: createRuntimeModelRoute({
         providerProfileId: 'provider-openrouter',
-        modelId: 'openrouter/auto',
+        modelId: LABEL_OPENROUTER_AUTO,
       }),
-      resolvedToolIds: ['tool.remote-search'],
+      resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
       requestOptions: {
         trace: true,
       },
@@ -676,12 +716,12 @@ describe('copilot chat helpers', () => {
       source: 'preflight',
       title: '发送失败',
       summaryMessage: '当前模型不可用，请重新选择模型。',
-      rawMessage: 'provider_catalog_only: not enabled',
+      rawMessage: LABEL_PROVIDER_CATALOG_ONLY,
       code: 'provider_catalog_only',
       stage: 'preflight',
       requestedMethod: 'run/start',
-      resolvedModelId: 'openrouter/auto',
-      resolvedToolIds: ['tool.remote-search'],
+      resolvedModelId: LABEL_OPENROUTER_AUTO,
+      resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
       requestOptions: {
         trace: true,
       },
@@ -704,7 +744,7 @@ describe('copilot chat helpers', () => {
         providerProfileId: 'provider-openai',
         modelId: 'openai/gpt-4.1',
       }),
-      resolvedToolIds: ['tool.remote-search'],
+      resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
       requestOptions: {
         trace: true,
       },
@@ -722,10 +762,12 @@ describe('copilot chat helpers', () => {
         supportedMethods: ['run/start'],
       },
       resolvedModelId: 'openai/gpt-4.1',
-      resolvedToolIds: ['tool.remote-search'],
+      resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
       requestOptions: {
         trace: true,
       },
     })
+    })
   })
+})
 })

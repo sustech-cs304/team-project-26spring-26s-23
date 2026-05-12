@@ -21,6 +21,14 @@ import type {
   RuntimeToolEvent,
 } from './thread-run-contract'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_2026_27T10 = '2026-03-27T10:00:00Z'
+const LABEL_OPENAI_COMPATIBLE = 'openai-compatible'
+const LABEL_RUN_ASSISTANT = 'run-1:assistant'
+const LABEL_TOOL_READ = 'tool.fs.read'
+const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
+
+
 export const runtimeUrl = 'http://127.0.0.1:8765'
 export const sessionId = 'session-1'
 export const agentId = 'general'
@@ -49,7 +57,7 @@ export function createRuntimeAgentsListResponse(
       {
         agentId,
         status: 'active',
-        recommendedTools: ['tool.fs.read'],
+        recommendedTools: [LABEL_TOOL_READ],
         displayName: '通用助手',
         description: '默认通用智能体',
         iconKey: 'sparkles',
@@ -66,9 +74,9 @@ export function createRuntimeThreadCreateResponse(
     ok: true,
     threadId: sessionId,
     boundAgent: createBoundAgent(),
-    createdAt: '2026-03-27T10:00:00Z',
-    updatedAt: '2026-03-27T10:00:00Z',
-    recommendedTools: ['tool.fs.read'],
+    createdAt: LABEL_2026_27T10,
+    updatedAt: LABEL_2026_27T10,
+    recommendedTools: [LABEL_TOOL_READ],
     capabilities: {
       tools: {
         selectionMode: 'recommendation-only',
@@ -85,26 +93,26 @@ export function createRuntimeThreadGetResponse(
     ok: true,
     threadId: sessionId,
     boundAgent: createBoundAgent(),
-    createdAt: '2026-03-27T10:00:00Z',
-    updatedAt: '2026-03-27T10:00:00Z',
+    createdAt: LABEL_2026_27T10,
+    updatedAt: LABEL_2026_27T10,
     capabilitiesVersion: 'cap-v12',
     tools: [
       {
-        toolId: 'tool.fs.read',
+        toolId: LABEL_TOOL_READ,
         kind: 'builtin',
         availability: 'available',
         displayName: '读取文件',
         description: '读取项目内文件内容。',
       },
       {
-        toolId: 'tool.remote-search',
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         kind: 'external',
         availability: 'disabled-by-global-setting',
         displayName: '远程搜索',
         description: '访问外部搜索服务',
       },
     ],
-    recommendedTools: ['tool.fs.read'],
+    recommendedTools: [LABEL_TOOL_READ],
     toolSelectionMode: 'recommendation-only',
     latestRunId: null,
     ...overrides,
@@ -120,21 +128,21 @@ export function createRuntimeCapabilitiesGetResponse(
     capabilitiesVersion: overrides.capabilitiesVersion ?? 'cap-v12',
     tools: overrides.tools ?? [
       {
-        toolId: 'tool.fs.read',
+        toolId: LABEL_TOOL_READ,
         kind: 'builtin',
         availability: 'available',
         displayName: '读取文件',
         description: '读取项目内文件内容。',
       },
       {
-        toolId: 'tool.remote-search',
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         kind: 'external',
         availability: 'disabled-by-global-setting',
         displayName: '远程搜索',
         description: '访问外部搜索服务',
       },
     ],
-    recommendedTools: overrides.recommendedTools ?? ['tool.fs.read'],
+    recommendedTools: overrides.recommendedTools ?? [LABEL_TOOL_READ],
     toolSelectionMode: overrides.toolSelectionMode ?? 'recommendation-only',
   })
 
@@ -161,13 +169,14 @@ type RuntimeModelRouteFixtureOverrides = Partial<RuntimeResolvedModelRoute> & {
   }
 }
 
+// eslint-disable-next-line complexity -- test-support fixture builder, intentionally verbose
 export function createRuntimeModelRoute(
   overrides: RuntimeModelRouteFixtureOverrides = {},
 ): RuntimeModelRoute & RuntimeResolvedModelRoute {
   const providerProfileId = overrides.providerProfileId ?? overrides.routeRef?.profileId ?? 'provider-openai'
   const modelId = overrides.snapshot?.modelId ?? overrides.modelId ?? overrides.routeRef?.modelId ?? 'qwen-plus'
   const provider = overrides.snapshot?.provider ?? overrides.provider ?? 'openai'
-  const endpointType = overrides.snapshot?.endpointType ?? overrides.endpointType ?? 'openai-compatible'
+  const endpointType = overrides.snapshot?.endpointType ?? overrides.endpointType ?? LABEL_OPENAI_COMPATIBLE
   const baseUrl = overrides.snapshot?.baseUrl ?? overrides.baseUrl ?? 'https://api.example.com/v1'
   const routeRef = overrides.routeRef ?? {
     routeKind: 'provider-model' as const,
@@ -210,7 +219,7 @@ export function createRuntimeResolvedModelRoute(
     runtimeStatus: overrides.runtimeStatus ?? 'enabled',
     catalogRevision: overrides.catalogRevision ?? '2026-04-06-provider-catalog-v1',
     endpointFamily: overrides.endpointFamily ?? 'openai',
-    endpointType: overrides.endpointType ?? 'openai-compatible',
+    endpointType: overrides.endpointType ?? LABEL_OPENAI_COMPATIBLE,
     baseUrl: overrides.baseUrl ?? 'https://api.example.com/v1',
     modelId,
     authKind: overrides.authKind ?? 'api-key',
@@ -229,6 +238,7 @@ type RuntimeRunMetadataEventOverrides = Omit<Partial<RuntimeRunMetadataEvent>, '
   payload?: Partial<RuntimeRunMetadataEvent['payload']>
 }
 
+// eslint-disable-next-line complexity -- test-support fixture builder, intentionally verbose
 export function createRuntimeRunStartResponse(
   overrides: RuntimeRunStartResponseOverrides = {},
 ): RuntimeRunStartResponse {
@@ -242,8 +252,8 @@ export function createRuntimeRunStartResponse(
       runId: overrides.run?.runId ?? 'run-1',
       threadId: overrides.run?.threadId ?? sessionId,
       status: overrides.run?.status ?? 'pending',
-      createdAt: overrides.run?.createdAt ?? '2026-03-27T10:00:00Z',
-      updatedAt: overrides.run?.updatedAt ?? '2026-03-27T10:00:00Z',
+      createdAt: overrides.run?.createdAt ?? LABEL_2026_27T10,
+      updatedAt: overrides.run?.updatedAt ?? LABEL_2026_27T10,
       startedAt: overrides.run?.startedAt ?? null,
       terminalAt: overrides.run?.terminalAt ?? null,
       cancelRequested: overrides.run?.cancelRequested ?? false,
@@ -257,7 +267,7 @@ export function createRuntimeRunStartResponse(
       thinkingCapabilitySnapshot: overrides.run?.thinkingCapabilitySnapshot ?? null,
       reasoningSuppressionBasis: overrides.run?.reasoningSuppressionBasis ?? null,
     },
-    assistantMessageId: overrides.assistantMessageId ?? 'run-1:assistant',
+    assistantMessageId: overrides.assistantMessageId ?? LABEL_RUN_ASSISTANT,
     stream: overrides.stream ?? {
       method: 'run/stream',
       body: {
@@ -273,6 +283,7 @@ export function createRuntimeRunStartResponse(
   }
 }
 
+// eslint-disable-next-line complexity -- test-support fixture builder, intentionally verbose
 export function createRuntimeRunCancelResponse(
   overrides: RuntimeRunCancelResponseOverrides = {},
 ): RuntimeRunCancelResponse {
@@ -286,8 +297,8 @@ export function createRuntimeRunCancelResponse(
       runId: overrides.run?.runId ?? 'run-1',
       threadId: overrides.run?.threadId ?? sessionId,
       status: overrides.run?.status ?? 'cancelled',
-      createdAt: overrides.run?.createdAt ?? '2026-03-27T10:00:00Z',
-      updatedAt: overrides.run?.updatedAt ?? '2026-03-27T10:00:00Z',
+      createdAt: overrides.run?.createdAt ?? LABEL_2026_27T10,
+      updatedAt: overrides.run?.updatedAt ?? LABEL_2026_27T10,
       startedAt: overrides.run?.startedAt ?? '2026-03-27T10:00:01Z',
       terminalAt: overrides.run?.terminalAt ?? null,
       cancelRequested: overrides.run?.cancelRequested ?? true,
@@ -305,6 +316,7 @@ export function createRuntimeRunCancelResponse(
   }
 }
 
+// eslint-disable-next-line complexity -- test-support fixture builder, intentionally verbose
 export function createRuntimeThinkingCapability(
   overrides: Partial<RuntimeThinkingCapability> = {},
 ): RuntimeThinkingCapability {
@@ -337,7 +349,7 @@ export function createRuntimeThinkingCapability(
     routeFingerprint: overrides.routeFingerprint ?? {
       providerProfileId: 'provider-openai',
       provider: 'openai',
-      endpointType: 'openai-compatible',
+      endpointType: LABEL_OPENAI_COMPATIBLE,
       baseUrl: 'https://api.example.com/v1',
       modelId: 'qwen-plus',
     },
@@ -346,7 +358,7 @@ export function createRuntimeThinkingCapability(
     defaultSelection,
     supportedLevels,
     defaultLevel,
-    providerHint: overrides.providerHint ?? 'openai-compatible',
+    providerHint: overrides.providerHint ?? LABEL_OPENAI_COMPATIBLE,
     provenance: overrides.provenance ?? {
       routeStatus: 'verified',
       override: {
@@ -399,11 +411,11 @@ export function createRuntimeRunCompletedEvent(
     sessionId: overrides.sessionId ?? sessionId,
     sequence: overrides.sequence ?? 3,
     payload: {
-      assistantMessageId: overrides.payload?.assistantMessageId ?? 'run-1:assistant',
+      assistantMessageId: overrides.payload?.assistantMessageId ?? LABEL_RUN_ASSISTANT,
       assistantText: overrides.payload?.assistantText ?? '这是总结结果。',
       resolvedModelId: overrides.payload?.resolvedModelId ?? 'qwen-plus',
       resolvedModelRoute: overrides.payload?.resolvedModelRoute ?? createRuntimeResolvedModelRoute(),
-      resolvedToolIds: overrides.payload?.resolvedToolIds ?? ['tool.remote-search'],
+      resolvedToolIds: overrides.payload?.resolvedToolIds ?? [LABEL_TOOL_REMOTE_SEARCH],
       requestOptions: overrides.payload?.requestOptions ?? { trace: true },
     },
   }
@@ -468,6 +480,7 @@ export function createRuntimeThinkingControlSpec(
   }
 }
 
+// eslint-disable-next-line complexity -- test-support fixture builder, intentionally verbose
 export function createRuntimeThinkingSelectionResult(
   overrides: Partial<NonNullable<RuntimeRunMetadataEvent['payload']['thinkingSeriesDecision']>> = {},
 ): NonNullable<RuntimeRunMetadataEvent['payload']['thinkingSeriesDecision']> {
@@ -691,7 +704,7 @@ export function createRuntimeToolEvent(
     sequence: overrides.sequence ?? 2,
     payload: {
       toolCallId: overrides.payload?.toolCallId ?? 'tool.remote-search:call-1',
-      toolId: overrides.payload?.toolId ?? 'tool.remote-search',
+      toolId: overrides.payload?.toolId ?? LABEL_TOOL_REMOTE_SEARCH,
       phase: overrides.payload?.phase ?? 'started',
       title: overrides.payload?.title ?? '调用联网搜索工具',
       summary: overrides.payload?.summary ?? '正在搜索 Shenzhen 天气信息。',
@@ -713,7 +726,7 @@ export async function* createRuntimeMessageEventStream(
       sessionId,
       sequence: 1,
       payload: {
-        assistantMessageId: 'run-1:assistant',
+        assistantMessageId: LABEL_RUN_ASSISTANT,
       },
     },
     {
@@ -722,7 +735,7 @@ export async function* createRuntimeMessageEventStream(
       sessionId,
       sequence: 2,
       payload: {
-        assistantMessageId: 'run-1:assistant',
+        assistantMessageId: LABEL_RUN_ASSISTANT,
         delta: '这是总结结果。',
       },
     },

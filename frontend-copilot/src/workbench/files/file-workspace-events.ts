@@ -181,94 +181,81 @@ export function buildObservedChange(
  * 5. Multiple affected paths → batch-updated (medium)
  * 6. Fallback → unknown-change (low)
  */
+/** Check if the observed change represents a single added entry. */
+function isSingleAdd(
+  addedPaths: string[], removedPaths: string[], modifiedPaths: string[],
+): boolean {
+  return addedPaths.length === 1 && removedPaths.length === 0 && modifiedPaths.length === 0
+}
+
+/** Check if the observed change represents a single deleted entry. */
+function isSingleDelete(
+  addedPaths: string[], removedPaths: string[], modifiedPaths: string[],
+): boolean {
+  return removedPaths.length === 1 && addedPaths.length === 0 && modifiedPaths.length === 0
+}
+
+/** Check if the observed change represents a single modified entry. */
+function isSingleModify(
+  addedPaths: string[], removedPaths: string[], modifiedPaths: string[],
+): boolean {
+  return modifiedPaths.length === 1 && addedPaths.length === 0 && removedPaths.length === 0
+}
+
+/** Check if the observed change looks like a same-directory rename (1 added + 1 removed). */
+function tryInferRename(
+  observedChange: FileWorkspaceObservedChange,
+): FileWorkspaceSemanticChange[] | null {
+  const { addedPaths, removedPaths, modifiedPaths } = observedChange
+  if (addedPaths.length !== 1 || removedPaths.length !== 1 || modifiedPaths.length !== 0) {
+    return null
+  }
+
+  const addedEntry = observedChange.entriesAfter.find((e) => e.path === addedPaths[0])
+  const removedEntry = observedChange.entriesBefore.find((e) => e.path === removedPaths[0])
+  if (!addedEntry || !removedEntry || addedEntry.kind !== removedEntry.kind) {
+    return null
+  }
+
+  const sizeClose =
+    addedEntry.size === null ||
+    removedEntry.size === null ||
+    addedEntry.size === removedEntry.size
+  if (!sizeClose) return null
+
+  return [
+    makeSemanticChange(observedChange, 'renamed', 'medium', {
+      primaryPath: addedPaths[0],
+      secondaryPath: removedPaths[0],
+    }),
+  ]
+}
+
 export function inferSemanticChanges(
   observedChange: FileWorkspaceObservedChange,
 ): FileWorkspaceSemanticChange[] {
-  const { addedPaths, removedPaths, modifiedPaths, affectedPaths } =
-    observedChange
+  const { addedPaths, removedPaths, modifiedPaths, affectedPaths } = observedChange
 
-  // Rule 1: single created
-  if (
-    addedPaths.length === 1 &&
-    removedPaths.length === 0 &&
-    modifiedPaths.length === 0
-  ) {
-    return [
-      makeSemanticChange(observedChange, 'created', 'high', {
-        primaryPath: addedPaths[0],
-      }),
-    ]
+  if (isSingleAdd(addedPaths, removedPaths, modifiedPaths)) {
+    return [makeSemanticChange(observedChange, 'created', 'high', { primaryPath: addedPaths[0] })]
   }
 
-  // Rule 2: single deleted
-  if (
-    removedPaths.length === 1 &&
-    addedPaths.length === 0 &&
-    modifiedPaths.length === 0
-  ) {
-    return [
-      makeSemanticChange(observedChange, 'deleted', 'high', {
-        primaryPath: removedPaths[0],
-      }),
-    ]
+  if (isSingleDelete(addedPaths, removedPaths, modifiedPaths)) {
+    return [makeSemanticChange(observedChange, 'deleted', 'high', { primaryPath: removedPaths[0] })]
   }
 
-  // Rule 3: single modified
-  if (
-    modifiedPaths.length === 1 &&
-    addedPaths.length === 0 &&
-    removedPaths.length === 0
-  ) {
-    return [
-      makeSemanticChange(observedChange, 'modified', 'high', {
-        primaryPath: modifiedPaths[0],
-      }),
-    ]
+  if (isSingleModify(addedPaths, removedPaths, modifiedPaths)) {
+    return [makeSemanticChange(observedChange, 'modified', 'high', { primaryPath: modifiedPaths[0] })]
   }
 
-  // Rule 4: same-directory rename (1 added + 1 removed, same kind, same size)
-  if (
-    addedPaths.length === 1 &&
-    removedPaths.length === 1 &&
-    modifiedPaths.length === 0
-  ) {
-    const addedEntry = observedChange.entriesAfter.find(
-      (e) => e.path === addedPaths[0],
-    )
-    const removedEntry = observedChange.entriesBefore.find(
-      (e) => e.path === removedPaths[0],
-    )
-    if (
-      addedEntry &&
-      removedEntry &&
-      addedEntry.kind === removedEntry.kind
-    ) {
-      const sizeClose =
-        addedEntry.size === null ||
-        removedEntry.size === null ||
-        addedEntry.size === removedEntry.size
-      if (sizeClose) {
-        return [
-          makeSemanticChange(observedChange, 'renamed', 'medium', {
-            primaryPath: addedPaths[0],
-            secondaryPath: removedPaths[0],
-          }),
-        ]
-      }
-    }
-  }
+  const renameResult = tryInferRename(observedChange)
+  if (renameResult) return renameResult
 
-  // Rule 5: multiple affected paths → batch-updated
   if (affectedPaths.length > 1) {
-    return [
-      makeSemanticChange(observedChange, 'batch-updated', 'medium', {}),
-    ]
+    return [makeSemanticChange(observedChange, 'batch-updated', 'medium', {})]
   }
 
-  // Rule 6: fallback → unknown-change
-  return [
-    makeSemanticChange(observedChange, 'unknown-change', 'low', {}),
-  ]
+  return [makeSemanticChange(observedChange, 'unknown-change', 'low', {})]
 }
 
 function makeSemanticChange(

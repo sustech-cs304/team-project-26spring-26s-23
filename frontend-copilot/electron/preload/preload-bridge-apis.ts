@@ -132,6 +132,161 @@ export interface PreloadBridgeApis {
 
 type IpcRendererLike = Pick<IpcRenderer, 'invoke' | 'on' | 'off'>
 
+function buildCopilotRuntimeApi(ipcRenderer: IpcRendererLike): CopilotRuntimeApi {
+  return {
+    load() { return ipcRenderer.invoke(COPILOT_RUNTIME_LOAD_CHANNEL) },
+    retry() { return ipcRenderer.invoke(COPILOT_RUNTIME_RETRY_CHANNEL) },
+  }
+}
+
+function buildCopilotHistoryApi(ipcRenderer: IpcRendererLike): CopilotHistoryApi {
+  return {
+    listThreads() { return ipcRenderer.invoke(COPILOT_HISTORY_LIST_THREADS_CHANNEL) },
+    getThreadDetail(threadId) { return ipcRenderer.invoke(COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL, threadId) },
+    getRunReplay(runId) { return ipcRenderer.invoke(COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL, runId) },
+    renameThread(threadId, request) { return ipcRenderer.invoke(COPILOT_HISTORY_RENAME_THREAD_CHANNEL, threadId, request) },
+    duplicateThread(threadId, request) { return ipcRenderer.invoke(COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL, threadId, request) },
+    deleteThread(threadId) { return ipcRenderer.invoke(COPILOT_HISTORY_DELETE_THREAD_CHANNEL, threadId) },
+    backupDatabase(request) { return ipcRenderer.invoke(COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL, request) },
+    restoreDatabase(request) { return ipcRenderer.invoke(COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL, request) },
+  }
+}
+
+function buildConfigCenterPublicSnapshotApi(ipcRenderer: IpcRendererLike): ConfigCenterPublicSnapshotApi {
+  return {
+    load() { return ipcRenderer.invoke(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL) },
+  }
+}
+
+function buildConfigCenterPublicPatchApi(ipcRenderer: IpcRendererLike): ConfigCenterPublicPatchApi {
+  return {
+    apply(patch) { return ipcRenderer.invoke(CONFIG_CENTER_PUBLIC_PATCH_CHANNEL, patch) },
+  }
+}
+
+function buildSettingsWorkspaceStateApi(ipcRenderer: IpcRendererLike): SettingsWorkspaceStateApi {
+  return {
+    load() { return ipcRenderer.invoke(SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL) },
+    save(input) { return ipcRenderer.invoke(SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL, input) },
+  }
+}
+
+function buildSettingsWorkspaceSecretsApi(ipcRenderer: IpcRendererLike): SettingsWorkspaceSecretsApi {
+  return {
+    loadStatuses(request) { return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL, request) },
+    loadSustechCasPassword() { return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL) },
+    saveProfileApiKey(request) { return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL, request) },
+    clearProfileApiKey(request) { return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL, request) },
+    saveSustechCasPassword(request) { return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL, request) },
+    clearSustechCasPassword() { return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL) },
+  }
+}
+
+function buildManagedRuntimeApi(ipcRenderer: IpcRendererLike): ManagedRuntimeApi {
+  return {
+    load() { return ipcRenderer.invoke(MANAGED_RUNTIME_LOAD_CHANNEL) },
+    installOrRepair(reason) { return ipcRenderer.invoke(MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL, reason) },
+  }
+}
+
+function buildMcpRegistryApi(ipcRenderer: IpcRendererLike): McpRegistryApi {
+  return {
+    loadRegistry(request) { return ipcRenderer.invoke(MCP_REGISTRY_LOAD_CHANNEL, request) },
+    saveServer(draft) { return ipcRenderer.invoke(MCP_REGISTRY_SAVE_SERVER_CHANNEL, draft) },
+    deleteServer(serverId) { return ipcRenderer.invoke(MCP_REGISTRY_DELETE_SERVER_CHANNEL, serverId) },
+    setServerEnabled(request) { return ipcRenderer.invoke(MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL, request) },
+    testConnection(request) { return ipcRenderer.invoke(MCP_REGISTRY_TEST_CONNECTION_CHANNEL, request) },
+    refreshCatalog(request) { return ipcRenderer.invoke(MCP_REGISTRY_REFRESH_CATALOG_CHANNEL, request) },
+  }
+}
+
+function buildSkillRegistryApi(ipcRenderer: IpcRendererLike): SkillRegistryApi {
+  return {
+    loadRegistry(request) { return ipcRenderer.invoke(SKILL_REGISTRY_LOAD_CHANNEL, request) },
+    importSkill(request) { return ipcRenderer.invoke(SKILL_REGISTRY_IMPORT_SKILL_CHANNEL, request) },
+    selectAndImportSkill() { return ipcRenderer.invoke(SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL) },
+    deleteSkill(skillId) { return ipcRenderer.invoke(SKILL_REGISTRY_DELETE_SKILL_CHANNEL, skillId) },
+    setSkillEnabled(request) { return ipcRenderer.invoke(SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL, request) },
+    refreshSkills(request) { return ipcRenderer.invoke(SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL, request) },
+  }
+}
+
+function buildToolCatalogApi(ipcRenderer: IpcRendererLike): ToolCatalogApi {
+  return {
+    load(request) { return ipcRenderer.invoke(TOOL_CATALOG_LOAD_CHANNEL, request) },
+  }
+}
+
+function buildAttachmentManagerApi(
+  ipcRenderer: IpcRendererLike,
+  helpers: { resolveFilePath?: (file: File) => string | null },
+): AttachmentManagerApi {
+  return {
+    resolveFilePath(file) { return helpers.resolveFilePath?.(file) ?? null },
+    readClipboardData() { return ipcRenderer.invoke(ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL) },
+    writeTempFile(request) { return ipcRenderer.invoke(ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL, request) },
+    readPreview(request) { return ipcRenderer.invoke(ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL, request) },
+    cleanupTempFiles(request) { return ipcRenderer.invoke(ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL, request) },
+  }
+}
+
+function buildDesktopNotificationApi(ipcRenderer: IpcRendererLike): DesktopNotificationApi {
+  return {
+    show(request) { return ipcRenderer.invoke(DESKTOP_NOTIFICATION_SHOW_CHANNEL, request) },
+  }
+}
+
+function buildWindowControlsApi(ipcRenderer: IpcRendererLike): DesktopWindowControlsApi {
+  return {
+    loadState() { return ipcRenderer.invoke(DESKTOP_WINDOW_STATE_LOAD_CHANNEL) },
+    minimize() { return ipcRenderer.invoke(DESKTOP_WINDOW_MINIMIZE_CHANNEL) },
+    toggleMaximize() { return ipcRenderer.invoke(DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL) },
+    close() { return ipcRenderer.invoke(DESKTOP_WINDOW_CLOSE_CHANNEL) },
+    onStateChanged(listener: (state: DesktopWindowState) => void): () => void {
+      const handler = (_event: unknown, state: DesktopWindowState) => { listener(state) }
+      ipcRenderer.on(DESKTOP_WINDOW_STATE_CHANGED_CHANNEL, handler)
+      return () => { ipcRenderer.off(DESKTOP_WINDOW_STATE_CHANGED_CHANNEL, handler) }
+    },
+  }
+}
+
+function buildBootstrapWindowApi(ipcRenderer: IpcRendererLike): BootstrapWindowApi {
+  return {
+    signalBootstrapScreenReady() { return ipcRenderer.invoke(BOOTSTRAP_WINDOW_READY_CHANNEL) },
+  }
+}
+
+function buildFileManagerApi(ipcRenderer: IpcRendererLike): FileManagerApi {
+  return {
+    selectRootDirectory(request) {
+      return request === undefined
+        ? ipcRenderer.invoke(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL)
+        : ipcRenderer.invoke(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, request)
+    },
+    listDirectory(request) { return ipcRenderer.invoke(FILE_MANAGER_LIST_DIRECTORY_CHANNEL, request) },
+    probeDirectory(request) { return ipcRenderer.invoke(FILE_MANAGER_PROBE_DIRECTORY_CHANNEL, request) },
+    createDirectory(request) { return ipcRenderer.invoke(FILE_MANAGER_CREATE_DIRECTORY_CHANNEL, request) },
+    copyEntries(request) { return ipcRenderer.invoke(FILE_MANAGER_COPY_ENTRIES_CHANNEL, request) },
+    moveEntries(request) { return ipcRenderer.invoke(FILE_MANAGER_MOVE_ENTRIES_CHANNEL, request) },
+    renameEntry(request) { return ipcRenderer.invoke(FILE_MANAGER_RENAME_ENTRY_CHANNEL, request) },
+    trashEntries(request) { return ipcRenderer.invoke(FILE_MANAGER_TRASH_ENTRIES_CHANNEL, request) },
+    deleteEntriesPermanently(request) { return ipcRenderer.invoke(FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL, request) },
+    watchDirectories(request) { return ipcRenderer.invoke(FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL, request) },
+    unwatchDirectories(request) { return ipcRenderer.invoke(FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL, request) },
+    onDirectoryChanged(listener: (event: DirectoryChangedEvent) => void): () => void {
+      const handler = (_event: unknown, event: DirectoryChangedEvent) => { listener(event) }
+      ipcRenderer.on(FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL, handler)
+      return () => { ipcRenderer.off(FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL, handler) }
+    },
+    loadLastRootDirectory() { return ipcRenderer.invoke(FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL) },
+    saveLastRootDirectory(request) { return ipcRenderer.invoke(FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL, request) },
+    clearLastRootDirectory() { return ipcRenderer.invoke(FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL) },
+    openEntryWithSystem(request) { return ipcRenderer.invoke(FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL, request) },
+    revealEntryInFolder(request) { return ipcRenderer.invoke(FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL, request) },
+    copyTextToClipboard(request) { return ipcRenderer.invoke(FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL, request) },
+  }
+}
+
 export function createPreloadBridgeApis(
   ipcRenderer: IpcRendererLike,
   helpers: {
@@ -139,247 +294,23 @@ export function createPreloadBridgeApis(
   } = {},
 ): PreloadBridgeApis {
   return {
-    copilotRuntime: {
-      load() {
-        return ipcRenderer.invoke(COPILOT_RUNTIME_LOAD_CHANNEL)
-      },
-      retry() {
-        return ipcRenderer.invoke(COPILOT_RUNTIME_RETRY_CHANNEL)
-      },
-    },
-    copilotHistory: {
-      listThreads() {
-        return ipcRenderer.invoke(COPILOT_HISTORY_LIST_THREADS_CHANNEL)
-      },
-      getThreadDetail(threadId) {
-        return ipcRenderer.invoke(COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL, threadId)
-      },
-      getRunReplay(runId) {
-        return ipcRenderer.invoke(COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL, runId)
-      },
-      renameThread(threadId, request) {
-        return ipcRenderer.invoke(COPILOT_HISTORY_RENAME_THREAD_CHANNEL, threadId, request)
-      },
-      duplicateThread(threadId, request) {
-        return ipcRenderer.invoke(COPILOT_HISTORY_DUPLICATE_THREAD_CHANNEL, threadId, request)
-      },
-      deleteThread(threadId) {
-        return ipcRenderer.invoke(COPILOT_HISTORY_DELETE_THREAD_CHANNEL, threadId)
-      },
-      backupDatabase(request) {
-        return ipcRenderer.invoke(COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL, request)
-      },
-      restoreDatabase(request) {
-        return ipcRenderer.invoke(COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL, request)
-      },
-    },
-    configCenterPublicSnapshot: {
-      load() {
-        return ipcRenderer.invoke(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL)
-      },
-    },
+    copilotRuntime: buildCopilotRuntimeApi(ipcRenderer),
+    copilotHistory: buildCopilotHistoryApi(ipcRenderer),
+    configCenterPublicSnapshot: buildConfigCenterPublicSnapshotApi(ipcRenderer),
     configCenterPublicSnapshotSubscription: createConfigCenterPublicSnapshotSubscriptionApi(ipcRenderer),
-    configCenterPublicPatch: {
-      apply(patch) {
-        return ipcRenderer.invoke(CONFIG_CENTER_PUBLIC_PATCH_CHANNEL, patch)
-      },
-    },
-    settingsWorkspaceState: {
-      load() {
-        return ipcRenderer.invoke(SETTINGS_WORKSPACE_STATE_LOAD_CHANNEL)
-      },
-      save(input) {
-        return ipcRenderer.invoke(SETTINGS_WORKSPACE_STATE_SAVE_CHANNEL, input)
-      },
-    },
-    settingsWorkspaceSecrets: {
-      loadStatuses(request) {
-        return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_LOAD_STATUSES_CHANNEL, request)
-      },
-      loadSustechCasPassword() {
-        return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_LOAD_SUSTECH_CAS_CHANNEL)
-      },
-      saveProfileApiKey(request) {
-        return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_SAVE_PROVIDER_API_KEY_CHANNEL, request)
-      },
-      clearProfileApiKey(request) {
-        return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL, request)
-      },
-      saveSustechCasPassword(request) {
-        return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL, request)
-      },
-      clearSustechCasPassword() {
-        return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL)
-      },
-    },
-    managedRuntime: {
-      load() {
-        return ipcRenderer.invoke(MANAGED_RUNTIME_LOAD_CHANNEL)
-      },
-      installOrRepair(reason) {
-        return ipcRenderer.invoke(MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL, reason)
-      },
-    },
-    mcpRegistry: {
-      loadRegistry(request) {
-        return ipcRenderer.invoke(MCP_REGISTRY_LOAD_CHANNEL, request)
-      },
-      saveServer(draft) {
-        return ipcRenderer.invoke(MCP_REGISTRY_SAVE_SERVER_CHANNEL, draft)
-      },
-      deleteServer(serverId) {
-        return ipcRenderer.invoke(MCP_REGISTRY_DELETE_SERVER_CHANNEL, serverId)
-      },
-      setServerEnabled(request) {
-        return ipcRenderer.invoke(MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL, request)
-      },
-      testConnection(request) {
-        return ipcRenderer.invoke(MCP_REGISTRY_TEST_CONNECTION_CHANNEL, request)
-      },
-      refreshCatalog(request) {
-        return ipcRenderer.invoke(MCP_REGISTRY_REFRESH_CATALOG_CHANNEL, request)
-      },
-    },
+    configCenterPublicPatch: buildConfigCenterPublicPatchApi(ipcRenderer),
+    settingsWorkspaceState: buildSettingsWorkspaceStateApi(ipcRenderer),
+    settingsWorkspaceSecrets: buildSettingsWorkspaceSecretsApi(ipcRenderer),
+    managedRuntime: buildManagedRuntimeApi(ipcRenderer),
+    mcpRegistry: buildMcpRegistryApi(ipcRenderer),
     mcpRegistrySubscription: createMcpRegistrySubscriptionApi(ipcRenderer),
-    skillRegistry: {
-      loadRegistry(request) {
-        return ipcRenderer.invoke(SKILL_REGISTRY_LOAD_CHANNEL, request)
-      },
-      importSkill(request) {
-        return ipcRenderer.invoke(SKILL_REGISTRY_IMPORT_SKILL_CHANNEL, request)
-      },
-      selectAndImportSkill() {
-        return ipcRenderer.invoke(SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL)
-      },
-      deleteSkill(skillId) {
-        return ipcRenderer.invoke(SKILL_REGISTRY_DELETE_SKILL_CHANNEL, skillId)
-      },
-      setSkillEnabled(request) {
-        return ipcRenderer.invoke(SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL, request)
-      },
-      refreshSkills(request) {
-        return ipcRenderer.invoke(SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL, request)
-      },
-    },
+    skillRegistry: buildSkillRegistryApi(ipcRenderer),
     skillRegistrySubscription: createSkillRegistrySubscriptionApi(ipcRenderer),
-    toolCatalog: {
-      load(request) {
-        return ipcRenderer.invoke(TOOL_CATALOG_LOAD_CHANNEL, request)
-      },
-    },
-    attachmentManager: {
-      resolveFilePath(file) {
-        return helpers.resolveFilePath?.(file) ?? null
-      },
-      readClipboardData() {
-        return ipcRenderer.invoke(ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL)
-      },
-      writeTempFile(request) {
-        return ipcRenderer.invoke(ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL, request)
-      },
-      readPreview(request) {
-        return ipcRenderer.invoke(ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL, request)
-      },
-      cleanupTempFiles(request) {
-        return ipcRenderer.invoke(ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL, request)
-      },
-    },
-    desktopNotification: {
-      show(request) {
-        return ipcRenderer.invoke(DESKTOP_NOTIFICATION_SHOW_CHANNEL, request)
-      },
-    },
-    windowControls: {
-      loadState() {
-        return ipcRenderer.invoke(DESKTOP_WINDOW_STATE_LOAD_CHANNEL)
-      },
-      minimize() {
-        return ipcRenderer.invoke(DESKTOP_WINDOW_MINIMIZE_CHANNEL)
-      },
-      toggleMaximize() {
-        return ipcRenderer.invoke(DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL)
-      },
-      close() {
-        return ipcRenderer.invoke(DESKTOP_WINDOW_CLOSE_CHANNEL)
-      },
-      onStateChanged(listener: (state: DesktopWindowState) => void): () => void {
-        const handler = (_event: unknown, state: DesktopWindowState) => {
-          listener(state)
-        }
-        ipcRenderer.on(DESKTOP_WINDOW_STATE_CHANGED_CHANNEL, handler)
-        return () => {
-          ipcRenderer.off(DESKTOP_WINDOW_STATE_CHANGED_CHANNEL, handler)
-        }
-      },
-    },
-    bootstrapWindow: {
-      signalBootstrapScreenReady() {
-        return ipcRenderer.invoke(BOOTSTRAP_WINDOW_READY_CHANNEL)
-      },
-    },
-    fileManager: {
-      selectRootDirectory(request) {
-        return request === undefined
-          ? ipcRenderer.invoke(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL)
-          : ipcRenderer.invoke(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, request)
-      },
-      listDirectory(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_LIST_DIRECTORY_CHANNEL, request)
-      },
-      probeDirectory(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_PROBE_DIRECTORY_CHANNEL, request)
-      },
-      createDirectory(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_CREATE_DIRECTORY_CHANNEL, request)
-      },
-      copyEntries(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_COPY_ENTRIES_CHANNEL, request)
-      },
-      moveEntries(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_MOVE_ENTRIES_CHANNEL, request)
-      },
-      renameEntry(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_RENAME_ENTRY_CHANNEL, request)
-      },
-      trashEntries(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_TRASH_ENTRIES_CHANNEL, request)
-      },
-      deleteEntriesPermanently(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL, request)
-      },
-      watchDirectories(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL, request)
-      },
-      unwatchDirectories(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL, request)
-      },
-      onDirectoryChanged(listener: (event: DirectoryChangedEvent) => void): () => void {
-        const handler = (_event: unknown, event: DirectoryChangedEvent) => {
-          listener(event)
-        }
-        ipcRenderer.on(FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL, handler)
-        return () => {
-          ipcRenderer.off(FILE_MANAGER_DIRECTORY_CHANGED_CHANNEL, handler)
-        }
-      },
-      loadLastRootDirectory() {
-        return ipcRenderer.invoke(FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL)
-      },
-      saveLastRootDirectory(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL, request)
-      },
-      clearLastRootDirectory() {
-        return ipcRenderer.invoke(FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL)
-      },
-      openEntryWithSystem(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL, request)
-      },
-      revealEntryInFolder(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL, request)
-      },
-      copyTextToClipboard(request) {
-        return ipcRenderer.invoke(FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL, request)
-      },
-    },
+    toolCatalog: buildToolCatalogApi(ipcRenderer),
+    attachmentManager: buildAttachmentManagerApi(ipcRenderer, helpers),
+    desktopNotification: buildDesktopNotificationApi(ipcRenderer),
+    windowControls: buildWindowControlsApi(ipcRenderer),
+    bootstrapWindow: buildBootstrapWindowApi(ipcRenderer),
+    fileManager: buildFileManagerApi(ipcRenderer),
   }
 }

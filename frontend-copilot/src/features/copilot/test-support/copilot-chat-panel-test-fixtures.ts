@@ -2,6 +2,10 @@ import type { AssistantAgentDirectoryState } from '../../../workbench/assistant/
 import type { AgentType, AssistantSessionShell } from '../../../workbench/types'
 import type { CopilotBootstrapState, CopilotDiagnosticsSummary } from '../types'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_TOOL_READ = 'tool.fs.read'
+
+
 interface SessionShellOverrides {
   sessionId?: string
   boundAgent?: Partial<AgentType>
@@ -134,7 +138,7 @@ export function createSelectedAgent(): AgentType {
     hint: '默认使用所有工具',
     status: 'active',
     icon: ((() => null) as unknown) as AgentType['icon'],
-    recommendedTools: ['tool.fs.read'],
+    recommendedTools: [LABEL_TOOL_READ],
   }
 }
 
@@ -177,7 +181,7 @@ export function createSessionShell(overrides: SessionShellOverrides = {}): Assis
       capabilitiesVersion: 'cap-v12',
       allAvailableTools: [
         {
-          toolId: 'tool.fs.read',
+          toolId: LABEL_TOOL_READ,
           kind: 'builtin',
           availability: 'available',
           displayName: '读取文件',
@@ -191,8 +195,8 @@ export function createSessionShell(overrides: SessionShellOverrides = {}): Assis
           description: '访问外部搜索服务',
         },
       ],
-      recommendedToolsForAgent: ['tool.fs.read'],
-      defaultEnabledTools: ['tool.fs.read'],
+      recommendedToolsForAgent: [LABEL_TOOL_READ],
+      defaultEnabledTools: [LABEL_TOOL_READ],
       toolSelectionMode: 'recommendation-only',
       ...overrides.capabilities,
     },

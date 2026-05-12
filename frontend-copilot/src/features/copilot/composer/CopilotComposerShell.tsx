@@ -5,7 +5,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent as ReactClipboardEvent,
   type Dispatch,
+  type DragEvent as ReactDragEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -70,6 +72,7 @@ export interface CopilotComposerShellProps {
   onResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
 }
 
+// eslint-disable-next-line max-lines-per-function -- shell component orchestrates many sub-components
 export function CopilotComposerShell({
   language = 'zh-CN',
   capabilities,
@@ -97,7 +100,6 @@ export function CopilotComposerShell({
   const controlsLocked = controlsLockedReason !== null
   const controlsDisabled = isSending || interactionLocked || controlsLocked
   const inputDisabled = interactionLocked || controlsLocked
-  const thinkingControlRef = useRef<HTMLDivElement | null>(null)
   const attachmentControlRef = useRef<HTMLDivElement | null>(null)
   const attachmentPanelCloseTimerRef = useRef<number | null>(null)
   const imagePreviewRef = useRef<HTMLImageElement | null>(null)
@@ -115,9 +117,7 @@ export function CopilotComposerShell({
     scale: 1,
   })
   const imagePreviewFrameRef = useRef<number | null>(null)
-  const thinkingPanelId = useId()
   const attachmentPanelId = useId()
-  const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
   const [attachmentPanelClosing, setAttachmentPanelClosing] = useState(false)
   const attachmentPanelVisible = attachments.panelOpen || attachmentPanelClosing
   const previewVisible = attachments.preview.open
@@ -127,65 +127,7 @@ export function CopilotComposerShell({
     setState: onAttachmentsChange,
   })
 
-  const attachmentCopy = useMemo(() => {
-    if (language === 'en-US') {
-      return {
-        triggerLabel: (count: number) => `Attached files (${count})`,
-        panelLabel: 'Attached files',
-        removeLabel: (name: string) => `Remove ${name}`,
-        closePreviewLabel: 'Close attachment preview',
-        previewDialogLabel: 'Attachment preview',
-        dropHint: 'Drop files to attach',
-        previewLoading: 'Loading preview…',
-      }
-    }
-
-    return {
-      triggerLabel: (count: number) => `已附加 ${count} 个文件`,
-      panelLabel: '已附加文件',
-      removeLabel: (name: string) => `移除 ${name}`,
-      closePreviewLabel: '关闭附件预览',
-      previewDialogLabel: '附件预览',
-      dropHint: '松开即可附加文件',
-      previewLoading: '正在加载预览…',
-    }
-  }, [language])
-
-  const canRenderThinkingControl = thinkingCapability !== null
-    && thinkingCapability.supported !== false
-    && thinkingCapability.series !== null
-    && thinkingCapability.editorType !== null
-  const effectiveThinkingSelection = useMemo(
-    () => (thinkingCapability === null ? draft.thinkingSelection : resolveThinkingSelectionForCapability(thinkingCapability, draft.thinkingSelection)),
-    [draft.thinkingSelection, thinkingCapability],
-  )
-  const currentThinkingValue = useMemo(
-    () => resolveThinkingSelectionValue(effectiveThinkingSelection, thinkingCapability),
-    [effectiveThinkingSelection, thinkingCapability],
-  )
-  const currentThinkingLabel = useMemo(
-    () => resolveThinkingValueLabel(currentThinkingValue),
-    [currentThinkingValue],
-  )
-  const thinkingTriggerPlaceholder = copy.composer.thinkingPlaceholder
-  const thinkingTriggerLabel = currentThinkingLabel === null ? thinkingTriggerPlaceholder : currentThinkingLabel
-  const unavailableThinkingReason = useMemo(
-    () => describeThinkingCapabilityUnavailableReason(thinkingCapability),
-    [thinkingCapability],
-  )
-  const thinkingTriggerTitle = canRenderThinkingControl
-    ? thinkingTriggerLabel
-    : unavailableThinkingReason ?? copy.composer.thinkingPlaceholder
-  const thinkingTriggerActive = effectiveThinkingSelection === null
-    ? false
-    : isThinkingSelectionActive(effectiveThinkingSelection)
-  const thinkingTriggerAriaProps = canRenderThinkingControl
-    ? {
-        'aria-haspopup': 'dialog' as const,
-        'aria-controls': thinkingPanelId,
-        'aria-expanded': thinkingPanelOpen,
-      }
-    : {}
+  const attachmentCopy = useMemo(() => resolveAttachmentCopy(language), [language])
 
   const requestCloseAttachmentPanel = useCallback(() => {
     if (!attachments.panelOpen) {
@@ -230,34 +172,6 @@ export function CopilotComposerShell({
       window.cancelAnimationFrame(imagePreviewFrameRef.current)
     }
   }, [])
-
-  useEffect(() => {
-    if (!thinkingPanelOpen) {
-      return undefined
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (thinkingControlRef.current?.contains(event.target as Node)) {
-        return
-      }
-
-      setThinkingPanelOpen(false)
-    }
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setThinkingPanelOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('keydown', handleEscape)
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('keydown', handleEscape)
-    }
-  }, [thinkingPanelOpen])
 
   useEffect(() => {
     if (!attachmentPanelVisible) {
@@ -317,12 +231,6 @@ export function CopilotComposerShell({
       document.removeEventListener('keydown', handleEscape)
     }
   }, [attachments.preview.open, requestCloseAttachmentPreview])
-
-  useEffect(() => {
-    if (controlsDisabled || !canRenderThinkingControl) {
-      setThinkingPanelOpen(false)
-    }
-  }, [canRenderThinkingControl, controlsDisabled])
 
   useEffect(() => {
     if (controlsDisabled) {
@@ -487,13 +395,6 @@ export function CopilotComposerShell({
     }
   }
 
-  const handleThinkingSelectionChange = (thinkingSelection: RuntimeThinkingSelection | null) => {
-    onDraftChange((current) => applyThinkingSelectionToComposerDraft(current, {
-      modelRoute: current.selectedModelRoute,
-      thinkingSelection,
-    }))
-  }
-
   return (
     <form className="copilot-chat__composer" data-testid="chat-composer-dock" onSubmit={onSubmit}>
       <div className="copilot-chat__composer-toolbar" data-testid="chat-composer-toolbar">
@@ -509,71 +410,13 @@ export function CopilotComposerShell({
             }))
           }}
         />
-        <div
-          className="copilot-chat__thinking-control"
-          data-testid="chat-thinking-control"
-          ref={thinkingControlRef}
-        >
-          <button
-            type="button"
-            className={[
-              'copilot-model-picker__trigger',
-              'copilot-chat__thinking-trigger',
-              controlsDisabled ? 'copilot-chat__thinking-trigger--disabled' : '',
-              thinkingTriggerActive ? 'copilot-chat__thinking-trigger--active' : '',
-            ].filter((className) => className !== '').join(' ')}
-            data-testid="chat-thinking-trigger"
-            aria-label={thinkingTriggerTitle}
-            title={thinkingTriggerTitle}
-            disabled={controlsDisabled}
-            {...thinkingTriggerAriaProps}
-            onClick={() => {
-              if (!canRenderThinkingControl) {
-                setThinkingPanelOpen(false)
-                return
-              }
-
-              setThinkingPanelOpen((current) => !current)
-            }}
-          >
-            <span className="copilot-chat__thinking-trigger-main">
-              <Lightbulb className="copilot-chat__thinking-trigger-icon" aria-hidden="true" />
-              <span className="copilot-chat__thinking-trigger-label" data-testid="chat-thinking-trigger-label">
-                {thinkingTriggerLabel}
-              </span>
-            </span>
-          </button>
-          {canRenderThinkingControl && thinkingCapability !== null && thinkingPanelOpen && (
-            <section
-              id={thinkingPanelId}
-              className="copilot-model-picker__panel copilot-chat__thinking-panel"
-              role="dialog"
-              aria-label={copy.composer.thinkingSettingsAriaLabel}
-              data-testid="chat-thinking-panel"
-            >
-              <div className="copilot-chat__thinking-panel-header">
-                <div className="copilot-chat__thinking-panel-summary">
-                  <span className="copilot-chat__thinking-panel-title" data-testid="chat-thinking-series-title">
-                    {buildThinkingSeriesLabel(thinkingCapability)}
-                  </span>
-                  <span className="copilot-chat__thinking-panel-current-shell">
-                    <span className="copilot-chat__thinking-panel-current-label">{copy.composer.currentValueLabel}</span>
-                    <span className="copilot-chat__thinking-panel-current-value" data-testid="chat-thinking-current-value">
-                      {currentThinkingLabel ?? copy.composer.unsetValue}
-                    </span>
-                  </span>
-                </div>
-              </div>
-              {renderThinkingControlBody({
-                capability: thinkingCapability,
-                currentSelection: effectiveThinkingSelection,
-                disabled: controlsDisabled,
-                onChange: handleThinkingSelectionChange,
-                onClose: () => setThinkingPanelOpen(false),
-              })}
-            </section>
-          )}
-        </div>
+        <ComposerThinkingControl
+          thinkingCapability={thinkingCapability}
+          draft={draft}
+          controlsDisabled={controlsDisabled}
+          copyComposer={copy.composer}
+          onDraftChange={onDraftChange}
+        />
         <ToolPicker
           language={language}
           tools={capabilities.allAvailableTools}
@@ -599,239 +442,52 @@ export function CopilotComposerShell({
         onMouseDown={interactionLocked ? undefined : onResizeStart}
       />
 
-      <div
-        className={[
-          'copilot-chat__composer-surface',
-          buildComposerSurfaceHeightClassName(composerHeight),
-          attachments.isDragActive ? 'copilot-chat__composer-surface--drag-active' : '',
-        ].filter((className) => className !== '').join(' ')}
-        data-testid="chat-composer-surface"
-        onDragEnter={attachmentActions.handleDragEnter}
-        onDragOver={attachmentActions.handleDragOver}
-        onDragLeave={attachmentActions.handleDragLeave}
-        onDrop={attachmentActions.handleDrop}
-      >
-        {attachmentPanelVisible && attachments.items.length > 0 && (
-          <section
-            id={attachmentPanelId}
-            className={[
-              'copilot-chat__attachment-panel',
-              attachmentPanelClosing ? 'copilot-chat__attachment-panel--closing' : '',
-            ].filter((className) => className !== '').join(' ')}
-            role="dialog"
-            aria-label={attachmentCopy.panelLabel}
-            data-testid="chat-composer-attachment-panel"
-            ref={attachmentControlRef}
-          >
-            <div className="copilot-chat__attachment-panel-header">
-              <span className="copilot-chat__attachment-panel-title">{attachmentCopy.panelLabel}</span>
-              <span className="copilot-chat__attachment-panel-count" data-testid="chat-composer-attachment-count">
-                {attachments.items.length}
-              </span>
-            </div>
-            <div className="copilot-chat__attachment-list">
-              {attachments.items.map((attachment) => (
-                <div
-                  key={attachment.id}
-                  className="copilot-chat__attachment-item"
-                  data-testid="chat-composer-attachment-item"
-                  data-attachment-path={attachment.path}
-                >
-                  <button
-                    type="button"
-                    className="copilot-chat__attachment-open"
-                    data-testid={`chat-composer-attachment-open-${attachment.id}`}
-                    onClick={() => {
-                      attachmentActions.openAttachmentPreview(attachment.id)
-                    }}
-                  >
-                    {attachment.kind === 'image'
-                      ? (
-                          attachment.previewUrl !== undefined
-                            ? <img className="copilot-chat__attachment-thumbnail" src={attachment.previewUrl} alt={attachment.name} data-testid="chat-composer-attachment-thumbnail" />
-                            : <ImageIcon className="copilot-chat__attachment-icon" aria-hidden="true" />
-                        )
-                      : attachment.kind === 'text'
-                        ? <FileText className="copilot-chat__attachment-icon" aria-hidden="true" />
-                        : <Paperclip className="copilot-chat__attachment-icon" aria-hidden="true" />}
-                    <span className="copilot-chat__attachment-meta">
-                      <span className="copilot-chat__attachment-name">{attachment.name}</span>
-                      <span className="copilot-chat__attachment-path">{attachment.path}</span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="copilot-chat__attachment-remove"
-                    aria-label={attachmentCopy.removeLabel(attachment.name)}
-                    title={attachmentCopy.removeLabel(attachment.name)}
-                    data-testid={`chat-composer-attachment-remove-${attachment.id}`}
-                    onClick={() => {
-                      attachmentActions.removeAttachment(attachment.id)
-                    }}
-                  >
-                    <X aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {attachments.isDragActive && (
-          <div className="copilot-chat__attachment-drop-hint" data-testid="chat-composer-attachment-drop-hint">
-            {attachmentCopy.dropHint}
-          </div>
-        )}
-
-        {attachments.notice !== null && (
-          <div className="copilot-chat__attachment-notice" data-testid="chat-composer-attachment-notice">
-            {attachments.notice.message}
-          </div>
-        )}
-
-        <div className="copilot-panel__field-group copilot-chat__composer-field">
-          <textarea
-            ref={composerInputRef}
-            className="copilot-chat__composer-input"
-            name="messageText"
-            aria-label={copy.composer.messageInputAriaLabel}
-            value={draft.messageText}
-            disabled={inputDisabled}
-            onChange={(event) => {
-              const nextValue = event.currentTarget.value
-              onDraftChange((current) => ({
-                ...current,
-                messageText: nextValue,
-              }))
-            }}
-            onKeyDown={handleMessageInputKeyDown}
-            onPaste={attachmentActions.handlePaste}
-            placeholder={copy.composer.messageInputPlaceholder}
-          />
-        </div>
-
-        {attachments.items.length > 0 && (
-          <div className="copilot-chat__attachment-trigger-shell" ref={attachmentPanelVisible ? undefined : attachmentControlRef}>
-            <button
-              type="button"
-              className="copilot-chat__attachment-trigger"
-              data-testid="chat-composer-attachment-trigger"
-              aria-label={attachmentCopy.triggerLabel(attachmentActions.attachmentCount)}
-              title={attachmentCopy.triggerLabel(attachmentActions.attachmentCount)}
-              aria-controls={attachmentPanelId}
-              aria-expanded={attachments.panelOpen}
-              onClick={() => {
-                if (attachmentPanelVisible) {
-                  requestCloseAttachmentPanel()
-                  return
-                }
-
-                attachmentActions.togglePanel()
-              }}
-            >
-              <Paperclip className="copilot-chat__attachment-trigger-icon" aria-hidden="true" />
-              <span className="copilot-chat__attachment-trigger-count" data-testid="chat-composer-attachment-trigger-count">
-                {attachmentActions.attachmentCount}
-              </span>
-            </button>
-          </div>
-        )}
-
-        <button
-          type={isSending ? 'button' : 'submit'}
-          className={[
-            'copilot-chat__send-button',
-            isSending ? 'copilot-chat__send-button--cancel' : '',
-          ].filter((className) => className !== '').join(' ')}
-          data-testid="chat-composer-send-button"
-          disabled={isSending ? !canCancel : sendDisabledReason !== null}
-          title={isSending ? copy.composer.cancelCurrentResponse : sendDisabledReason ?? copy.composer.sendMessage}
-          aria-label={isSending ? copy.composer.cancelCurrentResponse : sendDisabledReason ?? copy.composer.sendMessage}
-          onClick={isSending ? onCancel : undefined}
-        >
-          {isSending
-            ? <Square className="copilot-chat__send-button-icon" aria-hidden="true" />
-            : <ArrowUp className="copilot-chat__send-button-icon" aria-hidden="true" />}
-        </button>
-      </div>
+      {renderComposerSurface({
+        composerHeight,
+        attachments,
+        attachmentPanelVisible,
+        attachmentPanelClosing,
+        attachmentPanelId,
+        attachmentCopy,
+        attachmentControlRef,
+        openAttachmentPreview: attachmentActions.openAttachmentPreview,
+        removeAttachment: attachmentActions.removeAttachment,
+        handleDragEnter: attachmentActions.handleDragEnter,
+        handleDragOver: attachmentActions.handleDragOver,
+        handleDragLeave: attachmentActions.handleDragLeave,
+        handleDrop: attachmentActions.handleDrop,
+        handlePaste: attachmentActions.handlePaste,
+        attachmentCount: attachmentActions.attachmentCount,
+        togglePanel: attachmentActions.togglePanel,
+        requestCloseAttachmentPanel,
+        composerInputRef,
+        copy,
+        draftMessageText: draft.messageText,
+        inputDisabled,
+        onDraftChange,
+        handleMessageInputKeyDown,
+        isSending,
+        canCancel,
+        sendDisabledReason,
+        onCancel,
+      })}
 
       {controlsLockedReason !== null && (
         <p className="copilot-chat__composer-note" data-testid="chat-composer-note">{controlsLockedReason}</p>
       )}
 
-      {previewVisible && (
-        <div
-          className={[
-            'copilot-chat__attachment-preview-backdrop',
-            attachments.preview.kind === 'image' ? 'copilot-chat__attachment-preview-backdrop--image' : '',
-          ].filter((className) => className !== '').join(' ')}
-          data-testid="chat-composer-attachment-preview-backdrop"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              requestCloseAttachmentPreview()
-            }
-          }}
-        >
-          <section
-            className={[
-              'copilot-chat__attachment-preview-dialog',
-              attachments.preview.kind === 'image' ? 'copilot-chat__attachment-preview-dialog--image' : '',
-            ].filter((className) => className !== '').join(' ')}
-            role="dialog"
-            aria-label={attachmentCopy.previewDialogLabel}
-            data-testid="chat-composer-attachment-preview-dialog"
-          >
-            <div className="copilot-chat__attachment-preview-header">
-              <h2 className="copilot-chat__attachment-preview-title">{attachments.preview.title}</h2>
-              <button
-                type="button"
-                className="copilot-chat__attachment-preview-close"
-                aria-label={attachmentCopy.closePreviewLabel}
-                title={attachmentCopy.closePreviewLabel}
-                data-testid="chat-composer-attachment-preview-close"
-                onClick={requestCloseAttachmentPreview}
-              >
-                <X aria-hidden="true" />
-              </button>
-            </div>
-            <div className="copilot-chat__attachment-preview-body">
-              {attachments.preview.status === 'loading' && (
-                <p className="copilot-chat__attachment-preview-loading" data-testid="chat-composer-attachment-preview-loading">
-                  {attachmentCopy.previewLoading}
-                </p>
-              )}
-              {attachments.preview.status === 'error' && attachments.preview.message !== null && (
-                <p className="copilot-chat__attachment-preview-error" data-testid="chat-composer-attachment-preview-error">
-                  {attachments.preview.message}
-                </p>
-              )}
-              {attachments.preview.status === 'ready' && attachments.preview.kind === 'image' && attachments.preview.previewUrl !== null && (
-                <img
-                  ref={imagePreviewRef}
-                  className="copilot-chat__attachment-preview-image"
-                  src={attachments.preview.previewUrl}
-                  alt={attachments.preview.title}
-                  draggable={false}
-                  data-testid="chat-composer-attachment-preview-image"
-                  style={{ transform: 'translate3d(0, 0, 0) scale(1)' }}
-                  onClick={(event) => event.stopPropagation()}
-                  onLoad={handleImagePreviewLoad}
-                  onPointerDown={handleImagePreviewPointerDown}
-                  onPointerMove={handleImagePreviewPointerMove}
-                  onPointerUp={handleImagePreviewPointerEnd}
-                  onPointerCancel={handleImagePreviewPointerEnd}
-                  onWheel={handleImagePreviewWheel}
-                />
-              )}
-              {attachments.preview.status === 'ready' && attachments.preview.kind === 'text' && (
-                <pre className="copilot-chat__attachment-preview-text" data-testid="chat-composer-attachment-preview-text">
-                  {attachments.preview.text}
-                </pre>
-              )}
-            </div>
-          </section>
-        </div>
-      )}
+      {renderAttachmentPreviewDialog({
+        previewVisible,
+        attachments,
+        attachmentCopy,
+        requestCloseAttachmentPreview,
+        imagePreviewRef,
+        handleImagePreviewLoad,
+        handleImagePreviewPointerDown,
+        handleImagePreviewPointerMove,
+        handleImagePreviewPointerEnd,
+        handleImagePreviewWheel,
+      })}
     </form>
   )
 }
@@ -839,6 +495,536 @@ export function CopilotComposerShell({
 const EMPTY_COMPOSER_ATTACHMENTS_STATE = createEmptyComposerAttachmentsState()
 
 const NOOP_ATTACHMENTS_CHANGE: Dispatch<SetStateAction<CopilotComposerAttachmentsState>> = () => undefined
+
+function renderAttachmentPanel(input: {
+  attachmentPanelVisible: boolean
+  attachments: CopilotComposerAttachmentsState
+  attachmentPanelClosing: boolean
+  attachmentPanelId: string
+  attachmentCopy: { panelLabel: string; removeLabel: (name: string) => string }
+  attachmentControlRef: RefObject<HTMLDivElement | null>
+  openAttachmentPreview: (id: string) => void
+  removeAttachment: (id: string) => void
+}) {
+  const { attachmentPanelVisible, attachments, attachmentPanelClosing, attachmentPanelId, attachmentCopy, attachmentControlRef, openAttachmentPreview, removeAttachment } = input
+  if (!attachmentPanelVisible || attachments.items.length === 0) {
+    return null
+  }
+  return (
+    <section
+      id={attachmentPanelId}
+      className={[
+        'copilot-chat__attachment-panel',
+        attachmentPanelClosing ? 'copilot-chat__attachment-panel--closing' : '',
+      ].filter((className) => className !== '').join(' ')}
+      role="dialog"
+      aria-label={attachmentCopy.panelLabel}
+      data-testid="chat-composer-attachment-panel"
+      ref={attachmentControlRef as React.Ref<HTMLElement>}
+    >
+      <div className="copilot-chat__attachment-panel-header">
+        <span className="copilot-chat__attachment-panel-title">{attachmentCopy.panelLabel}</span>
+        <span className="copilot-chat__attachment-panel-count" data-testid="chat-composer-attachment-count">
+          {attachments.items.length}
+        </span>
+      </div>
+      <div className="copilot-chat__attachment-list">
+        {attachments.items.map((attachment) => (
+          <div
+            key={attachment.id}
+            className="copilot-chat__attachment-item"
+            data-testid="chat-composer-attachment-item"
+            data-attachment-path={attachment.path}
+          >
+            <button
+              type="button"
+              className="copilot-chat__attachment-open"
+              data-testid={`chat-composer-attachment-open-${attachment.id}`}
+              onClick={() => {
+                openAttachmentPreview(attachment.id)
+              }}
+            >
+              {attachment.kind === 'image'
+                ? (
+                    attachment.previewUrl !== undefined
+                      ? <img className="copilot-chat__attachment-thumbnail" src={attachment.previewUrl} alt={attachment.name} data-testid="chat-composer-attachment-thumbnail" />
+                      : <ImageIcon className="copilot-chat__attachment-icon" aria-hidden="true" />
+                  )
+                : attachment.kind === 'text'
+                  ? <FileText className="copilot-chat__attachment-icon" aria-hidden="true" />
+                  : <Paperclip className="copilot-chat__attachment-icon" aria-hidden="true" />}
+              <span className="copilot-chat__attachment-meta">
+                <span className="copilot-chat__attachment-name">{attachment.name}</span>
+                <span className="copilot-chat__attachment-path">{attachment.path}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="copilot-chat__attachment-remove"
+              aria-label={attachmentCopy.removeLabel(attachment.name)}
+              title={attachmentCopy.removeLabel(attachment.name)}
+              data-testid={`chat-composer-attachment-remove-${attachment.id}`}
+              onClick={() => {
+                removeAttachment(attachment.id)
+              }}
+            >
+              <X aria-hidden="true" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function renderAttachmentPreviewDialog(input: {
+  previewVisible: boolean
+  attachments: CopilotComposerAttachmentsState
+  attachmentCopy: { previewDialogLabel: string; closePreviewLabel: string; previewLoading: string }
+  requestCloseAttachmentPreview: () => void
+  imagePreviewRef: RefObject<HTMLImageElement | null>
+  handleImagePreviewLoad: (event: SyntheticEvent<HTMLImageElement>) => void
+  handleImagePreviewPointerDown: (event: ReactPointerEvent<HTMLImageElement>) => void
+  handleImagePreviewPointerMove: (event: ReactPointerEvent<HTMLImageElement>) => void
+  handleImagePreviewPointerEnd: (event: ReactPointerEvent<HTMLImageElement>) => void
+  handleImagePreviewWheel: (event: ReactWheelEvent<HTMLImageElement>) => void
+}) {
+  const { previewVisible, attachments, attachmentCopy, requestCloseAttachmentPreview, imagePreviewRef, handleImagePreviewLoad, handleImagePreviewPointerDown, handleImagePreviewPointerMove, handleImagePreviewPointerEnd, handleImagePreviewWheel } = input
+  if (!previewVisible) {
+    return null
+  }
+  return (
+    <div
+      className={[
+        'copilot-chat__attachment-preview-backdrop',
+        attachments.preview.kind === 'image' ? 'copilot-chat__attachment-preview-backdrop--image' : '',
+      ].filter((className) => className !== '').join(' ')}
+      data-testid="chat-composer-attachment-preview-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          requestCloseAttachmentPreview()
+        }
+      }}
+    >
+      <section
+        className={[
+          'copilot-chat__attachment-preview-dialog',
+          attachments.preview.kind === 'image' ? 'copilot-chat__attachment-preview-dialog--image' : '',
+        ].filter((className) => className !== '').join(' ')}
+        role="dialog"
+        aria-label={attachmentCopy.previewDialogLabel}
+        data-testid="chat-composer-attachment-preview-dialog"
+      >
+        <div className="copilot-chat__attachment-preview-header">
+          <h2 className="copilot-chat__attachment-preview-title">{attachments.preview.title}</h2>
+          <button
+            type="button"
+            className="copilot-chat__attachment-preview-close"
+            aria-label={attachmentCopy.closePreviewLabel}
+            title={attachmentCopy.closePreviewLabel}
+            data-testid="chat-composer-attachment-preview-close"
+            onClick={requestCloseAttachmentPreview}
+          >
+            <X aria-hidden="true" />
+          </button>
+        </div>
+        <div className="copilot-chat__attachment-preview-body">
+          {attachments.preview.status === 'loading' && (
+            <p className="copilot-chat__attachment-preview-loading" data-testid="chat-composer-attachment-preview-loading">
+              {attachmentCopy.previewLoading}
+            </p>
+          )}
+          {attachments.preview.status === 'error' && attachments.preview.message !== null && (
+            <p className="copilot-chat__attachment-preview-error" data-testid="chat-composer-attachment-preview-error">
+              {attachments.preview.message}
+            </p>
+          )}
+          {attachments.preview.status === 'ready' && attachments.preview.kind === 'image' && attachments.preview.previewUrl !== null && (
+            <img
+              ref={imagePreviewRef as React.Ref<HTMLImageElement>}
+              className="copilot-chat__attachment-preview-image"
+              src={attachments.preview.previewUrl}
+              alt={attachments.preview.title}
+              draggable={false}
+              data-testid="chat-composer-attachment-preview-image"
+              style={{ transform: 'translate3d(0, 0, 0) scale(1)' }}
+              onClick={(event) => event.stopPropagation()}
+              onLoad={handleImagePreviewLoad}
+              onPointerDown={handleImagePreviewPointerDown}
+              onPointerMove={handleImagePreviewPointerMove}
+              onPointerUp={handleImagePreviewPointerEnd}
+              onPointerCancel={handleImagePreviewPointerEnd}
+              onWheel={handleImagePreviewWheel}
+            />
+          )}
+          {attachments.preview.status === 'ready' && attachments.preview.kind === 'text' && (
+            <pre className="copilot-chat__attachment-preview-text" data-testid="chat-composer-attachment-preview-text">
+              {attachments.preview.text}
+            </pre>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+// eslint-disable-next-line max-lines-per-function -- render function with many child elements
+function renderComposerSurface(input: {
+  composerHeight: number
+  attachments: CopilotComposerAttachmentsState
+  attachmentPanelVisible: boolean
+  attachmentPanelClosing: boolean
+  attachmentPanelId: string
+  attachmentCopy: {
+    panelLabel: string
+    removeLabel: (name: string) => string
+    triggerLabel: (count: number) => string
+    dropHint: string
+  }
+  attachmentControlRef: RefObject<HTMLDivElement | null>
+  openAttachmentPreview: (id: string) => void
+  removeAttachment: (id: string) => void
+  handleDragEnter: (event: ReactDragEvent<HTMLDivElement>) => void
+  handleDragOver: (event: ReactDragEvent<HTMLDivElement>) => void
+  handleDragLeave: (event: ReactDragEvent<HTMLDivElement>) => void
+  handleDrop: (event: ReactDragEvent<HTMLDivElement>) => void
+  handlePaste: (event: ReactClipboardEvent<HTMLTextAreaElement>) => void
+  attachmentCount: number
+  togglePanel: () => void
+  requestCloseAttachmentPanel: () => void
+  composerInputRef: RefObject<HTMLTextAreaElement>
+  copy: ReturnType<typeof getCopilotChatCopy>
+  draftMessageText: string
+  inputDisabled: boolean
+  onDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+  handleMessageInputKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
+  isSending: boolean
+  canCancel: boolean
+  sendDisabledReason: string | null
+  onCancel: () => void
+}) {
+  const {
+    composerHeight,
+    attachments,
+    attachmentPanelVisible,
+    attachmentPanelClosing,
+    attachmentPanelId,
+    attachmentCopy,
+    attachmentControlRef,
+    openAttachmentPreview,
+    removeAttachment,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handlePaste,
+    attachmentCount,
+    togglePanel,
+    requestCloseAttachmentPanel,
+    composerInputRef,
+    copy,
+    draftMessageText,
+    inputDisabled,
+    onDraftChange,
+    handleMessageInputKeyDown,
+    isSending,
+    canCancel,
+    sendDisabledReason,
+    onCancel,
+  } = input
+  return (
+    <div
+      className={[
+        'copilot-chat__composer-surface',
+        buildComposerSurfaceHeightClassName(composerHeight),
+        attachments.isDragActive ? 'copilot-chat__composer-surface--drag-active' : '',
+      ].filter((className) => className !== '').join(' ')}
+      data-testid="chat-composer-surface"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {renderAttachmentPanel({
+        attachmentPanelVisible,
+        attachments,
+        attachmentPanelClosing,
+        attachmentPanelId,
+        attachmentCopy: { panelLabel: attachmentCopy.panelLabel, removeLabel: attachmentCopy.removeLabel },
+        attachmentControlRef,
+        openAttachmentPreview,
+        removeAttachment,
+      })}
+
+      {attachments.isDragActive && (
+        <div className="copilot-chat__attachment-drop-hint" data-testid="chat-composer-attachment-drop-hint">
+          {attachmentCopy.dropHint}
+        </div>
+      )}
+
+      {attachments.notice !== null && (
+        <div className="copilot-chat__attachment-notice" data-testid="chat-composer-attachment-notice">
+          {attachments.notice.message}
+        </div>
+      )}
+
+      <div className="copilot-panel__field-group copilot-chat__composer-field">
+        <textarea
+          ref={composerInputRef}
+          className="copilot-chat__composer-input"
+          name="messageText"
+          aria-label={copy.composer.messageInputAriaLabel}
+          value={draftMessageText}
+          disabled={inputDisabled}
+          onChange={(event) => {
+            const nextValue = event.currentTarget.value
+            onDraftChange((current) => ({
+              ...current,
+              messageText: nextValue,
+            }))
+          }}
+          onKeyDown={handleMessageInputKeyDown}
+          onPaste={handlePaste}
+          placeholder={copy.composer.messageInputPlaceholder}
+        />
+      </div>
+
+      {attachments.items.length > 0 && (
+        <div className="copilot-chat__attachment-trigger-shell" ref={attachmentPanelVisible ? undefined : attachmentControlRef as React.Ref<HTMLDivElement>}>
+          <button
+            type="button"
+            className="copilot-chat__attachment-trigger"
+            data-testid="chat-composer-attachment-trigger"
+            aria-label={attachmentCopy.triggerLabel(attachmentCount)}
+            title={attachmentCopy.triggerLabel(attachmentCount)}
+            aria-controls={attachmentPanelId}
+            aria-expanded={attachments.panelOpen}
+            onClick={() => {
+              if (attachmentPanelVisible) {
+                requestCloseAttachmentPanel()
+                return
+              }
+
+              togglePanel()
+            }}
+          >
+            <Paperclip className="copilot-chat__attachment-trigger-icon" aria-hidden="true" />
+            <span className="copilot-chat__attachment-trigger-count" data-testid="chat-composer-attachment-trigger-count">
+              {attachmentCount}
+            </span>
+          </button>
+        </div>
+      )}
+
+      <button
+        type={isSending ? 'button' : 'submit'}
+        className={[
+          'copilot-chat__send-button',
+          isSending ? 'copilot-chat__send-button--cancel' : '',
+        ].filter((className) => className !== '').join(' ')}
+        data-testid="chat-composer-send-button"
+        disabled={isSending ? !canCancel : sendDisabledReason !== null}
+        title={isSending ? copy.composer.cancelCurrentResponse : sendDisabledReason ?? copy.composer.sendMessage}
+        aria-label={isSending ? copy.composer.cancelCurrentResponse : sendDisabledReason ?? copy.composer.sendMessage}
+        onClick={isSending ? onCancel : undefined}
+      >
+        {isSending
+          ? <Square className="copilot-chat__send-button-icon" aria-hidden="true" />
+          : <ArrowUp className="copilot-chat__send-button-icon" aria-hidden="true" />}
+      </button>
+    </div>
+  )
+}
+
+interface ComposerThinkingControlProps {
+  thinkingCapability: RuntimeThinkingCapability | null
+  draft: CopilotChatComposerDraft
+  controlsDisabled: boolean
+  copyComposer: ReturnType<typeof getCopilotChatCopy>['composer']
+  onDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+}
+
+// eslint-disable-next-line max-lines-per-function -- extracted component with its own hooks and rendering
+function ComposerThinkingControl({
+  thinkingCapability,
+  draft,
+  controlsDisabled,
+  copyComposer,
+  onDraftChange,
+}: ComposerThinkingControlProps) {
+  const thinkingControlRef = useRef<HTMLDivElement | null>(null)
+  const thinkingPanelId = useId()
+  const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
+
+  const canRenderThinkingControl = thinkingCapability !== null
+    && thinkingCapability.supported !== false
+    && thinkingCapability.series !== null
+    && thinkingCapability.editorType !== null
+  const effectiveThinkingSelection = useMemo(
+    () => (thinkingCapability === null ? draft.thinkingSelection : resolveThinkingSelectionForCapability(thinkingCapability, draft.thinkingSelection)),
+    [draft.thinkingSelection, thinkingCapability],
+  )
+  const currentThinkingValue = useMemo(
+    () => resolveThinkingSelectionValue(effectiveThinkingSelection, thinkingCapability),
+    [effectiveThinkingSelection, thinkingCapability],
+  )
+  const currentThinkingLabel = useMemo(
+    () => resolveThinkingValueLabel(currentThinkingValue),
+    [currentThinkingValue],
+  )
+  const thinkingTriggerPlaceholder = copyComposer.thinkingPlaceholder
+  const thinkingTriggerLabel = currentThinkingLabel === null ? thinkingTriggerPlaceholder : currentThinkingLabel
+  const unavailableThinkingReason = useMemo(
+    () => describeThinkingCapabilityUnavailableReason(thinkingCapability),
+    [thinkingCapability],
+  )
+  const thinkingTriggerTitle = canRenderThinkingControl
+    ? thinkingTriggerLabel
+    : unavailableThinkingReason ?? copyComposer.thinkingPlaceholder
+  const thinkingTriggerActive = effectiveThinkingSelection === null
+    ? false
+    : isThinkingSelectionActive(effectiveThinkingSelection)
+  const thinkingTriggerAriaProps = canRenderThinkingControl
+    ? {
+        'aria-haspopup': 'dialog' as const,
+        'aria-controls': thinkingPanelId,
+        'aria-expanded': thinkingPanelOpen,
+      }
+    : {}
+
+  useEffect(() => {
+    if (!thinkingPanelOpen) {
+      return undefined
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (thinkingControlRef.current?.contains(event.target as Node)) {
+        return
+      }
+
+      setThinkingPanelOpen(false)
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setThinkingPanelOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [thinkingPanelOpen])
+
+  useEffect(() => {
+    if (controlsDisabled || !canRenderThinkingControl) {
+      setThinkingPanelOpen(false)
+    }
+  }, [canRenderThinkingControl, controlsDisabled])
+
+  const handleThinkingSelectionChange = (thinkingSelection: RuntimeThinkingSelection | null) => {
+    onDraftChange((current) => applyThinkingSelectionToComposerDraft(current, {
+      modelRoute: current.selectedModelRoute,
+      thinkingSelection,
+    }))
+  }
+
+  return (
+    <div
+      className="copilot-chat__thinking-control"
+      data-testid="chat-thinking-control"
+      ref={thinkingControlRef}
+    >
+      <button
+        type="button"
+        className={[
+          'copilot-model-picker__trigger',
+          'copilot-chat__thinking-trigger',
+          controlsDisabled ? 'copilot-chat__thinking-trigger--disabled' : '',
+          thinkingTriggerActive ? 'copilot-chat__thinking-trigger--active' : '',
+        ].filter((className) => className !== '').join(' ')}
+        data-testid="chat-thinking-trigger"
+        aria-label={thinkingTriggerTitle}
+        title={thinkingTriggerTitle}
+        disabled={controlsDisabled}
+        {...thinkingTriggerAriaProps}
+        onClick={() => {
+          if (!canRenderThinkingControl) {
+            setThinkingPanelOpen(false)
+            return
+          }
+
+          setThinkingPanelOpen((current) => !current)
+        }}
+      >
+        <span className="copilot-chat__thinking-trigger-main">
+          <Lightbulb className="copilot-chat__thinking-trigger-icon" aria-hidden="true" />
+          <span className="copilot-chat__thinking-trigger-label" data-testid="chat-thinking-trigger-label">
+            {thinkingTriggerLabel}
+          </span>
+        </span>
+      </button>
+      {canRenderThinkingControl && thinkingCapability !== null && thinkingPanelOpen && (
+        <section
+          id={thinkingPanelId}
+          className="copilot-model-picker__panel copilot-chat__thinking-panel"
+          role="dialog"
+          aria-label={copyComposer.thinkingSettingsAriaLabel}
+          data-testid="chat-thinking-panel"
+        >
+          <div className="copilot-chat__thinking-panel-header">
+            <div className="copilot-chat__thinking-panel-summary">
+              <span className="copilot-chat__thinking-panel-title" data-testid="chat-thinking-series-title">
+                {buildThinkingSeriesLabel(thinkingCapability)}
+              </span>
+              <span className="copilot-chat__thinking-panel-current-shell">
+                <span className="copilot-chat__thinking-panel-current-label">{copyComposer.currentValueLabel}</span>
+                <span className="copilot-chat__thinking-panel-current-value" data-testid="chat-thinking-current-value">
+                  {currentThinkingLabel ?? copyComposer.unsetValue}
+                </span>
+              </span>
+            </div>
+          </div>
+          {renderThinkingControlBody({
+            capability: thinkingCapability,
+            currentSelection: effectiveThinkingSelection,
+            disabled: controlsDisabled,
+            onChange: handleThinkingSelectionChange,
+            onClose: () => setThinkingPanelOpen(false),
+          })}
+        </section>
+      )}
+    </div>
+  )
+}
+
+function resolveAttachmentCopy(language: string) {
+  if (language === 'en-US') {
+    return {
+      triggerLabel: (count: number) => `Attached files (${count})`,
+      panelLabel: 'Attached files',
+      removeLabel: (name: string) => `Remove ${name}`,
+      closePreviewLabel: 'Close attachment preview',
+      previewDialogLabel: 'Attachment preview',
+      dropHint: 'Drop files to attach',
+      previewLoading: 'Loading preview…',
+    }
+  }
+
+  return {
+    triggerLabel: (count: number) => `已附加 ${count} 个文件`,
+    panelLabel: '已附加文件',
+    removeLabel: (name: string) => `移除 ${name}`,
+    closePreviewLabel: '关闭附件预览',
+    previewDialogLabel: '附件预览',
+    dropHint: '松开即可附加文件',
+    previewLoading: '正在加载预览…',
+  }
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))

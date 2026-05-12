@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { getRegisteredOnListener, loadPreloadModule } from './preload.test-support'
-import { MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL, type RuntimeConsoleEntry } from './renderer-ipc-contract'
+import { MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL } from './renderer-ipc-contract'
 
 describe('preload runtime console forwarding bridge', () => {
   it('registers main-process runtime console forwarding and writes forwarded entries to the browser console', async () => {
@@ -12,7 +12,7 @@ describe('preload runtime console forwarding bridge', () => {
       await loadPreloadModule()
 
       const runtimeConsoleListener = getRegisteredOnListener<
-        (event: unknown, payload: RuntimeConsoleEntry) => void
+        (...args: unknown[]) => void
       >(MAIN_PROCESS_RUNTIME_CONSOLE_CHANNEL)
 
       runtimeConsoleListener(undefined, {

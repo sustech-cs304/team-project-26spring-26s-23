@@ -1,3 +1,4 @@
+/* eslint-disable sonarjs/no-duplicate-string -- The reference to fake timers "vi.useRealTimers" in afterEach is a test cleanup convention shared across multiple test files. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createMcpConnectorHub } from './connector-hub'
@@ -6,10 +7,16 @@ import type { McpRegistrySubscriptionEvent, McpServerRecord, McpServerStateSumma
 import type { McpConnectorOperationResult, McpServerConnector } from './connectors/protocol'
 import { createConnectorFailure, createConnectorState, createConnectorSuccess, createMcpErrorSummary } from './connectors/protocol'
 
+const MCP_FIXED_NOW = '2026-04-21T12:00:00.000Z'
+const SERVER_STATE_KIND = 'server-state'
+const TOOL_ID_SEARCH_CAMPUS = 'mcp.test.search-campus'
+const REMOTE_TOOL_NAME_SEARCH_CAMPUS = 'search-campus'
+
 afterEach(() => {
   vi.useRealTimers()
 })
 
+// eslint-disable-next-line max-lines-per-function -- This describe groups connector-hub orchestration tests that rely on shared state transitions; splitting would break sequential operation ordering.
 describe('createMcpConnectorHub', () => {
   it('reconciles enabled servers, disables disabled servers, and publishes state updates', async () => {
     const publishedEvents: McpRegistrySubscriptionEvent[] = []
@@ -17,7 +24,7 @@ describe('createMcpConnectorHub', () => {
     const disabledServer = createMcpHttpSseStubServerFixture({ enabled: false })
 
     const hub = createMcpConnectorHub({
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
       publishEvent(event) {
         publishedEvents.push(event)
       },
@@ -38,7 +45,7 @@ describe('createMcpConnectorHub', () => {
     expect(hub.getTools(disabledServer.serverId)).toHaveLength(0)
     expect(publishedEvents).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        kind: 'server-state',
+        kind: SERVER_STATE_KIND,
         serverId: stdioServer.serverId,
         state: expect.objectContaining({ connectionState: 'connected', toolCount: 1 }),
       }),
@@ -56,7 +63,7 @@ describe('createMcpConnectorHub', () => {
     const publishedEvents: McpRegistrySubscriptionEvent[] = []
 
     const hub = createMcpConnectorHub({
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
       publishEvent(event) {
         publishedEvents.push(event)
       },
@@ -87,7 +94,7 @@ describe('createMcpConnectorHub', () => {
       }),
     ])
     expect(hub.getState(stdioServer.serverId)?.connectionState).toBe('connected')
-    expect(publishedEvents.some((event) => event.kind === 'server-state' && event.serverId === httpServer.serverId)).toBe(true)
+    expect(publishedEvents.some((event) => event.kind === SERVER_STATE_KIND && event.serverId === httpServer.serverId)).toBe(true)
   })
 
   it('performs limited retry recovery for retryable connector failures', async () => {
@@ -98,7 +105,7 @@ describe('createMcpConnectorHub', () => {
     let startCalls = 0
 
     const hub = createMcpConnectorHub({
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
       reconnectDelayMs: 10,
       publishEvent(event) {
         publishedEvents.push(event)
@@ -125,12 +132,12 @@ describe('createMcpConnectorHub', () => {
     expect(hub.getState(stdioServer.serverId)?.connectionState).toBe('connected')
     expect(publishedEvents).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        kind: 'server-state',
+        kind: SERVER_STATE_KIND,
         serverId: stdioServer.serverId,
         state: expect.objectContaining({ connectionState: 'connecting', reconnectAttempt: 1 }),
       }),
       expect.objectContaining({
-        kind: 'server-state',
+        kind: SERVER_STATE_KIND,
         serverId: stdioServer.serverId,
         state: expect.objectContaining({ connectionState: 'connected', toolCount: 1 }),
       }),
@@ -153,7 +160,7 @@ describe('createMcpConnectorHub', () => {
     const startCalls: string[] = []
 
     const hub = createMcpConnectorHub({
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
       reconnectDelayMs: 10,
       createConnector(server, context) {
         const connectorLabel = server.transportConfig.kind === 'stdio' && server.transportConfig.args.includes('--replacement')
@@ -191,7 +198,7 @@ describe('createMcpConnectorHub', () => {
     const capturedRequests: Array<{ toolId: string, remoteToolName: string, arguments: Record<string, unknown> }> = []
 
     const hub = createMcpConnectorHub({
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
       createConnector(server, context) {
         return createFakeConnector(server, context, {
           startResults: [createSuccessfulResult(server)],
@@ -210,18 +217,18 @@ describe('createMcpConnectorHub', () => {
     await hub.reconcile([stdioServer], { registryRevision: 6, snapshotRevision: 10 })
 
     await expect(hub.callTool({
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: stdioServer.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       arguments: { keyword: 'calendar' },
       runId: 'run-1',
       toolCallId: 'call-1',
       snapshotRevision: 10,
     })).resolves.toEqual({
       ok: true,
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: stdioServer.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       content: [{ type: 'text', text: '{"keyword":"calendar"}' }],
       structuredContent: { echoedArguments: { keyword: 'calendar' } },
       snapshotRevision: 10,
@@ -252,8 +259,8 @@ describe('createMcpConnectorHub', () => {
 
     expect(capturedRequests).toEqual([
       {
-        toolId: 'mcp.test.search-campus',
-        remoteToolName: 'search-campus',
+        toolId: TOOL_ID_SEARCH_CAMPUS,
+        remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
         arguments: { keyword: 'calendar' },
       },
     ])
@@ -263,7 +270,7 @@ describe('createMcpConnectorHub', () => {
     const stdioServer = createMcpStdioStubServerFixture()
 
     const hub = createMcpConnectorHub({
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
       createConnector(server, context) {
         return createFakeConnector(server, context, {
           startResults: [createSuccessfulResult(server, [])],
@@ -275,18 +282,18 @@ describe('createMcpConnectorHub', () => {
     await hub.reconcile([stdioServer], { registryRevision: 6, snapshotRevision: 10 })
 
     await expect(hub.callTool({
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: stdioServer.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       arguments: { keyword: 'calendar' },
       runId: 'run-1',
       toolCallId: 'call-1',
       snapshotRevision: 10,
     })).resolves.toEqual({
       ok: false,
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: stdioServer.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       snapshotRevision: 10,
       error: expect.objectContaining({
         code: 'directory_drift',
@@ -304,18 +311,18 @@ describe('createMcpConnectorHub', () => {
     ])
 
     await expect(hub.callTool({
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: stdioServer.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       arguments: { keyword: 'calendar' },
       runId: 'run-1',
       toolCallId: 'call-2',
       snapshotRevision: 10,
     })).resolves.toEqual({
       ok: true,
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: stdioServer.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       content: [{ type: 'text', text: '{"keyword":"calendar"}' }],
       structuredContent: { echoedArguments: { keyword: 'calendar' } },
       snapshotRevision: 10,
@@ -327,25 +334,29 @@ describe('createMcpConnectorHub', () => {
     const stdioServer = createMcpStdioStubServerFixture()
 
     const hub = createMcpConnectorHub({
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
       createConnector(server, context) {
         return createFakeConnector(server, context, {
           startResults: [createConnectorFailure(server, createMcpErrorSummary(
             'timeout',
             'Timed out while waiting for the MCP stdio server response during initialize.',
-            true,
-            () => '2026-04-21T12:00:00.000Z',
             {
-              phase: 'initialize',
-              diagnosticSummary: 'phase=initialize; command=uvx mcp-server-fetch; stderr=booting',
+              retryable: true,
+              now: () => '2026-04-21T12:00:00.000Z',
+              details: {
+                phase: 'initialize',
+                diagnosticSummary: 'phase=initialize; command=uvx mcp-server-fetch; stderr=booting',
+              },
             },
-          ), () => '2026-04-21T12:00:00.000Z', {
-            kind: 'stdio',
-            processStatus: 'running',
-            pid: 4102,
-            lastExitCode: null,
-            lastExitSignal: null,
-          }, {
+          ), {
+            now: () => '2026-04-21T12:00:00.000Z',
+            transportState: {
+              kind: 'stdio',
+              processStatus: 'running',
+              pid: 4102,
+              lastExitCode: null,
+              lastExitSignal: null,
+            },
             lastPhase: 'initialize',
             warnings: ['booting'],
           })],
@@ -383,7 +394,7 @@ function createFakeConnector(
     onCallTool?: (request: { toolId: string, remoteToolName: string, arguments: Record<string, unknown> }) => void
   } = {},
 ): McpServerConnector {
-  let state = createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, () => '2026-04-21T12:00:00.000Z')
+  let state = createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, {})
   let tools = [] as ReturnType<typeof createSuccessfulResult>['tools']
   const startQueue = [...sequences.startResults]
   const refreshQueue = [...(sequences.refreshResults ?? sequences.startResults)]
@@ -417,8 +428,7 @@ function createFakeConnector(
           error: createMcpErrorSummary(
             'directory_drift',
             'The requested MCP tool no longer exists in the current server catalog.',
-            false,
-            () => '2026-04-21T12:00:00.000Z',
+            { retryable: false, now: () => '2026-04-21T12:00:00.000Z' },
           ),
         }
       }
@@ -443,7 +453,7 @@ function createFakeConnector(
       }
     },
     async stop() {
-      state = createConnectorState(server, 'idle', 0, () => '2026-04-21T12:00:00.000Z')
+      state = createConnectorState(server, 'idle', 0, {})
       tools = []
     },
     getState() {
@@ -461,47 +471,51 @@ function createSuccessfulResult(server: McpServerRecord, tools = [{
     description: 'Search the campus knowledge base.',
     inputSchema: { type: 'object' },
   }]): McpConnectorOperationResult {
-  return createConnectorSuccess(server, tools, () => '2026-04-21T12:00:00.000Z', server.transportKind === 'stdio'
-    ? {
-        kind: 'stdio',
-        processStatus: 'running',
-        pid: 4102,
-        lastExitCode: null,
-        lastExitSignal: null,
-      }
-    : {
-        kind: 'http-sse',
-        endpointStatus: 'online',
-        lastHttpStatus: 200,
-        sseOnline: true,
-      })
+  return createConnectorSuccess(server, tools, {
+    now: () => '2026-04-21T12:00:00.000Z',
+    transportState: server.transportKind === 'stdio'
+      ? {
+          kind: 'stdio',
+          processStatus: 'running',
+          pid: 4102,
+          lastExitCode: null,
+          lastExitSignal: null,
+        }
+      : {
+          kind: 'http-sse',
+          endpointStatus: 'online',
+          lastHttpStatus: 200,
+          sseOnline: true,
+        },
+  })
 }
 
 function createRetryableFailure(server: McpServerRecord, code: string): McpConnectorOperationResult {
   return createConnectorFailure(server, createMcpErrorSummary(
     code,
     'Temporary connector failure.',
-    true,
-    () => '2026-04-21T12:00:00.000Z',
-  ), () => '2026-04-21T12:00:00.000Z', server.transportKind === 'stdio'
-    ? {
-        kind: 'stdio',
-        processStatus: 'exited',
-        pid: null,
-        lastExitCode: 1,
-        lastExitSignal: null,
-      }
-    : {
-        kind: 'http-sse',
-        endpointStatus: 'offline',
-        lastHttpStatus: 503,
-        sseOnline: false,
-      }, {
-        previousTools: [{
-          name: 'search-campus',
-          displayName: 'Search Campus',
-          description: 'Search the campus knowledge base.',
-          inputSchema: { type: 'object' },
-        }],
-      })
+    { retryable: true, now: () => '2026-04-21T12:00:00.000Z' },
+  ), {
+    now: () => '2026-04-21T12:00:00.000Z',
+    transportState: server.transportKind === 'stdio'
+      ? {
+          kind: 'stdio',
+          processStatus: 'exited',
+          pid: null,
+          lastExitCode: 1,
+          lastExitSignal: null,
+        }
+      : {
+          kind: 'http-sse',
+          endpointStatus: 'offline',
+          lastHttpStatus: 503,
+          sseOnline: false,
+        },
+    previousTools: [{
+      name: 'search-campus',
+      displayName: 'Search Campus',
+      description: 'Search the campus knowledge base.',
+      inputSchema: { type: 'object' },
+    }],
+  })
 }

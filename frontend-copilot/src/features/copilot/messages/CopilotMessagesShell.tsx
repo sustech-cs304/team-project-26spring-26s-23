@@ -75,8 +75,49 @@ export function CopilotMessagesShell({
     }),
     [conversation, transientError],
   )
+  const renderedAssistantPlaceholder = useAssistantPlaceholderState(assistantPlaceholder)
+
+  return (
+    <div
+      className="copilot-chat__stream copilot-chat__stream--scrollbarless"
+      data-testid="chat-message-scroll-region"
+      data-scrollbar-visibility="hidden"
+    >
+      {visibleConversation.length === 0 && !renderedAssistantPlaceholder.visible
+        ? (
+            <div
+              className="copilot-chat__empty copilot-panel__enter"
+              data-testid={emptyState === null ? 'chat-empty-state' : 'chat-no-model-empty-state'}
+            >
+              <p className="copilot-chat__empty-title">{emptyState?.title ?? copy.messages.emptyStateTitle}</p>
+              {emptyState !== null && (
+                <p className="copilot-chat__empty-description">{emptyState.description}</p>
+              )}
+            </div>
+          )
+        : visibleConversation.map((turn, index) => (
+            <MessageListItem
+              key={turn.id}
+              turn={turn}
+              index={index}
+              models={models}
+              language={language}
+              runtimeUrl={runtimeUrl}
+              onSubmitInlineForm={onSubmitInlineForm}
+              onResolveToolApproval={onResolveToolApproval}
+              onOpenErrorDetail={onOpenErrorDetail}
+            />
+          ))}
+      {renderedAssistantPlaceholder.visible && renderAssistantPlaceholder(renderedAssistantPlaceholder)}
+    </div>
+  )
+}
+
+function useAssistantPlaceholderState(
+  assistantPlaceholder: CopilotAssistantPlaceholderState | null | undefined,
+): RenderedAssistantPlaceholderState {
   const [renderedAssistantPlaceholder, setRenderedAssistantPlaceholder] = useState<RenderedAssistantPlaceholderState>(
-    () => createRenderedAssistantPlaceholderState(assistantPlaceholder),
+    () => createRenderedAssistantPlaceholderState(assistantPlaceholder ?? null),
   )
 
   useEffect(() => {
@@ -137,88 +178,87 @@ export function CopilotMessagesShell({
     renderedAssistantPlaceholder.visible,
   ])
 
+  return renderedAssistantPlaceholder
+}
+
+function MessageListItem({
+  turn,
+  index,
+  models,
+  language,
+  runtimeUrl,
+  onSubmitInlineForm,
+  onResolveToolApproval,
+  onOpenErrorDetail,
+}: {
+  turn: CopilotMessageListItem
+  index: number
+  models: CopilotModelOption[]
+  language: string
+  runtimeUrl: string | null
+  onSubmitInlineForm: CopilotMessagesShellProps['onSubmitInlineForm']
+  onResolveToolApproval: CopilotMessagesShellProps['onResolveToolApproval']
+  onOpenErrorDetail: CopilotMessagesShellProps['onOpenErrorDetail']
+}) {
+  const detailRows = buildDetailRows()
+  const enterDelay = Math.min(index * 35, 300)
+
   return (
-    <div
-      className="copilot-chat__stream copilot-chat__stream--scrollbarless"
-      data-testid="chat-message-scroll-region"
-      data-scrollbar-visibility="hidden"
+    <article
+      className={[
+        'copilot-chat__message',
+        `copilot-chat__message--${turn.kind}`,
+        turn.status ? `copilot-chat__message--${turn.status}` : '',
+      ].filter((className) => className !== '').join(' ')}
+      data-testid={`chat-message-${turn.kind}-${index}`}
+      style={{ animationDelay: `${enterDelay}ms` }}
     >
-      {visibleConversation.length === 0 && !renderedAssistantPlaceholder.visible
+      {turn.kind === 'inline-form'
         ? (
-            <div
-              className="copilot-chat__empty copilot-panel__enter"
-              data-testid={emptyState === null ? 'chat-empty-state' : 'chat-no-model-empty-state'}
-            >
-              <p className="copilot-chat__empty-title">{emptyState?.title ?? copy.messages.emptyStateTitle}</p>
-              {emptyState !== null && (
-                <p className="copilot-chat__empty-description">{emptyState.description}</p>
-              )}
-            </div>
+            <InlineFormMessageCard
+              turn={turn}
+              index={index}
+              onSubmitInlineForm={onSubmitInlineForm ?? null}
+            />
           )
-        : visibleConversation.map((turn, index) => {
-            const detailRows = buildDetailRows()
-            const enterDelay = Math.min(index * 35, 300)
-            return (
-              <article
-                key={turn.id}
-                className={[
-                  'copilot-chat__message',
-                  `copilot-chat__message--${turn.kind}`,
-                  turn.status ? `copilot-chat__message--${turn.status}` : '',
-                ].filter((className) => className !== '').join(' ')}
-                data-testid={`chat-message-${turn.kind}-${index}`}
-                style={{ animationDelay: `${enterDelay}ms` }}
-              >
-                {turn.kind === 'inline-form'
-                  ? (
-                      <InlineFormMessageCard
-                        turn={turn}
-                        index={index}
-                        onSubmitInlineForm={onSubmitInlineForm}
-                      />
-                    )
-                  : turn.kind === 'tool'
-                  ? (
-                      <ToolMessageCard
-                        turn={turn}
-                        index={index}
-                        runtimeUrl={runtimeUrl}
-                        onResolveToolApproval={onResolveToolApproval}
-                        onOpenErrorDetail={onOpenErrorDetail}
-                        language={language}
-                      />
-                    )
-                  : turn.kind === 'reasoning'
-                    ? (
-                        <ReasoningMessageCard turn={turn} index={index} language={language} />
-                      )
-                    : (
-                        <>
-                          {turn.kind !== 'user' && renderMessageHeader(turn, index, models, onOpenErrorDetail, language)}
-                          {renderMessageBody(turn)}
-                          {detailRows.length > 0 && (
-                            <div className="copilot-chat__message-detail-list">
-                              {detailRows.map((detail) => (
-                                <p
-                                  key={`${turn.id}:${detail.label}`}
-                                  className={[
-                                    'copilot-chat__message-detail',
-                                    `copilot-chat__message-detail--${detail.kind}`,
-                                  ].join(' ')}
-                                >
-                                  <span className="copilot-chat__message-detail-label">{detail.label}</span>
-                                  <span>{detail.value}</span>
-                                </p>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      )}
-              </article>
+        : turn.kind === 'tool'
+        ? (
+            <ToolMessageCard
+              turn={turn}
+              index={index}
+              runtimeUrl={runtimeUrl}
+              onResolveToolApproval={onResolveToolApproval}
+              onOpenErrorDetail={onOpenErrorDetail}
+              language={language}
+            />
+          )
+        : turn.kind === 'reasoning'
+          ? (
+              <ReasoningMessageCard turn={turn} index={index} language={language} />
             )
-          })}
-      {renderedAssistantPlaceholder.visible && renderAssistantPlaceholder(renderedAssistantPlaceholder)}
-    </div>
+          : (
+              <>
+                {turn.kind !== 'user' && renderMessageHeader(turn, index, { models, onOpenErrorDetail: onOpenErrorDetail ?? null, language })}
+                {renderMessageBody(turn)}
+                {detailRows.length > 0 && (
+                  <div className="copilot-chat__message-detail-list">
+                    {detailRows.map((detail) => (
+                      <p
+                        key={`${turn.id}:${detail.label}`}
+                        className={[
+                          'copilot-chat__message-detail',
+                          `copilot-chat__message-detail--${detail.kind}`,
+                        ].join(' ')}
+                      >
+                        <span className="copilot-chat__message-detail-label">{detail.label}</span>
+                        <span>{detail.value}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+    </article>
   )
 }
 
@@ -262,13 +302,18 @@ function createTransientErrorMessage(
   }
 }
 
+interface RenderMessageHeaderContext {
+  models: CopilotModelOption[]
+  onOpenErrorDetail: ((errorDetail: CopilotErrorDetailSource, trigger: HTMLButtonElement | null) => void) | null
+  language: string
+}
+
 function renderMessageHeader(
   turn: Exclude<CopilotMessageListItem, { kind: 'user' }>,
   index: number,
-  models: CopilotModelOption[],
-  onOpenErrorDetail: ((errorDetail: CopilotErrorDetailSource, trigger: HTMLButtonElement | null) => void) | null,
-  language: string,
+  context: RenderMessageHeaderContext,
 ) {
+  const { models, onOpenErrorDetail, language } = context
   const copy = getCopilotChatCopy(language)
   const errorDetail = resolveMessageErrorDetailSource(turn)
 

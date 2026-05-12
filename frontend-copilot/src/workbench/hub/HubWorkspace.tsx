@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { getHubWorkspaceContent, type WorkbenchLanguage } from '../locale'
 import type { HubWorkspaceView } from '../types'
@@ -18,13 +18,6 @@ interface UnifiedCalendarEvent {
   status: string
 }
 
-function resolveRuntimeBaseUrl(state?: CopilotBootstrapController['state']): string {
-  if (state && 'runtimeUrl' in state && state.runtimeUrl) {
-    return state.runtimeUrl
-  }
-  return 'http://127.0.0.1:8765'
-}
-
 interface HubWorkspaceProps {
   view: HubWorkspaceView
   language?: WorkbenchLanguage
@@ -33,7 +26,6 @@ interface HubWorkspaceProps {
 
 export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspaceProps) {
   const content = getHubWorkspaceContent(language, view)
-  const runtimeBaseUrl = useMemo(() => resolveRuntimeBaseUrl(bootstrap?.state), [bootstrap?.state])
   const [events, setEvents] = useState<UnifiedCalendarEvent[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,14 +53,14 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
         }
         const data = await response.json()
         setEvents(data.items || [])
-      } catch (err: any) {
-        setError(err.message)
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err))
       } finally {
         setIsLoading(false)
       }
     }
     fetchEvents()
-  }, [bootstrap?.state])
+  }, [bootstrap])
 
   return (
     <section className="workspace-stage hub-workspace" aria-label={`${content.title}工作区`}>

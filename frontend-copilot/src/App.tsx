@@ -118,6 +118,11 @@ interface AppProps {
   bootstrap: CopilotBootstrapController
 }
 
+// App wires many tightly-coupled effects (theme, animations, language,
+// workspace routing) and sub-components together. Extracting a custom hook
+// would scatter shared refs/state and increase risk of behavioral regressions
+// without material readability gain.
+// eslint-disable-next-line max-lines-per-function
 function App({ bootstrap }: AppProps) {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('assistant')
   const [visitedWorkspaces, setVisitedWorkspaces] = useState<Set<WorkspaceView>>(
@@ -292,49 +297,12 @@ function App({ bootstrap }: AppProps) {
       data-theme={themeMode}
       data-animations={animationsEnabled ? 'enabled' : 'disabled'}
     >
-        <aside className="workbench-rail" aria-label={workbenchShellCopy.railAriaLabel}>
-          {railPrimaryItems.map((item) => {
-            const Icon = item.icon
-            const active = activeWorkspace === item.id
-            const label = getWorkspaceLabel(workbenchLanguage, item.id)
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={`rail-button${active ? ' rail-button--active' : ''}`}
-                title={label}
-                aria-label={label}
-                aria-pressed={active}
-                onClick={() => activateWorkspace(item.id)}
-              >
-                <Icon size={18} className="rail-button__icon" />
-              </button>
-            )
-          })}
-
-          <div className="rail-spacer" />
-
-          {railSecondaryItems.map((item) => {
-            const Icon = item.icon
-            const active = activeWorkspace === item.id
-            const label = getWorkspaceLabel(workbenchLanguage, item.id)
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={`rail-button${active ? ' rail-button--active' : ''}`}
-                title={label}
-                aria-label={label}
-                aria-pressed={active}
-                onClick={() => activateWorkspace(item.id)}
-              >
-                <Icon size={18} className="rail-button__icon" />
-              </button>
-            )
-          })}
-        </aside>
+        <WorkbenchRail
+          activeWorkspace={activeWorkspace}
+          workbenchLanguage={workbenchLanguage}
+          railAriaLabel={workbenchShellCopy.railAriaLabel}
+          onActivateWorkspace={activateWorkspace}
+        />
 
         <div className="workbench-viewport">
           <RecoverableErrorBoundary
@@ -393,14 +361,14 @@ function App({ bootstrap }: AppProps) {
                     hidden={!isVisible}
                     aria-hidden={!isActive}
                   >
-                    {renderWorkspace(
+                    {renderWorkspace({
                       view,
                       bootstrap,
                       themeMode,
-                      handleThemeModeChange,
+                      onThemeModeChange: handleThemeModeChange,
                       workbenchLanguage,
-                      applyWorkbenchLanguage,
-                    )}
+                      onWorkbenchLanguageChange: applyWorkbenchLanguage,
+                    })}
                   </div>
                 )
               })}
@@ -411,14 +379,23 @@ function App({ bootstrap }: AppProps) {
   )
 }
 
-function renderWorkspace(
-  view: WorkspaceView,
-  bootstrap: CopilotBootstrapController,
-  themeMode: ThemeMode,
-  onThemeModeChange: (value: ThemeMode) => void,
-  workbenchLanguage: WorkbenchLanguage,
-  onWorkbenchLanguageChange: (value: string) => void,
-) {
+interface RenderWorkspaceOptions {
+  view: WorkspaceView
+  bootstrap: CopilotBootstrapController
+  themeMode: ThemeMode
+  onThemeModeChange: (value: ThemeMode) => void
+  workbenchLanguage: WorkbenchLanguage
+  onWorkbenchLanguageChange: (value: string) => void
+}
+
+function renderWorkspace({
+  view,
+  bootstrap,
+  themeMode,
+  onThemeModeChange,
+  workbenchLanguage,
+  onWorkbenchLanguageChange,
+}: RenderWorkspaceOptions) {
   if (view === 'assistant') {
     return <AssistantWorkspace bootstrap={bootstrap} language={workbenchLanguage} />
   }
@@ -451,6 +428,66 @@ function renderWorkspace(
   }
 
   return null
+}
+
+interface WorkbenchRailProps {
+  activeWorkspace: WorkspaceView
+  workbenchLanguage: WorkbenchLanguage
+  railAriaLabel: string
+  onActivateWorkspace: (target: WorkspaceView) => void
+}
+
+function WorkbenchRail({
+  activeWorkspace,
+  workbenchLanguage,
+  railAriaLabel,
+  onActivateWorkspace,
+}: WorkbenchRailProps) {
+  return (
+    <aside className="workbench-rail" aria-label={railAriaLabel}>
+      {railPrimaryItems.map((item) => {
+        const Icon = item.icon
+        const active = activeWorkspace === item.id
+        const label = getWorkspaceLabel(workbenchLanguage, item.id)
+
+        return (
+          <button
+            key={item.id}
+            type="button"
+            className={`rail-button${active ? ' rail-button--active' : ''}`}
+            title={label}
+            aria-label={label}
+            aria-pressed={active}
+            onClick={() => onActivateWorkspace(item.id)}
+          >
+            <Icon size={18} className="rail-button__icon" />
+          </button>
+        )
+      })}
+
+      <div className="rail-spacer" />
+
+      {railSecondaryItems.map((item) => {
+        const Icon = item.icon
+        const active = activeWorkspace === item.id
+        const label = getWorkspaceLabel(workbenchLanguage, item.id)
+
+        return (
+          <button
+            key={item.id}
+            type="button"
+            className={`rail-button${active ? ' rail-button--active' : ''}`}
+            title={label}
+            aria-label={label}
+            aria-pressed={active}
+            onClick={() => onActivateWorkspace(item.id)}
+          >
+            <Icon size={18} className="rail-button__icon" />
+          </button>
+        )
+      })}
+    </aside>
+  )
 }
 
 function formatErrorMessage(error: unknown): string {

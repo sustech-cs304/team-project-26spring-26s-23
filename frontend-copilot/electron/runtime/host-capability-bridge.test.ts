@@ -5,232 +5,128 @@ import {
   HOST_CAPABILITY_BRIDGE_TOKEN_HEADER,
 } from './host-capability-bridge'
 
+const CAP_SECRET = 'secret'
+const OP_GET_SECRET = 'get_secret'
+const TOOL_BB = 'blackboard.snapshot.sync'
+const CAP_EVENT = 'event'
+const OP_EMIT_EVENT = 'emit_event'
+const SECRET_NAME = 'provider.openrouter.apiKey'
+
 const activeStops: Array<() => Promise<void>> = []
 
 afterEach(async () => {
   while (activeStops.length > 0) {
     const stop = activeStops.pop()
-    if (stop === undefined) {
-      continue
-    }
+    if (stop === undefined) continue
     await stop()
   }
 })
+
+function makeSecretBody(requestId: string) {
+  return { requestId, capability: CAP_SECRET, operation: OP_GET_SECRET, toolId: TOOL_BB, runId: 'run-1', toolCallId: 'call-1', payload: { secretName: SECRET_NAME } }
+}
+
+async function postBridge(bridge: ReturnType<typeof createHostCapabilityBridge> extends Promise<infer T> ? T : never, body: Record<string, unknown>) {
+  const response = await fetch(bridge.bootstrap.url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', [HOST_CAPABILITY_BRIDGE_TOKEN_HEADER]: bridge.bootstrap.token },
+    body: JSON.stringify(body),
+  })
+  return response
+}
 
 describe('createHostCapabilityBridge', () => {
   it('dispatches authenticated capability bridge requests through the configured handler', async () => {
     const bridge = await createHostCapabilityBridge({
       async handleRequest(request) {
-        expect(request).toEqual({
-          requestId: 'request-1',
-          capability: 'secret',
-          operation: 'get_secret',
-          toolId: 'blackboard.snapshot.sync',
-          runId: 'run-1',
-          toolCallId: 'call-1',
-          payload: {
-            secretName: 'provider.openrouter.apiKey',
-          },
-        })
-
-        return createDesktopCapabilityBridgeSuccessResponse(request.requestId, {
-          value: 'resolved-secret',
-        })
+        expect(request).toEqual(makeSecretBody('request-1'))
+        return createDesktopCapabilityBridgeSuccessResponse(request.requestId, { value: 'resolved-secret' })
       },
     })
     activeStops.push(bridge.stop)
 
-    const response = await fetch(bridge.bootstrap.url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        [HOST_CAPABILITY_BRIDGE_TOKEN_HEADER]: bridge.bootstrap.token,
-      },
-      body: JSON.stringify({
-        requestId: 'request-1',
-        capability: 'secret',
-        operation: 'get_secret',
-        toolId: 'blackboard.snapshot.sync',
-        runId: 'run-1',
-        toolCallId: 'call-1',
-        payload: {
-          secretName: 'provider.openrouter.apiKey',
-        },
-      }),
-    })
-
+    const response = await postBridge(bridge, makeSecretBody('request-1'))
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({
-      requestId: 'request-1',
-      ok: true,
-      result: {
-        value: 'resolved-secret',
-      },
-    })
+    await expect(response.json()).resolves.toEqual({ requestId: 'request-1', ok: true, result: { value: 'resolved-secret' } })
   })
 
   it('rejects requests with an invalid private bridge token', async () => {
     const bridge = await createHostCapabilityBridge({
-      handleRequest() {
-        throw new Error('handleRequest should not be called when the token is invalid.')
-      },
+      handleRequest() { throw new Error('handleRequest should not be called when the token is invalid.') },
     })
     activeStops.push(bridge.stop)
 
     const response = await fetch(bridge.bootstrap.url, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        [HOST_CAPABILITY_BRIDGE_TOKEN_HEADER]: 'wrong-token',
-      },
-      body: JSON.stringify({
-        requestId: 'request-unauthorized',
-        capability: 'secret',
-        operation: 'get_secret',
-        toolId: 'blackboard.snapshot.sync',
-        runId: 'run-1',
-        toolCallId: 'call-1',
-        payload: {
-          secretName: 'provider.openrouter.apiKey',
-        },
-      }),
+      headers: { 'content-type': 'application/json', [HOST_CAPABILITY_BRIDGE_TOKEN_HEADER]: 'wrong-token' },
+      body: JSON.stringify(makeSecretBody('request-unauthorized')),
     })
-
     expect(response.status).toBe(401)
     await expect(response.json()).resolves.toEqual({
-      requestId: 'unauthorized',
-      ok: false,
-      errorCode: 'permission_denied',
-      errorMessage: 'Missing or invalid host capability bridge token.',
-      errorRetryable: false,
-      details: {
-        headerName: HOST_CAPABILITY_BRIDGE_TOKEN_HEADER,
-      },
+      requestId: 'unauthorized', ok: false, errorCode: 'permission_denied',
+      errorMessage: 'Missing or invalid host capability bridge token.', errorRetryable: false,
+      details: { headerName: HOST_CAPABILITY_BRIDGE_TOKEN_HEADER },
     })
   })
 
   it('rejects malformed capability request bodies before handler execution', async () => {
     let handlerCalls = 0
     const bridge = await createHostCapabilityBridge({
-      handleRequest() {
-        handlerCalls += 1
-        throw new Error('handleRequest should not be called for malformed requests.')
-      },
+      handleRequest() { handlerCalls += 1; throw new Error('handleRequest should not be called for malformed requests.') },
     })
     activeStops.push(bridge.stop)
 
-    const response = await fetch(bridge.bootstrap.url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        [HOST_CAPABILITY_BRIDGE_TOKEN_HEADER]: bridge.bootstrap.token,
-      },
-      body: JSON.stringify({
-        requestId: 'request-invalid',
-        capability: 'secret',
-        operation: 'get_secret',
-        toolId: 'blackboard.snapshot.sync',
-        runId: 'run-1',
-        toolCallId: 'call-1',
-        payload: {
-          wrongField: 'provider.openrouter.apiKey',
-        },
-      }),
+    const response = await postBridge(bridge, {
+      requestId: 'request-invalid', capability: CAP_SECRET, operation: OP_GET_SECRET,
+      toolId: TOOL_BB, runId: 'run-1', toolCallId: 'call-1',
+      payload: { wrongField: SECRET_NAME },
     })
-
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toMatchObject({
-      requestId: 'request-invalid',
-      ok: false,
-      errorCode: 'invalid_request',
-      errorRetryable: false,
-    })
+    await expect(response.json()).resolves.toMatchObject({ requestId: 'request-invalid', ok: false, errorCode: 'invalid_request', errorRetryable: false })
     expect(handlerCalls).toBe(0)
   })
 
   it('maps handler failures into protocol failure responses', async () => {
     const bridge = await createHostCapabilityBridge({
-      handleRequest() {
-        throw new Error('bridge exploded')
-      },
+      handleRequest() { throw new Error('bridge exploded') },
     })
     activeStops.push(bridge.stop)
 
-    const response = await fetch(bridge.bootstrap.url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        [HOST_CAPABILITY_BRIDGE_TOKEN_HEADER]: bridge.bootstrap.token,
-      },
-      body: JSON.stringify({
-        requestId: 'request-error',
-        capability: 'event',
-        operation: 'emit_event',
-        toolId: 'blackboard.snapshot.sync',
-        runId: 'run-1',
-        toolCallId: 'call-1',
-        payload: {
-          eventType: 'log',
-          message: 'hello',
-          data: {
-            source: 'test',
-          },
-        },
-      }),
+    const response = await postBridge(bridge, {
+      requestId: 'request-error', capability: CAP_EVENT, operation: OP_EMIT_EVENT,
+      toolId: TOOL_BB, runId: 'run-1', toolCallId: 'call-1',
+      payload: { eventType: 'log', message: 'hello', data: { source: 'test' } },
     })
-
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
-      requestId: 'request-error',
-      ok: false,
-      errorCode: 'internal_error',
-      errorMessage: 'bridge exploded',
-      errorRetryable: false,
-      details: {},
+      requestId: 'request-error', ok: false, errorCode: 'internal_error',
+      errorMessage: 'bridge exploded', errorRetryable: false, details: {},
     })
   })
 
   it('rejects oversized request bodies before handler execution', async () => {
     let handlerCalls = 0
     const bridge = await createHostCapabilityBridge({
-      handleRequest() {
-        handlerCalls += 1
-        throw new Error('handleRequest should not be called for oversized payloads.')
-      },
+      handleRequest() { handlerCalls += 1; throw new Error('handleRequest should not be called for oversized payloads.') },
     })
     activeStops.push(bridge.stop)
 
     const abortSignal = AbortSignal.timeout(5_000)
     const response = await fetch(bridge.bootstrap.url, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        [HOST_CAPABILITY_BRIDGE_TOKEN_HEADER]: bridge.bootstrap.token,
-      },
+      headers: { 'content-type': 'application/json', [HOST_CAPABILITY_BRIDGE_TOKEN_HEADER]: bridge.bootstrap.token },
       body: JSON.stringify({
-        requestId: 'request-too-large',
-        capability: 'event',
-        operation: 'emit_event',
-        toolId: 'blackboard.snapshot.sync',
-        runId: 'run-1',
-        toolCallId: 'call-1',
-        payload: {
-          message: 'x'.repeat(1024 * 1024),
-        },
+        requestId: 'request-too-large', capability: CAP_EVENT, operation: OP_EMIT_EVENT,
+        toolId: TOOL_BB, runId: 'run-1', toolCallId: 'call-1',
+        payload: { message: 'x'.repeat(1024 * 1024) },
       }),
       signal: abortSignal,
     })
-
     expect(response.status).toBe(413)
     await expect(response.json()).resolves.toEqual({
-      requestId: 'invalid-request',
-      ok: false,
-      errorCode: 'payload_too_large',
-      errorMessage: 'Host capability bridge request body exceeds 1048576 bytes.',
-      errorRetryable: false,
-      details: {
-        maxBodyBytes: 1048576,
-      },
+      requestId: 'invalid-request', ok: false, errorCode: 'payload_too_large',
+      errorMessage: 'Host capability bridge request body exceeds 1048576 bytes.', errorRetryable: false,
+      details: { maxBodyBytes: 1048576 },
     })
     expect(handlerCalls).toBe(0)
     vi.clearAllTimers()

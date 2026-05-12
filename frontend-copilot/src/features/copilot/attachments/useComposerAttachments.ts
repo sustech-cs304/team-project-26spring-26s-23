@@ -30,31 +30,84 @@ export function useComposerAttachments(input: {
   const pathlessNotice = input.language === 'en-US' ? NOTICE_PATHLESS_EN : NOTICE_PATHLESS_ZH
   const previewFailedNotice = input.language === 'en-US' ? NOTICE_PREVIEW_FAILED_EN : NOTICE_PREVIEW_FAILED_ZH
 
+  const operations = useComposerAttachmentOperations({
+    setState: input.setState,
+    state: input.state,
+    unsupportedNotice,
+    pathlessNotice,
+    previewFailedNotice,
+  })
+
+  return useMemo(() => ({
+    attachmentCount: input.state.items.length,
+    handlePaste: operations.handlePaste,
+    handleDragEnter: operations.handleDragEnter,
+    handleDragOver: operations.handleDragOver,
+    handleDragLeave: operations.handleDragLeave,
+    handleDrop: operations.handleDrop,
+    togglePanel: operations.togglePanel,
+    closePanel: operations.closePanel,
+    removeAttachment: operations.removeAttachment,
+    openAttachmentPreview: operations.openAttachmentPreview,
+    closeAttachmentPreview: operations.closeAttachmentPreview,
+    dismissNotice: operations.dismissNotice,
+  }), [
+    operations.closeAttachmentPreview,
+    operations.closePanel,
+    operations.dismissNotice,
+    operations.handleDragEnter,
+    operations.handleDragLeave,
+    operations.handleDragOver,
+    operations.handleDrop,
+    operations.handlePaste,
+    input.state.items.length,
+    operations.openAttachmentPreview,
+    operations.removeAttachment,
+    operations.togglePanel,
+  ])
+}
+
+/* eslint-disable-next-line max-lines-per-function -- 此 hook 封装全部附件操作的业务逻辑，属于内聚单元，拆分会增加不必要的参数传递。 */
+function useComposerAttachmentOperations(input: {
+  setState: Dispatch<SetStateAction<CopilotComposerAttachmentsState>>
+  state: CopilotComposerAttachmentsState
+  unsupportedNotice: string
+  pathlessNotice: string
+  previewFailedNotice: string
+}) {
+  const {
+    setState,
+    state,
+    unsupportedNotice,
+    pathlessNotice,
+    previewFailedNotice,
+  } = input
+
   const showNotice = useCallback((message: string) => {
-    input.setState((current) => ({
+    setState((current) => ({
       ...current,
       notice: {
         id: Date.now(),
         message,
       },
     }))
-  }, [input])
+  }, [setState])
 
   const addAttachments = useCallback((attachments: readonly CopilotComposerAttachment[]) => {
     if (attachments.length === 0) {
       return
     }
 
-    input.setState((current) => ({
+    setState((current) => ({
       ...current,
       items: mergeComposerAttachments(current.items, attachments),
       panelOpen: current.items.length === 0 ? true : current.panelOpen,
       notice: null,
     }))
-  }, [input])
+  }, [setState])
 
   const importFiles = useCallback((files: readonly File[]) => {
-    const attachments: CopilotComposerAttachment[] = []
+    const resolvedAttachments: CopilotComposerAttachment[] = []
     let hasPathlessFile = false
 
     for (const file of files) {
@@ -64,10 +117,10 @@ export function useComposerAttachments(input: {
         continue
       }
 
-      attachments.push(attachment)
+      resolvedAttachments.push(attachment)
     }
 
-    addAttachments(attachments)
+    addAttachments(resolvedAttachments)
     if (hasPathlessFile) {
       showNotice(pathlessNotice)
     }
@@ -111,23 +164,7 @@ export function useComposerAttachments(input: {
   const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const clipboardFiles = Array.from(event.clipboardData.files)
     if (clipboardFiles.length > 0) {
-      const localFiles: File[] = []
-      let hasPathlessImageClipboardFile = false
-      let hasUnsupportedClipboardFile = false
-
-      for (const file of clipboardFiles) {
-        if (extractFileSystemPath(file) !== null) {
-          localFiles.push(file)
-          continue
-        }
-
-        if (file.type.startsWith('image/')) {
-          hasPathlessImageClipboardFile = true
-          continue
-        }
-
-        hasUnsupportedClipboardFile = true
-      }
+      const { localFiles, hasPathlessImageClipboardFile, hasUnsupportedClipboardFile } = classifyClipboardFiles(clipboardFiles)
 
       event.preventDefault()
       if (localFiles.length > 0) {
@@ -171,12 +208,12 @@ export function useComposerAttachments(input: {
     }
 
     event.preventDefault()
-    input.setState((current) => ({
+    setState((current) => ({
       ...current,
       isDragActive: true,
       dragDepth: current.dragDepth + 1,
     }))
-  }, [input])
+  }, [setState])
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
     if (event.dataTransfer.files.length === 0) {
@@ -193,7 +230,7 @@ export function useComposerAttachments(input: {
     }
 
     event.preventDefault()
-    input.setState((current) => {
+    setState((current) => {
       const nextDragDepth = Math.max(0, current.dragDepth - 1)
       return {
         ...current,
@@ -201,7 +238,7 @@ export function useComposerAttachments(input: {
         isDragActive: nextDragDepth > 0,
       }
     })
-  }, [input])
+  }, [setState])
 
   const handleDrop = useCallback((event: React.DragEvent<HTMLElement>) => {
     if (event.dataTransfer.files.length === 0) {
@@ -210,39 +247,39 @@ export function useComposerAttachments(input: {
 
     event.preventDefault()
     importFiles(Array.from(event.dataTransfer.files))
-    input.setState((current) => ({
+    setState((current) => ({
       ...current,
       dragDepth: 0,
       isDragActive: false,
     }))
-  }, [importFiles, input])
+  }, [importFiles, setState])
 
   const togglePanel = useCallback(() => {
-    input.setState((current) => ({
+    setState((current) => ({
       ...current,
       panelOpen: current.items.length > 0 ? !current.panelOpen : false,
     }))
-  }, [input])
+  }, [setState])
 
   const closePanel = useCallback(() => {
-    input.setState((current) => (current.panelOpen ? { ...current, panelOpen: false } : current))
-  }, [input])
+    setState((current) => (current.panelOpen ? { ...current, panelOpen: false } : current))
+  }, [setState])
 
   const dismissNotice = useCallback(() => {
-    input.setState((current) => (current.notice === null ? current : { ...current, notice: null }))
-  }, [input])
+    setState((current) => (current.notice === null ? current : { ...current, notice: null }))
+  }, [setState])
 
   const closeAttachmentPreview = useCallback(() => {
-    input.setState((current) => (current.preview.open ? { ...current, preview: createIdleComposerAttachmentPreviewState() } : current))
-  }, [input])
+    setState((current) => (current.preview.open ? { ...current, preview: createIdleComposerAttachmentPreviewState() } : current))
+  }, [setState])
 
   const removeAttachment = useCallback((attachmentId: string) => {
-    const attachment = input.state.items.find((item) => item.id === attachmentId)
+    const attachment = state.items.find((item) => item.id === attachmentId)
     if (attachment === undefined) {
       return
     }
 
-    input.setState((current) => {
+    setState((current) => {
       const items = current.items.filter((item) => item.id !== attachmentId)
       return {
         ...current,
@@ -256,16 +293,16 @@ export function useComposerAttachments(input: {
     if (attachment.isTemporary && window.attachmentManager !== undefined) {
       void window.attachmentManager.cleanupTempFiles({ paths: [attachment.path] }).catch(() => undefined)
     }
-  }, [input])
+  }, [setState, state.items])
 
   const openAttachmentPreview = useCallback((attachmentId: string) => {
-    const attachment = input.state.items.find((item) => item.id === attachmentId)
+    const attachment = state.items.find((item) => item.id === attachmentId)
     if (attachment === undefined || attachment.kind === 'other') {
       return
     }
 
     if (attachment.kind === 'image') {
-      input.setState((current) => ({
+      setState((current) => ({
         ...current,
         preview: {
           open: true,
@@ -282,7 +319,7 @@ export function useComposerAttachments(input: {
       return
     }
 
-    input.setState((current) => ({
+    setState((current) => ({
       ...current,
       preview: {
         open: true,
@@ -298,7 +335,7 @@ export function useComposerAttachments(input: {
     }))
 
     void loadTextPreview(attachment.path).then((result) => {
-      input.setState((current) => {
+      setState((current) => {
         if (!current.preview.open || current.preview.attachmentId !== attachmentId) {
           return current
         }
@@ -337,10 +374,9 @@ export function useComposerAttachments(input: {
         }
       })
     })
-  }, [input, previewFailedNotice])
+  }, [setState, state.items, previewFailedNotice])
 
   return useMemo(() => ({
-    attachmentCount: input.state.items.length,
     handlePaste,
     handleDragEnter,
     handleDragOver,
@@ -361,11 +397,36 @@ export function useComposerAttachments(input: {
     handleDragOver,
     handleDrop,
     handlePaste,
-    input.state.items.length,
     openAttachmentPreview,
     removeAttachment,
     togglePanel,
   ])
+}
+
+function classifyClipboardFiles(files: File[]): {
+  localFiles: File[]
+  hasPathlessImageClipboardFile: boolean
+  hasUnsupportedClipboardFile: boolean
+} {
+  const localFiles: File[] = []
+  let hasPathlessImageClipboardFile = false
+  let hasUnsupportedClipboardFile = false
+
+  for (const file of files) {
+    if (extractFileSystemPath(file) !== null) {
+      localFiles.push(file)
+      continue
+    }
+
+    if (file.type.startsWith('image/')) {
+      hasPathlessImageClipboardFile = true
+      continue
+    }
+
+    hasUnsupportedClipboardFile = true
+  }
+
+  return { localFiles, hasPathlessImageClipboardFile, hasUnsupportedClipboardFile }
 }
 
 async function loadTextPreview(path: string): Promise<{ kind: 'text'; name: string; text: string; truncated: boolean } | { kind: 'error' } | null> {

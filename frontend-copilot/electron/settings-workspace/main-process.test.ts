@@ -1,3 +1,4 @@
+/* eslint-disable sonarjs/no-duplicate-string -- test fixture data inherently contains repeated string literals */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -8,19 +9,23 @@ import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../run
 import { createElectronSettingsWorkspaceService } from './main-process'
 import { createSettingsWorkspacePaths } from './paths'
 
+const EXPECTED_LOAD_SUCCEED = 'Expected settings workspace load to succeed.'
+const EXPECTED_SAVE_SUCCEED = 'Expected settings workspace save to succeed.'
+const INITIALIZED_DOCS_LOG = 'Initialized settings workspace persistence documents.'
+
 async function createPreparedPaths(testName: string) {
   const tempRoot = await mkdtemp(path.join(tmpdir(), `candue-settings-main-${testName}-`))
   const hostedPaths = createHostedRuntimePaths(tempRoot)
   await ensureHostedRuntimeDirectories(hostedPaths)
-
-  return {
-    tempRoot,
-    hostedPaths,
-  }
+  return { tempRoot, hostedPaths }
 }
 
 async function readJsonFile(filePath: string): Promise<unknown> {
   return JSON.parse(await readFile(filePath, 'utf8')) as unknown
+}
+
+function assertOk<T extends { ok: boolean }>(result: T, message: string): asserts result is T & { ok: true } {
+  if (!result.ok) throw new Error(message)
 }
 
 describe('createElectronSettingsWorkspaceService', () => {
@@ -34,11 +39,7 @@ describe('createElectronSettingsWorkspaceService', () => {
 
     try {
       const result = await service.loadState()
-
-      expect(result.ok).toBe(true)
-      if (!result.ok) {
-        throw new Error('Expected settings workspace load to succeed.')
-      }
+      assertOk(result, EXPECTED_LOAD_SUCCEED)
 
       expect(result.source).toBe('initialized-defaults')
       expect(result.state.providerProfiles).toEqual([])
@@ -48,7 +49,7 @@ describe('createElectronSettingsWorkspaceService', () => {
         primaryAssistantModelRoute: null,
         fastAssistantModelRoute: null,
       })
-      expect(appendLog).toHaveBeenCalledWith('info', 'Initialized settings workspace persistence documents.', null)
+      expect(appendLog).toHaveBeenCalledWith('info', INITIALIZED_DOCS_LOG, null)
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }
@@ -63,10 +64,7 @@ describe('createElectronSettingsWorkspaceService', () => {
 
     try {
       const initialized = await service.loadState()
-      expect(initialized.ok).toBe(true)
-      if (!initialized.ok) {
-        throw new Error('Expected initial settings workspace load to succeed.')
-      }
+      assertOk(initialized, EXPECTED_LOAD_SUCCEED)
 
       await writeFile(paths.stateDocument, `${JSON.stringify({
         version: 1,
@@ -104,31 +102,19 @@ describe('createElectronSettingsWorkspaceService', () => {
       }, null, 2)}\n`)
 
       const loaded = await service.loadState()
-      expect(loaded.ok).toBe(true)
-      if (!loaded.ok) {
-        throw new Error('Expected legacy settings workspace load to succeed.')
-      }
+      assertOk(loaded, EXPECTED_LOAD_SUCCEED)
 
-      expect(loaded.state.providerProfiles[0]).toMatchObject({
-        id: 'legacy-main-process-provider',
-        fastModel: '',
-        fallbackModel: '',
-      })
+      expect(loaded.state.providerProfiles[0]).toMatchObject({ id: 'legacy-main-process-provider', fastModel: '', fallbackModel: '' })
       expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
       expect(loaded.state.providerProfiles[0]).not.toHaveProperty('defaultModelId')
 
       const saveResult = await service.saveState(normalizeSettingsWorkspaceStateValues(loaded.state))
-      expect(saveResult.ok).toBe(true)
-      if (!saveResult.ok) {
-        throw new Error('Expected legacy settings workspace save to succeed.')
-      }
+      assertOk(saveResult, EXPECTED_SAVE_SUCCEED)
       expect(saveResult.state.providerProfiles[0]).not.toHaveProperty('defaultModel')
       expect(saveResult.state.providerProfiles[0]).not.toHaveProperty('defaultModelId')
 
       const persistedDocument = await readJsonFile(paths.stateDocument) as {
-        values: {
-          providerProfiles: Array<Record<string, unknown>>
-        }
+        values: { providerProfiles: Array<Record<string, unknown>> }
       }
       expect(persistedDocument.values.providerProfiles[0]).not.toHaveProperty('defaultModel')
     } finally {
@@ -144,64 +130,24 @@ describe('createElectronSettingsWorkspaceService', () => {
 
     try {
       const loaded = await service.loadState()
-      expect(loaded.ok).toBe(true)
-      if (!loaded.ok) {
-        throw new Error('Expected initial settings workspace load to succeed.')
-      }
+      assertOk(loaded, EXPECTED_LOAD_SUCCEED)
 
-      const persistedProvider = createProviderProfile({
-        id: 'main-process-provider',
-        name: 'Main Process Persisted Provider',
-      })
-
+      const persistedProvider = createProviderProfile({ id: 'main-process-provider', name: 'Main Process Persisted Provider' })
       const saveResult = await service.saveState(normalizeSettingsWorkspaceStateValues({
         ...loaded.state,
         providerProfiles: [persistedProvider],
       }))
-
-      expect(saveResult.ok).toBe(true)
-      if (!saveResult.ok) {
-        throw new Error('Expected settings workspace save to succeed.')
-      }
+      assertOk(saveResult, EXPECTED_SAVE_SUCCEED)
       expect(saveResult.state.providerProfiles[0]?.name).toBe('Main Process Persisted Provider')
 
-      const saveSecretResult = await service.saveProfileSecret({
-        profileId: 'main-process-provider',
-        apiKey: 'main-process-secret',
-      })
-      expect(saveSecretResult).toEqual({
-        ok: true,
-        profileId: 'main-process-provider',
-        state: {
-          hasApiKey: true,
-          apiKey: 'main-process-secret',
-        },
-      })
+      const saveSecretResult = await service.saveProfileSecret({ profileId: 'main-process-provider', apiKey: 'main-process-secret' })
+      expect(saveSecretResult).toEqual({ ok: true, profileId: 'main-process-provider', state: { hasApiKey: true, apiKey: 'main-process-secret' } })
 
-      const secretStatesResult = await service.loadSecretStates({
-        profileIds: ['main-process-provider'],
-      })
-      expect(secretStatesResult).toEqual({
-        ok: true,
-        states: {
-          'main-process-provider': {
-            hasApiKey: true,
-            apiKey: 'main-process-secret',
-          },
-        },
-      })
+      const secretStatesResult = await service.loadSecretStates({ profileIds: ['main-process-provider'] })
+      expect(secretStatesResult).toEqual({ ok: true, states: { 'main-process-provider': { hasApiKey: true, apiKey: 'main-process-secret' } } })
 
-      const clearSecretResult = await service.clearProfileSecret({
-        profileId: 'main-process-provider',
-      })
-      expect(clearSecretResult).toEqual({
-        ok: true,
-        profileId: 'main-process-provider',
-        state: {
-          hasApiKey: false,
-          apiKey: '',
-        },
-      })
+      const clearSecretResult = await service.clearProfileSecret({ profileId: 'main-process-provider' })
+      expect(clearSecretResult).toEqual({ ok: true, profileId: 'main-process-provider', state: { hasApiKey: false, apiKey: '' } })
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }
