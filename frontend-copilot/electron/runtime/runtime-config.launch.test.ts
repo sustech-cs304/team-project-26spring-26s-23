@@ -12,6 +12,19 @@ import {
 const BASE_URL = 'http://127.0.0.1:43210'
 const PORT = 43210
 const HOST = '127.0.0.1'
+const DEFAULT_TOKEN = 'token-123'
+const BRIDGE_URL = 'http://127.0.0.1:45678/host/private/provider-routes/resolve'
+const BRIDGE_TOKEN = 'bridge-token-123'
+const CAPABILITY_URL = 'http://127.0.0.1:45679/host/private/capability-bridge'
+const CAPABILITY_TOKEN = 'capability-bridge-token-123'
+const TMP_USERDATA = '.tmp-userdata'
+const DESKTOP_RUNTIME = 'desktop-runtime'
+const IPV6_HOST = '::1'
+const IPV6_BASE_URL = 'http://[::1]:43210'
+
+function resolveTmp(...segments: string[]) {
+  return path.resolve(TMP_USERDATA, ...segments)
+}
 
 function makeConfig(overrides: { userDataPath: string; processEnv?: Record<string, string>; localToken?: string; host?: string; hostModelRouteBridgeUrl?: string; hostModelRouteBridgeToken?: string; hostCapabilityBridgeUrl?: string; hostCapabilityBridgeToken?: string }) {
   return createHostedRuntimeLaunchConfig({
@@ -20,7 +33,7 @@ function makeConfig(overrides: { userDataPath: string; processEnv?: Record<strin
     processEnv: overrides.processEnv ?? {},
     port: PORT,
     host: overrides.host ?? HOST,
-    localToken: overrides.localToken ?? 'token-123',
+    localToken: overrides.localToken ?? DEFAULT_TOKEN,
     hostModelRouteBridgeUrl: overrides.hostModelRouteBridgeUrl,
     hostModelRouteBridgeToken: overrides.hostModelRouteBridgeToken,
     hostCapabilityBridgeUrl: overrides.hostCapabilityBridgeUrl,
@@ -28,12 +41,20 @@ function makeConfig(overrides: { userDataPath: string; processEnv?: Record<strin
   })
 }
 
+function expectBaseUrls(config: { baseUrl: string; readyUrl: string; healthUrl: string; diagnosticsUrl: string }, baseUrl: string) {
+  expect(config.baseUrl).toBe(baseUrl)
+  expect(config.readyUrl).toBe(`${baseUrl}/ready`)
+  expect(config.healthUrl).toBe(`${baseUrl}/health`)
+  expect(config.diagnosticsUrl).toBe(`${baseUrl}/diagnostics`)
+}
+
+// eslint-disable-next-line max-lines-per-function -- describe block covers 6 related test cases for URL/runtime config, just over limit
 describe('createHostedRuntimeLaunchConfig', () => {
   it('builds loopback URLs, canonical runtime args, and minimal child env for the Python runtime', () => {
-    const paths = createHostedRuntimePaths(path.resolve('.tmp-userdata'))
+    const paths = createHostedRuntimePaths(path.resolve(TMP_USERDATA))
     const config = createHostedRuntimeLaunchConfig({
       environment: 'development',
-      userDataPath: path.resolve('.tmp-userdata'),
+      userDataPath: path.resolve(TMP_USERDATA),
       processEnv: {
         EXISTING_ENV: 'kept',
         COPILOT_DESKTOP_RUNTIME_HOST: 'should-not-reach-child',
@@ -44,14 +65,11 @@ describe('createHostedRuntimeLaunchConfig', () => {
       },
       port: PORT,
       host: HOST,
-      localToken: 'token-123',
+      localToken: DEFAULT_TOKEN,
       paths,
     })
 
-    expect(config.baseUrl).toBe(BASE_URL)
-    expect(config.readyUrl).toBe(`${BASE_URL}/ready`)
-    expect(config.healthUrl).toBe(`${BASE_URL}/health`)
-    expect(config.diagnosticsUrl).toBe(`${BASE_URL}/diagnostics`)
+    expectBaseUrls(config, BASE_URL)
     expect(config.args).toEqual([
       '--host', HOST,
       '--port', String(PORT),
@@ -69,7 +87,7 @@ describe('createHostedRuntimeLaunchConfig', () => {
       '--backend-stderr-log-file', paths.backendStderrLogFile,
       '--runtime-snapshot-file', paths.runtimeSnapshotFile,
       '--last-failure-file', paths.lastFailureFile,
-      '--local-token', 'token-123',
+      '--local-token', DEFAULT_TOKEN,
     ])
     expect(config.env).toEqual({ EXISTING_ENV: 'kept', PYTHONUNBUFFERED: '1' })
 
@@ -105,7 +123,7 @@ describe('createHostedRuntimeLaunchConfig', () => {
 
   it('does not project retired startup model compatibility into runtime args', () => {
     const config = createHostedRuntimeLaunchConfig({
-      userDataPath: path.resolve('.tmp-userdata-model'),
+      userDataPath: path.resolve(`${TMP_USERDATA}-model`),
       processEnv: { COPILOT_RUNTIME_MODEL: 'env-primary', COPILOT_MODEL: 'env-legacy' },
       port: PORT,
       localToken: 'token-model',
@@ -117,59 +135,56 @@ describe('createHostedRuntimeLaunchConfig', () => {
 
   it('passes host model route bridge bootstrap through runtime args without leaking it into sanitized output', () => {
     const config = makeConfig({
-      userDataPath: path.resolve('.tmp-userdata-route-bridge'),
-      hostModelRouteBridgeUrl: 'http://127.0.0.1:45678/host/private/provider-routes/resolve',
-      hostModelRouteBridgeToken: 'bridge-token-123',
+      userDataPath: path.resolve(`${TMP_USERDATA}-route-bridge`),
+      hostModelRouteBridgeUrl: BRIDGE_URL,
+      hostModelRouteBridgeToken: BRIDGE_TOKEN,
     })
 
     expect(config.args).toEqual(expect.arrayContaining([
-      '--host-model-route-bridge-url', 'http://127.0.0.1:45678/host/private/provider-routes/resolve',
-      '--host-model-route-bridge-token', 'bridge-token-123',
+      '--host-model-route-bridge-url', BRIDGE_URL,
+      '--host-model-route-bridge-token', BRIDGE_TOKEN,
     ]))
     expect(sanitizeHostedRuntimeLaunchConfig(config).hostModelRouteBridgeConfigured).toBe(true)
   })
 
   it('passes host capability bridge bootstrap through runtime args without leaking it into sanitized output', () => {
     const config = makeConfig({
-      userDataPath: path.resolve('.tmp-userdata-capability-bridge'),
-      hostCapabilityBridgeUrl: 'http://127.0.0.1:45679/host/private/capability-bridge',
-      hostCapabilityBridgeToken: 'capability-bridge-token-123',
+      userDataPath: path.resolve(`${TMP_USERDATA}-capability-bridge`),
+      hostCapabilityBridgeUrl: CAPABILITY_URL,
+      hostCapabilityBridgeToken: CAPABILITY_TOKEN,
     })
 
     expect(config.args).toEqual(expect.arrayContaining([
-      '--host-capability-bridge-url', 'http://127.0.0.1:45679/host/private/capability-bridge',
-      '--host-capability-bridge-token', 'capability-bridge-token-123',
+      '--host-capability-bridge-url', CAPABILITY_URL,
+      '--host-capability-bridge-token', CAPABILITY_TOKEN,
     ]))
     expect(sanitizeHostedRuntimeLaunchConfig(config).hostCapabilityBridgeConfigured).toBe(true)
   })
 
   it('brackets IPv6 loopback hosts when composing runtime urls', () => {
-    const config = makeConfig({ userDataPath: path.resolve('.tmp-userdata-ipv6'), host: '::1', localToken: 'token-ipv6' })
+    const config = makeConfig({ userDataPath: path.resolve(`${TMP_USERDATA}-ipv6`), host: IPV6_HOST, localToken: 'token-ipv6' })
 
-    expect(config.baseUrl).toBe('http://[::1]:43210')
-    expect(config.readyUrl).toBe('http://[::1]:43210/ready')
-    expect(config.healthUrl).toBe('http://[::1]:43210/health')
-    expect(config.diagnosticsUrl).toBe('http://[::1]:43210/diagnostics')
-    expect(formatRuntimeBaseUrl('::1', 9000)).toBe('http://[::1]:9000')
+    expectBaseUrls(config, IPV6_BASE_URL)
+    expect(formatRuntimeBaseUrl(IPV6_HOST, 9000)).toBe('http://[::1]:9000')
   })
 
   it('derives runtime directories from Electron userData', () => {
-    const paths = createHostedRuntimePaths(path.resolve('.tmp-userdata'))
+    const paths = createHostedRuntimePaths(path.resolve(TMP_USERDATA))
 
     expect(paths).toEqual({
-      userDataDir: path.resolve('.tmp-userdata'),
-      runtimeRootDir: path.resolve('.tmp-userdata', 'desktop-runtime'),
-      configDir: path.resolve('.tmp-userdata', 'desktop-runtime', 'config'),
-      logsDir: path.resolve('.tmp-userdata', 'desktop-runtime', 'logs'),
-      databaseDir: path.resolve('.tmp-userdata', 'desktop-runtime', 'database'),
-      stateDir: path.resolve('.tmp-userdata', 'desktop-runtime', 'state'),
-      copilotSettingsFile: path.resolve('.tmp-userdata', 'desktop-runtime', 'config', 'copilot-settings.json'),
-      legacyCopilotSettingsFile: path.resolve('.tmp-userdata', 'copilot-settings.json'),
-      hostLogFile: path.resolve('.tmp-userdata', 'desktop-runtime', 'logs', 'electron-host.log'),
-      backendStdoutLogFile: path.resolve('.tmp-userdata', 'desktop-runtime', 'logs', 'backend.stdout.log'),
-      backendStderrLogFile: path.resolve('.tmp-userdata', 'desktop-runtime', 'logs', 'backend.stderr.log'),
-      runtimeSnapshotFile: path.resolve('.tmp-userdata', 'desktop-runtime', 'state', 'runtime-snapshot.json'),
-      lastFailureFile: path.resolve('.tmp-userdata', 'desktop-runtime', 'state', 'last-failure.json'),
+      userDataDir: resolveTmp(),
+      runtimeRootDir: resolveTmp(DESKTOP_RUNTIME),
+      configDir: resolveTmp(DESKTOP_RUNTIME, 'config'),
+      logsDir: resolveTmp(DESKTOP_RUNTIME, 'logs'),
+      databaseDir: resolveTmp(DESKTOP_RUNTIME, 'database'),
+      stateDir: resolveTmp(DESKTOP_RUNTIME, 'state'),
+      copilotSettingsFile: resolveTmp(DESKTOP_RUNTIME, 'config', 'copilot-settings.json'),
+      legacyCopilotSettingsFile: resolveTmp('copilot-settings.json'),
+      hostLogFile: resolveTmp(DESKTOP_RUNTIME, 'logs', 'electron-host.log'),
+      backendStdoutLogFile: resolveTmp(DESKTOP_RUNTIME, 'logs', 'backend.stdout.log'),
+      backendStderrLogFile: resolveTmp(DESKTOP_RUNTIME, 'logs', 'backend.stderr.log'),
+      runtimeSnapshotFile: resolveTmp(DESKTOP_RUNTIME, 'state', 'runtime-snapshot.json'),
+      lastFailureFile: resolveTmp(DESKTOP_RUNTIME, 'state', 'last-failure.json'),
     })
     expect(formatRuntimeBaseUrl(HOST, 9000)).toBe('http://127.0.0.1:9000')
   })

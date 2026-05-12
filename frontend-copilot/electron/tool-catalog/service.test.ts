@@ -1,4 +1,4 @@
-/* eslint-disable max-lines-per-function */
+/* eslint-disable max-lines-per-function, sonarjs/no-duplicate-string */
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ConfigCenterPublicSnapshot } from '../config-center/public-snapshot'
@@ -8,6 +8,14 @@ const RUNTIME_URL = 'http://127.0.0.1:8765'
 const INVALID_PAYLOAD_MSG = 'Hosted backend returned an invalid global tool catalog payload.'
 const LANG_EN = 'en-US'
 const DEFAULT_TOOLSET = 'default'
+const WORKSPACE_GROUP = {
+  id: 'workspace',
+  label: 'Workspace Tools',
+  labelZh: '项目内工具',
+  labelEn: 'Workspace Tools',
+  order: 0,
+  sourceKind: 'workspace',
+} as const
 
 function createHostedBackendStub(overrides?: {
   getRuntimeBaseUrl?: () => string | null
@@ -55,14 +63,7 @@ describe('createElectronToolCatalogService', () => {
             displayNameEn: 'Read File',
             descriptionZh: '读取当前工作区内文件内容。',
             descriptionEn: 'Read file content from the current workspace.',
-            group: {
-              id: 'workspace',
-              label: 'Workspace Tools',
-              labelZh: '项目内工具',
-              labelEn: 'Workspace Tools',
-              order: 0,
-              sourceKind: 'workspace',
-            },
+            group: WORKSPACE_GROUP,
           },
           {
             toolId: 'blackboard.course_catalog.search',
@@ -74,14 +75,7 @@ describe('createElectronToolCatalogService', () => {
             displayNameEn: 'Course Catalog Search',
             descriptionZh: '搜索 Blackboard 课程目录。',
             descriptionEn: 'Search Blackboard course catalog.',
-            group: {
-              id: 'workspace',
-              label: 'Workspace Tools',
-              labelZh: '项目内工具',
-              labelEn: 'Workspace Tools',
-              order: 0,
-              sourceKind: 'workspace',
-            },
+            group: WORKSPACE_GROUP,
           },
         ],
       }),
@@ -130,14 +124,7 @@ describe('createElectronToolCatalogService', () => {
           displayNameEn: 'Read File',
           descriptionZh: '读取当前工作区内文件内容。',
           descriptionEn: 'Read file content from the current workspace.',
-          group: {
-            id: 'workspace',
-            label: 'Workspace Tools',
-            labelZh: '项目内工具',
-            labelEn: 'Workspace Tools',
-            order: 0,
-            sourceKind: 'workspace',
-          },
+          group: WORKSPACE_GROUP,
         },
         {
           toolId: 'blackboard.course_catalog.search',
@@ -149,14 +136,7 @@ describe('createElectronToolCatalogService', () => {
           displayNameEn: 'Course Catalog Search',
           descriptionZh: '搜索 Blackboard 课程目录。',
           descriptionEn: 'Search Blackboard course catalog.',
-          group: {
-            id: 'workspace',
-            label: 'Workspace Tools',
-            labelZh: '项目内工具',
-            labelEn: 'Workspace Tools',
-            order: 0,
-            sourceKind: 'workspace',
-          },
+          group: WORKSPACE_GROUP,
         },
       ],
     })

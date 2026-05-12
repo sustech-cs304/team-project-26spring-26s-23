@@ -91,14 +91,10 @@ export function resolveSettingsWorkspaceProviderRoute(
 ): SettingsWorkspaceProviderRouteResolveResult {
   const requestedRouteRef = resolveRequestedRouteRef(input.request)
   if (requestedRouteRef === null) {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.INVALID_REQUEST,
-        message: 'Provider route request must include a stable routeRef.',
-        details: {},
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.INVALID_REQUEST,
+      'Provider route request must include a stable routeRef.',
+    )
   }
 
   const providerProfile = input.state.providerProfiles.find((profile) => {
@@ -106,173 +102,95 @@ export function resolveSettingsWorkspaceProviderRoute(
   })
 
   if (providerProfile === undefined) {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_PROFILE_NOT_FOUND,
-        message: `Provider profile '${requestedRouteRef.profileId}' does not exist.`,
-        details: {
-          providerProfileId: requestedRouteRef.profileId,
-          routeRef: requestedRouteRef,
-        },
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_PROFILE_NOT_FOUND,
+      `Provider profile '${requestedRouteRef.profileId}' does not exist.`,
+      { providerProfileId: requestedRouteRef.profileId, routeRef: requestedRouteRef },
+    )
   }
 
   const providerProfileId = resolveProfileId(providerProfile)
   const providerId = resolveProviderIdFromProfile(providerProfile)
   const providerCatalogEntry = getProviderCatalogEntry(providerId)
   if (providerCatalogEntry === null) {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_CATALOG_ENTRY_NOT_FOUND,
-        message: `Provider '${providerId}' is not defined in provider catalog.`,
-        details: {
-          providerProfileId,
-          providerId,
-          routeRef: requestedRouteRef,
-        },
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_CATALOG_ENTRY_NOT_FOUND,
+      `Provider '${providerId}' is not defined in provider catalog.`,
+      { providerProfileId, providerId, routeRef: requestedRouteRef },
+    )
   }
 
   const compatibilityStatus = providerProfile.compatibility?.status ?? 'active'
   if (compatibilityStatus === 'legacy') {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_PROFILE_LEGACY,
-        message: `Provider profile '${providerProfileId}' is marked as legacy and cannot be resolved for runtime execution.`,
-        details: {
-          providerProfileId,
-          providerId,
-          routeRef: requestedRouteRef,
-          compatibility: providerProfile.compatibility,
-        },
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_PROFILE_LEGACY,
+      `Provider profile '${providerProfileId}' is marked as legacy and cannot be resolved for runtime execution.`,
+      { providerProfileId, providerId, routeRef: requestedRouteRef, compatibility: providerProfile.compatibility },
+    )
   }
 
   if (compatibilityStatus === 'unsupported') {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_PROFILE_UNSUPPORTED,
-        message: `Provider profile '${providerProfileId}' is marked as unsupported and cannot be resolved for runtime execution.`,
-        details: {
-          providerProfileId,
-          providerId,
-          routeRef: requestedRouteRef,
-          compatibility: providerProfile.compatibility,
-        },
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_PROFILE_UNSUPPORTED,
+      `Provider profile '${providerProfileId}' is marked as unsupported and cannot be resolved for runtime execution.`,
+      { providerProfileId, providerId, routeRef: requestedRouteRef, compatibility: providerProfile.compatibility },
+    )
   }
 
   if (providerCatalogEntry.runtimeStatus === 'catalog-only') {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_RUNTIME_CATALOG_ONLY,
-        message: `Provider '${providerCatalogEntry.providerId}' is catalog-only and cannot be resolved for runtime execution.`,
-        details: {
-          providerProfileId,
-          providerId: providerCatalogEntry.providerId,
-          routeRef: requestedRouteRef,
-          runtimeStatus: providerCatalogEntry.runtimeStatus,
-        },
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_RUNTIME_CATALOG_ONLY,
+      `Provider '${providerCatalogEntry.providerId}' is catalog-only and cannot be resolved for runtime execution.`,
+      { providerProfileId, providerId: providerCatalogEntry.providerId, routeRef: requestedRouteRef, runtimeStatus: providerCatalogEntry.runtimeStatus },
+    )
   }
 
   if (providerCatalogEntry.runtimeStatus === 'legacy-unsupported') {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_RUNTIME_LEGACY_UNSUPPORTED,
-        message: `Provider '${providerCatalogEntry.providerId}' is marked as legacy-unsupported in provider catalog.`,
-        details: {
-          providerProfileId,
-          providerId: providerCatalogEntry.providerId,
-          routeRef: requestedRouteRef,
-          runtimeStatus: providerCatalogEntry.runtimeStatus,
-        },
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_RUNTIME_LEGACY_UNSUPPORTED,
+      `Provider '${providerCatalogEntry.providerId}' is marked as legacy-unsupported in provider catalog.`,
+      { providerProfileId, providerId: providerCatalogEntry.providerId, routeRef: requestedRouteRef, runtimeStatus: providerCatalogEntry.runtimeStatus },
+    )
   }
 
   const normalizedModelId = normalizeModelId(requestedRouteRef.modelId)
   if (!providerProfileSupportsModel(providerProfile, normalizedModelId)) {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_MODEL_NOT_FOUND,
-        message: `Provider profile '${providerProfileId}' does not define model '${normalizedModelId}'.`,
-        details: {
-          providerProfileId,
-          providerId: providerCatalogEntry.providerId,
-          routeRef: requestedRouteRef,
-          modelId: normalizedModelId,
-          supportedModelIds: buildSupportedModelIds(providerProfile),
-        },
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_MODEL_NOT_FOUND,
+      `Provider profile '${providerProfileId}' does not define model '${normalizedModelId}'.`,
+      { providerProfileId, providerId: providerCatalogEntry.providerId, routeRef: requestedRouteRef, modelId: normalizedModelId, supportedModelIds: buildSupportedModelIds(providerProfile) },
+    )
   }
 
   const catalogRevision = getProviderCatalogRevision()
   const requestedCatalogRevision = normalizeNonEmptyString(input.request.catalogRevision, '')
   if (requestedCatalogRevision !== '' && requestedCatalogRevision !== catalogRevision) {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.CATALOG_REVISION_MISMATCH,
-        message: `Requested provider catalog revision '${requestedCatalogRevision}' does not match current revision '${catalogRevision}'.`,
-        details: {
-          providerProfileId,
-          providerId: providerCatalogEntry.providerId,
-          routeRef: requestedRouteRef,
-          expectedCatalogRevision: requestedCatalogRevision,
-          actualCatalogRevision: catalogRevision,
-        },
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.CATALOG_REVISION_MISMATCH,
+      `Requested provider catalog revision '${requestedCatalogRevision}' does not match current revision '${catalogRevision}'.`,
+      { providerProfileId, providerId: providerCatalogEntry.providerId, routeRef: requestedRouteRef, expectedCatalogRevision: requestedCatalogRevision, actualCatalogRevision: catalogRevision },
+    )
   }
 
   const normalizedBaseUrl = resolveExpectedBaseUrl(providerProfile)
   const normalizedRouteRef = buildRouteRef(providerProfileId, normalizedModelId)
 
   if (normalizedBaseUrl === '') {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_BASE_URL_MISSING,
-        message: `Provider profile '${providerProfileId}' is missing a base URL.`,
-        details: {
-          providerProfileId,
-          providerId: providerCatalogEntry.providerId,
-          routeRef: normalizedRouteRef,
-        },
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_BASE_URL_MISSING,
+      `Provider profile '${providerProfileId}' is missing a base URL.`,
+      { providerProfileId, providerId: providerCatalogEntry.providerId, routeRef: normalizedRouteRef },
+    )
   }
 
   const authKind = providerCatalogEntry.authSchema.defaultKind
   const apiKey = normalizeNonEmptyString(input.secretStates[providerProfileId]?.apiKey, '')
   if (authKind !== 'none' && apiKey === '') {
-    return {
-      ok: false,
-      error: {
-        code: SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_SECRET_MISSING,
-        message: `Provider profile '${providerProfileId}' is missing an API key.`,
-        details: {
-          providerProfileId,
-          providerId: providerCatalogEntry.providerId,
-          routeRef: normalizedRouteRef,
-          authKind,
-        },
-      },
-    }
+    return resolverError(
+      SETTINGS_WORKSPACE_PROVIDER_ROUTE_ERROR_CODES.PROVIDER_SECRET_MISSING,
+      `Provider profile '${providerProfileId}' is missing an API key.`,
+      { providerProfileId, providerId: providerCatalogEntry.providerId, routeRef: normalizedRouteRef, authKind },
+    )
   }
 
   const resolvedRoute: SettingsWorkspaceResolvedProviderRoute = {
@@ -291,15 +209,15 @@ export function resolveSettingsWorkspaceProviderRoute(
     capabilityHints: { ...providerCatalogEntry.capabilityHints },
   }
 
-  return {
-    ok: true,
-    resolvedRoute,
-    privateAuth: {
-      authKind,
-      authPayload: apiKey === '' ? {} : { apiKey },
-      apiKey,
-    },
-  }
+  return { ok: true, resolvedRoute, privateAuth: { authKind, authPayload: apiKey === '' ? {} : { apiKey }, apiKey } }
+}
+
+function resolverError(
+  code: SettingsWorkspaceProviderRouteErrorCode,
+  message: string,
+  details: Record<string, unknown> = {},
+): { ok: false; error: SettingsWorkspaceProviderRouteResolveError } {
+  return { ok: false, error: { code, message, details } }
 }
 
 function resolveRequestedRouteRef(
