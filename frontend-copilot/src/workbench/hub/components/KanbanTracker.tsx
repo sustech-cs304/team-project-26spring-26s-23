@@ -1,5 +1,3 @@
-import React from 'react';
-
 // 这里为了通用，可以直接引入外部定义，先暂时在内部简单声明
 interface UnifiedCalendarEvent {
   id: string | number

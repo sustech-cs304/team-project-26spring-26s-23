@@ -1,5 +1,3 @@
-import React from 'react';
-
 interface UnifiedCalendarEvent {
   id: string | number
   source: string
