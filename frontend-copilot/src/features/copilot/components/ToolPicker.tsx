@@ -250,7 +250,7 @@ function ToolPickerPanel({
           type="button"
           className="copilot-model-picker__tag copilot-model-picker__tag--all"
           onClick={() => {
-            onChangeToolIds(selectAllToolIds({ tools, policy: toolPermissionPolicy }))
+            onChangeToolIds(selectAllToolIds({ tools, policy: toolPermissionPolicy ?? null }))
           }}
           data-testid="chat-tool-picker-select-all"
         >
@@ -260,7 +260,7 @@ function ToolPickerPanel({
           type="button"
           className="copilot-model-picker__tag copilot-model-picker__tag--neutral"
           onClick={() => {
-            onChangeToolIds(invertToolSelection({ tools, selectedToolIds, policy: toolPermissionPolicy }))
+            onChangeToolIds(invertToolSelection({ tools, selectedToolIds, policy: toolPermissionPolicy ?? null }))
           }}
           data-testid="chat-tool-picker-invert"
         >
@@ -270,7 +270,7 @@ function ToolPickerPanel({
           type="button"
           className="copilot-model-picker__tag copilot-model-picker__tag--tools"
           onClick={() => {
-            onChangeToolIds(pickRecommendedToolIds({ tools, recommendedToolIds, policy: toolPermissionPolicy }))
+            onChangeToolIds(pickRecommendedToolIds({ tools, recommendedToolIds, policy: toolPermissionPolicy ?? null }))
           }}
           data-testid="chat-tool-picker-select-recommended"
         >
@@ -423,7 +423,7 @@ function ToolPickerOption({
         onChangeToolIds(toggleToolIdInSelection({
           selectedToolIds,
           toolId: tool.toolId,
-          policy: toolPermissionPolicy,
+          policy: toolPermissionPolicy ?? null,
         }))
       }}
       data-testid={`chat-tool-option-${tool.toolId}`}

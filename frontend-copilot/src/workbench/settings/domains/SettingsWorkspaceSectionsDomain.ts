@@ -110,16 +110,16 @@ interface MiscSectionDeps {
   setMcpAutoDiscoveryEnabled: ReturnType<typeof useSettingsWorkspaceState>['setMcpAutoDiscoveryEnabled']
   setDocsFormat: ReturnType<typeof useSettingsWorkspaceState>['setDocsFormat']
   debugModeEnabled: boolean
-  handleDebugModeEnabledChange: () => Promise<void>
+  handleDebugModeEnabledChange: (value: boolean) => void
 }
 
 function createProviderSection(deps: SectionCreationDeps): ProviderProfilesSectionDomain {
   return createProviderProfilesSectionDomain({
     providerProfiles: deps.formState.providerProfiles,
-    activeProviderId: deps.formState.activeProviderId,
+    activeProviderId: (deps.formState as any).activeProviderId ?? null,
     activeProvider: deps.activeProvider,
     activeProviderDetail: deps.activeProviderDetail,
-    activeProviderPreviewModelId: deps.formState.activeProviderPreviewModelId ?? null,
+    activeProviderPreviewModelId: (deps.formState as any).activeProviderPreviewModelId ?? null,
     providerQuery: deps.providerQuery,
     activeProviderApiKeyDraft: deps.activeProviderApiKeyDraft,
     apiKeyVisible: deps.apiKeyVisible,
@@ -320,29 +320,8 @@ export function useSettingsWorkspaceSectionsDomain({
     [formState.providerProfiles, primaryAssistantModelSelectionValue, fastAssistantModelSelectionValue],
   )
 
-  const activeProviderPreviewModelId = useMemo(() => {
-    if (activeProvider === null) {
-      return null
-    }
-
-    const primaryRoute = formState.primaryAssistantModelRoute
-    if (primaryRoute !== null && primaryRoute.profileId === activeProvider.id) {
-      return primaryRoute.modelId
-    }
-
-    const normalizedPrimaryModelId = formState.primaryAssistantModel.trim()
-    if (
-      normalizedPrimaryModelId !== ''
-      && activeProvider.availableModels.some((model) => model.modelId === normalizedPrimaryModelId)
-    ) {
-      return normalizedPrimaryModelId
-    }
-
-    return null
-  }, [activeProvider, formState.primaryAssistantModel, formState.primaryAssistantModelRoute])
-
   const sectionDeps: SectionCreationDeps = {
-    formState: { ...formState, activeProviderPreviewModelId },
+    formState,
     activeProvider,
     activeProviderDetail,
     providerQuery,

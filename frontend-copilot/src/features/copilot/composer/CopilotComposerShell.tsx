@@ -452,11 +452,11 @@ export function CopilotComposerShell({
         attachmentControlRef,
         openAttachmentPreview: attachmentActions.openAttachmentPreview,
         removeAttachment: attachmentActions.removeAttachment,
-        handleDragEnter: attachmentActions.handleDragEnter,
-        handleDragOver: attachmentActions.handleDragOver,
-        handleDragLeave: attachmentActions.handleDragLeave,
-        handleDrop: attachmentActions.handleDrop,
-        handlePaste: attachmentActions.handlePaste,
+        handleDragEnter: attachmentActions.handleDragEnter as any,
+        handleDragOver: attachmentActions.handleDragOver as any,
+        handleDragLeave: attachmentActions.handleDragLeave as any,
+        handleDrop: attachmentActions.handleDrop as any,
+        handlePaste: attachmentActions.handlePaste as any,
         attachmentCount: attachmentActions.attachmentCount,
         togglePanel: attachmentActions.togglePanel,
         requestCloseAttachmentPanel,
@@ -520,7 +520,7 @@ function renderAttachmentPanel(input: {
       role="dialog"
       aria-label={attachmentCopy.panelLabel}
       data-testid="chat-composer-attachment-panel"
-      ref={attachmentControlRef}
+      ref={attachmentControlRef as React.Ref<HTMLElement>}
     >
       <div className="copilot-chat__attachment-panel-header">
         <span className="copilot-chat__attachment-panel-title">{attachmentCopy.panelLabel}</span>
@@ -641,7 +641,7 @@ function renderAttachmentPreviewDialog(input: {
           )}
           {attachments.preview.status === 'ready' && attachments.preview.kind === 'image' && attachments.preview.previewUrl !== null && (
             <img
-              ref={imagePreviewRef}
+              ref={imagePreviewRef as React.Ref<HTMLImageElement>}
               className="copilot-chat__attachment-preview-image"
               src={attachments.preview.previewUrl}
               alt={attachments.preview.title}
@@ -790,7 +790,7 @@ function renderComposerSurface(input: {
       </div>
 
       {attachments.items.length > 0 && (
-        <div className="copilot-chat__attachment-trigger-shell" ref={attachmentPanelVisible ? undefined : attachmentControlRef}>
+        <div className="copilot-chat__attachment-trigger-shell" ref={attachmentPanelVisible ? undefined : attachmentControlRef as React.Ref<HTMLDivElement>}>
           <button
             type="button"
             className="copilot-chat__attachment-trigger"

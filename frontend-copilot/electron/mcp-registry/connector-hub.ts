@@ -475,7 +475,7 @@ function createHubToolCallFailure(
 }
 
 function createInitialState(
-  ctx: HubContext,
+  _ctx: HubContext,
   server: McpServerRecord,
 ): McpServerStateSummary {
   return createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, {

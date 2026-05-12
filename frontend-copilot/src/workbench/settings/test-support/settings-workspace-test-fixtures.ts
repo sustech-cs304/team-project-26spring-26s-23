@@ -4,7 +4,7 @@ import type {
   SettingsWorkspaceToolPermissionPolicyState,
 } from '../../../../electron/settings-workspace/schema'
 import type { CopilotBootstrapController } from '../../../features/copilot/types'
-import type { ModelRouteRef, ProviderProfile } from '../../types'
+import type { ModelRouteRef, ProviderProfile, ProviderProfileExtensions } from '../../types'
 import { createProviderModelProfile } from '../domains/provider-profiles/provider-profiles'
 
 export interface WorkspaceStateOverrides {
@@ -111,7 +111,7 @@ export function createProviderProfile(
     region: d.region,
     notes: d.notes,
     compatibility: d.compatibility,
-    extensions: d.extensions,
+    extensions: d.extensions as ProviderProfileExtensions,
     availableModels:
       overrides.availableModels
       ?? [

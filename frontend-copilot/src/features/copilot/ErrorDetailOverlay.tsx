@@ -311,7 +311,7 @@ function ErrorDetailHeader({
           {summaryCopyLabel}
         </button>
         <button
-          ref={closeButtonRef}
+          ref={closeButtonRef as React.Ref<HTMLButtonElement>}
           type="button"
           className="icon-button error-detail-overlay__close"
           aria-label="关闭错误详情"

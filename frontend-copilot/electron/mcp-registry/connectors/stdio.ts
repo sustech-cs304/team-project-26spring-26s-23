@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { once } from 'node:events'
 
-import type { McpConnectionPhase, McpServerRecord, McpToolCallResult } from '../types'
+import type { McpConnectionPhase, McpServerRecord, McpServerStateSummary, McpToolCallResult } from '../types'
 import {
   MCP_INITIALIZE_METHOD,
   MCP_INITIALIZED_NOTIFICATION_METHOD,

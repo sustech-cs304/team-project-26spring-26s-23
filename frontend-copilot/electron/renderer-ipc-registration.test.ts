@@ -75,7 +75,7 @@ import { createFakeIpcMain } from './renderer-ipc-transport.test-support'
 import { registerRendererIpcHandlers } from './renderer-ipc-registration'
 
 const BACKUP_PATH = 'backups/history.db'
-const IMAGE_PNG = 'image/png'
+const IMAGE_PNG = 'image/png' as const
 const PASTED_IMAGE = 'pasted-image.png'
 const README_PATH = '/tmp/readme.txt'
 const TEMP_ATTACHMENT_PATH = '/tmp/candue-attachments/pasted-image.png'

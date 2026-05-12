@@ -8,6 +8,11 @@ import {
   SUSTECH_BLACKBOARD_UPDATE_SETTINGS_CHANNEL,
 } from './ipc'
 import { createElectronSustechBlackboardService } from './service'
+import type {
+  BlackboardSyncSettingsUpdateResult,
+  BlackboardSyncStatusResult,
+  BlackboardSyncTriggerResult,
+} from './types'
 
 const RUNTIME_BASE_URL = 'http://127.0.0.1:8000'
 
@@ -88,7 +93,7 @@ describe('createElectronSustechBlackboardService', () => {
 
       const resultPromise = ipcMain.invoke(SUSTECH_BLACKBOARD_TRIGGER_SYNC_CHANNEL)
       await vi.runAllTicks()
-      const result = await resultPromise
+      const result = await resultPromise as BlackboardSyncTriggerResult
 
       expect(result.ok).toBe(true)
       expect(result.state.status).toBe('running')
@@ -162,7 +167,7 @@ describe('createElectronSustechBlackboardService', () => {
       const ipcMain = createIpcMainStub()
       service.registerIpcHandlers(ipcMain)
 
-      const result = await ipcMain.invoke(SUSTECH_BLACKBOARD_UPDATE_SETTINGS_CHANNEL, undefined, 'daily')
+      const result = await ipcMain.invoke(SUSTECH_BLACKBOARD_UPDATE_SETTINGS_CHANNEL, undefined, 'daily') as BlackboardSyncSettingsUpdateResult
       await vi.runAllTicks()
 
       expect(result.ok).toBe(true)
@@ -205,7 +210,7 @@ describe('createElectronSustechBlackboardService', () => {
       const ipcMain = createIpcMainStub()
       const service = createElectronSustechBlackboardService(createServiceOptions())
       service.registerIpcHandlers(ipcMain)
-      const result = await ipcMain.invoke(SUSTECH_BLACKBOARD_GET_STATUS_CHANNEL)
+      const result = await ipcMain.invoke(SUSTECH_BLACKBOARD_GET_STATUS_CHANNEL) as BlackboardSyncStatusResult
       expect(result.ok).toBe(true)
       expect(result.state.status).toBeDefined()
       service.dispose()

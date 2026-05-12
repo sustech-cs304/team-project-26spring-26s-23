@@ -228,10 +228,10 @@ function resolveReadyLikeState(
   const missingFields = getMissingReadyStateFields(baseState)
 
   if (missingFields.length > 0) {
-    return { ...baseState, status: 'incomplete', missingFields }
+    return { ...baseState, status: 'incomplete', missingFields } as CopilotConfigState
   }
 
-  return { ...baseState, status, runtimeUrl: baseState.runtimeUrl! }
+  return { ...baseState, status, runtimeUrl: baseState.runtimeUrl! } as CopilotConfigState
 }
 
 function resolveStoppedState(
@@ -240,10 +240,10 @@ function resolveStoppedState(
   const missingFields = getMissingReadyStateFields(baseState)
 
   if (missingFields.length === 1 && missingFields[0] === 'runtimeUrl') {
-    return { ...baseState, status: 'empty', missingFields }
+    return { ...baseState, status: 'empty', missingFields } as CopilotConfigState
   }
 
-  return { ...baseState, status: 'incomplete', missingFields }
+  return { ...baseState, status: 'incomplete', missingFields } as CopilotConfigState
 }
 
 function normalizeOptionalString(value: unknown): string | null {

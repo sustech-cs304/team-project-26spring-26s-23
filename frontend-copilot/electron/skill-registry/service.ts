@@ -14,6 +14,7 @@ import type {
   SkillSetEnabledRequest,
   SkillSetEnabledResult,
 } from './ipc'
+import type { SkillValidationStatus } from './types'
 import {
   collectSkillSnapshotRedactionViolations,
   createSkillCapabilitySnapshot,
@@ -291,7 +292,7 @@ function buildRefreshSkillsMethod(ctx: ServiceContext): SkillRegistryService['re
     }
 
     const refreshedRecords: SkillRecord[] = []
-    const results: Array<{ skillId: string; status: string; errors: SkillValidationIssue[]; warnings: SkillValidationIssue[] }> = []
+    const results: Array<{ skillId: string; status: SkillValidationStatus; errors: SkillValidationIssue[]; warnings: SkillValidationIssue[] }> = []
     const existingSkillIds = new Set(snapshot.skills.map((skill) => skill.skillId))
 
     for (const skill of resolvedTargets.skills) {

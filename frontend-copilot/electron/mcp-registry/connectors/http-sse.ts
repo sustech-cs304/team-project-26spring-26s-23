@@ -1,4 +1,4 @@
-import type { McpServerRecord, McpToolCallResult } from '../types'
+import type { McpServerRecord, McpServerStateSummary, McpToolCallResult } from '../types'
 import {
   MCP_INITIALIZE_METHOD,
   MCP_INITIALIZED_NOTIFICATION_METHOD,

@@ -16,7 +16,6 @@ import { createBlackboardScheduler, type BlackboardScheduler } from './scheduler
 import {
   DEFAULT_BLACKBOARD_SYNC_STATE,
   type BlackboardSyncInterval,
-  type BlackboardSyncSettingsUpdateResult,
   type BlackboardSyncState,
   type BlackboardSyncStatusResult,
   type BlackboardSyncTriggerResult,
@@ -261,7 +260,8 @@ function createIpcHandlers(
         void executeSync(state, updater, options, { parallelWorkers: workers, currentTermOnly: termOnly })
         return { ok: true, state: { ...state.syncState } }
       })
-      ipcMain.handle(SUSTECH_BLACKBOARD_UPDATE_SETTINGS_CHANNEL, async (_event: unknown, interval: string): Promise<BlackboardSyncSettingsUpdateResult> => {
+      ipcMain.handle(SUSTECH_BLACKBOARD_UPDATE_SETTINGS_CHANNEL, async (...args: unknown[]) => {
+        const interval = args[1] as string
         await initPromise
         const validIntervals: BlackboardSyncInterval[] = ['off', 'two_hours', 'daily']
         const normalizedInterval: BlackboardSyncInterval = validIntervals.includes(interval as BlackboardSyncInterval) ? (interval as BlackboardSyncInterval) : 'off'

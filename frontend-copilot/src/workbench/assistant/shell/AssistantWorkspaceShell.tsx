@@ -30,8 +30,8 @@ import {
 } from '../assistant-workspace-controller'
 import {
   useAssistantWorkspaceState,
-  type CopilotThreadRuntimeControllerState,
 } from '../useAssistantWorkspaceState'
+import type { CopilotThreadRuntimeControllerState } from '../../../features/copilot/thread-runtime-controller'
 import type { AssistantWorkspaceSessionStatus } from '../assistant-workspace-session-controller'
 import type { AgentType } from '../../types'
 

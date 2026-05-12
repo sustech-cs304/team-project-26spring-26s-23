@@ -248,7 +248,7 @@ function renderInlineFormControl({
       return (
         <InlineFormSelectControl
           id={fieldId}
-          value={typeof value === 'boolean' ? '' : value}
+          value={typeof value === 'boolean' || typeof value === 'number' ? String(value) : value}
           disabled={readOnly}
           placeholder="请选择"
           options={field.options ?? []}

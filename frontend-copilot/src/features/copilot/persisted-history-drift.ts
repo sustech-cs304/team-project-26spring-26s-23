@@ -57,7 +57,7 @@ function readHistoryInput(
 ): AssistantSessionHistoryState | null {
   if (isRecord(input) && 'history' in input) {
     const history = input.history
-    return isRecord(history) ? history as AssistantSessionHistoryState : null
+    return isRecord(history) ? history as unknown as AssistantSessionHistoryState : null
   }
 
   return isRecord(input) ? input as AssistantSessionHistoryState : null

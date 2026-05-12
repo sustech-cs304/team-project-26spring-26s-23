@@ -283,7 +283,7 @@ function renderActiveSessionShell(
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
       <section className="copilot-chat" data-testid="chat-send-shell">
         {props.historyRestoreError !== null && props.historyRestoreError !== undefined && renderHistoryRestoreNotice()}
-        {renderPersistedHistoryCapabilitiesNotice({
+        {props.sessionShell !== null && renderPersistedHistoryCapabilitiesNotice({
           sessionShell: props.sessionShell,
           sessionHistory: props.sessionHistory,
           onRetrySessionHistory: props.onRetrySessionHistory,
@@ -329,7 +329,7 @@ function renderActiveSessionShell(
         </CrossFade>
         <CopilotComposerShell
           language={props.language}
-          capabilities={props.sessionShell.capabilities}
+          capabilities={props.sessionShell?.capabilities ?? { tools: {} } as any}
           modelGroups={props.modelGroups}
           thinkingCapability={props.thinkingCapability}
           draft={props.composerDraft}

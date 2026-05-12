@@ -160,7 +160,7 @@ function buildCopilotHistoryApi(copilotHistoryService: ReturnType<CreateMainProc
   }
 }
 
-function buildAttachmentApi(attachmentService: ElectronAttachmentService) {
+function buildAttachmentApi(attachmentService: Omit<ElectronAttachmentService, 'resolveFilePath'>) {
   return {
     async readClipboardAttachmentData() {
       return await attachmentService.readClipboardData()

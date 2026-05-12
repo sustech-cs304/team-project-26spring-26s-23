@@ -154,7 +154,7 @@ describe('createHostCapabilityBridge integrated runtime regression', () => {
       result: { artifactId: expect.stringMatching(/^artifact-/), uri: expect.stringMatching(/^artifact:\/\/desktop\/artifact-/), name: 'snapshot.json', contentType: 'application/json', metadata: { toolId: TOOL_BB, invocationId: BB_CALL } },
     })
 
-    const artifactId = String(r1.payload.result.artifactId)
+    const artifactId = String((r1.payload.result as { artifactId: unknown }).artifactId)
     const artifactIndex = await readJsonFile(ctx.bridgePaths.artifactIndexFile) as { artifacts?: Record<string, { fileName?: string }> }
     const artifactFileName = artifactIndex.artifacts?.[artifactId]?.fileName
     if (artifactFileName === undefined) throw new Error(`Expected artifact '${artifactId}' to be persisted.`)

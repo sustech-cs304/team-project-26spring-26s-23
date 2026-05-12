@@ -309,7 +309,7 @@ function ModelEditorDialogContent({
 
   return (
     <div className="model-editor-backdrop" role="presentation" onClick={onClose}>
-      <section ref={dialogRef} className="model-editor-modal" role="dialog" aria-modal="true"
+      <section ref={dialogRef as React.Ref<HTMLElement>} className="model-editor-modal" role="dialog" aria-modal="true"
         aria-label={modelEditorState.isNew ? copy.addTitle : copy.editTitle}
         tabIndex={-1} onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
         <div className="model-editor-modal__header">
@@ -319,7 +319,7 @@ function ModelEditorDialogContent({
         <div className="model-editor-modal__body">
           <div className="form-grid form-grid--two">
             <TextField label={copy.modelIdLabel} value={modelEditorState.modelId}
-              onChange={(value) => { onStateChange({ modelId: value }) }} placeholder={copy.modelIdPlaceholder} inputRef={initialFocusRef} />
+              onChange={(value) => { onStateChange({ modelId: value }) }} placeholder={copy.modelIdPlaceholder} inputRef={initialFocusRef as React.Ref<HTMLInputElement>} />
             <TextField label={copy.modelNameLabel} value={modelEditorState.displayName}
               onChange={(value) => onStateChange({ displayName: value })} placeholder={copy.modelNamePlaceholder} />
           </div>

@@ -276,31 +276,25 @@ export function useFileManagerState(): FileManagerState {
     [visibleTree],
   )
 
-  // ── Ref to track previous state for focus retention ──────
-  const prevFocusedPathRef = useRef<string | null>(null)
+  // ── Ref to track visible tree changes for focus retention ──────
   const prevVisiblePathsRef = useRef<string[]>([])
 
   // ── Focus retention after tree refresh ───────────────────
   useEffect(() => {
-    const prevFocused = prevFocusedPathRef.current
+    const prevVisiblePaths = prevVisiblePathsRef.current
+    const visiblePathsChanged =
+      prevVisiblePaths.length !== visiblePaths.length ||
+      prevVisiblePaths.some((path, index) => path !== visiblePaths[index])
 
-    prevFocusedPathRef.current = focusedPath
     prevVisiblePathsRef.current = visiblePaths
 
-    // Only attempt retention if there was a previously focused path
-    // and it disappeared from the new visible tree
-    if (!prevFocused) return
-    if (visiblePaths.includes(prevFocused)) {
-      // Focused path still exists, ensure it's still set
-      if (focusedPath !== prevFocused) {
-        setFocusedPath(prevFocused)
-      }
-      return
-    }
+    // Only repair focus when the visible tree changed and the current focus disappeared.
+    // Do not restore the previous focused path on ordinary focus changes, otherwise
+    // Ctrl/Shift selection can ping-pong focus between two still-visible rows forever.
+    if (!visiblePathsChanged || !focusedPath || visiblePaths.includes(focusedPath)) return
 
-    // Focused path disappeared – fall back to nearest visible ancestor or first item
     const ancestor = findNearestVisibleAncestor(
-      prevFocused,
+      focusedPath,
       visiblePaths,
       rootEntries,
       entriesCache,
@@ -580,7 +574,7 @@ export function useFileManagerState(): FileManagerState {
     )
     if (clipboardOp === 'cut') {
       for (const srcPath of sourcePaths) {
-        const srcParent = getParentPathForRefresh(srcPath, rootPath)
+        const srcParent = getParentPathForRefresh(srcPath, rootPath ?? '')
         if (!snapshots.has(srcParent)) {
           snapshots.set(
             srcParent,
@@ -772,7 +766,31 @@ export function useFileManagerState(): FileManagerState {
         entryPaths,
       })
 
-      handleTrashResult(result, entryPaths, entriesBeforeByDir)
+      if (!result.ok) {
+        if (result.code === 'trash_unavailable') {
+          setConfirmDeletePaths(entryPaths)
+          setErrorMessage(null)
+        } else {
+          setErrorMessage(`移到回收站失败：${result.message}`)
+        }
+        return
+      }
+
+      if (result.failedItems && result.failedItems.length > 0) {
+        setConfirmDeletePaths(result.failedItems.map((item) => item.path))
+      }
+
+      if (result.affectedPaths.length > 0) {
+        const hookMeta: PostOperationHookMeta = {
+          operation: 'delete',
+          entriesBeforeByDir,
+        }
+        handlePostOperationResult(result, hookMeta)
+      }
+
+      if (!result.failedItems || result.failedItems.length === 0) {
+        setSuccessMessage(`已将 ${entryPaths.length} 个项目移到回收站`)
+      }
     } catch (err) {
       setErrorMessage(`删除异常：${err instanceof Error ? err.message : String(err)}`)
     } finally {

@@ -117,7 +117,7 @@ export function restoreAttachmentManagerApi() {
 export function createResolvedSendMessageSpy() {
   return vi.fn((input: CopilotMessageDispatchInput) => {
     const routeRef = input.modelRoute.routeRef ?? {
-      routeKind: LABEL_PROVIDER_MODEL as const,
+      routeKind: LABEL_PROVIDER_MODEL,
       profileId: LABEL_UNKNOWN_PROFILE,
       modelId: LABEL_UNKNOWN_MODEL,
     }
@@ -201,7 +201,7 @@ export function createDeferredResolvedSendMessageSpy(
     input: CopilotMessageDispatchInput,
   ): AsyncGenerator<import('./chat-contract').RuntimeRunEvent> {
     const routeRef = input.modelRoute.routeRef ?? {
-      routeKind: LABEL_PROVIDER_MODEL as const,
+      routeKind: LABEL_PROVIDER_MODEL,
       profileId: LABEL_UNKNOWN_PROFILE,
       modelId: LABEL_UNKNOWN_MODEL,
     }
@@ -260,7 +260,7 @@ export function createDeferredResolvedSendMessageSpy(
 export function createToolLifecycleSendMessageSpy() {
   return vi.fn((input: CopilotMessageDispatchInput) => {
     const routeRef = input.modelRoute.routeRef ?? {
-      routeKind: LABEL_PROVIDER_MODEL as const,
+      routeKind: LABEL_PROVIDER_MODEL,
       profileId: LABEL_UNKNOWN_PROFILE,
       modelId: LABEL_UNKNOWN_MODEL,
     }
@@ -344,7 +344,7 @@ export function createToolLifecycleSendMessageSpy() {
 export function createToolFailureSendMessageSpy() {
   return vi.fn((input: CopilotMessageDispatchInput) => {
     const routeRef = input.modelRoute.routeRef ?? {
-      routeKind: LABEL_PROVIDER_MODEL as const,
+      routeKind: LABEL_PROVIDER_MODEL,
       profileId: LABEL_UNKNOWN_PROFILE,
       modelId: LABEL_UNKNOWN_MODEL,
     }

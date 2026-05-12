@@ -221,36 +221,37 @@ function normalizeSkillRecord(value: unknown): SkillRecord | null {
     return null
   }
 
-  const validation = normalizeValidationSummary(value.validation)
+  const rec = value as Record<string, unknown>
+  const validation = normalizeValidationSummary(rec.validation as Record<string, unknown>)
   if (validation === null) return null
 
-  const capabilities = normalizeCapabilities(value.capabilities)
+  const capabilities = normalizeCapabilities(rec.capabilities)
   if (capabilities === null) return null
 
-  const resourceSummaries = Array.isArray(value.resourceSummaries)
-    ? value.resourceSummaries
+  const resourceSummaries = Array.isArray(rec.resourceSummaries)
+    ? rec.resourceSummaries
       .map(normalizeResourceSummary)
       .filter((resource): resource is SkillResourceSummary => resource !== null)
     : []
 
   return {
-    skillId: value.skillId,
-    displayName: value.displayName,
-    description: value.description,
-    ...(typeof value.version === 'string' || value.version === null ? { version: value.version } : {}),
-    source: value.source,
-    ...(typeof value.sourceDirectory === 'string' || value.sourceDirectory === null ? { sourceDirectory: value.sourceDirectory } : {}),
-    enabled: value.enabled,
+    skillId: rec.skillId as string,
+    displayName: rec.displayName as string,
+    description: rec.description as string,
+    ...(typeof rec.version === 'string' || rec.version === null ? { version: rec.version } : {}),
+    source: rec.source as 'builtin' | 'imported',
+    ...(typeof rec.sourceDirectory === 'string' || rec.sourceDirectory === null ? { sourceDirectory: rec.sourceDirectory } : {}),
+    enabled: rec.enabled as boolean,
     trusted: true,
-    managedDirectoryName: value.managedDirectoryName,
-    entryPath: value.entryPath,
-    tags: normalizeStringArray(value.tags),
+    managedDirectoryName: rec.managedDirectoryName as string,
+    entryPath: rec.entryPath as string,
+    tags: normalizeStringArray(rec.tags),
     capabilities,
     validation,
-    entrySummary: typeof value.entrySummary === 'string' || value.entrySummary === null ? value.entrySummary : null,
+    entrySummary: typeof rec.entrySummary === 'string' || rec.entrySummary === null ? rec.entrySummary : null,
     resourceSummaries,
-    importedAt: value.importedAt,
-    updatedAt: value.updatedAt,
+    importedAt: rec.importedAt as string,
+    updatedAt: rec.updatedAt as string,
   }
 }
 

@@ -69,9 +69,6 @@ function createHistoryThread(overrides: Partial<HistoryThreadFixture> = {}): His
     lastRunStatus: 'completed',
     lastUserMessagePreview: HISTORY_USER_MESSAGE,
     lastAssistantMessagePreview: HISTORY_THREAD_SUMMARY,
-    driftSummary: {
-      status: 'not_evaluated',
-    },
     ...rest,
     driftSummary: overrideDrift ?? {
       status: 'not_evaluated',
@@ -181,7 +178,7 @@ function createHistoryService(input: {
   ) => Promise<void> | void
 } = {}) {
   const hostedBackendService = input.hostedBackendService ?? createHostedBackendServiceStub({
-    runtimeBaseUrl: 'runtimeBaseUrl' in input ? input.runtimeBaseUrl : HISTORY_RUNTIME_BASE_URL,
+    runtimeBaseUrl: input.runtimeBaseUrl ?? HISTORY_RUNTIME_BASE_URL,
     localToken: input.localToken,
   })
 

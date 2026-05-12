@@ -886,7 +886,7 @@ function buildFileManagerApi(deps: FileManagerServiceDeps): FileManagerApi {
     ...buildWatcherOps(deps),
     ...buildPersistenceOps(deps),
     ...buildShellOps(deps),
-  }
+  } as FileManagerApi
 }
 
 // ===== IPC handler registration / deregistration =====

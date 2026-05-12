@@ -218,7 +218,7 @@ function MessageListItem({
             <InlineFormMessageCard
               turn={turn}
               index={index}
-              onSubmitInlineForm={onSubmitInlineForm}
+              onSubmitInlineForm={onSubmitInlineForm ?? null}
             />
           )
         : turn.kind === 'tool'
@@ -238,7 +238,7 @@ function MessageListItem({
             )
           : (
               <>
-                {turn.kind !== 'user' && renderMessageHeader(turn, index, { models, onOpenErrorDetail, language })}
+                {turn.kind !== 'user' && renderMessageHeader(turn, index, { models, onOpenErrorDetail: onOpenErrorDetail ?? null, language })}
                 {renderMessageBody(turn)}
                 {detailRows.length > 0 && (
                   <div className="copilot-chat__message-detail-list">

@@ -24,7 +24,8 @@ import TurndownService from 'turndown'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import remarkGfm from 'remark-gfm'
 import type { WorkbenchLanguage } from '../_locale/types'
-import { ContextMenu, type ContextMenuItem } from '../files/ContextMenu'
+import { ContextMenu } from '../files/ContextMenu'
+import type { ContextMenuItem } from '../files/context-menu-items'
 
 interface Course {
   id: number
@@ -1093,7 +1094,7 @@ function AnnouncementScopeToolbar({
       ].filter(Boolean).join(' ')}
     >
       <div className="sustech-detail-toolbar__spacer" />
-      <div className="sustech-detail-filter" ref={menuRef}>
+      <div className="sustech-detail-filter" ref={menuRef as React.Ref<HTMLDivElement>}>
         <span className="sustech-detail-filter__label">
           {isEnglish ? 'Scope' : '范围'}
         </span>

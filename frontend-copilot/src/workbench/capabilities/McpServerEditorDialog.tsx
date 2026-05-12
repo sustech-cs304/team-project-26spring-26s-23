@@ -302,7 +302,7 @@ function renderMcpFormPanel(input: {
       <label className="capabilities-dialog__field-group">
         <span className="capabilities-dialog__field-label">服务器名称</span>
         <input
-          ref={firstInputRef}
+          ref={firstInputRef as React.Ref<HTMLInputElement>}
           className="text-input"
           value={formState.displayName}
           aria-label="服务器名称"
@@ -504,7 +504,7 @@ function renderMcpImportPanel(input: {
       <label className="capabilities-dialog__field-group capabilities-dialog__field-group--full">
         <span className="capabilities-dialog__field-label">粘贴标准 MCP JSON</span>
         <textarea
-          ref={importTextareaRef}
+          ref={importTextareaRef as React.Ref<HTMLTextAreaElement>}
           className="text-input text-input--textarea capabilities-dialog__editor"
           value={importValue}
           spellCheck={false}

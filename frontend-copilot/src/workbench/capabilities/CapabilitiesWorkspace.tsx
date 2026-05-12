@@ -330,7 +330,7 @@ function renderCapabilitiesToolbar(input: {
           busy={managedRuntime.busy}
           open={managedRuntimePanelOpen}
           error={managedRuntime.error}
-          onToggle={() => setManagedRuntimePanelOpen((previous) => !previous)}
+          onToggle={() => setManagedRuntimePanelOpen(!managedRuntimePanelOpen)}
           onInstallOrRepair={managedRuntime.installOrRepair}
         />
         <button

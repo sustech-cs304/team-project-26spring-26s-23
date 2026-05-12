@@ -409,9 +409,10 @@ function parseLegacyTransportConfig(value: Record<string, unknown>): McpTranspor
   const config = parseKnownTransportConfig(value, resolvedKind)
   if (config !== null && resolvedKind === 'http-sse') {
     return {
-      ...config,
-      baseUrl: config.baseUrl || (typeof value.url === 'string' ? value.url : ''),
-    }
+      kind: 'http-sse' as const,
+      baseUrl: (typeof value.url === 'string' ? value.url : '') || '',
+      ...(config.kind === 'http-sse' ? { headers: config.headers, env: config.env, ssePathOverride: config.ssePathOverride } : {}),
+    } as McpTransportConfig
   }
   return config
 }
