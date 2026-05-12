@@ -200,33 +200,32 @@ function normalizeDocument(value: unknown): SkillRegistryDocument | null {
   }
 }
 
+function hasSkillRecordShape(value: unknown): value is Record<string, unknown> {
+  return isPlainRecord(value)
+    && typeof value.skillId === 'string'
+    && typeof value.displayName === 'string'
+    && typeof value.description === 'string'
+    && (value.source === 'builtin' || value.source === 'imported')
+    && (typeof value.sourceDirectory === 'string' || value.sourceDirectory === null || value.sourceDirectory === undefined)
+    && typeof value.enabled === 'boolean'
+    && value.trusted === true
+    && typeof value.managedDirectoryName === 'string'
+    && typeof value.entryPath === 'string'
+    && isPlainRecord(value.validation)
+    && typeof value.importedAt === 'string'
+    && typeof value.updatedAt === 'string'
+}
+
 function normalizeSkillRecord(value: unknown): SkillRecord | null {
-  if (!isPlainRecord(value)
-    || typeof value.skillId !== 'string'
-    || typeof value.displayName !== 'string'
-    || typeof value.description !== 'string'
-    || (value.source !== 'builtin' && value.source !== 'imported')
-    || !(typeof value.sourceDirectory === 'string' || value.sourceDirectory === null || value.sourceDirectory === undefined)
-    || typeof value.enabled !== 'boolean'
-    || value.trusted !== true
-    || typeof value.managedDirectoryName !== 'string'
-    || typeof value.entryPath !== 'string'
-    || !isPlainRecord(value.validation)
-    || typeof value.importedAt !== 'string'
-    || typeof value.updatedAt !== 'string'
-  ) {
+  if (!hasSkillRecordShape(value)) {
     return null
   }
 
   const validation = normalizeValidationSummary(value.validation)
-  if (validation === null) {
-    return null
-  }
+  if (validation === null) return null
 
   const capabilities = normalizeCapabilities(value.capabilities)
-  if (capabilities === null) {
-    return null
-  }
+  if (capabilities === null) return null
 
   const resourceSummaries = Array.isArray(value.resourceSummaries)
     ? value.resourceSummaries

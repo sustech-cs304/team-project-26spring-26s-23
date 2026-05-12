@@ -11,6 +11,11 @@ import {
 import { createPersistedWorkspaceState, createProviderProfile } from './settings-workspace-test-fixtures'
 
 const SHARED_MODEL_ID = 'shared-model'
+const ALPHA_FAST_MODEL = 'alpha-fast'
+
+function mkRoute(profileId: string, modelId: string) {
+  return { routeKind: 'provider-model' as const, profileId, modelId }
+}
 const ALPHA_PROFILE_ID = 'alpha-profile'
 const BETA_PROFILE_ID = 'beta-profile'
 const OPENAI = 'openai'
@@ -30,8 +35,8 @@ function createAlphaProfile(overrides?: { availableModels?: Array<{ id: string; 
     providerId: OPENAI,
     protocol: OPENAI,
     primaryModelId: SHARED_MODEL_ID,
-    fastModel: 'alpha-fast',
-    fallbackModel: 'alpha-fast',
+    fastModel: ALPHA_FAST_MODEL,
+    fallbackModel: ALPHA_FAST_MODEL,
     availableModels: overrides?.availableModels ?? [
       {
         ...createProviderProfile({ id: ALPHA_PROFILE_ID }).availableModels[0]!,
@@ -50,8 +55,8 @@ function createBetaProfile() {
     providerId: GEMINI,
     protocol: GEMINI,
     primaryModelId: SHARED_MODEL_ID,
-    fastModel: 'shared-model',
-    fallbackModel: 'shared-model',
+    fastModel: SHARED_MODEL_ID,
+    fallbackModel: SHARED_MODEL_ID,
     availableModels: [
       {
         ...createProviderProfile({ id: BETA_PROFILE_ID }).availableModels[0]!,
@@ -82,14 +87,14 @@ describe('settings workspace save input', () => {
       const alphaProvider = createProviderProfile({
         id: ALPHA_PROFILE_ID,
         primaryModelId: 'alpha-model',
-        fastModel: 'alpha-fast',
-        fallbackModel: 'alpha-fast',
+        fastModel: ALPHA_FAST_MODEL,
+        fallbackModel: ALPHA_FAST_MODEL,
       })
       const formState = createSettingsWorkspaceFormStateFromEditableState(createPersistedWorkspaceState({
         providerProfiles: [alphaProvider],
         defaultModelRouting: {
           primaryAssistantModel: 'alpha-model',
-          fastAssistantModel: 'alpha-fast',
+          fastAssistantModel: ALPHA_FAST_MODEL,
           primaryAssistantModelRoute: null,
           fastAssistantModelRoute: null,
         },
@@ -116,30 +121,16 @@ describe('settings workspace save input', () => {
       const betaProvider = createBetaProfile()
       const formState = createFormStateWithProfiles([alphaProvider, betaProvider])
 
-      formState.primaryAssistantModel = serializeModelRouteRef({
-        routeKind: 'provider-model',
-        profileId: ALPHA_PROFILE_ID,
-        modelId: SHARED_MODEL_ID,
-      })
-      formState.fastAssistantModel = serializeModelRouteRef({
-        routeKind: 'provider-model',
-        profileId: BETA_PROFILE_ID,
-        modelId: SHARED_MODEL_ID,
-      })
+      const routeAlpha = mkRoute(ALPHA_PROFILE_ID, SHARED_MODEL_ID)
+      const routeBeta = mkRoute(BETA_PROFILE_ID, SHARED_MODEL_ID)
+      formState.primaryAssistantModel = serializeModelRouteRef(routeAlpha)
+      formState.fastAssistantModel = serializeModelRouteRef(routeBeta)
 
       const saveInput = createSettingsWorkspaceStateSaveInput(formState)
 
       expect(saveInput.defaultModelRouting).toEqual({
-        primaryAssistantModel: {
-          routeKind: 'provider-model',
-          profileId: ALPHA_PROFILE_ID,
-          modelId: SHARED_MODEL_ID,
-        },
-        fastAssistantModel: {
-          routeKind: 'provider-model',
-          profileId: BETA_PROFILE_ID,
-          modelId: SHARED_MODEL_ID,
-        },
+        primaryAssistantModel: routeAlpha,
+        fastAssistantModel: routeBeta,
       })
     })
   })
@@ -166,17 +157,9 @@ describe('settings workspace save input', () => {
 
       expect(buildDefaultModelRouteSelectionValue({
         selectedModelId: SHARED_MODEL_ID,
-        persistedRoute: {
-          routeKind: 'provider-model',
-          profileId: BETA_PROFILE_ID,
-          modelId: SHARED_MODEL_ID,
-        },
+        persistedRoute: mkRoute(BETA_PROFILE_ID, SHARED_MODEL_ID),
         providerProfiles: [alphaProvider, betaProvider],
-      })).toBe(serializeModelRouteRef({
-        routeKind: 'provider-model',
-        profileId: BETA_PROFILE_ID,
-        modelId: SHARED_MODEL_ID,
-      }))
+      })).toBe(serializeModelRouteRef(mkRoute(BETA_PROFILE_ID, SHARED_MODEL_ID)))
 
       expect(buildDefaultModelRouteSelectionValue({
         selectedModelId: SHARED_MODEL_ID,

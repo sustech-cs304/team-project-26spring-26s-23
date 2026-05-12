@@ -59,13 +59,14 @@ describe('SettingsWorkspace secrets', () => {
 
   describe('api key auto-save on blur', () => {
     it('auto-saves provider api keys on blur and clears them when the draft becomes empty', async () => {
+      const ROTATED_SECRET = 'rotated-secret'
       const { saveProfileApiKey, clearProfileApiKey } = installSettingsWorkspaceBridge({
         saveProfileApiKeyResult: {
           ok: true,
           profileId: DEFAULT_PROVIDER_ID,
           state: {
             hasApiKey: true,
-            apiKey: 'rotated-secret',
+            apiKey: ROTATED_SECRET,
           },
         },
         clearProfileApiKeyResult: {
@@ -85,14 +86,14 @@ describe('SettingsWorkspace secrets', () => {
       await flushAsyncEffects()
 
       const apiKeyInput = rendered.getByTestId(API_KEY_INPUT_ID) as HTMLInputElement
-      await setFormControlValue(apiKeyInput, 'rotated-secret')
+      await setFormControlValue(apiKeyInput, ROTATED_SECRET)
       await blurElement(apiKeyInput)
 
       expect(saveProfileApiKey).toHaveBeenCalledWith({
         profileId: DEFAULT_PROVIDER_ID,
-        apiKey: 'rotated-secret',
+        apiKey: ROTATED_SECRET,
       })
-      expect(apiKeyInput.value).toBe('rotated-secret')
+      expect(apiKeyInput.value).toBe(ROTATED_SECRET)
       expect(rendered.getByTestId(API_KEY_FEEDBACK_ID).textContent).toBe('已自动保存 API 密钥')
 
       await setFormControlValue(apiKeyInput, '')
@@ -108,13 +109,14 @@ describe('SettingsWorkspace secrets', () => {
     })
 
     it('keeps provider api key drafts visible after auto-save and preserves show hide toggle behavior', async () => {
+      const SECRET_AFTER_BLUR = 'secret-after-blur'
       const { saveProfileApiKey } = installSettingsWorkspaceBridge({
         saveProfileApiKeyResult: {
           ok: true,
           profileId: DEFAULT_PROVIDER_ID,
           state: {
             hasApiKey: true,
-            apiKey: 'secret-after-blur',
+            apiKey: SECRET_AFTER_BLUR,
           },
         },
       })
@@ -128,14 +130,14 @@ describe('SettingsWorkspace secrets', () => {
       const apiKeyInput = rendered.getByTestId(API_KEY_INPUT_ID) as HTMLInputElement
       expect(apiKeyInput.type).toBe('password')
 
-      await setFormControlValue(apiKeyInput, 'secret-after-blur')
+      await setFormControlValue(apiKeyInput, SECRET_AFTER_BLUR)
       await blurElement(apiKeyInput)
 
       expect(saveProfileApiKey).toHaveBeenCalledWith({
         profileId: DEFAULT_PROVIDER_ID,
-        apiKey: 'secret-after-blur',
+        apiKey: SECRET_AFTER_BLUR,
       })
-      expect(apiKeyInput.value).toBe('secret-after-blur')
+      expect(apiKeyInput.value).toBe(SECRET_AFTER_BLUR)
 
       await clickElement(rendered.getByTestId(API_KEY_VISIBILITY_ID))
       expect((rendered.getByTestId(API_KEY_INPUT_ID) as HTMLInputElement).type).toBe('text')
@@ -177,9 +179,10 @@ describe('SettingsWorkspace secrets', () => {
 
   describe('restored provider secrets', () => {
     it('restores saved provider api keys for viewing and copying without helper descriptions', async () => {
+      const PERSISTED_SECRET = 'persisted-secret'
       const clipboardWriteText = mockClipboardWriteText()
       installSettingsWorkspaceBridge({
-        loadStatusesResult: createPersistedSecretStatesResult('persisted-secret', DEFAULT_PROVIDER_ID),
+        loadStatusesResult: createPersistedSecretStatesResult(PERSISTED_SECRET, DEFAULT_PROVIDER_ID),
       })
 
       const rendered = renderSettingsWorkspace({
@@ -189,7 +192,7 @@ describe('SettingsWorkspace secrets', () => {
       await flushAsyncEffects()
 
       const apiKeyInput = rendered.getByTestId(API_KEY_INPUT_ID) as HTMLInputElement
-      expect(apiKeyInput.value).toBe('persisted-secret')
+      expect(apiKeyInput.value).toBe(PERSISTED_SECRET)
       expect(apiKeyInput.type).toBe('password')
       expect(rendered.queryByTestId('provider-api-key-status')).toBeNull()
       expect(rendered.container.textContent).not.toContain('失焦会自动保存')
@@ -201,7 +204,7 @@ describe('SettingsWorkspace secrets', () => {
 
       await clickElement(rendered.getByTestId(API_KEY_COPY_ID))
 
-      expect(clipboardWriteText).toHaveBeenCalledWith('persisted-secret')
+      expect(clipboardWriteText).toHaveBeenCalledWith(PERSISTED_SECRET)
       expect(rendered.getByTestId(API_KEY_FEEDBACK_ID).textContent).toBe(COPIED_FEEDBACK)
 
       rendered.unmount()
@@ -210,19 +213,21 @@ describe('SettingsWorkspace secrets', () => {
 
   describe('cas password secrets', () => {
     it('loads, auto-saves, and clears the sustech cas password on blur', async () => {
+      const PERSISTED_CAS = 'persisted-cas-secret'
+      const ROTATED_CAS = 'rotated-cas-secret'
       const { saveSustechCasPassword, clearSustechCasPassword } = installSettingsWorkspaceBridge({
         loadSustechCasPasswordResult: {
           ok: true,
           state: {
             hasPassword: true,
-            password: 'persisted-cas-secret',
+            password: PERSISTED_CAS,
           },
         },
         saveSustechCasPasswordResult: {
           ok: true,
           state: {
             hasPassword: true,
-            password: 'rotated-cas-secret',
+            password: ROTATED_CAS,
           },
         },
         clearSustechCasPasswordResult: {
@@ -242,15 +247,15 @@ describe('SettingsWorkspace secrets', () => {
 
       const casPasswordInput = rendered.getByTestId(CAS_PASSWORD_INPUT_ID) as HTMLInputElement
       expect(casPasswordInput.type).toBe('password')
-      expect(casPasswordInput.value).toBe('persisted-cas-secret')
+      expect(casPasswordInput.value).toBe(PERSISTED_CAS)
 
-      await setFormControlValue(casPasswordInput, 'rotated-cas-secret')
+      await setFormControlValue(casPasswordInput, ROTATED_CAS)
       await blurElement(casPasswordInput)
 
       expect(saveSustechCasPassword).toHaveBeenCalledWith({
-        password: 'rotated-cas-secret',
+        password: ROTATED_CAS,
       })
-      expect(casPasswordInput.value).toBe('rotated-cas-secret')
+      expect(casPasswordInput.value).toBe(ROTATED_CAS)
       expect(rendered.container.textContent).toContain('已自动保存 CAS 密码')
 
       await setFormControlValue(casPasswordInput, '')

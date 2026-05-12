@@ -557,7 +557,6 @@ function mapReplayToolEvent(input: Omit<MapReplayEventInput, 'assistantMessageId
   }
 
   const title = normalizeOptionalString(readString(payload.title)) ?? '工具调用'
-  // eslint-disable-next-line sonarjs/no-identical-functions
   const summary = readReplayToolEventSummary(payload, title)
 
   return {

@@ -7,14 +7,7 @@ import { clipboard, nativeImage } from 'electron'
 import type {
   AttachmentManagerApi,
   AttachmentServiceError,
-  CleanupTemporaryAttachmentFilesRequest,
-  CleanupTemporaryAttachmentFilesResult,
   ClipboardAttachmentUnsupportedReason,
-  ReadAttachmentPreviewRequest,
-  ReadAttachmentPreviewResult,
-  ReadClipboardAttachmentDataResult,
-  WriteAttachmentTempFileRequest,
-  WriteAttachmentTempFileResult,
 } from './ipc'
 import { createAttachmentServiceError } from './ipc'
 
@@ -238,216 +231,237 @@ function readFilePrefix(filePath: string, byteLength: number): Buffer {
   }
 }
 
+interface AttachmentServiceDeps {
+  log: (level: 'info' | 'warn' | 'error', message: string, context?: Record<string, unknown>) => void
+  now: () => Date
+  tempRootPath: string
+}
+
+function buildReadClipboardData(deps: AttachmentServiceDeps): ElectronAttachmentService['readClipboardData'] {
+  return async function readClipboardData() {
+    try {
+      const availableFormats = clipboard.availableFormats()
+      const image = clipboard.readImage()
+      if (!image.isEmpty()) {
+        const pngBuffer = image.toPNG()
+        const size = image.getSize()
+        const currentTime = deps.now()
+        return {
+          ok: true,
+          status: 'image',
+          availableFormats,
+          data: {
+            mimeType: 'image/png',
+            base64Data: pngBuffer.toString('base64'),
+            byteLength: pngBuffer.byteLength,
+            width: size.width,
+            height: size.height,
+            suggestedName: createClipboardSuggestedName(currentTime),
+          },
+        }
+      }
+
+      const nonTextFormats = availableFormats.filter((format) => !isLikelyPlainTextClipboardFormat(format))
+      if (nonTextFormats.length > 0) {
+        return {
+          ok: true,
+          status: 'unsupported',
+          availableFormats,
+          reason: getClipboardUnsupportedReason(nonTextFormats),
+        }
+      }
+
+      return {
+        ok: true,
+        status: 'empty',
+        availableFormats,
+      }
+    } catch (error) {
+      const details = getErrorMessage(error)
+      deps.log('error', '附件服务: 读取剪贴板失败', { details })
+      return createAttachmentServiceError('io_error', '读取剪贴板附件失败', details)
+    }
+  }
+}
+
+function buildWriteTempFile(deps: AttachmentServiceDeps): ElectronAttachmentService['writeTempFile'] {
+  return async function writeTempFile(request) {
+    try {
+      if (request.data.mimeType !== 'image/png') {
+        return createAttachmentServiceError('unsupported', '当前仅支持将 PNG 图片数据写入临时附件文件')
+      }
+
+      const buffer = Buffer.from(request.data.base64Data, 'base64')
+      if (buffer.byteLength === 0) {
+        return createAttachmentServiceError('invalid_request', '附件图片数据为空，无法写入临时文件')
+      }
+
+      fs.mkdirSync(deps.tempRootPath, { recursive: true })
+      const currentTime = deps.now()
+      const filePath = createUniqueTemporaryFilePath(deps.tempRootPath, request.data.suggestedName)
+      fs.writeFileSync(filePath, buffer)
+
+      deps.log('info', '附件服务: 已写入临时图片附件', {
+        filePath,
+        size: buffer.byteLength,
+      })
+
+      return {
+        ok: true,
+        file: {
+          path: filePath,
+          name: path.basename(filePath),
+          mimeType: 'image/png',
+          size: buffer.byteLength,
+          createdAt: currentTime.toISOString(),
+          isTemporary: true,
+        },
+      }
+    } catch (error) {
+      const details = getErrorMessage(error)
+      deps.log('error', '附件服务: 写入临时附件文件失败', { details })
+      return createAttachmentServiceError('io_error', '写入临时附件文件失败', details)
+    }
+  }
+}
+
+function buildReadPreview(deps: AttachmentServiceDeps): ElectronAttachmentService['readPreview'] {
+  return async function readPreview(request) {
+    try {
+      const previewPath = path.resolve(request.path)
+      if (!fs.existsSync(previewPath)) {
+        return createNotFoundError(previewPath)
+      }
+
+      const stats = fs.statSync(previewPath)
+      if (!stats.isFile()) {
+        return createAttachmentServiceError('unsupported', `当前仅支持预览文件附件: ${previewPath}`)
+      }
+
+      const name = path.basename(previewPath)
+      const extension = path.extname(previewPath).toLowerCase()
+      const maxBytes = clampTextPreviewMaxBytes(request.maxTextBytes)
+
+      if (IMAGE_EXTENSION_TO_MIME.has(extension)) {
+        const buffer = fs.readFileSync(previewPath)
+        const imageMimeType = detectImageMimeType(buffer, previewPath)
+
+        if (imageMimeType !== null) {
+          const image = nativeImage.createFromBuffer(buffer)
+          const size = image.getSize()
+          return {
+            ok: true,
+            kind: 'image',
+            path: previewPath,
+            name,
+            size: stats.size,
+            mimeType: imageMimeType,
+            dataUrl: `data:${imageMimeType};base64,${buffer.toString('base64')}`,
+            width: size.width,
+            height: size.height,
+          }
+        }
+      }
+
+      const previewBuffer = readFilePrefix(previewPath, maxBytes)
+      if (shouldTreatAsText(previewPath, previewBuffer)) {
+        return {
+          ok: true,
+          kind: 'text',
+          path: previewPath,
+          name,
+          size: stats.size,
+          mimeType: 'text/plain',
+          text: previewBuffer.toString('utf8'),
+          truncated: stats.size > previewBuffer.byteLength,
+          maxBytes,
+          encoding: 'utf-8',
+        }
+      }
+
+      return {
+        ok: true,
+        kind: 'unsupported',
+        path: previewPath,
+        name,
+        size: stats.size,
+        reason: 'binary_content',
+      }
+    } catch (error) {
+      const details = getErrorMessage(error)
+      deps.log('error', '附件服务: 读取附件预览失败', { details, path: request.path })
+      return createAttachmentServiceError('io_error', '读取附件预览失败', details)
+    }
+  }
+}
+
+function buildCleanupTempFiles(deps: AttachmentServiceDeps): ElectronAttachmentService['cleanupTempFiles'] {
+  return async function cleanupTempFiles(request) {
+    try {
+      const deletedPaths: string[] = []
+      const missingPaths: string[] = []
+      const skippedPaths: string[] = []
+
+      for (const candidate of request.paths) {
+        const resolvedPath = path.resolve(candidate)
+        if (!ensureWithinDirectory(resolvedPath, deps.tempRootPath)) {
+          skippedPaths.push(resolvedPath)
+          continue
+        }
+
+        if (!fs.existsSync(resolvedPath)) {
+          missingPaths.push(resolvedPath)
+          continue
+        }
+
+        const stats = fs.statSync(resolvedPath)
+        if (stats.isDirectory()) {
+          skippedPaths.push(resolvedPath)
+          continue
+        }
+
+        fs.unlinkSync(resolvedPath)
+        deletedPaths.push(resolvedPath)
+      }
+
+      deps.log('info', '附件服务: 已执行临时附件清理', {
+        deletedCount: deletedPaths.length,
+        missingCount: missingPaths.length,
+        skippedCount: skippedPaths.length,
+      })
+
+      return {
+        ok: true,
+        deletedPaths,
+        missingPaths,
+        skippedPaths,
+      }
+    } catch (error) {
+      const details = getErrorMessage(error)
+      deps.log('error', '附件服务: 清理临时附件失败', { details })
+      return createAttachmentServiceError('io_error', '清理临时附件失败', details)
+    }
+  }
+}
+
 export function createElectronAttachmentService(
   options: ElectronAttachmentServiceOptions = {},
 ): Omit<ElectronAttachmentService, 'resolveFilePath'> {
   const { appendLog, temporaryRootPath, now = () => new Date() } = options
   const tempRootPath = getTemporaryRootPath(temporaryRootPath)
 
-  function log(level: 'info' | 'warn' | 'error', message: string, context?: Record<string, unknown>): void {
-    appendLog?.(level, message, context)
+  const deps: AttachmentServiceDeps = {
+    log(level, message, context) {
+      appendLog?.(level, message, context)
+    },
+    now,
+    tempRootPath,
   }
 
   return {
-    async readClipboardData(): Promise<ReadClipboardAttachmentDataResult> {
-      try {
-        const availableFormats = clipboard.availableFormats()
-        const image = clipboard.readImage()
-        if (!image.isEmpty()) {
-          const pngBuffer = image.toPNG()
-          const size = image.getSize()
-          const currentTime = now()
-          return {
-            ok: true,
-            status: 'image',
-            availableFormats,
-            data: {
-              mimeType: 'image/png',
-              base64Data: pngBuffer.toString('base64'),
-              byteLength: pngBuffer.byteLength,
-              width: size.width,
-              height: size.height,
-              suggestedName: createClipboardSuggestedName(currentTime),
-            },
-          }
-        }
-
-        const nonTextFormats = availableFormats.filter((format) => !isLikelyPlainTextClipboardFormat(format))
-        if (nonTextFormats.length > 0) {
-          return {
-            ok: true,
-            status: 'unsupported',
-            availableFormats,
-            reason: getClipboardUnsupportedReason(nonTextFormats),
-          }
-        }
-
-        return {
-          ok: true,
-          status: 'empty',
-          availableFormats,
-        }
-      } catch (error) {
-        const details = getErrorMessage(error)
-        log('error', '附件服务: 读取剪贴板失败', { details })
-        return createAttachmentServiceError('io_error', '读取剪贴板附件失败', details)
-      }
-    },
-
-    async writeTempFile(request: WriteAttachmentTempFileRequest): Promise<WriteAttachmentTempFileResult> {
-      try {
-        if (request.data.mimeType !== 'image/png') {
-          return createAttachmentServiceError('unsupported', '当前仅支持将 PNG 图片数据写入临时附件文件')
-        }
-
-        const buffer = Buffer.from(request.data.base64Data, 'base64')
-        if (buffer.byteLength === 0) {
-          return createAttachmentServiceError('invalid_request', '附件图片数据为空，无法写入临时文件')
-        }
-
-        fs.mkdirSync(tempRootPath, { recursive: true })
-        const currentTime = now()
-        const filePath = createUniqueTemporaryFilePath(tempRootPath, request.data.suggestedName)
-        fs.writeFileSync(filePath, buffer)
-
-        log('info', '附件服务: 已写入临时图片附件', {
-          filePath,
-          size: buffer.byteLength,
-        })
-
-        return {
-          ok: true,
-          file: {
-            path: filePath,
-            name: path.basename(filePath),
-            mimeType: 'image/png',
-            size: buffer.byteLength,
-            createdAt: currentTime.toISOString(),
-            isTemporary: true,
-          },
-        }
-      } catch (error) {
-        const details = getErrorMessage(error)
-        log('error', '附件服务: 写入临时附件文件失败', { details })
-        return createAttachmentServiceError('io_error', '写入临时附件文件失败', details)
-      }
-    },
-
-    async readPreview(request: ReadAttachmentPreviewRequest): Promise<ReadAttachmentPreviewResult> {
-      try {
-        const previewPath = path.resolve(request.path)
-        if (!fs.existsSync(previewPath)) {
-          return createNotFoundError(previewPath)
-        }
-
-        const stats = fs.statSync(previewPath)
-        if (!stats.isFile()) {
-          return createAttachmentServiceError('unsupported', `当前仅支持预览文件附件: ${previewPath}`)
-        }
-
-        const name = path.basename(previewPath)
-        const extension = path.extname(previewPath).toLowerCase()
-        const maxBytes = clampTextPreviewMaxBytes(request.maxTextBytes)
-
-        if (IMAGE_EXTENSION_TO_MIME.has(extension)) {
-          const buffer = fs.readFileSync(previewPath)
-          const imageMimeType = detectImageMimeType(buffer, previewPath)
-
-          if (imageMimeType !== null) {
-            const image = nativeImage.createFromBuffer(buffer)
-            const size = image.getSize()
-            return {
-              ok: true,
-              kind: 'image',
-              path: previewPath,
-              name,
-              size: stats.size,
-              mimeType: imageMimeType,
-              dataUrl: `data:${imageMimeType};base64,${buffer.toString('base64')}`,
-              width: size.width,
-              height: size.height,
-            }
-          }
-        }
-
-        const previewBuffer = readFilePrefix(previewPath, maxBytes)
-        if (shouldTreatAsText(previewPath, previewBuffer)) {
-          return {
-            ok: true,
-            kind: 'text',
-            path: previewPath,
-            name,
-            size: stats.size,
-            mimeType: 'text/plain',
-            text: previewBuffer.toString('utf8'),
-            truncated: stats.size > previewBuffer.byteLength,
-            maxBytes,
-            encoding: 'utf-8',
-          }
-        }
-
-        return {
-          ok: true,
-          kind: 'unsupported',
-          path: previewPath,
-          name,
-          size: stats.size,
-          reason: 'binary_content',
-        }
-      } catch (error) {
-        const details = getErrorMessage(error)
-        log('error', '附件服务: 读取附件预览失败', { details, path: request.path })
-        return createAttachmentServiceError('io_error', '读取附件预览失败', details)
-      }
-    },
-
-    async cleanupTempFiles(
-      request: CleanupTemporaryAttachmentFilesRequest,
-    ): Promise<CleanupTemporaryAttachmentFilesResult> {
-      try {
-        const deletedPaths: string[] = []
-        const missingPaths: string[] = []
-        const skippedPaths: string[] = []
-
-        for (const candidate of request.paths) {
-          const resolvedPath = path.resolve(candidate)
-          if (!ensureWithinDirectory(resolvedPath, tempRootPath)) {
-            skippedPaths.push(resolvedPath)
-            continue
-          }
-
-          if (!fs.existsSync(resolvedPath)) {
-            missingPaths.push(resolvedPath)
-            continue
-          }
-
-          const stats = fs.statSync(resolvedPath)
-          if (stats.isDirectory()) {
-            skippedPaths.push(resolvedPath)
-            continue
-          }
-
-           fs.unlinkSync(resolvedPath)
-          deletedPaths.push(resolvedPath)
-        }
-
-        log('info', '附件服务: 已执行临时附件清理', {
-          deletedCount: deletedPaths.length,
-          missingCount: missingPaths.length,
-          skippedCount: skippedPaths.length,
-        })
-
-        return {
-          ok: true,
-          deletedPaths,
-          missingPaths,
-          skippedPaths,
-        }
-      } catch (error) {
-        const details = getErrorMessage(error)
-        log('error', '附件服务: 清理临时附件失败', { details })
-        return createAttachmentServiceError('io_error', '清理临时附件失败', details)
-      }
-    },
+    readClipboardData: buildReadClipboardData(deps),
+    writeTempFile: buildWriteTempFile(deps),
+    readPreview: buildReadPreview(deps),
+    cleanupTempFiles: buildCleanupTempFiles(deps),
   }
 }

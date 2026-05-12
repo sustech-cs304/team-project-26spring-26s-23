@@ -84,16 +84,269 @@ interface SkillMarkdownMetadata {
   body: string
 }
 
-export function createSkillRegistryService(
-  options: CreateSkillRegistryServiceOptions,
-): SkillRegistryService {
-  const now = options.now ?? (() => new Date().toISOString())
-  const builtinSkillSources = options.builtinSkillSources ?? []
+interface ServiceContext {
+  options: CreateSkillRegistryServiceOptions
+  now: () => string
+  builtinSkillSources: readonly BuiltinSkillSource[]
+  persistSnapshotArtifacts: (snapshot: SkillRegistryStoreSnapshot, snapshotRevision: number) => Promise<SkillRegistryStoreSnapshot>
+  loadSnapshotWithBuiltinSkills: () => Promise<SkillRegistryStoreSnapshot>
+}
 
-  const persistSnapshotArtifacts = async (
-    snapshot: SkillRegistryStoreSnapshot,
-    snapshotRevision: number,
-  ): Promise<SkillRegistryStoreSnapshot> => {
+function buildLoadRegistryMethod(ctx: ServiceContext): SkillRegistryService['loadRegistry'] {
+  return async function loadRegistry(request) {
+    const snapshot = await ctx.loadSnapshotWithBuiltinSkills()
+    const persistedSnapshot = await ctx.persistSnapshotArtifacts(snapshot, snapshot.snapshotRevision)
+    return buildLoadResult(persistedSnapshot, request?.includeDisabled ?? true)
+  }
+}
+
+function buildImportSkillMethod(ctx: ServiceContext): SkillRegistryService['importSkill'] {
+  return async function importSkill(request) {
+    const sourceDirectory = typeof request.sourceDirectory === 'string'
+      ? request.sourceDirectory.trim()
+      : ''
+    if (sourceDirectory === '') {
+      return createSkillRegistryApiFailure(
+        'Skill import requires a source directory.',
+        SKILL_REGISTRY_INVALID_REQUEST_ERROR_CODE,
+      )
+    }
+
+    const snapshot = await ctx.loadSnapshotWithBuiltinSkills()
+    const validated = await validateSkillPackage({
+      sourceDirectory,
+      existingSkillIds: new Set(snapshot.skills.map((skill) => skill.skillId)),
+    })
+
+    if (!validated.ok) {
+      return createSkillRegistryApiFailure(
+        'Skill package failed validation.',
+        SKILL_REGISTRY_VALIDATION_ERROR_CODE,
+        validated.validation.errors,
+      )
+    }
+
+    const importedAt = ctx.now()
+    const managedDirectoryName = await resolveManagedDirectoryName(
+      validated.package.metadata.skillId,
+      ctx.options.paths.managedSkillsDir,
+      snapshot.skills,
+    )
+    const managedDirectory = path.join(ctx.options.paths.managedSkillsDir, managedDirectoryName)
+    const stagingDirectory = path.join(
+      ctx.options.paths.managedSkillsDir,
+      `.import-${managedDirectoryName}-${Date.now().toString(36)}`,
+    )
+    let finalDirectoryCreated = false
+
+    try {
+      await mkdir(ctx.options.paths.managedSkillsDir, { recursive: true })
+      await cp(path.resolve(sourceDirectory), stagingDirectory, {
+        recursive: true, errorOnExist: true, force: false, dereference: false,
+      })
+      await rename(stagingDirectory, managedDirectory)
+      finalDirectoryCreated = true
+
+      const skill = buildSkillRecord({
+        validated: validated.package,
+        managedDirectoryName,
+        source: 'imported',
+        enabled: request.enabled ?? true,
+        importedAt,
+        updatedAt: importedAt,
+      })
+      const currentRevisions = resolveRuntimeRevisions(snapshot)
+      const nextSnapshotRevision = skill.enabled && skill.validation.status === 'valid'
+        ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+        : currentRevisions.snapshotRevision
+      const stored = await ctx.options.store.saveSkills(
+        upsertSkill(snapshot.skills, skill),
+        { snapshotRevision: currentRevisions.snapshotRevision },
+      )
+      const persistedSnapshot = await ctx.persistSnapshotArtifacts(stored, nextSnapshotRevision)
+      const persistedSkill = persistedSnapshot.skills.find((entry) => entry.skillId === skill.skillId) ?? skill
+      await publishSnapshotEvent(persistedSnapshot, ctx.options.publishEvent, nextSnapshotRevision)
+      await ctx.options.publishEvent?.({
+        kind: 'skill-updated',
+        registryRevision: persistedSnapshot.registryRevision,
+        snapshotRevision: nextSnapshotRevision,
+        skillId: persistedSkill.skillId,
+        skill: persistedSkill,
+      })
+
+      return {
+        ok: true,
+        registryRevision: persistedSnapshot.registryRevision,
+        snapshotRevision: nextSnapshotRevision,
+        skill: persistedSkill,
+        validationErrors: [],
+      }
+    } catch (error) {
+      await rm(stagingDirectory, { recursive: true, force: true })
+      if (finalDirectoryCreated) {
+        await rm(managedDirectory, { recursive: true, force: true })
+      }
+      await ctx.options.appendLog?.('error', '[skill-registry] Failed to import the skill package.', {
+        skillId: validated.package.metadata.skillId,
+        sourceDirectory,
+        managedDirectoryName,
+        detail: formatUnknownError(error),
+      })
+      return createSkillRegistryApiFailure(
+        `Failed to import the skill package: ${formatUnknownError(error)}`,
+        'internal_error',
+      )
+    }
+  }
+}
+
+function buildDeleteSkillMethod(ctx: ServiceContext): SkillRegistryService['deleteSkill'] {
+  return async function deleteSkill(skillId) {
+    const snapshot = await ctx.loadSnapshotWithBuiltinSkills()
+    const existing = snapshot.skills.find((skill) => skill.skillId === skillId)
+    if (existing === undefined) {
+      return createSkillRegistryApiFailure(`Skill "${skillId}" was not found.`, SKILL_REGISTRY_NOT_FOUND_ERROR_CODE)
+    }
+    if (existing.source === 'builtin') {
+      return createSkillRegistryApiFailure(
+        `Builtin Skill "${skillId}" cannot be deleted.`,
+        SKILL_REGISTRY_INVALID_REQUEST_ERROR_CODE,
+      )
+    }
+
+    const currentRevisions = resolveRuntimeRevisions(snapshot)
+    const nextSnapshotRevision = existing.enabled
+      ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+      : currentRevisions.snapshotRevision
+    await rm(resolveManagedSkillDirectory(ctx.options.paths, existing), { recursive: true, force: true })
+    const stored = await ctx.options.store.saveSkills(
+      snapshot.skills.filter((skill) => skill.skillId !== skillId),
+      { snapshotRevision: currentRevisions.snapshotRevision },
+    )
+    const persistedSnapshot = await ctx.persistSnapshotArtifacts(stored, nextSnapshotRevision)
+    await publishSnapshotEvent(persistedSnapshot, ctx.options.publishEvent, nextSnapshotRevision)
+    await ctx.options.publishEvent?.({
+      kind: 'skill-deleted',
+      registryRevision: persistedSnapshot.registryRevision,
+      snapshotRevision: nextSnapshotRevision,
+      skillId,
+    })
+
+    return {
+      ok: true,
+      registryRevision: persistedSnapshot.registryRevision,
+      snapshotRevision: nextSnapshotRevision,
+      skillId,
+      deleted: true,
+    }
+  }
+}
+
+function buildSetSkillEnabledMethod(ctx: ServiceContext): SkillRegistryService['setSkillEnabled'] {
+  return async function setSkillEnabled(request) {
+    const snapshot = await ctx.loadSnapshotWithBuiltinSkills()
+    const existing = snapshot.skills.find((skill) => skill.skillId === request.skillId)
+    if (existing === undefined) {
+      return createSkillRegistryApiFailure(
+        `Skill "${request.skillId}" was not found.`,
+        SKILL_REGISTRY_NOT_FOUND_ERROR_CODE,
+      )
+    }
+
+    const updatedSkill: SkillRecord = { ...cloneSkillRecord(existing), enabled: request.enabled, updatedAt: ctx.now() }
+    const currentRevisions = resolveRuntimeRevisions(snapshot)
+    const nextSnapshotRevision = existing.enabled === request.enabled
+      ? currentRevisions.snapshotRevision
+      : bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+    const stored = await ctx.options.store.saveSkills(
+      upsertSkill(snapshot.skills, updatedSkill),
+      { snapshotRevision: currentRevisions.snapshotRevision },
+    )
+    const persistedSnapshot = await ctx.persistSnapshotArtifacts(stored, nextSnapshotRevision)
+    const persistedSkill = persistedSnapshot.skills.find((skill) => skill.skillId === request.skillId) ?? updatedSkill
+    await publishSnapshotEvent(persistedSnapshot, ctx.options.publishEvent, nextSnapshotRevision)
+    await ctx.options.publishEvent?.({
+      kind: 'skill-updated',
+      registryRevision: persistedSnapshot.registryRevision,
+      snapshotRevision: nextSnapshotRevision,
+      skillId: persistedSkill.skillId,
+      skill: persistedSkill,
+    })
+
+    return {
+      ok: true,
+      registryRevision: persistedSnapshot.registryRevision,
+      snapshotRevision: nextSnapshotRevision,
+      skill: persistedSkill,
+    }
+  }
+}
+
+function buildRefreshSkillsMethod(ctx: ServiceContext): SkillRegistryService['refreshSkills'] {
+  return async function refreshSkills(request) {
+    const snapshot = await ctx.loadSnapshotWithBuiltinSkills()
+    const resolvedTargets = resolveRefreshTargets(snapshot, request)
+    if (!resolvedTargets.ok) {
+      return resolvedTargets.failure
+    }
+
+    const refreshedRecords: SkillRecord[] = []
+    const results: Array<{ skillId: string; status: string; errors: SkillValidationIssue[]; warnings: SkillValidationIssue[] }> = []
+    const existingSkillIds = new Set(snapshot.skills.map((skill) => skill.skillId))
+
+    for (const skill of resolvedTargets.skills) {
+      const sourceDirectory = skill.source === 'builtin'
+        ? resolveBuiltinSkillSourceDirectory(skill.skillId, ctx.builtinSkillSources)
+        : resolveManagedSkillDirectory(ctx.options.paths, skill)
+      const validation = await validateSkillPackage({
+        sourceDirectory, existingSkillIds, expectedSkillId: skill.skillId,
+      })
+      if (validation.ok) {
+        const refreshedRecord = buildRefreshedSkillRecord(skill, validation.package, ctx.now())
+        refreshedRecords.push(refreshedRecord)
+        results.push({
+          skillId: refreshedRecord.skillId, status: refreshedRecord.validation.status,
+          errors: refreshedRecord.validation.errors, warnings: refreshedRecord.validation.warnings,
+        })
+      } else {
+        const invalidRecord: SkillRecord = {
+          ...cloneSkillRecord(skill),
+          validation: validation.validation, entrySummary: null, resourceSummaries: [], updatedAt: ctx.now(),
+        }
+        refreshedRecords.push(invalidRecord)
+        results.push({
+          skillId: invalidRecord.skillId, status: invalidRecord.validation.status,
+          errors: invalidRecord.validation.errors, warnings: invalidRecord.validation.warnings,
+        })
+      }
+    }
+
+    const refreshedById = new Map(refreshedRecords.map((skill) => [skill.skillId, skill]))
+    const nextSkills = snapshot.skills.map((skill) => refreshedById.get(skill.skillId) ?? skill)
+    const currentRevisions = resolveRuntimeRevisions(snapshot)
+    const shouldBumpSnapshot = resolvedTargets.skills.some((skill) => skill.enabled)
+    const nextSnapshotRevision = shouldBumpSnapshot
+      ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
+      : currentRevisions.snapshotRevision
+    const stored = await ctx.options.store.saveSkills(nextSkills, { snapshotRevision: currentRevisions.snapshotRevision })
+    const persistedSnapshot = await ctx.persistSnapshotArtifacts(stored, nextSnapshotRevision)
+    await publishSnapshotEvent(persistedSnapshot, ctx.options.publishEvent, nextSnapshotRevision)
+
+    return {
+      ok: true,
+      registryRevision: persistedSnapshot.registryRevision,
+      snapshotRevision: nextSnapshotRevision,
+      refreshedSkillIds: resolvedTargets.skills.map((skill) => skill.skillId),
+      results,
+    }
+  }
+}
+
+function createPersistSnapshotArtifacts(
+  options: CreateSkillRegistryServiceOptions,
+  now: () => string,
+): (snapshot: SkillRegistryStoreSnapshot, snapshotRevision: number) => Promise<SkillRegistryStoreSnapshot> {
+  return async (snapshot, snapshotRevision) => {
     let persistedSnapshot = overrideSnapshotRevision(snapshot, snapshotRevision)
 
     if (snapshot.snapshotRevision !== snapshotRevision) {
@@ -101,9 +354,7 @@ export function createSkillRegistryService(
         persistedSnapshot = await options.store.saveSnapshotRevision(snapshotRevision)
       } catch (error) {
         await options.appendLog?.('error', '[skill-registry] Failed to persist the skill snapshot revision.', {
-          registryRevision: snapshot.registryRevision,
-          snapshotRevision,
-          detail: formatUnknownError(error),
+          registryRevision: snapshot.registryRevision, snapshotRevision, detail: formatUnknownError(error),
         })
       }
     }
@@ -123,273 +374,25 @@ export function createSkillRegistryService(
         await options.snapshotSink.write(capabilitySnapshot)
       } catch (error) {
         await options.appendLog?.('error', '[skill-registry] Failed to persist the skill capability snapshot.', {
-          registryRevision: snapshot.registryRevision,
-          snapshotRevision,
-          detail: formatUnknownError(error),
+          registryRevision: snapshot.registryRevision, snapshotRevision, detail: formatUnknownError(error),
         })
       }
     }
 
     return persistedSnapshot
   }
+}
 
-  return {
-    async loadRegistry(request) {
-      const snapshot = await loadSnapshotWithBuiltinSkills()
-      const persistedSnapshot = await persistSnapshotArtifacts(snapshot, snapshot.snapshotRevision)
-      return buildLoadResult(persistedSnapshot, request?.includeDisabled ?? true)
-    },
-    async importSkill(request) {
-      const sourceDirectory = typeof request.sourceDirectory === 'string'
-        ? request.sourceDirectory.trim()
-        : ''
-      if (sourceDirectory === '') {
-        return createSkillRegistryApiFailure(
-          'Skill import requires a source directory.',
-          SKILL_REGISTRY_INVALID_REQUEST_ERROR_CODE,
-        )
-      }
+export function createSkillRegistryService(
+  options: CreateSkillRegistryServiceOptions,
+): SkillRegistryService {
+  const now = options.now ?? (() => new Date().toISOString())
+  const builtinSkillSources = options.builtinSkillSources ?? []
+  const persistSnapshotArtifacts = createPersistSnapshotArtifacts(options, now)
 
-      const snapshot = await loadSnapshotWithBuiltinSkills()
-      const validated = await validateSkillPackage({
-        sourceDirectory,
-        existingSkillIds: new Set(snapshot.skills.map((skill) => skill.skillId)),
-      })
-
-      if (!validated.ok) {
-        return createSkillRegistryApiFailure(
-          'Skill package failed validation.',
-          SKILL_REGISTRY_VALIDATION_ERROR_CODE,
-          validated.validation.errors,
-        )
-      }
-
-      const importedAt = now()
-      const managedDirectoryName = await resolveManagedDirectoryName(
-        validated.package.metadata.skillId,
-        options.paths.managedSkillsDir,
-        snapshot.skills,
-      )
-      const managedDirectory = path.join(options.paths.managedSkillsDir, managedDirectoryName)
-      const stagingDirectory = path.join(
-        options.paths.managedSkillsDir,
-        `.import-${managedDirectoryName}-${Date.now().toString(36)}`,
-      )
-      let finalDirectoryCreated = false
-
-      try {
-        await mkdir(options.paths.managedSkillsDir, { recursive: true })
-        await cp(path.resolve(sourceDirectory), stagingDirectory, {
-          recursive: true,
-          errorOnExist: true,
-          force: false,
-          dereference: false,
-        })
-        await rename(stagingDirectory, managedDirectory)
-        finalDirectoryCreated = true
-
-        const skill = buildSkillRecord({
-          validated: validated.package,
-          managedDirectoryName,
-          source: 'imported',
-          enabled: request.enabled ?? true,
-          importedAt,
-          updatedAt: importedAt,
-        })
-        const currentRevisions = resolveRuntimeRevisions(snapshot)
-        const nextSnapshotRevision = skill.enabled && skill.validation.status === 'valid'
-          ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
-          : currentRevisions.snapshotRevision
-        const stored = await options.store.saveSkills(
-          upsertSkill(snapshot.skills, skill),
-          { snapshotRevision: currentRevisions.snapshotRevision },
-        )
-        const persistedSnapshot = await persistSnapshotArtifacts(stored, nextSnapshotRevision)
-        const persistedSkill = persistedSnapshot.skills.find((entry) => entry.skillId === skill.skillId) ?? skill
-        await publishSnapshotEvent(persistedSnapshot, options.publishEvent, nextSnapshotRevision)
-        await options.publishEvent?.({
-          kind: 'skill-updated',
-          registryRevision: persistedSnapshot.registryRevision,
-          snapshotRevision: nextSnapshotRevision,
-          skillId: persistedSkill.skillId,
-          skill: persistedSkill,
-        })
-
-        return {
-          ok: true,
-          registryRevision: persistedSnapshot.registryRevision,
-          snapshotRevision: nextSnapshotRevision,
-          skill: persistedSkill,
-          validationErrors: [],
-        }
-      } catch (error) {
-        await rm(stagingDirectory, { recursive: true, force: true })
-        if (finalDirectoryCreated) {
-          await rm(managedDirectory, { recursive: true, force: true })
-        }
-        await options.appendLog?.('error', '[skill-registry] Failed to import the skill package.', {
-          skillId: validated.package.metadata.skillId,
-          sourceDirectory,
-          managedDirectoryName,
-          detail: formatUnknownError(error),
-        })
-        return createSkillRegistryApiFailure(
-          `Failed to import the skill package: ${formatUnknownError(error)}`,
-          'internal_error',
-        )
-      }
-    },
-    async deleteSkill(skillId) {
-      const snapshot = await loadSnapshotWithBuiltinSkills()
-      const existing = snapshot.skills.find((skill) => skill.skillId === skillId)
-      if (existing === undefined) {
-        return createSkillRegistryApiFailure(
-          `Skill "${skillId}" was not found.`,
-          SKILL_REGISTRY_NOT_FOUND_ERROR_CODE,
-        )
-      }
-      if (existing.source === 'builtin') {
-        return createSkillRegistryApiFailure(
-          `Builtin Skill "${skillId}" cannot be deleted.`,
-          SKILL_REGISTRY_INVALID_REQUEST_ERROR_CODE,
-        )
-      }
-
-      const currentRevisions = resolveRuntimeRevisions(snapshot)
-      const nextSnapshotRevision = existing.enabled
-        ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
-        : currentRevisions.snapshotRevision
-      await rm(resolveManagedSkillDirectory(options.paths, existing), { recursive: true, force: true })
-      const stored = await options.store.saveSkills(
-        snapshot.skills.filter((skill) => skill.skillId !== skillId),
-        { snapshotRevision: currentRevisions.snapshotRevision },
-      )
-      const persistedSnapshot = await persistSnapshotArtifacts(stored, nextSnapshotRevision)
-      await publishSnapshotEvent(persistedSnapshot, options.publishEvent, nextSnapshotRevision)
-      await options.publishEvent?.({
-        kind: 'skill-deleted',
-        registryRevision: persistedSnapshot.registryRevision,
-        snapshotRevision: nextSnapshotRevision,
-        skillId,
-      })
-
-      return {
-        ok: true,
-        registryRevision: persistedSnapshot.registryRevision,
-        snapshotRevision: nextSnapshotRevision,
-        skillId,
-        deleted: true,
-      }
-    },
-    async setSkillEnabled(request) {
-      const snapshot = await loadSnapshotWithBuiltinSkills()
-      const existing = snapshot.skills.find((skill) => skill.skillId === request.skillId)
-      if (existing === undefined) {
-        return createSkillRegistryApiFailure(
-          `Skill "${request.skillId}" was not found.`,
-          SKILL_REGISTRY_NOT_FOUND_ERROR_CODE,
-        )
-      }
-
-      const updatedSkill: SkillRecord = {
-        ...cloneSkillRecord(existing),
-        enabled: request.enabled,
-        updatedAt: now(),
-      }
-      const currentRevisions = resolveRuntimeRevisions(snapshot)
-      const nextSnapshotRevision = existing.enabled === request.enabled
-        ? currentRevisions.snapshotRevision
-        : bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
-      const stored = await options.store.saveSkills(
-        upsertSkill(snapshot.skills, updatedSkill),
-        { snapshotRevision: currentRevisions.snapshotRevision },
-      )
-      const persistedSnapshot = await persistSnapshotArtifacts(stored, nextSnapshotRevision)
-      const persistedSkill = persistedSnapshot.skills.find((skill) => skill.skillId === request.skillId) ?? updatedSkill
-      await publishSnapshotEvent(persistedSnapshot, options.publishEvent, nextSnapshotRevision)
-      await options.publishEvent?.({
-        kind: 'skill-updated',
-        registryRevision: persistedSnapshot.registryRevision,
-        snapshotRevision: nextSnapshotRevision,
-        skillId: persistedSkill.skillId,
-        skill: persistedSkill,
-      })
-
-      return {
-        ok: true,
-        registryRevision: persistedSnapshot.registryRevision,
-        snapshotRevision: nextSnapshotRevision,
-        skill: persistedSkill,
-      }
-    },
-    async refreshSkills(request) {
-      const snapshot = await loadSnapshotWithBuiltinSkills()
-      const resolvedTargets = resolveRefreshTargets(snapshot, request)
-      if (!resolvedTargets.ok) {
-        return resolvedTargets.failure
-      }
-
-      const refreshedRecords: SkillRecord[] = []
-      const results = []
-      const existingSkillIds = new Set(snapshot.skills.map((skill) => skill.skillId))
-
-      for (const skill of resolvedTargets.skills) {
-        const sourceDirectory = skill.source === 'builtin'
-          ? resolveBuiltinSkillSourceDirectory(skill.skillId, builtinSkillSources)
-          : resolveManagedSkillDirectory(options.paths, skill)
-        const validation = await validateSkillPackage({
-          sourceDirectory,
-          existingSkillIds,
-          expectedSkillId: skill.skillId,
-        })
-        if (validation.ok) {
-          const refreshedRecord = buildRefreshedSkillRecord(skill, validation.package, now())
-          refreshedRecords.push(refreshedRecord)
-          results.push({
-            skillId: refreshedRecord.skillId,
-            status: refreshedRecord.validation.status,
-            errors: refreshedRecord.validation.errors,
-            warnings: refreshedRecord.validation.warnings,
-          })
-        } else {
-          const invalidRecord: SkillRecord = {
-            ...cloneSkillRecord(skill),
-            validation: validation.validation,
-            entrySummary: null,
-            resourceSummaries: [],
-            updatedAt: now(),
-          }
-          refreshedRecords.push(invalidRecord)
-          results.push({
-            skillId: invalidRecord.skillId,
-            status: invalidRecord.validation.status,
-            errors: invalidRecord.validation.errors,
-            warnings: invalidRecord.validation.warnings,
-          })
-        }
-      }
-
-      const refreshedById = new Map(refreshedRecords.map((skill) => [skill.skillId, skill]))
-      const nextSkills = snapshot.skills.map((skill) => refreshedById.get(skill.skillId) ?? skill)
-      const currentRevisions = resolveRuntimeRevisions(snapshot)
-      const shouldBumpSnapshot = resolvedTargets.skills.some((skill) => skill.enabled)
-      const nextSnapshotRevision = shouldBumpSnapshot
-        ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
-        : currentRevisions.snapshotRevision
-      const stored = await options.store.saveSkills(nextSkills, {
-        snapshotRevision: currentRevisions.snapshotRevision,
-      })
-      const persistedSnapshot = await persistSnapshotArtifacts(stored, nextSnapshotRevision)
-      await publishSnapshotEvent(persistedSnapshot, options.publishEvent, nextSnapshotRevision)
-
-      return {
-        ok: true,
-        registryRevision: persistedSnapshot.registryRevision,
-        snapshotRevision: nextSnapshotRevision,
-        refreshedSkillIds: resolvedTargets.skills.map((skill) => skill.skillId),
-        results,
-      }
-    },
+  const ctx: ServiceContext = {
+    options, now, builtinSkillSources, persistSnapshotArtifacts,
+    loadSnapshotWithBuiltinSkills: undefined as unknown as () => Promise<SkillRegistryStoreSnapshot>,
   }
 
   async function loadSnapshotWithBuiltinSkills(): Promise<SkillRegistryStoreSnapshot> {
@@ -433,14 +436,13 @@ export function createSkillRegistryService(
     }
 
     if (!changed) {
-      return {
-        ...snapshot,
-        skills: mergedSkills,
-      }
+      return { ...snapshot, skills: mergedSkills }
     }
 
     return await options.store.saveSkills(mergedSkills, { snapshotRevision: nextSnapshotRevision })
   }
+
+  ctx.loadSnapshotWithBuiltinSkills = loadSnapshotWithBuiltinSkills
 
   async function loadBuiltinSkillRecord(
     builtinSource: BuiltinSkillSource,
@@ -489,6 +491,14 @@ export function createSkillRegistryService(
     return existing !== undefined && !sameSkillRecordContent(existing, nextRecord)
       ? { ...nextRecord, updatedAt: now() }
       : nextRecord
+  }
+
+  return {
+    loadRegistry: buildLoadRegistryMethod(ctx),
+    importSkill: buildImportSkillMethod(ctx),
+    deleteSkill: buildDeleteSkillMethod(ctx),
+    setSkillEnabled: buildSetSkillEnabledMethod(ctx),
+    refreshSkills: buildRefreshSkillsMethod(ctx),
   }
 }
 

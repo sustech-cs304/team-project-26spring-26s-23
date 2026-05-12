@@ -39,6 +39,31 @@ const NEW_FOLDER = 'new-folder'
 const NEW_NAME = 'new-name.txt'
 const COPY_OP = 'copy'
 
+function buildExpectedIpcCalls(): Array<[string, ...unknown[]]> {
+  return [
+    [FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, { initialPath: DEFAULT_ROOT }],
+    [FILE_MANAGER_LIST_DIRECTORY_CHANNEL, { rootPath: ROOT, directoryPath: SUB }],
+    [FILE_MANAGER_PROBE_DIRECTORY_CHANNEL, { rootPath: ROOT }],
+    [FILE_MANAGER_CREATE_DIRECTORY_CHANNEL, { rootPath: ROOT, parentPath: SUB, name: NEW_FOLDER }],
+    [
+      FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+      { rootPath: ROOT, sourcePaths: [FILE1, FILE2], destinationDirectory: TARGET, operationType: COPY_OP },
+    ],
+    [FILE_MANAGER_MOVE_ENTRIES_CHANNEL, { rootPath: ROOT, sourcePaths: [FILE1], destinationDirectory: TARGET }],
+    [FILE_MANAGER_RENAME_ENTRY_CHANNEL, { rootPath: ROOT, entryPath: OLD_NAME, newName: NEW_NAME }],
+    [FILE_MANAGER_TRASH_ENTRIES_CHANNEL, { rootPath: ROOT, entryPaths: [DELETE_ME] }],
+    [FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL, { rootPath: ROOT, entryPaths: [PERMANENT_DELETE] }],
+    [FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL, { paths: [ROOT, SUB] }],
+    [FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL, { paths: [SUB] }],
+    [FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL],
+    [FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL, { rootPath: SAVED_ROOT }],
+    [FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL],
+    [FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL, { path: ARBITRARY_FILE }],
+    [FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL, { path: ARBITRARY_DIR }],
+    [FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL, { text: COPIED_PATH }],
+  ]
+}
+
 describe('preload file-manager bridge', () => {
   it('routes file-manager bridge APIs through the expected IPC channels', async () => {
     const invokeMock = getInvokeMock()
@@ -49,138 +74,30 @@ describe('preload file-manager bridge', () => {
     const fileManagerApi = getExposedApi<FileManagerApi>('fileManager')
 
     await fileManagerApi.selectRootDirectory({ initialPath: DEFAULT_ROOT })
-
-    await fileManagerApi.listDirectory({
-      rootPath: ROOT,
-      directoryPath: SUB,
-    })
-
-    await fileManagerApi.probeDirectory({
-      rootPath: ROOT,
-    })
-
-    await fileManagerApi.createDirectory({
-      rootPath: ROOT,
-      parentPath: SUB,
-      name: NEW_FOLDER,
-    })
-
+    await fileManagerApi.listDirectory({ rootPath: ROOT, directoryPath: SUB })
+    await fileManagerApi.probeDirectory({ rootPath: ROOT })
+    await fileManagerApi.createDirectory({ rootPath: ROOT, parentPath: SUB, name: NEW_FOLDER })
     await fileManagerApi.copyEntries({
-      rootPath: ROOT,
-      sourcePaths: [FILE1, FILE2],
-      destinationDirectory: TARGET,
-      operationType: COPY_OP,
+      rootPath: ROOT, sourcePaths: [FILE1, FILE2], destinationDirectory: TARGET, operationType: COPY_OP,
     })
-
-    await fileManagerApi.moveEntries({
-      rootPath: ROOT,
-      sourcePaths: [FILE1],
-      destinationDirectory: TARGET,
-    })
-
-    await fileManagerApi.renameEntry({
-      rootPath: ROOT,
-      entryPath: OLD_NAME,
-      newName: NEW_NAME,
-    })
-
-    await fileManagerApi.trashEntries({
-      rootPath: ROOT,
-      entryPaths: [DELETE_ME],
-    })
-
-    await fileManagerApi.deleteEntriesPermanently({
-      rootPath: ROOT,
-      entryPaths: [PERMANENT_DELETE],
-    })
-
-    await fileManagerApi.watchDirectories({
-      paths: [ROOT, SUB],
-    })
-
-    await fileManagerApi.unwatchDirectories({
-      paths: [SUB],
-    })
+    await fileManagerApi.moveEntries({ rootPath: ROOT, sourcePaths: [FILE1], destinationDirectory: TARGET })
+    await fileManagerApi.renameEntry({ rootPath: ROOT, entryPath: OLD_NAME, newName: NEW_NAME })
+    await fileManagerApi.trashEntries({ rootPath: ROOT, entryPaths: [DELETE_ME] })
+    await fileManagerApi.deleteEntriesPermanently({ rootPath: ROOT, entryPaths: [PERMANENT_DELETE] })
+    await fileManagerApi.watchDirectories({ paths: [ROOT, SUB] })
+    await fileManagerApi.unwatchDirectories({ paths: [SUB] })
 
     // onDirectoryChanged: verify listener registration
     const unsub = fileManagerApi.onDirectoryChanged(() => {})
     unsub()
 
     await fileManagerApi.loadLastRootDirectory()
-
-    await fileManagerApi.saveLastRootDirectory({
-      rootPath: SAVED_ROOT,
-    })
-
+    await fileManagerApi.saveLastRootDirectory({ rootPath: SAVED_ROOT })
     await fileManagerApi.clearLastRootDirectory()
-
     await fileManagerApi.openEntryWithSystem({ path: ARBITRARY_FILE })
-
     await fileManagerApi.revealEntryInFolder({ path: ARBITRARY_DIR })
-
     await fileManagerApi.copyTextToClipboard({ text: COPIED_PATH })
 
-    expect(invokeMock.mock.calls).toEqual([
-      [FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, { initialPath: DEFAULT_ROOT }],
-      [FILE_MANAGER_LIST_DIRECTORY_CHANNEL, { rootPath: ROOT, directoryPath: SUB }],
-      [FILE_MANAGER_PROBE_DIRECTORY_CHANNEL, { rootPath: ROOT }],
-      [FILE_MANAGER_CREATE_DIRECTORY_CHANNEL, { rootPath: ROOT, parentPath: SUB, name: NEW_FOLDER }],
-      [
-        FILE_MANAGER_COPY_ENTRIES_CHANNEL,
-        {
-          rootPath: ROOT,
-          sourcePaths: [FILE1, FILE2],
-          destinationDirectory: TARGET,
-          operationType: COPY_OP,
-        },
-      ],
-      [
-        FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
-        {
-          rootPath: ROOT,
-          sourcePaths: [FILE1],
-          destinationDirectory: TARGET,
-        },
-      ],
-      [
-        FILE_MANAGER_RENAME_ENTRY_CHANNEL,
-        {
-          rootPath: ROOT,
-          entryPath: OLD_NAME,
-          newName: NEW_NAME,
-        },
-      ],
-      [
-        FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
-        {
-          rootPath: ROOT,
-          entryPaths: [DELETE_ME],
-        },
-      ],
-      [
-        FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
-        {
-          rootPath: ROOT,
-          entryPaths: [PERMANENT_DELETE],
-        },
-      ],
-      [
-        FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
-        { paths: [ROOT, SUB] },
-      ],
-      [
-        FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
-        { paths: [SUB] },
-      ],
-      [FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL],
-      [
-        FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
-        { rootPath: SAVED_ROOT },
-      ],
-      [FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL],
-      [FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL, { path: ARBITRARY_FILE }],
-      [FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL, { path: ARBITRARY_DIR }],
-      [FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL, { text: COPIED_PATH }],
-    ])
+    expect(invokeMock.mock.calls).toEqual(buildExpectedIpcCalls())
   })
 })

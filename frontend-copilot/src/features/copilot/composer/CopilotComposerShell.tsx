@@ -72,7 +72,7 @@ export interface CopilotComposerShellProps {
   onResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function -- shell component orchestrates many sub-components
+// eslint-disable-next-line max-lines-per-function -- shell component orchestrates many sub-components
 export function CopilotComposerShell({
   language = 'zh-CN',
   capabilities,

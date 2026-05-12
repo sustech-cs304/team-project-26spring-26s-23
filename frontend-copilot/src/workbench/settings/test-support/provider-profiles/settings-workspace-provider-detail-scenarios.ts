@@ -19,6 +19,8 @@ const MODEL_SERVICE_SECTION = 'model-service'
 const PROVIDER_BASE_URL_INPUT_ID = 'provider-base-url-input'
 const PROVIDER_DISPLAY_NAME_INPUT_ID = 'provider-display-name-input'
 const PROVIDER_CONTEXT_MENU_ID = 'provider-context-menu'
+const OPENAI_DEFAULT_PLACEHOLDER = 'https://api.openai.com/v1'
+const LEGACY_PROVIDER_ID = 'legacy-provider'
 
 export async function runProviderModelEditorFocusScenario() {
   installSettingsWorkspaceBridge()
@@ -86,7 +88,7 @@ export async function runAddProviderFromEmptyStateScenario() {
   expect(addedProviderCard?.textContent).toContain('OpenAI')
   expect((rendered.getByTestId(PROVIDER_DISPLAY_NAME_INPUT_ID) as HTMLInputElement).value).toBe('OpenAI')
   expect(baseUrlInput.value).toBe('')
-  expect(baseUrlInput.placeholder).toBe('https://api.openai.com/v1')
+  expect(baseUrlInput.placeholder).toBe(OPENAI_DEFAULT_PLACEHOLDER)
   expect(rendered.container.textContent).toContain('链接预览：未填写服务地址')
   expect(rendered.getByTestId('provider-base-url-feedback').textContent).toBe('未填写服务地址')
 
@@ -94,6 +96,7 @@ export async function runAddProviderFromEmptyStateScenario() {
 }
 
 export async function runDuplicateProviderScenario() {
+  const PERSISTED_SECRET = 'persisted-secret'
   const persistedState = createPersistedWorkspaceState()
   const { saveProfileApiKey } = installSettingsWorkspaceBridge({
     loadStateResult: {
@@ -101,13 +104,13 @@ export async function runDuplicateProviderScenario() {
       source: 'stored',
       state: persistedState,
     },
-    loadStatusesResult: createPersistedSecretStatesResult('persisted-secret', 'openrouter'),
+    loadStatusesResult: createPersistedSecretStatesResult(PERSISTED_SECRET, 'openrouter'),
     saveProfileApiKeyResult: {
       ok: true,
       profileId: 'persisted-router-1',
       state: {
         hasApiKey: true,
-        apiKey: 'persisted-secret',
+        apiKey: PERSISTED_SECRET,
       },
     },
   })
@@ -128,7 +131,7 @@ export async function runDuplicateProviderScenario() {
 
   expect(saveProfileApiKey).toHaveBeenCalledWith({
     profileId: 'persisted-router-1',
-    apiKey: 'persisted-secret',
+    apiKey: PERSISTED_SECRET,
   })
 
   const copiedProviderCard = rendered.getByTestId('settings-provider-card-persisted-router-1')
@@ -210,8 +213,8 @@ export async function runExtensionBannerHiddenScenario() {
           protocol: 'openai',
           name: 'Extended Provider',
           displayName: 'Extended Provider',
-          endpoint: 'https://api.openai.com/v1',
-          baseUrl: 'https://api.openai.com/v1',
+          endpoint: OPENAI_DEFAULT_PLACEHOLDER,
+          baseUrl: OPENAI_DEFAULT_PLACEHOLDER,
           organization: 'org-1',
           region: 'apac',
           notes: 'retained note',
@@ -245,10 +248,10 @@ export async function runLegacyProviderWarningScenario() {
       source: 'stored',
       state: createPersistedWorkspaceState({
         providerProfiles: [createProviderProfile({
-          id: 'legacy-provider',
-          profileId: 'legacy-provider',
-          providerId: 'legacy-provider',
-          protocol: 'legacy-provider',
+          id: LEGACY_PROVIDER_ID,
+          profileId: LEGACY_PROVIDER_ID,
+          providerId: LEGACY_PROVIDER_ID,
+          protocol: LEGACY_PROVIDER_ID,
           name: 'Legacy Provider',
           displayName: 'Legacy Provider',
           endpoint: 'https://legacy.example.com/v1',
@@ -437,7 +440,7 @@ export async function runApiAddressFieldScenario() {
   expect(rendered.container.textContent).toContain('链接预览：https://persisted.example.com/v1/chat/completions')
 
   const apiAddressInput = rendered.getByTestId(PROVIDER_BASE_URL_INPUT_ID) as HTMLInputElement
-  expect(apiAddressInput.placeholder).toBe('https://api.openai.com/v1')
+  expect(apiAddressInput.placeholder).toBe(OPENAI_DEFAULT_PLACEHOLDER)
   await setFormControlValue(apiAddressInput, 'https://editable.example.com/v2/chat/completions')
 
   expect(apiAddressInput.value).toBe('https://editable.example.com/v2/chat/completions')

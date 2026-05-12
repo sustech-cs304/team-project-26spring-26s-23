@@ -142,7 +142,6 @@ afterEach(() => {
 
 /* eslint-disable-next-line max-lines-per-function -- organizational wrapper for send error test groups */
 describe('CopilotChatPanel composer interactions', () => {
-  /* eslint-disable-next-line max-lines-per-function -- integration test for failed sends as echoed user messages with error details */
   describe('send error handling', () => {
   it('keeps failed sends as echoed user messages plus an error turn', async () => {
     const sendMessage = vi.fn(async function* () {

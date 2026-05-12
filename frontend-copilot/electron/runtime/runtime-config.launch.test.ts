@@ -9,6 +9,25 @@ import {
   sanitizeHostedRuntimeLaunchConfig,
 } from './runtime-config'
 
+const BASE_URL = 'http://127.0.0.1:43210'
+const PORT = 43210
+const HOST = '127.0.0.1'
+
+function makeConfig(overrides: { userDataPath: string; processEnv?: Record<string, string>; localToken?: string; host?: string; hostModelRouteBridgeUrl?: string; hostModelRouteBridgeToken?: string; hostCapabilityBridgeUrl?: string; hostCapabilityBridgeToken?: string }) {
+  return createHostedRuntimeLaunchConfig({
+    environment: 'development',
+    userDataPath: overrides.userDataPath,
+    processEnv: overrides.processEnv ?? {},
+    port: PORT,
+    host: overrides.host ?? HOST,
+    localToken: overrides.localToken ?? 'token-123',
+    hostModelRouteBridgeUrl: overrides.hostModelRouteBridgeUrl,
+    hostModelRouteBridgeToken: overrides.hostModelRouteBridgeToken,
+    hostCapabilityBridgeUrl: overrides.hostCapabilityBridgeUrl,
+    hostCapabilityBridgeToken: overrides.hostCapabilityBridgeToken,
+  })
+}
+
 describe('createHostedRuntimeLaunchConfig', () => {
   it('builds loopback URLs, canonical runtime args, and minimal child env for the Python runtime', () => {
     const paths = createHostedRuntimePaths(path.resolve('.tmp-userdata'))
@@ -23,19 +42,19 @@ describe('createHostedRuntimeLaunchConfig', () => {
         COPILOT_RUNTIME_MODEL: 'qwen-plus',
         COPILOT_MODEL: 'legacy-model',
       },
-      port: 43210,
-      host: '127.0.0.1',
+      port: PORT,
+      host: HOST,
       localToken: 'token-123',
       paths,
     })
 
-    expect(config.baseUrl).toBe('http://127.0.0.1:43210')
-    expect(config.readyUrl).toBe('http://127.0.0.1:43210/ready')
-    expect(config.healthUrl).toBe('http://127.0.0.1:43210/health')
-    expect(config.diagnosticsUrl).toBe('http://127.0.0.1:43210/diagnostics')
+    expect(config.baseUrl).toBe(BASE_URL)
+    expect(config.readyUrl).toBe(`${BASE_URL}/ready`)
+    expect(config.healthUrl).toBe(`${BASE_URL}/health`)
+    expect(config.diagnosticsUrl).toBe(`${BASE_URL}/diagnostics`)
     expect(config.args).toEqual([
-      '--host', '127.0.0.1',
-      '--port', '43210',
+      '--host', HOST,
+      '--port', String(PORT),
       '--app-mode', 'desktop',
       '--environment', 'development',
       '--root-dir', paths.runtimeRootDir,
@@ -52,18 +71,15 @@ describe('createHostedRuntimeLaunchConfig', () => {
       '--last-failure-file', paths.lastFailureFile,
       '--local-token', 'token-123',
     ])
-    expect(config.env).toEqual({
-      EXISTING_ENV: 'kept',
-      PYTHONUNBUFFERED: '1',
-    })
+    expect(config.env).toEqual({ EXISTING_ENV: 'kept', PYTHONUNBUFFERED: '1' })
 
     expect(sanitizeHostedRuntimeLaunchConfig(config)).toEqual({
-      host: '127.0.0.1',
-      port: 43210,
-      baseUrl: 'http://127.0.0.1:43210',
-      readyUrl: 'http://127.0.0.1:43210/ready',
-      healthUrl: 'http://127.0.0.1:43210/health',
-      diagnosticsUrl: 'http://127.0.0.1:43210/diagnostics',
+      host: HOST,
+      port: PORT,
+      baseUrl: BASE_URL,
+      readyUrl: `${BASE_URL}/ready`,
+      healthUrl: `${BASE_URL}/health`,
+      diagnosticsUrl: `${BASE_URL}/diagnostics`,
       appMode: 'desktop',
       environment: 'development',
       localTokenConfigured: true,
@@ -90,11 +106,8 @@ describe('createHostedRuntimeLaunchConfig', () => {
   it('does not project retired startup model compatibility into runtime args', () => {
     const config = createHostedRuntimeLaunchConfig({
       userDataPath: path.resolve('.tmp-userdata-model'),
-      processEnv: {
-        COPILOT_RUNTIME_MODEL: 'env-primary',
-        COPILOT_MODEL: 'env-legacy',
-      },
-      port: 43210,
+      processEnv: { COPILOT_RUNTIME_MODEL: 'env-primary', COPILOT_MODEL: 'env-legacy' },
+      port: PORT,
       localToken: 'token-model',
     })
 
@@ -103,11 +116,8 @@ describe('createHostedRuntimeLaunchConfig', () => {
   })
 
   it('passes host model route bridge bootstrap through runtime args without leaking it into sanitized output', () => {
-    const config = createHostedRuntimeLaunchConfig({
+    const config = makeConfig({
       userDataPath: path.resolve('.tmp-userdata-route-bridge'),
-      processEnv: {},
-      port: 43210,
-      localToken: 'token-bridge',
       hostModelRouteBridgeUrl: 'http://127.0.0.1:45678/host/private/provider-routes/resolve',
       hostModelRouteBridgeToken: 'bridge-token-123',
     })
@@ -120,11 +130,8 @@ describe('createHostedRuntimeLaunchConfig', () => {
   })
 
   it('passes host capability bridge bootstrap through runtime args without leaking it into sanitized output', () => {
-    const config = createHostedRuntimeLaunchConfig({
+    const config = makeConfig({
       userDataPath: path.resolve('.tmp-userdata-capability-bridge'),
-      processEnv: {},
-      port: 43210,
-      localToken: 'token-capability-bridge',
       hostCapabilityBridgeUrl: 'http://127.0.0.1:45679/host/private/capability-bridge',
       hostCapabilityBridgeToken: 'capability-bridge-token-123',
     })
@@ -137,13 +144,7 @@ describe('createHostedRuntimeLaunchConfig', () => {
   })
 
   it('brackets IPv6 loopback hosts when composing runtime urls', () => {
-    const config = createHostedRuntimeLaunchConfig({
-      userDataPath: path.resolve('.tmp-userdata-ipv6'),
-      processEnv: {},
-      port: 43210,
-      host: '::1',
-      localToken: 'token-ipv6',
-    })
+    const config = makeConfig({ userDataPath: path.resolve('.tmp-userdata-ipv6'), host: '::1', localToken: 'token-ipv6' })
 
     expect(config.baseUrl).toBe('http://[::1]:43210')
     expect(config.readyUrl).toBe('http://[::1]:43210/ready')
@@ -170,21 +171,21 @@ describe('createHostedRuntimeLaunchConfig', () => {
       runtimeSnapshotFile: path.resolve('.tmp-userdata', 'desktop-runtime', 'state', 'runtime-snapshot.json'),
       lastFailureFile: path.resolve('.tmp-userdata', 'desktop-runtime', 'state', 'last-failure.json'),
     })
-    expect(formatRuntimeBaseUrl('127.0.0.1', 9000)).toBe('http://127.0.0.1:9000')
+    expect(formatRuntimeBaseUrl(HOST, 9000)).toBe('http://127.0.0.1:9000')
   })
 })
 
 describe('resolveHostedRuntimeEnvironmentOverrides', () => {
   it('reads optional override values from process env', () => {
     expect(resolveHostedRuntimeEnvironmentOverrides({
-      [HOSTED_RUNTIME_OVERRIDE_ENV_NAMES.HOST]: '127.0.0.1',
+      [HOSTED_RUNTIME_OVERRIDE_ENV_NAMES.HOST]: HOST,
       [HOSTED_RUNTIME_OVERRIDE_ENV_NAMES.ENVIRONMENT]: 'production',
       [HOSTED_RUNTIME_OVERRIDE_ENV_NAMES.STARTUP_TIMEOUT_MS]: '45000',
       [HOSTED_RUNTIME_OVERRIDE_ENV_NAMES.SHUTDOWN_TIMEOUT_MS]: '9000',
       [HOSTED_RUNTIME_OVERRIDE_ENV_NAMES.HEALTHCHECK_INTERVAL_MS]: '750',
       [HOSTED_RUNTIME_OVERRIDE_ENV_NAMES.HEALTHCHECK_REQUEST_TIMEOUT_MS]: '2200',
     })).toEqual({
-      host: '127.0.0.1',
+      host: HOST,
       environment: 'production',
       startupTimeoutMs: 45000,
       shutdownTimeoutMs: 9000,

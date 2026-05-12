@@ -895,7 +895,6 @@ function useAssistantHistoryRestore({
     void performHistoryRestore(ctx)
 
     return () => { cancelledRef.current = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- historyRestoreRetryKey drives retry cycles; stable refs and callbacks included.
   }, [
     appendWorkspaceDebugLog, bootstrap.state, clearHistoryRestoreRetry, historyRestoreRetryKey,
     isMountedRef, listHistoryThreadsImpl, resetHistoryRestoreRetryBackoff,
