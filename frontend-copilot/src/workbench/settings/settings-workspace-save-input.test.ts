@@ -9,6 +9,7 @@ import {
   serializeModelRouteRef,
 } from './settings-workspace-model-options'
 import { createPersistedWorkspaceState, createProviderProfile } from './settings-workspace-test-fixtures'
+import { createProviderModelProfile } from './domains/provider-profiles/provider-profiles'
 
 const SHARED_MODEL_ID = 'shared-model'
 const ALPHA_FAST_MODEL = 'alpha-fast'
@@ -28,7 +29,7 @@ const defaultModelRoutingTemplate = {
   fastAssistantModelRoute: null as null,
 }
 
-function createAlphaProfile(overrides?: { availableModels?: Array<{ id: string; modelId: string; displayName: string }> }) {
+function createAlphaProfile(overrides?: { availableModels?: import('../types').ProviderModelProfile[] }) {
   return createProviderProfile({
     id: ALPHA_PROFILE_ID,
     profileId: ALPHA_PROFILE_ID,
@@ -39,7 +40,7 @@ function createAlphaProfile(overrides?: { availableModels?: Array<{ id: string; 
     fallbackModel: ALPHA_FAST_MODEL,
     availableModels: overrides?.availableModels ?? [
       {
-        ...createProviderProfile({ id: ALPHA_PROFILE_ID }).availableModels[0]!,
+        ...createProviderModelProfile(OPENAI, SHARED_MODEL_ID, 'Alpha Provider'),
         id: 'alpha-model-1',
         modelId: SHARED_MODEL_ID,
         displayName: 'Shared Model A',
@@ -59,7 +60,7 @@ function createBetaProfile() {
     fallbackModel: SHARED_MODEL_ID,
     availableModels: [
       {
-        ...createProviderProfile({ id: BETA_PROFILE_ID }).availableModels[0]!,
+        ...createProviderModelProfile(GEMINI, SHARED_MODEL_ID, 'Beta Provider'),
         id: 'beta-model-1',
         modelId: SHARED_MODEL_ID,
         displayName: 'Shared Model B',

@@ -440,7 +440,7 @@ describe('CopilotComposer attachments', () => {
           path: LABEL_PREVIEW_NOTE_TXT,
           name: LABEL_PREVIEW_NOTE_TXT,
           size: 12,
-          mimeType: LABEL_TEXT_PLAIN as const,
+          mimeType: LABEL_TEXT_PLAIN as 'text/plain',
           text: 'preview body',
           truncated: false,
           maxBytes: 262144,

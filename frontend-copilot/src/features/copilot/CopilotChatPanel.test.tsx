@@ -1125,7 +1125,7 @@ describe('CopilotChatPanel', () => {
         threadId: 'thread-1',
         segments: [{
           id: 'inline-form:run-form-pending-history:tool.request-user-form:call-1',
-          kind: LABEL_INLINE_FORM as const,
+          kind: LABEL_INLINE_FORM as 'inline-form',
           runId: LABEL_RUN_FORM_PENDING,
           startedSequence: 1,
           lastSequence: 1,
@@ -1251,7 +1251,7 @@ describe('CopilotChatPanel', () => {
         threadId: 'thread-1',
         segments: [{
           id: 'inline-form:run-form-pending-history:tool.request-user-form:call-1',
-          kind: LABEL_INLINE_FORM as const,
+          kind: LABEL_INLINE_FORM as 'inline-form',
           runId: LABEL_RUN_FORM_PENDING,
           startedSequence: 1,
           lastSequence: 1,

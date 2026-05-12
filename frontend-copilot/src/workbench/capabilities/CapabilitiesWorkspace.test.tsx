@@ -224,7 +224,7 @@ beforeEach(() => {
   })
 })
 
-function getNavButton(container: ParentNode, sectionId: 'tool-permissions' | LABEL_MCP_SERVERS | 'skills'): HTMLButtonElement {
+function getNavButton(container: ParentNode, sectionId: 'tool-permissions' | typeof LABEL_MCP_SERVERS | 'skills'): HTMLButtonElement {
   const expectedId = `capabilities-tab-${sectionId}`
   const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((element) => {
     return element.id === expectedId
