@@ -938,7 +938,7 @@ def test_agent_tools_return_stable_shapes() -> None:
             uid="ics_1",
             raw_uid=None,
             title="Tool Event",
-            start_at=None,
+            start_at=datetime(2026, 4, 1, 10, 0),
             end_at=None,
         )
         return CalendarICSSyncResult(

@@ -8,7 +8,6 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.event_manager.data.dto import UnifiedCalendarEvent
-from ..security import require_local_token
 
 
 def _utc_now() -> datetime:
@@ -21,14 +20,6 @@ def build_calendar_router() -> APIRouter:
     def list_calendar_events(request: Request) -> dict[str, list[dict[str, Any]]]:
         # TODO: Replace with real database queries once the persistence layer is ready.
         # This is mock data for the frontend to start developing the UI.
-        runtime_config = (
-            request.app.state.runtime_config
-            if hasattr(request.app.state, "runtime_config")
-            else None
-        )
-        if runtime_config is not None:
-            require_local_token(request, runtime_config)
-
         now = _utc_now()
         
         mock_events = [

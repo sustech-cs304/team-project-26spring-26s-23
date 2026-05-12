@@ -2,6 +2,8 @@ import { useEffect, useState, useMemo } from 'react'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { getHubWorkspaceContent, type WorkbenchLanguage } from '../locale'
 import type { HubWorkspaceView } from '../types'
+import { TimelineView } from './components/TimelineView'
+import { KanbanTracker } from './components/KanbanTracker'
 
 interface UnifiedCalendarEvent {
   id: string | number
@@ -37,24 +39,36 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    // 决定实际要用的 Base URL
+    let actualRuntimeUrl = 'http://127.0.0.1:8765'
+    if (bootstrap) {
+      if (bootstrap.state.status === 'ready' || bootstrap.state.status === 'degraded') {
+        actualRuntimeUrl = bootstrap.state.runtimeUrl
+      } else {
+        // Electron 环境下，系统还在初始化或者异常状态，暂不请求
+        return
+      }
+    }
+
     async function fetchEvents() {
       setIsLoading(true)
       setError(null)
       try {
-        const response = await fetch(`${runtimeBaseUrl}/calendar/events`)
+        const response = await fetch(`${actualRuntimeUrl}/calendar/events`)
         if (!response.ok) {
-          throw new Error('Failed to fetch events')
+          const errText = await response.text().catch(() => 'No text')
+          throw new Error(`Failed to fetch events: ${response.status} ${response.statusText} ${errText}`)
         }
         const data = await response.json()
-        setEvents(data)
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : String(err))
+        setEvents(data.items || [])
+      } catch (err: any) {
+        setError(err.message)
       } finally {
         setIsLoading(false)
       }
     }
     fetchEvents()
-  }, [runtimeBaseUrl])
+  }, [bootstrap?.state])
 
   return (
     <section className="workspace-stage hub-workspace" aria-label={`${content.title}工作区`}>
@@ -83,54 +97,37 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
           </div>
         </header>
 
-        <section className="workspace-main__content">
-          <div className="hub-main-grid">
-            <section className="hub-card hub-card--highlight">
-              <h3 className="hub-card__title">{content.spotlightTitle}</h3>
-              <div className="hub-chip-row">
-                {content.highlights.map((highlight) => (
-                  <span key={highlight} className="hub-chip">
-                    {highlight}
-                  </span>
-                ))}
-              </div>
-            </section>
+        <section className="workspace-main__content" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', height: '100%', overflow: 'hidden' }}>
+          {/* 顶部：时间轴 (Timeline / Roadmap) 视图 */}
+          <TimelineView events={events} />
 
-            {content.entries.map((entry) => (
-              <section key={entry.id} className="hub-card">
-                <h3 className="hub-card__title">{entry.title}</h3>
-              </section>
-            ))}
+          {/* 底部：任务跟踪器 (Kanban) 视图 */}
+          <KanbanTracker events={events} />
 
-            {content.sections.map((section) => (
-              <section key={section.id} className="hub-card">
-                <h3 className="hub-card__title">{section.title}</h3>
-              </section>
-            ))}
-
-            <section className="hub-card">
-              <h3 className="hub-card__title">Upcoming Events</h3>
+          {/* 暂时保留原本获取的数据用于 debug 和对照，用一个折叠面板包起来 */}
+          <details style={{ marginTop: 'auto', border: '1px solid var(--vscode-widget-border)', borderRadius: '4px', padding: '0.5rem' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
+              后端原始事件数据 Debug (Error: {error || 'None'})
+            </summary>
+            <div style={{ marginTop: '0.5rem', maxHeight: '150px', overflowY: 'auto', fontSize: '0.85em' }}>
               {isLoading ? (
                 <p>Loading events...</p>
-              ) : error ? (
-                <p style={{ color: 'red' }}>Error: {error}</p>
               ) : events.length === 0 ? (
                 <p>No events found.</p>
               ) : (
-                <ul style={{ paddingLeft: '1rem', marginTop: '1rem' }}>
+                <ul style={{ paddingLeft: '1rem' }}>
                   {events.map((evt) => (
-                    <li key={evt.id} style={{ marginBottom: '0.5rem' }}>
+                    <li key={evt.id} style={{ marginBottom: '0.25rem' }}>
                       <strong>{evt.title}</strong>
-                      <div style={{ fontSize: '0.85em', color: 'var(--vscode-descriptionForeground)' }}>
+                      <div style={{ color: 'var(--vscode-descriptionForeground)' }}>
                         {new Date(evt.start_time).toLocaleString()} - {evt.source.toUpperCase()}
-                        {evt.location && ` • ${evt.location}`}
                       </div>
                     </li>
                   ))}
                 </ul>
               )}
-            </section>
-          </div>
+            </div>
+          </details>
         </section>
       </main>
     </section>
