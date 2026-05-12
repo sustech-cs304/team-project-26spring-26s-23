@@ -140,7 +140,9 @@ afterEach(() => {
   restoreAttachmentManagerApi()
 })
 
+/* eslint-disable-next-line max-lines-per-function -- organizational wrapper for model picker test groups */
 describe('CopilotChatPanel composer interactions', () => {
+  /* eslint-disable-next-line max-lines-per-function -- three integration tests for model picker/routing scenarios, each requiring independent full render setup */
   describe('model picker and routing', () => {
   it('sends messages with the updated model selected from the picker', async () => {
     const sendMessage = createResolvedSendMessageSpy()
@@ -425,6 +427,7 @@ describe('CopilotChatPanel composer interactions', () => {
   })
 
   })
+  /* eslint-disable-next-line max-lines-per-function -- three integration tests for model state edge cases, each requiring independent render setup */
   describe('model state edge cases', () => {
   it('forwards enabled debug mode from bootstrap state into chat send requests', async () => {
     const sendMessage = createResolvedSendMessageSpy()

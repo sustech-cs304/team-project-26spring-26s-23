@@ -10,6 +10,8 @@ import { buildErrorDetailOverlayViewModel, createCopilotErrorDetailSource } from
 const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
 
 
+// 包含 3 个已拆分的子 describe（full copy/group copy/diagnostics），顶层 describe 仅做语义分组
+/* eslint-disable-next-line max-lines-per-function */
 describe('error detail overlay copy helpers', () => {
   describe('full copy text', () => {
     it('formats the full copy text as structured plain text without empty sections', () => {

@@ -270,6 +270,14 @@ export async function* streamRuntimeRun(input: {
   signal?: AbortSignal
 }): AsyncGenerator<RuntimeRunEvent> {
   const fetchFn = input.fetchFn ?? fetch
+  const response = await fetchRuntimeRunStreamResponse(fetchFn, input)
+  yield* consumeRuntimeRunEventStream(response, input.signal)
+}
+
+async function fetchRuntimeRunStreamResponse(
+  fetchFn: FetchLike,
+  input: { runtimeUrl: string; runId: string; signal?: AbortSignal },
+): Promise<Awaited<ReturnType<FetchLike>>> {
   let response: Awaited<ReturnType<FetchLike>>
   try {
     response = await fetchFn(buildRuntimeEndpoint(input.runtimeUrl), {
@@ -301,6 +309,13 @@ export async function* streamRuntimeRun(input: {
     throw new Error('Runtime run stream response body is unavailable.')
   }
 
+  return response
+}
+
+async function* consumeRuntimeRunEventStream(
+  response: Awaited<ReturnType<FetchLike>>,
+  signal?: AbortSignal,
+): AsyncGenerator<RuntimeRunEvent> {
   let lastSequence = 0
   let runId: string | null = null
   let sessionId: string | null = null
@@ -308,26 +323,8 @@ export async function* streamRuntimeRun(input: {
   let sawTerminal = false
 
   try {
-    for await (const event of parseRuntimeRunEventStream(response.body)) {
-      if (sawTerminal) {
-        throw new Error('Runtime event stream emitted additional events after a terminal event.')
-      }
-
-      if (event.sequence <= lastSequence) {
-        throw new Error(`Runtime event sequence regressed from ${lastSequence} to ${event.sequence}.`)
-      }
-
-      if (runId !== null && event.runId !== runId) {
-        throw new Error(`Runtime event stream changed runId from ${runId} to ${event.runId}.`)
-      }
-
-      if (sessionId !== null && event.sessionId !== sessionId) {
-        throw new Error(`Runtime event stream changed sessionId from ${sessionId} to ${event.sessionId}.`)
-      }
-
-      if (!sawRunStarted && event.type !== 'run_started') {
-        throw new Error(`Runtime event stream must begin with run_started, received ${event.type}.`)
-      }
+    for await (const event of parseRuntimeRunEventStream(response.body!)) {
+      validateSingleStreamEvent(event, { lastSequence, runId, sessionId, sawTerminal, sawRunStarted })
 
       lastSequence = event.sequence
       runId = event.runId
@@ -350,10 +347,43 @@ export async function* streamRuntimeRun(input: {
       throw new Error('Runtime event stream ended without a terminal event.')
     }
   } catch (error) {
-    if (isAbortLikeError(error) || input.signal?.aborted === true) {
+    if (isAbortLikeError(error) || signal?.aborted === true) {
       throw createAbortError()
     }
     throw error
+  }
+}
+
+interface StreamValidationState {
+  lastSequence: number
+  runId: string | null
+  sessionId: string | null
+  sawTerminal: boolean
+  sawRunStarted: boolean
+}
+
+function validateSingleStreamEvent(
+  event: RuntimeRunEvent,
+  state: StreamValidationState,
+): void {
+  if (state.sawTerminal) {
+    throw new Error('Runtime event stream emitted additional events after a terminal event.')
+  }
+
+  if (event.sequence <= state.lastSequence) {
+    throw new Error(`Runtime event sequence regressed from ${state.lastSequence} to ${event.sequence}.`)
+  }
+
+  if (state.runId !== null && event.runId !== state.runId) {
+    throw new Error(`Runtime event stream changed runId from ${state.runId} to ${event.runId}.`)
+  }
+
+  if (state.sessionId !== null && event.sessionId !== state.sessionId) {
+    throw new Error(`Runtime event stream changed sessionId from ${state.sessionId} to ${event.sessionId}.`)
+  }
+
+  if (!state.sawRunStarted && event.type !== 'run_started') {
+    throw new Error(`Runtime event stream must begin with run_started, received ${event.type}.`)
   }
 }
 

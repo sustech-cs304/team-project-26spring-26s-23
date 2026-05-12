@@ -72,6 +72,7 @@ export interface CopilotComposerShellProps {
   onResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
 }
 
+// eslint-disable-next-line complexity, max-lines-per-function -- shell component orchestrates many sub-components
 export function CopilotComposerShell({
   language = 'zh-CN',
   capabilities,
@@ -99,7 +100,6 @@ export function CopilotComposerShell({
   const controlsLocked = controlsLockedReason !== null
   const controlsDisabled = isSending || interactionLocked || controlsLocked
   const inputDisabled = interactionLocked || controlsLocked
-  const thinkingControlRef = useRef<HTMLDivElement | null>(null)
   const attachmentControlRef = useRef<HTMLDivElement | null>(null)
   const attachmentPanelCloseTimerRef = useRef<number | null>(null)
   const imagePreviewRef = useRef<HTMLImageElement | null>(null)
@@ -117,9 +117,7 @@ export function CopilotComposerShell({
     scale: 1,
   })
   const imagePreviewFrameRef = useRef<number | null>(null)
-  const thinkingPanelId = useId()
   const attachmentPanelId = useId()
-  const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
   const [attachmentPanelClosing, setAttachmentPanelClosing] = useState(false)
   const attachmentPanelVisible = attachments.panelOpen || attachmentPanelClosing
   const previewVisible = attachments.preview.open
@@ -129,65 +127,7 @@ export function CopilotComposerShell({
     setState: onAttachmentsChange,
   })
 
-  const attachmentCopy = useMemo(() => {
-    if (language === 'en-US') {
-      return {
-        triggerLabel: (count: number) => `Attached files (${count})`,
-        panelLabel: 'Attached files',
-        removeLabel: (name: string) => `Remove ${name}`,
-        closePreviewLabel: 'Close attachment preview',
-        previewDialogLabel: 'Attachment preview',
-        dropHint: 'Drop files to attach',
-        previewLoading: 'Loading preview…',
-      }
-    }
-
-    return {
-      triggerLabel: (count: number) => `已附加 ${count} 个文件`,
-      panelLabel: '已附加文件',
-      removeLabel: (name: string) => `移除 ${name}`,
-      closePreviewLabel: '关闭附件预览',
-      previewDialogLabel: '附件预览',
-      dropHint: '松开即可附加文件',
-      previewLoading: '正在加载预览…',
-    }
-  }, [language])
-
-  const canRenderThinkingControl = thinkingCapability !== null
-    && thinkingCapability.supported !== false
-    && thinkingCapability.series !== null
-    && thinkingCapability.editorType !== null
-  const effectiveThinkingSelection = useMemo(
-    () => (thinkingCapability === null ? draft.thinkingSelection : resolveThinkingSelectionForCapability(thinkingCapability, draft.thinkingSelection)),
-    [draft.thinkingSelection, thinkingCapability],
-  )
-  const currentThinkingValue = useMemo(
-    () => resolveThinkingSelectionValue(effectiveThinkingSelection, thinkingCapability),
-    [effectiveThinkingSelection, thinkingCapability],
-  )
-  const currentThinkingLabel = useMemo(
-    () => resolveThinkingValueLabel(currentThinkingValue),
-    [currentThinkingValue],
-  )
-  const thinkingTriggerPlaceholder = copy.composer.thinkingPlaceholder
-  const thinkingTriggerLabel = currentThinkingLabel === null ? thinkingTriggerPlaceholder : currentThinkingLabel
-  const unavailableThinkingReason = useMemo(
-    () => describeThinkingCapabilityUnavailableReason(thinkingCapability),
-    [thinkingCapability],
-  )
-  const thinkingTriggerTitle = canRenderThinkingControl
-    ? thinkingTriggerLabel
-    : unavailableThinkingReason ?? copy.composer.thinkingPlaceholder
-  const thinkingTriggerActive = effectiveThinkingSelection === null
-    ? false
-    : isThinkingSelectionActive(effectiveThinkingSelection)
-  const thinkingTriggerAriaProps = canRenderThinkingControl
-    ? {
-        'aria-haspopup': 'dialog' as const,
-        'aria-controls': thinkingPanelId,
-        'aria-expanded': thinkingPanelOpen,
-      }
-    : {}
+  const attachmentCopy = useMemo(() => resolveAttachmentCopy(language), [language])
 
   const requestCloseAttachmentPanel = useCallback(() => {
     if (!attachments.panelOpen) {
@@ -232,34 +172,6 @@ export function CopilotComposerShell({
       window.cancelAnimationFrame(imagePreviewFrameRef.current)
     }
   }, [])
-
-  useEffect(() => {
-    if (!thinkingPanelOpen) {
-      return undefined
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (thinkingControlRef.current?.contains(event.target as Node)) {
-        return
-      }
-
-      setThinkingPanelOpen(false)
-    }
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setThinkingPanelOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('keydown', handleEscape)
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('keydown', handleEscape)
-    }
-  }, [thinkingPanelOpen])
 
   useEffect(() => {
     if (!attachmentPanelVisible) {
@@ -319,12 +231,6 @@ export function CopilotComposerShell({
       document.removeEventListener('keydown', handleEscape)
     }
   }, [attachments.preview.open, requestCloseAttachmentPreview])
-
-  useEffect(() => {
-    if (controlsDisabled || !canRenderThinkingControl) {
-      setThinkingPanelOpen(false)
-    }
-  }, [canRenderThinkingControl, controlsDisabled])
 
   useEffect(() => {
     if (controlsDisabled) {
@@ -489,13 +395,6 @@ export function CopilotComposerShell({
     }
   }
 
-  const handleThinkingSelectionChange = (thinkingSelection: RuntimeThinkingSelection | null) => {
-    onDraftChange((current) => applyThinkingSelectionToComposerDraft(current, {
-      modelRoute: current.selectedModelRoute,
-      thinkingSelection,
-    }))
-  }
-
   return (
     <form className="copilot-chat__composer" data-testid="chat-composer-dock" onSubmit={onSubmit}>
       <div className="copilot-chat__composer-toolbar" data-testid="chat-composer-toolbar">
@@ -511,71 +410,13 @@ export function CopilotComposerShell({
             }))
           }}
         />
-        <div
-          className="copilot-chat__thinking-control"
-          data-testid="chat-thinking-control"
-          ref={thinkingControlRef}
-        >
-          <button
-            type="button"
-            className={[
-              'copilot-model-picker__trigger',
-              'copilot-chat__thinking-trigger',
-              controlsDisabled ? 'copilot-chat__thinking-trigger--disabled' : '',
-              thinkingTriggerActive ? 'copilot-chat__thinking-trigger--active' : '',
-            ].filter((className) => className !== '').join(' ')}
-            data-testid="chat-thinking-trigger"
-            aria-label={thinkingTriggerTitle}
-            title={thinkingTriggerTitle}
-            disabled={controlsDisabled}
-            {...thinkingTriggerAriaProps}
-            onClick={() => {
-              if (!canRenderThinkingControl) {
-                setThinkingPanelOpen(false)
-                return
-              }
-
-              setThinkingPanelOpen((current) => !current)
-            }}
-          >
-            <span className="copilot-chat__thinking-trigger-main">
-              <Lightbulb className="copilot-chat__thinking-trigger-icon" aria-hidden="true" />
-              <span className="copilot-chat__thinking-trigger-label" data-testid="chat-thinking-trigger-label">
-                {thinkingTriggerLabel}
-              </span>
-            </span>
-          </button>
-          {canRenderThinkingControl && thinkingCapability !== null && thinkingPanelOpen && (
-            <section
-              id={thinkingPanelId}
-              className="copilot-model-picker__panel copilot-chat__thinking-panel"
-              role="dialog"
-              aria-label={copy.composer.thinkingSettingsAriaLabel}
-              data-testid="chat-thinking-panel"
-            >
-              <div className="copilot-chat__thinking-panel-header">
-                <div className="copilot-chat__thinking-panel-summary">
-                  <span className="copilot-chat__thinking-panel-title" data-testid="chat-thinking-series-title">
-                    {buildThinkingSeriesLabel(thinkingCapability)}
-                  </span>
-                  <span className="copilot-chat__thinking-panel-current-shell">
-                    <span className="copilot-chat__thinking-panel-current-label">{copy.composer.currentValueLabel}</span>
-                    <span className="copilot-chat__thinking-panel-current-value" data-testid="chat-thinking-current-value">
-                      {currentThinkingLabel ?? copy.composer.unsetValue}
-                    </span>
-                  </span>
-                </div>
-              </div>
-              {renderThinkingControlBody({
-                capability: thinkingCapability,
-                currentSelection: effectiveThinkingSelection,
-                disabled: controlsDisabled,
-                onChange: handleThinkingSelectionChange,
-                onClose: () => setThinkingPanelOpen(false),
-              })}
-            </section>
-          )}
-        </div>
+        <ComposerThinkingControl
+          thinkingCapability={thinkingCapability}
+          draft={draft}
+          controlsDisabled={controlsDisabled}
+          copyComposer={copy.composer}
+          onDraftChange={onDraftChange}
+        />
         <ToolPicker
           language={language}
           tools={capabilities.allAvailableTools}
@@ -827,6 +668,7 @@ function renderAttachmentPreviewDialog(input: {
   )
 }
 
+// eslint-disable-next-line max-lines-per-function -- render function with many child elements
 function renderComposerSurface(input: {
   composerHeight: number
   attachments: CopilotComposerAttachmentsState
@@ -992,6 +834,196 @@ function renderComposerSurface(input: {
       </button>
     </div>
   )
+}
+
+interface ComposerThinkingControlProps {
+  thinkingCapability: RuntimeThinkingCapability | null
+  draft: CopilotChatComposerDraft
+  controlsDisabled: boolean
+  copyComposer: ReturnType<typeof getCopilotChatCopy>['composer']
+  onDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+}
+
+// eslint-disable-next-line max-lines-per-function -- extracted component with its own hooks and rendering
+function ComposerThinkingControl({
+  thinkingCapability,
+  draft,
+  controlsDisabled,
+  copyComposer,
+  onDraftChange,
+}: ComposerThinkingControlProps) {
+  const thinkingControlRef = useRef<HTMLDivElement | null>(null)
+  const thinkingPanelId = useId()
+  const [thinkingPanelOpen, setThinkingPanelOpen] = useState(false)
+
+  const canRenderThinkingControl = thinkingCapability !== null
+    && thinkingCapability.supported !== false
+    && thinkingCapability.series !== null
+    && thinkingCapability.editorType !== null
+  const effectiveThinkingSelection = useMemo(
+    () => (thinkingCapability === null ? draft.thinkingSelection : resolveThinkingSelectionForCapability(thinkingCapability, draft.thinkingSelection)),
+    [draft.thinkingSelection, thinkingCapability],
+  )
+  const currentThinkingValue = useMemo(
+    () => resolveThinkingSelectionValue(effectiveThinkingSelection, thinkingCapability),
+    [effectiveThinkingSelection, thinkingCapability],
+  )
+  const currentThinkingLabel = useMemo(
+    () => resolveThinkingValueLabel(currentThinkingValue),
+    [currentThinkingValue],
+  )
+  const thinkingTriggerPlaceholder = copyComposer.thinkingPlaceholder
+  const thinkingTriggerLabel = currentThinkingLabel === null ? thinkingTriggerPlaceholder : currentThinkingLabel
+  const unavailableThinkingReason = useMemo(
+    () => describeThinkingCapabilityUnavailableReason(thinkingCapability),
+    [thinkingCapability],
+  )
+  const thinkingTriggerTitle = canRenderThinkingControl
+    ? thinkingTriggerLabel
+    : unavailableThinkingReason ?? copyComposer.thinkingPlaceholder
+  const thinkingTriggerActive = effectiveThinkingSelection === null
+    ? false
+    : isThinkingSelectionActive(effectiveThinkingSelection)
+  const thinkingTriggerAriaProps = canRenderThinkingControl
+    ? {
+        'aria-haspopup': 'dialog' as const,
+        'aria-controls': thinkingPanelId,
+        'aria-expanded': thinkingPanelOpen,
+      }
+    : {}
+
+  useEffect(() => {
+    if (!thinkingPanelOpen) {
+      return undefined
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (thinkingControlRef.current?.contains(event.target as Node)) {
+        return
+      }
+
+      setThinkingPanelOpen(false)
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setThinkingPanelOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [thinkingPanelOpen])
+
+  useEffect(() => {
+    if (controlsDisabled || !canRenderThinkingControl) {
+      setThinkingPanelOpen(false)
+    }
+  }, [canRenderThinkingControl, controlsDisabled])
+
+  const handleThinkingSelectionChange = (thinkingSelection: RuntimeThinkingSelection | null) => {
+    onDraftChange((current) => applyThinkingSelectionToComposerDraft(current, {
+      modelRoute: current.selectedModelRoute,
+      thinkingSelection,
+    }))
+  }
+
+  return (
+    <div
+      className="copilot-chat__thinking-control"
+      data-testid="chat-thinking-control"
+      ref={thinkingControlRef}
+    >
+      <button
+        type="button"
+        className={[
+          'copilot-model-picker__trigger',
+          'copilot-chat__thinking-trigger',
+          controlsDisabled ? 'copilot-chat__thinking-trigger--disabled' : '',
+          thinkingTriggerActive ? 'copilot-chat__thinking-trigger--active' : '',
+        ].filter((className) => className !== '').join(' ')}
+        data-testid="chat-thinking-trigger"
+        aria-label={thinkingTriggerTitle}
+        title={thinkingTriggerTitle}
+        disabled={controlsDisabled}
+        {...thinkingTriggerAriaProps}
+        onClick={() => {
+          if (!canRenderThinkingControl) {
+            setThinkingPanelOpen(false)
+            return
+          }
+
+          setThinkingPanelOpen((current) => !current)
+        }}
+      >
+        <span className="copilot-chat__thinking-trigger-main">
+          <Lightbulb className="copilot-chat__thinking-trigger-icon" aria-hidden="true" />
+          <span className="copilot-chat__thinking-trigger-label" data-testid="chat-thinking-trigger-label">
+            {thinkingTriggerLabel}
+          </span>
+        </span>
+      </button>
+      {canRenderThinkingControl && thinkingCapability !== null && thinkingPanelOpen && (
+        <section
+          id={thinkingPanelId}
+          className="copilot-model-picker__panel copilot-chat__thinking-panel"
+          role="dialog"
+          aria-label={copyComposer.thinkingSettingsAriaLabel}
+          data-testid="chat-thinking-panel"
+        >
+          <div className="copilot-chat__thinking-panel-header">
+            <div className="copilot-chat__thinking-panel-summary">
+              <span className="copilot-chat__thinking-panel-title" data-testid="chat-thinking-series-title">
+                {buildThinkingSeriesLabel(thinkingCapability)}
+              </span>
+              <span className="copilot-chat__thinking-panel-current-shell">
+                <span className="copilot-chat__thinking-panel-current-label">{copyComposer.currentValueLabel}</span>
+                <span className="copilot-chat__thinking-panel-current-value" data-testid="chat-thinking-current-value">
+                  {currentThinkingLabel ?? copyComposer.unsetValue}
+                </span>
+              </span>
+            </div>
+          </div>
+          {renderThinkingControlBody({
+            capability: thinkingCapability,
+            currentSelection: effectiveThinkingSelection,
+            disabled: controlsDisabled,
+            onChange: handleThinkingSelectionChange,
+            onClose: () => setThinkingPanelOpen(false),
+          })}
+        </section>
+      )}
+    </div>
+  )
+}
+
+function resolveAttachmentCopy(language: string) {
+  if (language === 'en-US') {
+    return {
+      triggerLabel: (count: number) => `Attached files (${count})`,
+      panelLabel: 'Attached files',
+      removeLabel: (name: string) => `Remove ${name}`,
+      closePreviewLabel: 'Close attachment preview',
+      previewDialogLabel: 'Attachment preview',
+      dropHint: 'Drop files to attach',
+      previewLoading: 'Loading preview…',
+    }
+  }
+
+  return {
+    triggerLabel: (count: number) => `已附加 ${count} 个文件`,
+    panelLabel: '已附加文件',
+    removeLabel: (name: string) => `移除 ${name}`,
+    closePreviewLabel: '关闭附件预览',
+    previewDialogLabel: '附件预览',
+    dropHint: '松开即可附加文件',
+    previewLoading: '正在加载预览…',
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {

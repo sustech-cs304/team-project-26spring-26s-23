@@ -140,7 +140,9 @@ afterEach(() => {
   restoreAttachmentManagerApi()
 })
 
+/* eslint-disable-next-line max-lines-per-function -- organizational wrapper for send error test groups */
 describe('CopilotChatPanel composer interactions', () => {
+  /* eslint-disable-next-line max-lines-per-function -- integration test for failed sends as echoed user messages with error details */
   describe('send error handling', () => {
   it('keeps failed sends as echoed user messages plus an error turn', async () => {
     const sendMessage = vi.fn(async function* () {
@@ -189,6 +191,7 @@ describe('CopilotChatPanel composer interactions', () => {
   })
 
   })
+  /* eslint-disable-next-line max-lines-per-function -- integration tests for inline form validation and submission, each requiring full setup */
   describe('inline form validation and submission', () => {
   it('prevents inline form submission when local validation fails', async () => {
     const sendMessage = vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
@@ -269,6 +272,7 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- complex integration test with two-stage send: form request yields inline form, form submission sends structured payload */
   it('submits inline form payload as a new user message and keeps the form readonly afterwards', async () => {
     const sendMessage = vi.fn()
       .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
@@ -402,7 +406,9 @@ describe('CopilotChatPanel composer interactions', () => {
   })
 
   })
+  /* eslint-disable-next-line max-lines-per-function -- integration tests for inline form state lifecycle management */
   describe('inline form state management', () => {
+  /* eslint-disable-next-line max-lines-per-function -- complex integration test covering pending form state, composer enablement, and form expiration */
   it('keeps the composer enabled while an inline form is pending and expires the old form after a normal send', async () => {
     const sendMessage = vi.fn()
       .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
@@ -530,6 +536,7 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- complex integration test spanning session switches with inline form state retention and composer re-enablement */
   it('keeps a pending inline form across session switches and keeps the composer usable after returning', async () => {
     const firstSessionShell = createSessionShell({ sessionId: 'session-inline-form-a' })
     const secondSessionShell = createSessionShell({ sessionId: 'session-inline-form-b' })

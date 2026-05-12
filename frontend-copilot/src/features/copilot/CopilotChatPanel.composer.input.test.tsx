@@ -144,7 +144,9 @@ afterEach(() => {
   restoreAttachmentManagerApi()
 })
 
+/* eslint-disable-next-line max-lines-per-function -- organizational wrapper for composer input test groups */
 describe('CopilotChatPanel composer interactions', () => {
+  /* eslint-disable-next-line max-lines-per-function -- four integration tests for input handling and attachments/resize, each requiring independent render setup */
   describe('composer input handling', () => {
   it('submits on Enter and keeps newline behavior for Ctrl + Enter in the message composer', async () => {
     const sendMessage = createResolvedSendMessageSpy()

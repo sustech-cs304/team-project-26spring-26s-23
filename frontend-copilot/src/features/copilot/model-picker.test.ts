@@ -16,7 +16,9 @@ const LABEL_PROVIDER_MODEL = 'provider-model'
 const LABEL_SHARED_MODEL = 'shared-model'
 
 
+/* eslint-disable-next-line max-lines-per-function -- 模型选择器测试覆盖多个 provider 场景，拆分破坏完整性 */
 describe('copilot model picker bridge', () => {
+  /* eslint-disable-next-line max-lines-per-function -- catalog 构建包含多层 fixture 构造，强行拆分降低可读性 */
   describe('model catalog construction', () => {
     it('maps persisted provider profiles into provider-backed groups and model options', () => {
     const catalog = createCopilotModelCatalog([

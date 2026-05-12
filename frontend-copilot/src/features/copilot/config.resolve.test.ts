@@ -11,6 +11,8 @@ const LABEL_CAMPUS_AGENT = 'campus-agent'
 const LABEL_HTTP_127 = 'http://127.0.0.1:8765'
 
 
+// 包含 4 个已拆分的子 describe（error/ready/transitional/empty states），顶层 describe 仅做语义分组
+/* eslint-disable-next-line max-lines-per-function */
 describe('resolveCopilotConfigState', () => {
   describe('error states', () => {
     it('returns an error state when bootstrap field loading fails', () => {

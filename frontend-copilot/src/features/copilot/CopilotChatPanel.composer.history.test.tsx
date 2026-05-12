@@ -140,7 +140,9 @@ afterEach(() => {
   restoreAttachmentManagerApi()
 })
 
+/* eslint-disable-next-line max-lines-per-function -- organizational wrapper for composer interaction test groups */
 describe('CopilotChatPanel composer interactions', () => {
+  /* eslint-disable-next-line max-lines-per-function -- three integration tests for thread drift/rebinding scenarios, each requiring independent full render setup */
   describe('thread drift and rebinding', () => {
   it('displays legacy-unsupported provider validation in the chat area without a composer error bar', async () => {
     const sendMessage = createResolvedSendMessageSpy()
@@ -345,6 +347,7 @@ describe('CopilotChatPanel composer interactions', () => {
   })
 
   })
+  /* eslint-disable-next-line max-lines-per-function -- two integration tests for history continuation/cancel scenarios, each requiring independent full render setup */
   describe('history continuation and cancel', () => {
   it('allows a subsequent successful send after a legacy-provider validation failure and clears the stale error message', async () => {
     const sendMessage = createResolvedSendMessageSpy()

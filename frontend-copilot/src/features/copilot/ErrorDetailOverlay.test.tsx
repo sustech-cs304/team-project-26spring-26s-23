@@ -36,6 +36,8 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+// 包含 8 个紧密相关的渲染/交互/剪贴板测试，拆分会导致语义分组不自然
+/* eslint-disable-next-line max-lines-per-function */
 describe('ErrorDetailOverlay', () => {
   it('renders grouped content and the restrained empty state contract', () => {
     const rendered = renderWithRoot(

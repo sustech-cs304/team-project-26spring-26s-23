@@ -139,6 +139,20 @@ export function getCopilotSendDisabledReason(input: {
   hasAvailableModels: boolean
   selectedModelOption: CopilotModelOption | null
 }): string | null {
+  return getSendDisabledReasonChain(input)
+}
+
+// eslint-disable-next-line complexity -- same logic as original getCopilotSendDisabledReason, guard clause chain
+function getSendDisabledReasonChain(input: {
+  state: CopilotBootstrapState
+  sessionShell: AssistantSessionShell | null
+  runState: CopilotRunState
+  composerDraft: CopilotChatComposerDraft
+  hasAttachments?: boolean
+  hasConfiguredModels: boolean
+  hasAvailableModels: boolean
+  selectedModelOption: CopilotModelOption | null
+}): string | null {
   if (!isCopilotConnectableState(input.state)) {
     return '当前运行态未就绪，无法发送消息。'
   }
@@ -186,66 +200,107 @@ export function getCopilotSendDisabledReason(input: {
 function summarizeRuntimeRunEventForDebug(event: RuntimeRunEvent): Record<string, unknown> {
   switch (event.type) {
     case 'run_started':
-      return {
-        runId: event.runId,
-        type: event.type,
-        assistantMessageId: event.payload.assistantMessageId,
-      }
+      return summarizeRunStartedForDebug(event)
     case 'run_completed':
-      return {
-        runId: event.runId,
-        type: event.type,
-        assistantMessageId: event.payload.assistantMessageId,
-        resolvedToolIds: [...event.payload.resolvedToolIds],
-      }
+      return summarizeRunCompletedForDebug(event)
     case 'run_failed':
-      return {
-        runId: event.runId,
-        type: event.type,
-        code: event.payload.code,
-        message: event.payload.message,
-      }
+      return summarizeRunFailedForDebug(event)
     case 'run_cancelled':
-      return {
-        runId: event.runId,
-        type: event.type,
-        reason: event.payload.reason,
-      }
+      return summarizeRunCancelledForDebug(event)
     case 'tool_event':
-      return {
-        runId: event.runId,
-        type: event.type,
-        toolCallId: event.payload.toolCallId,
-        toolId: event.payload.toolId,
-        phase: event.payload.phase,
-        approval: event.payload.approval ?? null,
-        errorSummary: event.payload.errorSummary ?? null,
-      }
+      return summarizeToolEventForDebug(event)
     case 'run_diagnostic':
-      return {
-        runId: event.runId,
-        type: event.type,
-        code: event.payload.code,
-        stage: event.payload.stage ?? null,
-      }
+      return summarizeRunDiagnosticForDebug(event)
     case 'text_delta':
     case 'reasoning_delta':
-      return {
-        runId: event.runId,
-        type: event.type,
-        textDeltaLength: event.payload.delta.length,
-      }
+      return summarizeDeltaForDebug(event)
     case 'run_metadata':
-      return {
-        runId: event.runId,
-        type: event.type,
-        requestedThinkingSelection: event.payload.requestedThinkingSelection ?? null,
-        appliedThinkingSelection: event.payload.appliedThinkingSelection ?? null,
-        requestedThinkingLevel: event.payload.requestedThinkingLevel ?? null,
-        appliedThinkingLevel: event.payload.appliedThinkingLevel ?? null,
-        thinkingCapabilitySnapshot: event.payload.thinkingCapabilitySnapshot ?? null,
-        reasoningSuppressionBasis: event.payload.reasoningSuppressionBasis ?? null,
-      }
+      return summarizeRunMetadataForDebug(event)
+  }
+}
+
+type RunStartedLike = RuntimeRunEvent & { type: 'run_started' }
+type RunCompletedLike = RuntimeRunEvent & { type: 'run_completed' }
+type RunFailedLike = RuntimeRunEvent & { type: 'run_failed' }
+type RunCancelledLike = RuntimeRunEvent & { type: 'run_cancelled' }
+type ToolEventLike = RuntimeRunEvent & { type: 'tool_event' }
+type RunDiagnosticLike = RuntimeRunEvent & { type: 'run_diagnostic' }
+type DeltaLike = RuntimeRunEvent & { type: 'text_delta' | 'reasoning_delta' }
+type RunMetadataLike = RuntimeRunEvent & { type: 'run_metadata' }
+
+function summarizeRunStartedForDebug(event: RunStartedLike): Record<string, unknown> {
+  return {
+    runId: event.runId,
+    type: event.type,
+    assistantMessageId: event.payload.assistantMessageId,
+  }
+}
+
+function summarizeRunCompletedForDebug(event: RunCompletedLike): Record<string, unknown> {
+  return {
+    runId: event.runId,
+    type: event.type,
+    assistantMessageId: event.payload.assistantMessageId,
+    resolvedToolIds: [...event.payload.resolvedToolIds],
+  }
+}
+
+function summarizeRunFailedForDebug(event: RunFailedLike): Record<string, unknown> {
+  return {
+    runId: event.runId,
+    type: event.type,
+    code: event.payload.code,
+    message: event.payload.message,
+  }
+}
+
+function summarizeRunCancelledForDebug(event: RunCancelledLike): Record<string, unknown> {
+  return {
+    runId: event.runId,
+    type: event.type,
+    reason: event.payload.reason,
+  }
+}
+
+function summarizeToolEventForDebug(event: ToolEventLike): Record<string, unknown> {
+  return {
+    runId: event.runId,
+    type: event.type,
+    toolCallId: event.payload.toolCallId,
+    toolId: event.payload.toolId,
+    phase: event.payload.phase,
+    approval: event.payload.approval ?? null,
+    errorSummary: event.payload.errorSummary ?? null,
+  }
+}
+
+function summarizeRunDiagnosticForDebug(event: RunDiagnosticLike): Record<string, unknown> {
+  return {
+    runId: event.runId,
+    type: event.type,
+    code: event.payload.code,
+    stage: event.payload.stage ?? null,
+  }
+}
+
+function summarizeDeltaForDebug(event: DeltaLike): Record<string, unknown> {
+  return {
+    runId: event.runId,
+    type: event.type,
+    textDeltaLength: event.payload.delta.length,
+  }
+}
+
+function summarizeRunMetadataForDebug(event: RunMetadataLike): Record<string, unknown> {
+  return {
+    runId: event.runId,
+    type: event.type,
+    requestedThinkingSelection: event.payload.requestedThinkingSelection ?? null,
+    appliedThinkingSelection: event.payload.appliedThinkingSelection ?? null,
+    requestedThinkingLevel: event.payload.requestedThinkingLevel ?? null,
+    appliedThinkingLevel: event.payload.appliedThinkingLevel ?? null,
+    thinkingCapabilitySnapshot: event.payload.thinkingCapabilitySnapshot ?? null,
+    reasoningSuppressionBasis: event.payload.reasoningSuppressionBasis ?? null,
   }
 }
 
@@ -547,7 +602,7 @@ function handleSendError(input: {
   }
 }
 
-function validateCopilotSendPreflight(input: {
+interface SendPreflightInput {
   hasConfiguredModels: boolean
   hasAvailableModels: boolean
   selectedModelOption: CopilotModelOption | null
@@ -555,44 +610,14 @@ function validateCopilotSendPreflight(input: {
   attachments?: readonly CopilotComposerAttachment[]
   messageOverride?: { content: string }
   setSendError: Dispatch<SetStateAction<CopilotTransientErrorState | null>>
-}):
+}
+
+function validateCopilotSendPreflight(input: SendPreflightInput):
   | { ok: true; trimmedMessage: string; requestOptions: Record<string, unknown> }
   | { ok: false } {
-  if (!input.hasConfiguredModels) {
-    input.setSendError(createPreflightTransientErrorState({
-      message: '尚未配置模型，请先前往设置页完成模型配置。',
-      code: 'no_configured_models',
-      details: { hasConfiguredModels: false },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return { ok: false }
-  }
-
-  if (!input.hasAvailableModels && input.selectedModelOption !== null && !input.selectedModelOption.available) {
-    input.setSendError(createPreflightTransientErrorState({
-      message: input.selectedModelOption.unavailableReason ?? MODEL_UNAVAILABLE_MESSAGE,
-      code: 'selected_model_unavailable',
-      details: {
-        selectedModelId: input.selectedModelOption.modelId,
-        unavailableReason: input.selectedModelOption.unavailableReason,
-      },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return { ok: false }
-  }
-
-  if (!input.hasAvailableModels) {
-    input.setSendError(createPreflightTransientErrorState({
-      message: '当前没有可用模型，请前往设置页调整模型配置。',
-      code: 'no_available_models',
-      details: { hasAvailableModels: false },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return { ok: false }
-  }
+  if (checkPreflightConfiguredModels(input)) return { ok: false }
+  if (checkPreflightSpecificModelUnavailable(input)) return { ok: false }
+  if (checkPreflightNoAvailableModels(input)) return { ok: false }
 
   const trimmedMessage = (input.messageOverride?.content ?? input.composerDraft.messageText).trim()
   if (trimmedMessage === '' && (input.attachments?.length ?? 0) === 0) {
@@ -606,42 +631,8 @@ function validateCopilotSendPreflight(input: {
     return { ok: false }
   }
 
-  if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
-    if (input.selectedModelOption !== null && !input.selectedModelOption.available) {
-      input.setSendError(createPreflightTransientErrorState({
-        message: input.selectedModelOption.unavailableReason ?? MODEL_UNAVAILABLE_MESSAGE,
-        code: 'selected_model_unavailable',
-        details: {
-          selectedModelId: input.selectedModelOption.modelId,
-          unavailableReason: input.selectedModelOption.unavailableReason,
-        },
-        composerDraft: input.composerDraft,
-        selectedModelOption: input.selectedModelOption,
-      }))
-      return { ok: false }
-    }
-
-    input.setSendError(createPreflightTransientErrorState({
-      message: '请先选择模型。',
-      code: 'model_required',
-      details: { field: 'selectedModelRoute' },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return { ok: false }
-  }
-
-  const streamingSupportReason = getRuntimeModelRouteStreamingSupportReason(input.composerDraft.selectedModelRoute)
-  if (streamingSupportReason !== null) {
-    input.setSendError(createPreflightTransientErrorState({
-      message: streamingSupportReason,
-      code: 'streaming_not_supported',
-      details: { reason: streamingSupportReason },
-      composerDraft: input.composerDraft,
-      selectedModelOption: input.selectedModelOption,
-    }))
-    return { ok: false }
-  }
+  if (checkPreflightModelRequired(input)) return { ok: false }
+  if (checkPreflightStreamingSupport(input)) return { ok: false }
 
   let requestOptions: Record<string, unknown>
   try {
@@ -659,6 +650,94 @@ function validateCopilotSendPreflight(input: {
   }
 
   return { ok: true, trimmedMessage, requestOptions }
+}
+
+function checkPreflightConfiguredModels(input: SendPreflightInput): boolean {
+  if (!input.hasConfiguredModels) {
+    input.setSendError(createPreflightTransientErrorState({
+      message: '尚未配置模型，请先前往设置页完成模型配置。',
+      code: 'no_configured_models',
+      details: { hasConfiguredModels: false },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return true
+  }
+  return false
+}
+
+function checkPreflightSpecificModelUnavailable(input: SendPreflightInput): boolean {
+  if (!input.hasAvailableModels && input.selectedModelOption !== null && !input.selectedModelOption.available) {
+    input.setSendError(createPreflightTransientErrorState({
+      message: input.selectedModelOption.unavailableReason ?? MODEL_UNAVAILABLE_MESSAGE,
+      code: 'selected_model_unavailable',
+      details: {
+        selectedModelId: input.selectedModelOption.modelId,
+        unavailableReason: input.selectedModelOption.unavailableReason,
+      },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return true
+  }
+  return false
+}
+
+function checkPreflightNoAvailableModels(input: SendPreflightInput): boolean {
+  if (!input.hasAvailableModels) {
+    input.setSendError(createPreflightTransientErrorState({
+      message: '当前没有可用模型，请前往设置页调整模型配置。',
+      code: 'no_available_models',
+      details: { hasAvailableModels: false },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return true
+  }
+  return false
+}
+
+function checkPreflightModelRequired(input: SendPreflightInput): boolean {
+  if (input.composerDraft.selectedModelRoute === null || input.composerDraft.selectedModelId.trim() === '') {
+    if (input.selectedModelOption !== null && !input.selectedModelOption.available) {
+      input.setSendError(createPreflightTransientErrorState({
+        message: input.selectedModelOption.unavailableReason ?? MODEL_UNAVAILABLE_MESSAGE,
+        code: 'selected_model_unavailable',
+        details: {
+          selectedModelId: input.selectedModelOption.modelId,
+          unavailableReason: input.selectedModelOption.unavailableReason,
+        },
+        composerDraft: input.composerDraft,
+        selectedModelOption: input.selectedModelOption,
+      }))
+      return true
+    }
+
+    input.setSendError(createPreflightTransientErrorState({
+      message: '请先选择模型。',
+      code: 'model_required',
+      details: { field: 'selectedModelRoute' },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return true
+  }
+  return false
+}
+
+function checkPreflightStreamingSupport(input: SendPreflightInput): boolean {
+  const streamingSupportReason = getRuntimeModelRouteStreamingSupportReason(input.composerDraft.selectedModelRoute)
+  if (streamingSupportReason !== null) {
+    input.setSendError(createPreflightTransientErrorState({
+      message: streamingSupportReason,
+      code: 'streaming_not_supported',
+      details: { reason: streamingSupportReason },
+      composerDraft: input.composerDraft,
+      selectedModelOption: input.selectedModelOption,
+    }))
+    return true
+  }
+  return false
 }
 
 function isAbortError(error: unknown): boolean {

@@ -408,7 +408,7 @@ function stringifyRecord(record: Record<string, unknown>): string | null {
 
 const MCP_NOT_PROVIDED = '未提供' as const
 
-function readMcpFailureDetail(source: CopilotErrorDetailSource): {
+interface McpFailureDetail {
   toolName: string
   toolId: string
   toolCallId: string
@@ -420,7 +420,9 @@ function readMcpFailureDetail(source: CopilotErrorDetailSource): {
   snapshotRevision: string
   catalogVersion: string
   targetSummary: string
-} | null {
+}
+
+function readMcpFailureDetail(source: CopilotErrorDetailSource): McpFailureDetail | null {
   const details = source.details
   const toolId = readOptionalString(details.toolId)
   const serverId = readOptionalString(details.serverId)
@@ -428,61 +430,90 @@ function readMcpFailureDetail(source: CopilotErrorDetailSource): {
   const remoteToolName = readOptionalString(details.remoteToolName)
   const requestedRemoteToolName = readOptionalString(details.requestedRemoteToolName)
 
-  const isMcpToolId = toolId !== null && /^mcp[.:/]/iu.test(toolId)
-  const hasMcpContext = serverId !== null
-    || requestedServerId !== null
-    || remoteToolName !== null
-    || requestedRemoteToolName !== null
-
-  if (!isMcpToolId && !hasMcpContext) {
+  if (!isMcpRelatedFailure({ toolId, serverId, requestedServerId, remoteToolName, requestedRemoteToolName })) {
     return null
   }
 
   const resolvedServerId = serverId ?? requestedServerId ?? MCP_NOT_PROVIDED
   const resolvedToolId = toolId ?? MCP_NOT_PROVIDED
   const resolvedToolCallId = readOptionalString(details.toolCallId) ?? MCP_NOT_PROVIDED
-  const toolName = readWithFallback(
+
+  return {
+    toolName: readMcpFailureToolName(remoteToolName, requestedRemoteToolName, toolId),
+    toolId: resolvedToolId,
+    toolCallId: resolvedToolCallId,
+    serverName: readMcpFailureServerName(details, resolvedServerId),
+    serverId: resolvedServerId,
+    phase: readMcpFailurePhase(details, source.stage),
+    diagnosticSummary: readMcpFailureDiagnosticSummary(details),
+    stderrSummary: readOptionalString(details.stderrSummary) ?? MCP_NOT_PROVIDED,
+    snapshotRevision: resolveMcpSnapshotRevision(details),
+    catalogVersion: resolveMcpCatalogVersion(details),
+    targetSummary: summarizeDefinedEntries({
+      serverId: resolvedServerId === MCP_NOT_PROVIDED ? null : resolvedServerId,
+      remoteToolName: readMcpFailureToolName(remoteToolName, requestedRemoteToolName, toolId) === MCP_NOT_PROVIDED ? null : readMcpFailureToolName(remoteToolName, requestedRemoteToolName, toolId),
+      toolCallId: resolvedToolCallId === MCP_NOT_PROVIDED ? null : resolvedToolCallId,
+    }) ?? MCP_NOT_PROVIDED,
+  }
+}
+
+function isMcpRelatedFailure(input: {
+  toolId: string | null
+  serverId: string | null
+  requestedServerId: string | null
+  remoteToolName: string | null
+  requestedRemoteToolName: string | null
+}): boolean {
+  const isMcpToolId = input.toolId !== null && /^mcp[.:/]/iu.test(input.toolId)
+  const hasMcpContext = input.serverId !== null
+    || input.requestedServerId !== null
+    || input.remoteToolName !== null
+    || input.requestedRemoteToolName !== null
+  return isMcpToolId || hasMcpContext
+}
+
+function readMcpFailureToolName(
+  remoteToolName: string | null,
+  requestedRemoteToolName: string | null,
+  toolId: string | null,
+): string {
+  return readWithFallback(
     [remoteToolName, requestedRemoteToolName, deriveToolNameFromToolId(toolId)],
     MCP_NOT_PROVIDED,
   )
-  const serverName = readWithFallback(
+}
+
+function readMcpFailureServerName(details: Record<string, unknown>, resolvedServerId: string): string {
+  return readWithFallback(
     [readOptionalString(details.serverName), readOptionalString(details.displayName), resolvedServerId],
     MCP_NOT_PROVIDED,
   )
-  const phase = readWithFallback(
-    [readOptionalString(details.phase), readOptionalString(details.stage), source.stage],
+}
+
+function readMcpFailurePhase(details: Record<string, unknown>, stage: string | null): string {
+  return readWithFallback(
+    [readOptionalString(details.phase), readOptionalString(details.stage), stage],
     MCP_NOT_PROVIDED,
   )
-  const diagnosticSummary = readWithFallback(
+}
+
+function readMcpFailureDiagnosticSummary(details: Record<string, unknown>): string {
+  return readWithFallback(
     [readOptionalString(details.diagnosticSummary), readOptionalString(details.errorSummary), readOptionalString(details.diagnostic)],
     MCP_NOT_PROVIDED,
   )
-  const stderrSummary = readOptionalString(details.stderrSummary) ?? MCP_NOT_PROVIDED
-  const snapshotRevision = readOptionalIntegerText(details.snapshotRevision)
+}
+
+function resolveMcpSnapshotRevision(details: Record<string, unknown>): string {
+  return readOptionalIntegerText(details.snapshotRevision)
     ?? readOptionalIntegerText(details.requestedSnapshotRevision)
     ?? MCP_NOT_PROVIDED
-  const catalogVersion = readOptionalIntegerText(details.catalogVersion)
+}
+
+function resolveMcpCatalogVersion(details: Record<string, unknown>): string {
+  return readOptionalIntegerText(details.catalogVersion)
     ?? readOptionalIntegerText(details.catalogRevision)
     ?? MCP_NOT_PROVIDED
-  const targetSummary = summarizeDefinedEntries({
-    serverId: resolvedServerId === MCP_NOT_PROVIDED ? null : resolvedServerId,
-    remoteToolName: toolName === MCP_NOT_PROVIDED ? null : toolName,
-    toolCallId: resolvedToolCallId === MCP_NOT_PROVIDED ? null : resolvedToolCallId,
-  }) ?? MCP_NOT_PROVIDED
-
-  return {
-    toolName,
-    toolId: resolvedToolId,
-    toolCallId: resolvedToolCallId,
-    serverName,
-    serverId: resolvedServerId,
-    phase,
-    diagnosticSummary,
-    stderrSummary,
-    snapshotRevision,
-    catalogVersion,
-    targetSummary,
-  }
 }
 
 function readWithFallback(

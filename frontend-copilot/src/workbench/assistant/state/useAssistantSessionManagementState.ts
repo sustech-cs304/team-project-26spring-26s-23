@@ -51,6 +51,11 @@ interface UseAssistantSessionManagementStateResult {
   cancelSessionDelete: () => void
 }
 
+// This hook encapsulates all session management actions (rename, duplicate,
+// delete) that share the same state and mutex refs. Extracting individual
+// callbacks would require lifting the shared refs and state to a parent,
+// adding boilerplate without reducing actual complexity.
+// eslint-disable-next-line max-lines-per-function
 export function useAssistantSessionManagementState({
   sessionListState,
   setSelectedAgentId,

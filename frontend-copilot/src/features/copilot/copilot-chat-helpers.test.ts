@@ -56,6 +56,8 @@ const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
 const LABEL_TOOL_REMOTE_SEARCH_2 = 'tool.remote-search:call-1'
 
 
+// 顶层测试 describe，包含 7+ 子 describe，覆盖 chat helpers 全场景，无法安全拆分
+/* eslint-disable-next-line max-lines-per-function */
 describe('copilot chat helpers', () => {
   describe('debug summaries', () => {
     it('builds runtime and session debug summaries for console logging', () => {
@@ -116,6 +118,8 @@ describe('copilot chat helpers', () => {
     })
   })
 
+  // 包含 4 个嵌套 describe（attachments/enabled tools/tool permission/thinking selection），无法进一步拆分
+  /* eslint-disable-next-line max-lines-per-function */
   describe('message send input', () => {
     it('builds request-scoped message input around structured thinking selection without legacy payload aliases', () => {
     const sessionShell = createSessionShell()
@@ -475,6 +479,8 @@ describe('copilot chat helpers', () => {
     })
   })
 
+  // 包含 2 个 tool step turn 测试，覆盖 insert/update/cancel 完整流程
+  /* eslint-disable-next-line max-lines-per-function */
   describe('tool step turns', () => {
     it('inserts tool steps ahead of the pending assistant turn and updates the same step on completion/failure', () => {
     const assistantTurn = createPendingAssistantTurn({
@@ -603,6 +609,8 @@ describe('copilot chat helpers', () => {
   })
   })
 
+  // 包含 4 个 error handling 测试，覆盖格式化、capability 构建、transient 状态和 preflight 详情
+  /* eslint-disable-next-line max-lines-per-function */
   describe('error handling', () => {
     it('formats structured backend errors into explicit user-facing messages', () => {
     expect(formatRuntimeMessageSendError(new RuntimeRequestError('agent_mismatch: session bound agent differs', {

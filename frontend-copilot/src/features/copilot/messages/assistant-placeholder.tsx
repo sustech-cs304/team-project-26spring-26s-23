@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- 此文件导出 createRenderedAssistantPlaceholderState 和 renderAssistantPlaceholder (非组件)，均为该模块的公开契约。 */
 import type { CopilotAssistantPlaceholderState } from '../run-segment-view-model'
 
 interface RenderedAssistantPlaceholderState {

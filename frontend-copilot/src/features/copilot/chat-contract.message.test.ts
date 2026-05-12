@@ -25,7 +25,11 @@ const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
 
 const RUNTIME_CONNECTIVITY_ERROR_MESSAGE = '无法连接到本地运行时，可能由后端异常、CORS 或网络拒绝导致，请查看运行时控制台日志。'
 
+// 包含 5 个紧密相关的异步集成测试，拆分会导致语义分组不自然
+/* eslint-disable-next-line max-lines-per-function */
 describe('dispatchCopilotMessage', () => {
+  // 单个集成测试，覆盖完整的 run/start → run/stream 传输路径，包含 20+ 断言验证请求体和响应
+  /* eslint-disable-next-line max-lines-per-function */
   it('posts run/start then run/stream with structured thinking payload as the main transport path', async () => {
     const runEvents: RuntimeRunEvent[] = [
       {

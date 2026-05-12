@@ -467,34 +467,43 @@ function normalizeRuntimeThinkingValueForCapability(
       return cloneRuntimeThinkingValue(fixedValue)
     }
     case 'budget':
-      if (value.valueType !== 'budget') {
-        return null
-      }
-      if (value.mode === 'budget' && typeof value.budgetTokens === 'number') {
-        if (!supportsExactBudgetThinkingSelection(capability)) {
-          return null
-        }
-        const budgetTokens = normalizeBudgetTokens(value.budgetTokens)
-        return budgetTokens === null
-          ? null
-          : {
-              valueType: 'budget',
-              mode: 'budget',
-              budgetTokens,
-              labelZh: formatThinkingTokenCount(budgetTokens),
-            }
-      }
-      return cloneRuntimeThinkingValue(
-        capability.allowedValues.find((candidate) => (
-          candidate.valueType === 'budget' && candidate.mode === value.mode
-        )) ?? null,
-      )
+      return normalizeBudgetThinkingValue(value, capability)
     case 'discrete':
       if (value.valueType !== 'code') {
         return null
       }
       return cloneRuntimeThinkingValue(findThinkingCodeValue(capability.allowedValues, value.code))
   }
+}
+
+function normalizeBudgetThinkingValue(
+  value: NonNullable<RuntimeThinkingSelection['value']> | null | undefined,
+  capability: RuntimeThinkingCapability,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  if (value?.valueType !== 'budget') {
+    return null
+  }
+
+  if (value.mode === 'budget' && typeof value.budgetTokens === 'number') {
+    if (!supportsExactBudgetThinkingSelection(capability)) {
+      return null
+    }
+    const budgetTokens = normalizeBudgetTokens(value.budgetTokens)
+    return budgetTokens === null
+      ? null
+      : {
+          valueType: 'budget',
+          mode: 'budget',
+          budgetTokens,
+          labelZh: formatThinkingTokenCount(budgetTokens),
+        }
+  }
+
+  return cloneRuntimeThinkingValue(
+    capability.allowedValues.find((candidate) => (
+      candidate.valueType === 'budget' && candidate.mode === value.mode
+    )) ?? null,
+  )
 }
 
 function supportsExactBudgetThinkingSelection(capability: RuntimeThinkingCapability): boolean {

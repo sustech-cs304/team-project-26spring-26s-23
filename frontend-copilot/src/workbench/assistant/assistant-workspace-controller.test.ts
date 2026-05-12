@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { enhanceRuntimeAgents } from '../config'
+
+const TOOL_ID_FS_READ = 'tool.fs.read'
 import {
   activateAssistantSession,
   createAssistantAgentDirectoryState,
@@ -32,7 +34,7 @@ describe('assistant-workspace-controller', () => {
       capabilitiesVersion: 'cap-v12',
       allAvailableTools: [
         {
-          toolId: 'tool.fs.read',
+          toolId: TOOL_ID_FS_READ,
           kind: 'builtin',
           availability: 'available',
           displayName: '读取文件',
@@ -46,8 +48,8 @@ describe('assistant-workspace-controller', () => {
           description: '访问外部搜索服务',
         },
       ],
-      recommendedToolsForAgent: ['tool.fs.read'],
-      defaultEnabledTools: ['tool.fs.read'],
+      recommendedToolsForAgent: [TOOL_ID_FS_READ],
+      defaultEnabledTools: [TOOL_ID_FS_READ],
       toolSelectionMode: 'recommendation-only',
     })
     expect(capabilities.allAvailableTools.map((tool) => tool.toolId)).toContain('tool.remote-search')
@@ -73,7 +75,7 @@ describe('assistant-workspace-controller', () => {
         capabilitiesVersion: 'cap-v12',
         allAvailableTools: [
           {
-            toolId: 'tool.fs.read',
+            toolId: TOOL_ID_FS_READ,
             kind: 'builtin',
             availability: 'available',
             displayName: '读取文件',
@@ -87,8 +89,8 @@ describe('assistant-workspace-controller', () => {
             description: '访问外部搜索服务',
           },
         ],
-        recommendedToolsForAgent: ['tool.fs.read'],
-        defaultEnabledTools: ['tool.fs.read'],
+        recommendedToolsForAgent: [TOOL_ID_FS_READ],
+        defaultEnabledTools: [TOOL_ID_FS_READ],
         toolSelectionMode: 'recommendation-only',
       },
     })

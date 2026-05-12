@@ -37,7 +37,10 @@ afterAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
 })
 
+// 已拆分为 2 个子 describe（rendering and search / selection and permissions），父级仅做语义分组
+/* eslint-disable-next-line max-lines-per-function */
 describe('ToolPicker', () => {
+  describe('rendering and search', () => {
   it('renders grouped localized tools in stable platform order and hides source/status labels', async () => {
     const rendered = renderWithRoot(<ToolPickerHarness />)
     const trigger = rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_2) as HTMLButtonElement
@@ -146,7 +149,9 @@ describe('ToolPicker', () => {
 
     rendered.unmount()
   })
+  })
 
+  describe('selection and permissions', () => {
   it('supports multi-select, select-all, invert and recommended shortcuts with grouped options', async () => {
     const rendered = renderWithRoot(<ToolPickerHarness />)
 
@@ -286,6 +291,7 @@ describe('ToolPicker', () => {
     expect(rendered.getByTestId('chat-tool-option-mcp.mcp-stdio-stub.search-campus.00004d8d').textContent).toContain('stdio stub server / Search Campus')
 
     rendered.unmount()
+  })
   })
 })
 

@@ -191,6 +191,7 @@ describe('CopilotComposer thinking controls', () => {
   })
 })
 
+/* eslint-disable-next-line max-lines-per-function -- integration test group for CopilotComposer attachment handling (paste, file display, removal), each test requires independent render setup */
 describe('CopilotComposer attachments', () => {
   describe('paste handling', () => {
     it('does not intercept pure text paste', async () => {

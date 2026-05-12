@@ -29,6 +29,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// 包含 5 个已拆分的子 describe，顶层 describe 仅做语义分组
+/* eslint-disable-next-line max-lines-per-function */
 describe('config center public bridge', () => {
   describe('unavailable api errors', () => {
     it('returns a structured failure when the public snapshot api is unavailable', async () => {

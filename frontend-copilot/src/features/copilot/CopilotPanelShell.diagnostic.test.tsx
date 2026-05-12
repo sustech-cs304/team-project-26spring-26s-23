@@ -38,6 +38,8 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+// 顶层集成测试 describe，包含 5+ 子 describe，覆盖 diagnostic 面板全场景，无法安全拆分
+/* eslint-disable-next-line max-lines-per-function */
 describe('CopilotPanelShell diagnostic visibility', () => {
   describe('persisted history retry and loading', () => {
     it('renders a concise persisted history retry prompt and triggers retry', async () => {
@@ -145,6 +147,8 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     })
   })
 
+  // 包含 3 个紧密相关的 history loading gate 测试，需共享 fake timers 和复杂 shell 构建
+  /* eslint-disable-next-line max-lines-per-function */
   describe('history loading gate', () => {
     it('keeps previous content visible, locks the composer, and switches directly to the new thread when loading finishes within 300ms', async () => {
       vi.useFakeTimers()
@@ -463,6 +467,8 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     })
   })
 
+  // 包含 4 个 transient/edge case 测试，覆盖交互式 shell 与 sse 流
+  /* eslint-disable-next-line max-lines-per-function */
   describe('transient and edge cases', () => {
     it('prefers transient conversation content over persisted loading gating', () => {
       const html = renderToStaticMarkup(
@@ -947,6 +953,8 @@ function renderShell(debugModeEnabled: boolean): string {
   )
 }
 
+// 测试 helper 函数，构建完整 CopilotPanelShell 用于交互式渲染验证
+/* eslint-disable-next-line max-lines-per-function */
 function renderInteractiveShell(debugModeEnabled: boolean) {
   const conversation: CopilotMessageListItem[] = [
     {

@@ -144,7 +144,9 @@ afterEach(() => {
   restoreAttachmentManagerApi()
 })
 
+/* eslint-disable-next-line max-lines-per-function -- organizational wrapper for message display test groups */
 describe('CopilotChatPanel composer interactions', () => {
+  /* eslint-disable-next-line max-lines-per-function -- five integration tests for message display/notifications, each with unique fixtures */
   describe('message display and notifications', () => {
   it('echoes user and assistant messages after a successful send with model icon and model name in the assistant header', async () => {
     const sendMessage = createResolvedSendMessageSpy()
@@ -478,6 +480,7 @@ describe('CopilotChatPanel composer interactions', () => {
   })
 
   })
+  /* eslint-disable-next-line max-lines-per-function -- four integration tests for send feedback/assistant placeholder, each with unique fixtures */
   describe('send feedback and assistant placeholder', () => {
   it('shows an assistant placeholder immediately after send with spinner feedback', async () => {
     const sendMessage = createStartOnlyPendingSendMessageSpy()

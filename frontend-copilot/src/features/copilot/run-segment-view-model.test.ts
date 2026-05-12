@@ -11,7 +11,14 @@ import {
   resolveCopilotReasoningElapsedMs,
 } from './run-segment-view-model'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_CAPABILITY_VISIBILITY = 'capability-visibility'
+const LABEL_CAS_AUTH_FAILURE_MSG = 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。'
+const LABEL_SUPPRESSED = 'suppressed'
+
+/* eslint-disable-next-line max-lines-per-function -- 视图模型投影测试覆盖 reasoning/terminal/tool 多种段类型，拆分削弱完整性 */
 describe('run segment view model', () => {
+  /* eslint-disable-next-line max-lines-per-function -- reasoning 投影包含多层 metadata fixture 构造，强行拆分降低可读性 */
   describe('reasoning projection', () => {
     it('projects reasoning observation timestamps into the reasoning view item', () => {
       const items = buildCopilotRunSegmentViewModel({
@@ -119,13 +126,13 @@ describe('run segment view model', () => {
         appliedThinkingLevel: 'auto',
         thinkingCapabilitySnapshot,
         reasoningSuppressed: true,
-        reasoningTraceState: 'suppressed',
+        reasoningTraceState: LABEL_SUPPRESSED,
         reasoningSuppressionBasis: createRuntimeReasoningSuppressionBasis({
           shouldSuppress: true,
-          source: 'capability-visibility',
+          source: LABEL_CAPABILITY_VISIBILITY,
           reasonCode: 'capability_visibility_suppressed',
           appliedThinkingLevel: 'auto',
-          reasoningVisibility: 'suppressed',
+          reasoningVisibility: LABEL_SUPPRESSED,
         }),
       })
 
@@ -134,13 +141,13 @@ describe('run segment view model', () => {
         requestedThinkingLevel: 'medium',
         appliedThinkingLevel: 'auto',
         thinkingCapabilitySnapshot,
-        reasoningTraceState: 'suppressed',
+        reasoningTraceState: LABEL_SUPPRESSED,
         reasoningSuppressionBasis: {
           shouldSuppress: true,
-          source: 'capability-visibility',
+          source: LABEL_CAPABILITY_VISIBILITY,
           reasonCode: 'capability_visibility_suppressed',
           appliedThinkingLevel: 'auto',
-          reasoningVisibility: 'suppressed',
+          reasoningVisibility: LABEL_SUPPRESSED,
         },
       })
       expect(items[1]).toMatchObject({
@@ -148,13 +155,13 @@ describe('run segment view model', () => {
         requestedThinkingLevel: 'medium',
         appliedThinkingLevel: 'auto',
         thinkingCapabilitySnapshot,
-        reasoningTraceState: 'suppressed',
+        reasoningTraceState: LABEL_SUPPRESSED,
         reasoningSuppressionBasis: {
           shouldSuppress: true,
-          source: 'capability-visibility',
+          source: LABEL_CAPABILITY_VISIBILITY,
           reasonCode: 'capability_visibility_suppressed',
           appliedThinkingLevel: 'auto',
-          reasoningVisibility: 'suppressed',
+          reasoningVisibility: LABEL_SUPPRESSED,
         },
         errorDetail: {
           source: 'streaming',
@@ -203,7 +210,7 @@ describe('run segment view model', () => {
             cancelReason: null,
             failure: {
               code: 'authentication_required',
-              message: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+              message: LABEL_CAS_AUTH_FAILURE_MSG,
               details: {
                 toolId: 'blackboard.snapshot.sync',
               },
@@ -231,11 +238,11 @@ describe('run segment view model', () => {
 
       expect(items[1]).toMatchObject({
         kind: 'terminal',
-        content: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+        content: LABEL_CAS_AUTH_FAILURE_MSG,
         errorDetail: {
           code: 'authentication_required',
-          summaryMessage: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
-          rawMessage: 'CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。',
+          summaryMessage: LABEL_CAS_AUTH_FAILURE_MSG,
+          rawMessage: LABEL_CAS_AUTH_FAILURE_MSG,
         },
       })
     })
@@ -311,13 +318,13 @@ describe('run segment view model', () => {
         appliedThinkingLevel: 'auto',
         thinkingCapabilitySnapshot: null,
         reasoningSuppressed: true,
-        reasoningTraceState: 'suppressed',
+        reasoningTraceState: LABEL_SUPPRESSED,
         reasoningSuppressionBasis: createRuntimeReasoningSuppressionBasis({
           shouldSuppress: true,
-          source: 'capability-visibility',
+          source: LABEL_CAPABILITY_VISIBILITY,
           reasonCode: 'capability_visibility_suppressed',
           appliedThinkingLevel: 'auto',
-          reasoningVisibility: 'suppressed',
+          reasoningVisibility: LABEL_SUPPRESSED,
         }),
       })
 

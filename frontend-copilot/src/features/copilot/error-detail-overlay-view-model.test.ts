@@ -24,6 +24,7 @@ const LABEL_TOOL_MODEL_CONTEXT = 'tool-model-context'
 const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
 
 
+/* eslint-disable-next-line max-lines-per-function -- 测试文件包含多个集中 describe 分组，拆分将破坏语义完整性 */
 describe('error detail overlay view model', () => {
   describe('group ordering', () => {
     it('maps preflight, run-start, and streaming failures into the same stable group order', () => {
@@ -141,6 +142,7 @@ describe('error detail overlay view model', () => {
     })
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- 多个工具失败场景测试集中于同一 describe，拆分降低可读性 */
   describe('tool failure details', () => {
     it('preserves traceback diagnostics in the raw details group for streaming tool failures', () => {
     const traceback = [

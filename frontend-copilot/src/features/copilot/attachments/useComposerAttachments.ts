@@ -67,6 +67,7 @@ export function useComposerAttachments(input: {
   ])
 }
 
+/* eslint-disable-next-line max-lines-per-function -- 此 hook 封装全部附件操作的业务逻辑，属于内聚单元，拆分会增加不必要的参数传递。 */
 function useComposerAttachmentOperations(input: {
   setState: Dispatch<SetStateAction<CopilotComposerAttachmentsState>>
   state: CopilotComposerAttachmentsState
@@ -163,23 +164,7 @@ function useComposerAttachmentOperations(input: {
   const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const clipboardFiles = Array.from(event.clipboardData.files)
     if (clipboardFiles.length > 0) {
-      const localFiles: File[] = []
-      let hasPathlessImageClipboardFile = false
-      let hasUnsupportedClipboardFile = false
-
-      for (const file of clipboardFiles) {
-        if (extractFileSystemPath(file) !== null) {
-          localFiles.push(file)
-          continue
-        }
-
-        if (file.type.startsWith('image/')) {
-          hasPathlessImageClipboardFile = true
-          continue
-        }
-
-        hasUnsupportedClipboardFile = true
-      }
+      const { localFiles, hasPathlessImageClipboardFile, hasUnsupportedClipboardFile } = classifyClipboardFiles(clipboardFiles)
 
       event.preventDefault()
       if (localFiles.length > 0) {
@@ -416,6 +401,32 @@ function useComposerAttachmentOperations(input: {
     removeAttachment,
     togglePanel,
   ])
+}
+
+function classifyClipboardFiles(files: File[]): {
+  localFiles: File[]
+  hasPathlessImageClipboardFile: boolean
+  hasUnsupportedClipboardFile: boolean
+} {
+  const localFiles: File[] = []
+  let hasPathlessImageClipboardFile = false
+  let hasUnsupportedClipboardFile = false
+
+  for (const file of files) {
+    if (extractFileSystemPath(file) !== null) {
+      localFiles.push(file)
+      continue
+    }
+
+    if (file.type.startsWith('image/')) {
+      hasPathlessImageClipboardFile = true
+      continue
+    }
+
+    hasUnsupportedClipboardFile = true
+  }
+
+  return { localFiles, hasPathlessImageClipboardFile, hasUnsupportedClipboardFile }
 }
 
 async function loadTextPreview(path: string): Promise<{ kind: 'text'; name: string; text: string; truncated: boolean } | { kind: 'error' } | null> {

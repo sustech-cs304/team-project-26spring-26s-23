@@ -144,7 +144,9 @@ afterEach(() => {
   restoreAttachmentManagerApi()
 })
 
+/* eslint-disable-next-line max-lines-per-function -- organizational wrapper for tool lifecycle test groups */
 describe('CopilotChatPanel composer interactions', () => {
+  /* eslint-disable-next-line max-lines-per-function -- integration tests for tool approval interaction scenarios */
   describe('tool approval interactions', () => {
   it('renders tool approval buttons without waiting callout in manual approval mode', async () => {
     const toolApprovalControl = createDeferredSignal()
@@ -420,6 +422,7 @@ describe('CopilotChatPanel composer interactions', () => {
   })
 
   })
+  /* eslint-disable-next-line max-lines-per-function -- integration tests for tool failure handling and terminal state visibility */
   describe('tool failure handling', () => {
   it('keeps a failed tool step visible when the runtime emits tool_event failed before run_completed', async () => {
     const sendMessage = createToolFailureSendMessageSpy()
@@ -512,6 +515,7 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- complex integration test covering transient failed terminal visibility through history replay and handoff sync */
   it('keeps the transient failed terminal visible until persisted replay contains the failed terminal handoff', async () => {
     const sendMessage = createToolFailureThenFatalSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()

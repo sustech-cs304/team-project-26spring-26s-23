@@ -140,7 +140,9 @@ afterEach(() => {
   restoreAttachmentManagerApi()
 })
 
+/* eslint-disable-next-line max-lines-per-function -- organizational wrapper for tool picker test groups */
 describe('CopilotChatPanel composer interactions', () => {
+  /* eslint-disable-next-line max-lines-per-function -- three integration tests for tool picker interactions, each requiring independent render setup */
   describe('tool picker interactions', () => {
   it('supports searching and shortcut-updating message-level enabledTools through the tool picker', async () => {
     const sendMessage = createResolvedSendMessageSpy()

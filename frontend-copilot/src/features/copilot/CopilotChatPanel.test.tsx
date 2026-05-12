@@ -63,6 +63,7 @@ afterAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
 })
 
+/* eslint-disable-next-line max-lines-per-function -- organizational wrapper for all CopilotChatPanel unit tests */
 describe('CopilotChatPanel', () => {
   describe('basic rendering', () => {
     it('renders the session-first placeholder when runtime is ready but no session has been created yet', () => {
@@ -147,6 +148,7 @@ describe('CopilotChatPanel', () => {
     })
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- integration tests for persisted history state rendering including loading skeletons and post-load states */
   describe('persisted history states', () => {
     it('shows a lightweight skeleton while persisted history detail is still loading', () => {
       const html = renderToStaticMarkup(
@@ -291,6 +293,7 @@ describe('CopilotChatPanel', () => {
     })
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- integration tests for persisted history detail parsing, retry flows, and canonical tool summary rendering */
   describe('persisted history detail and retry', () => {
     it('keeps canonical JSON tool summaries as persisted tool primary content for structured rendering', () => {
       const canonicalToolSummary = '{\n  "items": [\n    1,\n    2,\n    3\n  ],\n  "ok": true\n}'
@@ -516,6 +519,7 @@ describe('CopilotChatPanel', () => {
     })
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- integration tests for run browse selection and timeline conversation fallback behavior */
   describe('run browse and timeline default', () => {
     it('keeps a restored history thread on the default chat path until run browse is explicitly selected', () => {
       const html = renderToStaticMarkup(
@@ -645,6 +649,7 @@ describe('CopilotChatPanel', () => {
     })
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- integration tests for replay fallback to persisted assistantText and reasoning timeline extraction */
   describe('replay fallback and reasoning timeline', () => {
     it('falls back to persisted run assistantText when run_completed payload omits assistant fields', () => {
       const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
@@ -698,6 +703,7 @@ describe('CopilotChatPanel', () => {
       ])
     })
 
+    /* eslint-disable-next-line max-lines-per-function -- complex integration test covering timeline/replay precedence for inline-form and reasoning pipeline state */
     it('prefers timeline history when replay drops persisted inline-form and reasoning state', () => {
       const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
         hasLoadedDetail: true,
@@ -938,6 +944,7 @@ describe('CopilotChatPanel', () => {
     })
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- integration tests for structured payload, inline form rendering, and form rebuildability from persisted history */
   describe('structured payload and inline forms', () => {
     it('preserves missing null and object structuredPayload states in timeline user messages', () => {
       const conversation = buildPersistedConversationFromHistory(createPersistedHistoryState({
@@ -1161,6 +1168,7 @@ describe('CopilotChatPanel', () => {
       })).toBe('awaiting-input-inline-form-missing-from-handoff')
     })
 
+    /* eslint-disable-next-line max-lines-per-function -- complex integration test for inline-form handoff resolution from persisted history state */
     it('allows handoff when persisted history can rebuild the pending inline form for awaiting-input runs', () => {
       const sessionHistory = createPersistedHistoryState({
         hasLoadedDetail: true,

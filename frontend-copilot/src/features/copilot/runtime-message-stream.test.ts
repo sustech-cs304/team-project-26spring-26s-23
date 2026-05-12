@@ -8,8 +8,19 @@ import {
 } from './thread-run-contract.test-support'
 import { parseRuntimeRunEventStream } from './runtime-message-stream'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_FORM_CALL_1 = 'tool.request-user-form:call-1'
+const LABEL_FORM_TOOL = 'tool.request-user-form'
+const LABEL_RUN_1_ASSISTANT = 'run-1:assistant'
+const LABEL_TOOL_CALL_1 = 'tool.remote-search:call-1'
+const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
+const LABEL_WEATHER_SUMMARY = 'Shenzhen：晴 / 24°C / 湿度 60%'
+
+/* eslint-disable-next-line max-lines-per-function -- SSE 解析测试覆盖 7 种事件类型和 5 种拒绝路径，集中管理保证完整性 */
 describe('parseRuntimeRunEventStream', () => {
+  /* eslint-disable-next-line max-lines-per-function -- 成功解析路径包含 tool_event、reasoning_delta、run_metadata 三种子 describe */
   describe('successful parsing', () => {
+    /* eslint-disable-next-line max-lines-per-function -- tool_event 覆盖 completed/waiting_approval/cancelled/无 timeoutAt 多种变体 */
     describe('tool_event', () => {
       it('parses real tool_event payloads and keeps optional summaries', async () => {
         const events = await collectEvents(createSseEventStream([
@@ -19,7 +30,7 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 1,
             payload: {
-              assistantMessageId: 'run-1:assistant',
+              assistantMessageId: LABEL_RUN_1_ASSISTANT,
             },
           },
           {
@@ -28,13 +39,13 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 2,
             payload: {
-              toolCallId: 'tool.remote-search:call-1',
-              toolId: 'tool.remote-search',
+              toolCallId: LABEL_TOOL_CALL_1,
+              toolId: LABEL_TOOL_REMOTE_SEARCH,
               phase: 'completed',
               title: '天气工具已返回结果',
-              summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+              summary: LABEL_WEATHER_SUMMARY,
               inputSummary: '{"location":"Shenzhen"}',
-              resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+              resultSummary: LABEL_WEATHER_SUMMARY,
             },
           },
           {
@@ -43,14 +54,14 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 3,
             payload: {
-              assistantMessageId: 'run-1:assistant',
+              assistantMessageId: LABEL_RUN_1_ASSISTANT,
               assistantText: '这是助手回显',
               resolvedModelId: 'qwen-plus',
               resolvedModelRoute: createRuntimeResolvedModelRoute({
                 providerProfileId: 'provider-openai',
                 modelId: 'qwen-plus',
               }),
-              resolvedToolIds: ['tool.remote-search'],
+              resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
               requestOptions: {},
             },
           },
@@ -63,13 +74,13 @@ describe('parseRuntimeRunEventStream', () => {
           sessionId: 'session-1',
           sequence: 2,
           payload: {
-            toolCallId: 'tool.remote-search:call-1',
-            toolId: 'tool.remote-search',
+            toolCallId: LABEL_TOOL_CALL_1,
+            toolId: LABEL_TOOL_REMOTE_SEARCH,
             phase: 'completed',
             title: '天气工具已返回结果',
-            summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+            summary: LABEL_WEATHER_SUMMARY,
             inputSummary: '{"location":"Shenzhen"}',
-            resultSummary: 'Shenzhen：晴 / 24°C / 湿度 60%',
+            resultSummary: LABEL_WEATHER_SUMMARY,
           },
         })
       })
@@ -82,8 +93,8 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 1,
             payload: {
-              toolCallId: 'tool.remote-search:call-1',
-              toolId: 'tool.remote-search',
+              toolCallId: LABEL_TOOL_CALL_1,
+              toolId: LABEL_TOOL_REMOTE_SEARCH,
               phase: 'waiting_approval',
               title: '等待批准',
               summary: '等待批准',
@@ -106,7 +117,7 @@ describe('parseRuntimeRunEventStream', () => {
             sequence: 2,
             payload: {
               toolCallId: 'tool.remote-search:call-2',
-              toolId: 'tool.remote-search',
+              toolId: LABEL_TOOL_REMOTE_SEARCH,
               phase: 'cancelled',
               title: '已取消',
               summary: '已取消',
@@ -148,8 +159,8 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 1,
             payload: {
-              toolCallId: 'tool.remote-search:call-1',
-              toolId: 'tool.remote-search',
+              toolCallId: LABEL_TOOL_CALL_1,
+              toolId: LABEL_TOOL_REMOTE_SEARCH,
               phase: 'waiting_approval',
               title: '等待批准',
               summary: '等待批准',
@@ -187,7 +198,7 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 1,
             payload: {
-              assistantMessageId: 'run-1:assistant',
+              assistantMessageId: LABEL_RUN_1_ASSISTANT,
             },
           },
           {
@@ -205,7 +216,7 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 3,
             payload: {
-              assistantMessageId: 'run-1:assistant',
+              assistantMessageId: LABEL_RUN_1_ASSISTANT,
               assistantText: '最终答案',
               resolvedModelId: 'qwen-plus',
               resolvedModelRoute: createRuntimeResolvedModelRoute({
@@ -280,6 +291,7 @@ describe('parseRuntimeRunEventStream', () => {
     })
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- 拒绝路径覆盖 form 校验、phase 校验、security 校验三种子场景 */
   describe('rejection', () => {
     describe('inline form validation', () => {
       it('rejects inline form requests with an empty fields array', async () => {
@@ -290,8 +302,8 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 1,
             payload: {
-              toolCallId: 'tool.request-user-form:call-1',
-              toolId: 'tool.request-user-form',
+              toolCallId: LABEL_FORM_CALL_1,
+              toolId: LABEL_FORM_TOOL,
               phase: 'completed',
               title: '请求表单',
               summary: '请填写表单。',
@@ -315,8 +327,8 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 1,
             payload: {
-              toolCallId: 'tool.request-user-form:call-1',
-              toolId: 'tool.request-user-form',
+              toolCallId: LABEL_FORM_CALL_1,
+              toolId: LABEL_FORM_TOOL,
               phase: 'completed',
               title: '请求表单',
               summary: '请选择一个选项。',
@@ -346,8 +358,8 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 1,
             payload: {
-              toolCallId: 'tool.request-user-form:call-1',
-              toolId: 'tool.request-user-form',
+              toolCallId: LABEL_FORM_CALL_1,
+              toolId: LABEL_FORM_TOOL,
               phase: 'completed',
               title: '请求表单',
               summary: '请选择一个选项。',
@@ -378,8 +390,8 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 1,
             payload: {
-              toolCallId: 'tool.request-user-form:call-1',
-              toolId: 'tool.request-user-form',
+              toolCallId: LABEL_FORM_CALL_1,
+              toolId: LABEL_FORM_TOOL,
               phase: 'completed',
               title: '请求表单',
               summary: '请确认。',
@@ -412,8 +424,8 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 1,
             payload: {
-              toolCallId: 'tool.remote-search:call-1',
-              toolId: 'tool.remote-search',
+              toolCallId: LABEL_TOOL_CALL_1,
+              toolId: LABEL_TOOL_REMOTE_SEARCH,
               phase: 'unknown_phase_xyz',
               title: '天气工具已取消',
               summary: '已取消',
@@ -434,8 +446,8 @@ describe('parseRuntimeRunEventStream', () => {
             sessionId: 'session-1',
             sequence: 1,
             payload: {
-              toolCallId: 'tool.remote-search:call-1',
-              toolId: 'tool.remote-search',
+              toolCallId: LABEL_TOOL_CALL_1,
+              toolId: LABEL_TOOL_REMOTE_SEARCH,
               phase: 'waiting_approval',
               title: '等待批准',
               summary: '等待批准',

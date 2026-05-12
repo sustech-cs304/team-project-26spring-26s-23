@@ -27,6 +27,9 @@ import {
   createDefaultInlineFormValues,
 } from './inline-form'
 
+const INLINE_FORM_KIND = 'inline-form' as const
+const PROVIDER_MODEL_ROUTE_KIND = 'provider-model' as const
+
 interface PersistedRunContext {
   resolvedModelId: string | null
   resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
@@ -109,7 +112,7 @@ export function getPersistedInlineFormRebuildability(
   options: PersistedConversationBuildOptions = {},
 ): PersistedInlineFormRebuildability {
   const persistedConversation = buildPersistedConversationFromHistory(history, options).conversation
-  const inlineFormSegments = persistedConversation.filter((item) => item.kind === 'inline-form')
+  const inlineFormSegments = persistedConversation.filter((item) => item.kind === INLINE_FORM_KIND)
 
   return {
     hasInlineForm: inlineFormSegments.length > 0,
@@ -441,6 +444,14 @@ function filterTimelineItemsForSelectedRun(
     .map((timelineItem) => ({ ...timelineItem }))
 }
 
+interface MapReplayEventInput {
+  runId: string
+  threadId: string
+  event: CopilotHistoryRunEvent
+  payload: Record<string, unknown>
+  assistantMessageId: string
+}
+
 function mapPersistedRunEventToRuntimeRunEvent(
   runId: string,
   threadId: string,
@@ -450,38 +461,34 @@ function mapPersistedRunEventToRuntimeRunEvent(
   const payload = cloneRecord(event.payload)
   const historicalRecord = asRecord(historicalSnapshot)
   const assistantMessageId = normalizeOptionalString(readString(payload.assistantMessageId)) ?? buildReplayAssistantMessageId(runId)
+  const input: MapReplayEventInput = { runId, threadId, event, payload, assistantMessageId }
 
   switch (event.eventType) {
     case 'run_started':
-      return mapReplayRunStartedEvent(runId, threadId, event, payload, assistantMessageId)
+      return mapReplayRunStartedEvent(input)
     case 'run_metadata':
-      return mapReplayRunMetadataEvent(runId, threadId, event, payload)
+      return mapReplayRunMetadataEvent(input)
     case 'text_delta':
-      return mapReplayTextDeltaEvent(runId, threadId, event, payload, assistantMessageId)
+      return mapReplayTextDeltaEvent(input)
     case 'reasoning_delta':
-      return mapReplayReasoningDeltaEvent(runId, threadId, event, payload)
+      return mapReplayReasoningDeltaEvent(input)
     case 'tool_event':
-      return mapReplayToolEvent(runId, threadId, event, payload)
+      return mapReplayToolEvent(input)
     case 'run_diagnostic':
-      return mapReplayRunDiagnosticEvent(runId, threadId, event, payload)
+      return mapReplayRunDiagnosticEvent(input)
     case 'run_completed':
-      return mapReplayRunCompletedEvent(runId, threadId, event, payload, assistantMessageId, historicalRecord)
+      return mapReplayRunCompletedEvent({ ...input, historicalRecord })
     case 'run_failed':
-      return mapReplayRunFailedEvent(runId, threadId, event, payload)
+      return mapReplayRunFailedEvent(input)
     case 'run_cancelled':
-      return mapReplayRunCancelledEvent(runId, threadId, event, payload, assistantMessageId)
+      return mapReplayRunCancelledEvent(input)
     default:
       return null
   }
 }
 
-function mapReplayRunStartedEvent(
-  runId: string,
-  threadId: string,
-  event: CopilotHistoryRunEvent,
-  payload: Record<string, unknown>,
-  assistantMessageId: string,
-): RuntimeRunEvent {
+function mapReplayRunStartedEvent(input: MapReplayEventInput): RuntimeRunEvent {
+  const { runId, threadId, event, payload, assistantMessageId } = input
   return {
     type: 'run_started',
     runId,
@@ -494,12 +501,8 @@ function mapReplayRunStartedEvent(
   }
 }
 
-function mapReplayRunMetadataEvent(
-  runId: string,
-  threadId: string,
-  event: CopilotHistoryRunEvent,
-  payload: Record<string, unknown>,
-): RuntimeRunEvent {
+function mapReplayRunMetadataEvent(input: Omit<MapReplayEventInput, 'assistantMessageId'>): RuntimeRunEvent {
+  const { runId, threadId, event, payload } = input
   return {
     type: 'run_metadata',
     runId,
@@ -509,13 +512,8 @@ function mapReplayRunMetadataEvent(
   }
 }
 
-function mapReplayTextDeltaEvent(
-  runId: string,
-  threadId: string,
-  event: CopilotHistoryRunEvent,
-  payload: Record<string, unknown>,
-  assistantMessageId: string,
-): RuntimeRunEvent | null {
+function mapReplayTextDeltaEvent(input: MapReplayEventInput): RuntimeRunEvent | null {
+  const { runId, threadId, event, payload, assistantMessageId } = input
   const delta = normalizeOptionalString(readString(payload.delta))
   if (delta === null) {
     return null
@@ -533,12 +531,8 @@ function mapReplayTextDeltaEvent(
   }
 }
 
-function mapReplayReasoningDeltaEvent(
-  runId: string,
-  threadId: string,
-  event: CopilotHistoryRunEvent,
-  payload: Record<string, unknown>,
-): RuntimeRunEvent | null {
+function mapReplayReasoningDeltaEvent(input: Omit<MapReplayEventInput, 'assistantMessageId'>): RuntimeRunEvent | null {
+  const { runId, threadId, event, payload } = input
   const delta = normalizeOptionalString(readString(payload.delta))
   if (delta === null) {
     return null
@@ -555,22 +549,16 @@ function mapReplayReasoningDeltaEvent(
   }
 }
 
-function mapReplayToolEvent(
-  runId: string,
-  threadId: string,
-  event: CopilotHistoryRunEvent,
-  payload: Record<string, unknown>,
-): RuntimeRunEvent | null {
+function mapReplayToolEvent(input: Omit<MapReplayEventInput, 'assistantMessageId'>): RuntimeRunEvent | null {
+  const { runId, threadId, event, payload } = input
   const phase = normalizeOptionalString(readString(payload.phase)) ?? normalizeOptionalString(event.phase)
   if (phase !== 'started' && phase !== 'completed' && phase !== 'failed') {
     return null
   }
 
   const title = normalizeOptionalString(readString(payload.title)) ?? '工具调用'
-  const summary = normalizeOptionalString(readString(payload.summary))
-    ?? normalizeOptionalString(readString(payload.resultSummary))
-    ?? normalizeOptionalString(readString(payload.errorSummary))
-    ?? title
+  // eslint-disable-next-line sonarjs/no-identical-functions
+  const summary = readReplayToolEventSummary(payload, title)
 
   return {
     type: 'tool_event',
@@ -593,12 +581,15 @@ function mapReplayToolEvent(
   }
 }
 
-function mapReplayRunDiagnosticEvent(
-  runId: string,
-  threadId: string,
-  event: CopilotHistoryRunEvent,
-  payload: Record<string, unknown>,
-): RuntimeRunEvent {
+function readReplayToolEventSummary(payload: Record<string, unknown>, fallback: string): string {
+  return normalizeOptionalString(readString(payload.summary))
+    ?? normalizeOptionalString(readString(payload.resultSummary))
+    ?? normalizeOptionalString(readString(payload.errorSummary))
+    ?? fallback
+}
+
+function mapReplayRunDiagnosticEvent(input: Omit<MapReplayEventInput, 'assistantMessageId'>): RuntimeRunEvent {
+  const { runId, threadId, event, payload } = input
   return {
     type: 'run_diagnostic',
     runId,
@@ -613,14 +604,12 @@ function mapReplayRunDiagnosticEvent(
   }
 }
 
-function mapReplayRunCompletedEvent(
-  runId: string,
-  threadId: string,
-  event: CopilotHistoryRunEvent,
-  payload: Record<string, unknown>,
-  assistantMessageId: string,
-  historicalRecord: Record<string, unknown> | null,
-): RuntimeRunEvent {
+interface MapReplayRunCompletedEventInput extends MapReplayEventInput {
+  historicalRecord: Record<string, unknown> | null
+}
+
+function mapReplayRunCompletedEvent(input: MapReplayRunCompletedEventInput): RuntimeRunEvent {
+  const { runId, threadId, event, payload, assistantMessageId, historicalRecord } = input
   const resolvedModelId = normalizeOptionalString(readString(payload.resolvedModelId))
     ?? normalizeOptionalString(readString(historicalRecord?.resolvedModelId))
     ?? 'history-model'
@@ -637,12 +626,7 @@ function mapReplayRunCompletedEvent(
     sequence: event.sequence,
     payload: {
       assistantMessageId,
-      assistantText: normalizeOptionalString(readString(payload.assistantText))
-        ?? normalizeOptionalString(readString(payload.delta))
-        ?? normalizeOptionalString(readString(payload.text))
-        ?? normalizeOptionalString(readString(payload.message))
-        ?? normalizeOptionalString(readString(historicalRecord?.assistantText))
-        ?? '',
+      assistantText: resolveReplayAssistantText(payload, historicalRecord),
       resolvedModelId,
       resolvedModelRoute,
       resolvedToolIds: resolvedToolIds.length > 0 ? resolvedToolIds : fallbackToolIds,
@@ -651,12 +635,20 @@ function mapReplayRunCompletedEvent(
   }
 }
 
-function mapReplayRunFailedEvent(
-  runId: string,
-  threadId: string,
-  event: CopilotHistoryRunEvent,
+function resolveReplayAssistantText(
   payload: Record<string, unknown>,
-): RuntimeRunEvent {
+  historicalRecord: Record<string, unknown> | null,
+): string {
+  return normalizeOptionalString(readString(payload.assistantText))
+    ?? normalizeOptionalString(readString(payload.delta))
+    ?? normalizeOptionalString(readString(payload.text))
+    ?? normalizeOptionalString(readString(payload.message))
+    ?? normalizeOptionalString(readString(historicalRecord?.assistantText))
+    ?? ''
+}
+
+function mapReplayRunFailedEvent(input: Omit<MapReplayEventInput, 'assistantMessageId'>): RuntimeRunEvent {
+  const { runId, threadId, event, payload } = input
   return {
     type: 'run_failed',
     runId,
@@ -670,13 +662,8 @@ function mapReplayRunFailedEvent(
   }
 }
 
-function mapReplayRunCancelledEvent(
-  runId: string,
-  threadId: string,
-  event: CopilotHistoryRunEvent,
-  payload: Record<string, unknown>,
-  assistantMessageId: string,
-): RuntimeRunEvent {
+function mapReplayRunCancelledEvent(input: MapReplayEventInput): RuntimeRunEvent {
+  const { runId, threadId, event, payload, assistantMessageId } = input
   return {
     type: 'run_cancelled',
     runId,
@@ -801,30 +788,50 @@ function mapToolMessageItem(
   const toolId = normalizeOptionalString(readString(timelineItem.toolId)) ?? 'unknown-tool'
   const formRequest = findInlineFormRequestInToolBlock(timelineItem)
   if (toolId === CONTROLLED_INLINE_FORM_TOOL_ID && formRequest !== null) {
-    return [{
-      id: buildHistoryItemId('inline-form', timelineItem, index),
-      kind: 'inline-form',
-      runId,
-      sequence: readNumber(timelineItem.sequenceStart) ?? index,
-      status: 'completed',
-      toolCallId: normalizeOptionalString(readString(timelineItem.toolCallId)) ?? `history-tool-call-${index}`,
-      toolId,
-      formId: formRequest.formId,
-      title: formRequest.title,
-      content: normalizeOptionalString(
-        readString(timelineItem.summary)
-          ?? readString(timelineItem.resultSummary)
-          ?? readString(timelineItem.errorSummary),
-      ) ?? formRequest.description ?? formRequest.title,
-      description: formRequest.description ?? null,
-      submitLabel: formRequest.submitLabel ?? '提交',
-      fields: formRequest.fields.map(cloneInlineFormField),
-      formState: 'pending',
-      formValues: createDefaultInlineFormValues(formRequest.fields),
-      submittedPayload: null,
-    } satisfies CopilotMessageListItem]
+    return [buildInlineFormMessageItem({ timelineItem, index, runId, toolId, formRequest })]
   }
 
+  return [buildToolMessageItemFromTimeline(timelineItem, index, runId, toolId)]
+}
+
+function buildInlineFormMessageItem(input: {
+  timelineItem: Record<string, unknown>
+  index: number
+  runId: string
+  toolId: string
+  formRequest: RuntimeInlineFormRequest
+}): CopilotMessageListItem {
+  const { timelineItem, index, runId, toolId, formRequest } = input
+  return {
+    id: buildHistoryItemId(INLINE_FORM_KIND, timelineItem, index),
+    kind: INLINE_FORM_KIND,
+    runId,
+    sequence: readNumber(timelineItem.sequenceStart) ?? index,
+    status: 'completed',
+    toolCallId: normalizeOptionalString(readString(timelineItem.toolCallId)) ?? `history-tool-call-${index}`,
+    toolId,
+    formId: formRequest.formId,
+    title: formRequest.title,
+    content: normalizeOptionalString(
+      readString(timelineItem.summary)
+        ?? readString(timelineItem.resultSummary)
+        ?? readString(timelineItem.errorSummary),
+    ) ?? formRequest.description ?? formRequest.title,
+    description: formRequest.description ?? null,
+    submitLabel: formRequest.submitLabel ?? '提交',
+    fields: formRequest.fields.map(cloneInlineFormField),
+    formState: 'pending',
+    formValues: createDefaultInlineFormValues(formRequest.fields),
+    submittedPayload: null,
+  } satisfies CopilotMessageListItem
+}
+
+function buildToolMessageItemFromTimeline(
+  timelineItem: Record<string, unknown>,
+  index: number,
+  runId: string,
+  toolId: string,
+): CopilotToolMessageItem {
   const phases = Array.isArray(timelineItem.phases)
     ? timelineItem.phases.map((phase) => cloneRecord(phase))
     : []
@@ -837,7 +844,7 @@ function mapToolMessageItem(
     ?? (status === 'failed' ? errorSummary ?? resultSummary : resultSummary ?? errorSummary)
     ?? title
 
-  const item: CopilotToolMessageItem = {
+  return {
     id: buildHistoryItemId('tool', timelineItem, index),
     kind: 'tool',
     runId,
@@ -852,8 +859,6 @@ function mapToolMessageItem(
     resultSummary,
     errorSummary,
   }
-
-  return [item]
 }
 
 function mapDiagnosticMessageItem(
@@ -971,8 +976,8 @@ function shouldPreferTimelineConversation(input: {
     return false
   }
 
-  const timelineHasInlineForm = input.timelineConversation.some((item) => item.kind === 'inline-form')
-  const replayHasInlineForm = input.replayConversation.some((item) => item.kind === 'inline-form')
+  const timelineHasInlineForm = input.timelineConversation.some((item) => item.kind === INLINE_FORM_KIND)
+  const replayHasInlineForm = input.replayConversation.some((item) => item.kind === INLINE_FORM_KIND)
   if (timelineHasInlineForm && !replayHasInlineForm) {
     return true
   }
@@ -986,7 +991,7 @@ function reconcileInlineFormSubmissionState(
   conversation: CopilotMessageListItem[],
 ): CopilotMessageListItem[] {
   const nextConversation = conversation.map((item) => {
-    if (item.kind !== 'inline-form') {
+    if (item.kind !== INLINE_FORM_KIND) {
       return item
     }
 
@@ -1011,7 +1016,7 @@ function reconcileInlineFormSubmissionState(
 
     for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
       const candidate = nextConversation[previousIndex]
-      if (candidate?.kind !== 'inline-form') {
+      if (candidate?.kind !== INLINE_FORM_KIND) {
         continue
       }
 
@@ -1270,17 +1275,36 @@ function asRuntimeResolvedRoute(
   value: unknown,
 ): RuntimeResolvedModelRoute | null {
   const record = isRecord(value) ? value : null
+  const resolvedRouteRef = readResolvedRouteRef(record)
+  if (resolvedRouteRef === null) {
+    return null
+  }
+
+  return buildRuntimeResolvedRouteFromRecord(record, resolvedRouteRef)
+}
+
+function readResolvedRouteRef(
+  record: Record<string, unknown> | null,
+): RuntimeResolvedModelRoute['routeRef'] | null {
   const routeRefRecord = isRecord(record?.routeRef) ? record.routeRef : null
-  const routeKind = readString(routeRefRecord?.routeKind) === 'provider-model' ? 'provider-model' : null
+  const routeKind = readString(routeRefRecord?.routeKind) === PROVIDER_MODEL_ROUTE_KIND ? PROVIDER_MODEL_ROUTE_KIND : null
   const profileId = normalizeOptionalString(readString(routeRefRecord?.profileId))
   const modelIdFromRouteRef = normalizeOptionalString(readString(routeRefRecord?.modelId))
-  const routeRef: RuntimeResolvedModelRoute['routeRef'] | null = routeKind !== null && profileId !== null && modelIdFromRouteRef !== null
-    ? {
-        routeKind: 'provider-model',
-        profileId,
-        modelId: modelIdFromRouteRef,
-      }
-    : null
+  if (routeKind === null || profileId === null || modelIdFromRouteRef === null) {
+    return null
+  }
+
+  return {
+    routeKind: PROVIDER_MODEL_ROUTE_KIND as 'provider-model',
+    profileId,
+    modelId: modelIdFromRouteRef,
+  }
+}
+
+function buildRuntimeResolvedRouteFromRecord(
+  record: Record<string, unknown> | null,
+  routeRef: RuntimeResolvedModelRoute['routeRef'],
+): RuntimeResolvedModelRoute | null {
   const providerProfileId = normalizeOptionalString(readString(record?.providerProfileId))
   const provider = normalizeOptionalString(readString(record?.provider))
   const providerId = normalizeOptionalString(readString(record?.providerId))
@@ -1294,8 +1318,7 @@ function asRuntimeResolvedRoute(
   const authKind = normalizeOptionalString(readString(record?.authKind))
 
   if (
-    routeRef === null
-    || providerProfileId === null
+    providerProfileId === null
     || provider === null
     || providerId === null
     || adapterId === null
@@ -1329,7 +1352,7 @@ function asRuntimeResolvedRoute(
 function buildFallbackRuntimeResolvedModelRoute(modelId: string): RuntimeResolvedModelRoute {
   return {
     routeRef: {
-      routeKind: 'provider-model',
+      routeKind: PROVIDER_MODEL_ROUTE_KIND as 'provider-model',
       profileId: 'history-profile',
       modelId,
     },

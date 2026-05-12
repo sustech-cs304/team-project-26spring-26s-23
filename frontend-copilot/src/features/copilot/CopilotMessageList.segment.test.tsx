@@ -42,6 +42,8 @@ const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
 const LABEL_TOOL_REMOTE_SEARCH_2 = 'tool.remote-search:call-1'
 
 
+// 顶层集成测试 describe，包含 8+ 子 describe，覆盖 segment 渲染全场景，无法安全拆分
+/* eslint-disable-next-line max-lines-per-function */
 describe('CopilotMessageList segment rendering', () => {
   describe('assistant headers and model fallback', () => {
     it('renders assistant headers with catalog icon and model name instead of the fixed assistant label', () => {
@@ -138,6 +140,8 @@ describe('CopilotMessageList segment rendering', () => {
     })
   })
 
+  // 包含 2 个紧密相关的排序/渲染测试，拆分会导致语义分组不自然
+  /* eslint-disable-next-line max-lines-per-function */
   describe('segment ordering and tool rendering', () => {
     it('renders assistant → tool → assistant in segment order', () => {
       const html = renderConversation({
@@ -290,7 +294,10 @@ describe('CopilotMessageList segment rendering', () => {
     })
   })
 
+  // 已拆分为 2 个子 describe（run failure visibility / failed tool cards），父级仅做语义分组
+  /* eslint-disable-next-line max-lines-per-function */
   describe('failed run rendering', () => {
+    describe('run failure visibility', () => {
     it('keeps rendered segments visible when a run fails and shows a simplified terminal message', () => {
       const html = renderConversation({
         ...createIdleCopilotRunState(),
@@ -386,7 +393,9 @@ describe('CopilotMessageList segment rendering', () => {
       expect(html).toContain('工具执行失败，请重试。')
       expect(html.indexOf('已生成的第一段')).toBeLessThan(html.indexOf('发送失败'))
     })
+    })
 
+    describe('failed tool cards', () => {
     it('keeps the safe fallback title when the failed tool card only carries a blank toolId', () => {
       const html = renderConversation({
         ...createIdleCopilotRunState(),
@@ -503,8 +512,12 @@ describe('CopilotMessageList segment rendering', () => {
       expect(html).not.toContain('stderr tail')
     })
   })
+  })
 
+  // 已拆分为 2 个子 describe（authentication failures / transient errors），父级仅做语义分组
+  /* eslint-disable-next-line max-lines-per-function */
   describe('authentication and transient errors', () => {
+    describe('authentication failures', () => {
     it('renders explicit CAS credential guidance for authentication failures', () => {
       const html = renderConversation({
         ...createIdleCopilotRunState(),
@@ -563,7 +576,9 @@ describe('CopilotMessageList segment rendering', () => {
       expect(html).toContain('CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。')
       expect(html).not.toContain('工具执行失败，请重试。')
     })
+    })
 
+    describe('transient errors and diagnostics', () => {
     it('renders a detail button for transient failed cards without leaking raw diagnostics into the card body', () => {
       const html = renderToStaticMarkup(
         <CopilotMessageList
@@ -665,8 +680,12 @@ describe('CopilotMessageList segment rendering', () => {
       expect(html).not.toContain('思考轨迹')
     })
   })
+  })
 
+  // 已拆分为 2 个子 describe（cancelled runs / reasoning content），父级仅做语义分组
+  /* eslint-disable-next-line max-lines-per-function */
   describe('cancelled and reasoning display', () => {
+    describe('cancelled runs', () => {
     it('keeps completed segments visible when a run is cancelled and appends a terminal marker', () => {
       const html = renderConversation({
         ...createIdleCopilotRunState(),
@@ -731,7 +750,9 @@ describe('CopilotMessageList segment rendering', () => {
       expect(html).toContain('本次响应已取消：user_cancelled')
       expect(html.indexOf('已保留的回答前半段')).toBeLessThan(html.indexOf('本次响应已取消：user_cancelled'))
     })
+    })
 
+    describe('reasoning content display', () => {
     it('renders reasoning content as a dedicated collapsed card without merging it into assistant text', () => {
       const html = renderConversation({
         ...createIdleCopilotRunState(),
@@ -853,6 +874,7 @@ describe('CopilotMessageList segment rendering', () => {
       expect(html).not.toContain('抑制依据')
       expect(html).not.toContain('capability_visibility_suppressed')
     })
+  })
   })
 
   describe('streaming reasoning', () => {

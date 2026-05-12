@@ -46,6 +46,8 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
 }
 
+// 顶层集成测试 describe，包含 6+ 子 describe，覆盖 thinking selector 全场景，无法安全拆分
+/* eslint-disable-next-line max-lines-per-function */
 describe('Copilot thinking selector', () => {
   describe('backend canonical capability', () => {
     it('uses backend canonical capability instead of local model declaration as chat control truth', async () => {
@@ -207,6 +209,8 @@ describe('Copilot thinking selector', () => {
     })
   })
 
+  // 包含 3 个 thinking control 渲染测试，需共享复杂 capability 配置
+  /* eslint-disable-next-line max-lines-per-function */
   describe('control type rendering', () => {
     it('renders fixed capability as a locked control instead of normal discrete buttons', async () => {
       const getThinkingCapability = createThinkingCapabilityGetter({
@@ -383,6 +387,8 @@ describe('Copilot thinking selector', () => {
     })
   })
 
+  // 包含 2 个 override/memory 相关测试，覆盖 capability 覆盖与模型记忆
+  /* eslint-disable-next-line max-lines-per-function */
   describe('override and memory', () => {
     it('shows a lightweight override source badge for unknown plus override capability', async () => {
       const overrideCapability = createPresetCapability({
@@ -525,6 +531,8 @@ describe('Copilot thinking selector', () => {
     })
   })
 
+  // 包含 2 个 send/run metadata 测试，需完整的 send 集成流程
+  /* eslint-disable-next-line max-lines-per-function */
   describe('send and run metadata', () => {
     it('sends structured budget selection without reviving compat thinkingLevelIntent payloads', async () => {
       const sendMessage = vi.fn(async function* (

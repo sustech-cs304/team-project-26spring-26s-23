@@ -22,11 +22,18 @@ import {
   sessionId,
 } from './thread-run-contract.test-support'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_RUN_1_ASSISTANT = 'run-1:assistant'
+const LABEL_RUNTIME_URL = 'http://127.0.0.1:8765/'
+const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const frontendRoot = path.resolve(__dirname, '..', '..', '..')
 
+/* eslint-disable-next-line max-lines-per-function -- 主路径集成测试覆盖 run/start 和 run/stream 两个核心协议流程 */
 describe('thread run primary path', () => {
+  /* eslint-disable-next-line max-lines-per-function -- run/start payload 构造覆盖 trace/thinking/empty-tools 三种输入变体 */
   describe('run/start payload construction', () => {
     it('normalizes compat thinking input into structured run/start payload and returns stream plus cancel descriptors', async () => {
       const fetchFn = createFetchFn(createRuntimeRunStartResponse({
@@ -40,7 +47,7 @@ describe('thread run primary path', () => {
           terminalAt: null,
           cancelRequested: false,
         },
-        assistantMessageId: 'run-1:assistant',
+        assistantMessageId: LABEL_RUN_1_ASSISTANT,
       }), {
         headers: {
           'content-type': 'application/json',
@@ -54,7 +61,7 @@ describe('thread run primary path', () => {
         message: createUserMessage(),
         modelRoute: createRuntimeModelRoute(),
         thinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
-        enabledTools: ['tool.remote-search'],
+        enabledTools: [LABEL_TOOL_REMOTE_SEARCH],
         debugModeEnabled: true,
         requestOptions: {
           trace: true,
@@ -62,7 +69,7 @@ describe('thread run primary path', () => {
         fetchFn,
       })
 
-      expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+      expect(fetchFn).toHaveBeenCalledWith(LABEL_RUNTIME_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -93,7 +100,7 @@ describe('thread run primary path', () => {
                   labelZh: '自动',
                 },
               },
-              enabledTools: ['tool.remote-search'],
+              enabledTools: [LABEL_TOOL_REMOTE_SEARCH],
               debugModeEnabled: true,
               requestOptions: {
                 trace: true,
@@ -130,14 +137,14 @@ describe('thread run primary path', () => {
         agent: agentId,
         message: createUserMessage(),
         modelRoute: createRuntimeModelRoute(),
-        enabledTools: ['tool.remote-search'],
+        enabledTools: [LABEL_TOOL_REMOTE_SEARCH],
         requestOptions: {
           trace: true,
         },
         fetchFn,
       })
 
-      expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+      expect(fetchFn).toHaveBeenCalledWith(LABEL_RUNTIME_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -160,7 +167,7 @@ describe('thread run primary path', () => {
                 },
                 catalogRevision: '2026-04-06-provider-catalog-v1',
               },
-              enabledTools: ['tool.remote-search'],
+              enabledTools: [LABEL_TOOL_REMOTE_SEARCH],
               requestOptions: {
                 trace: true,
               },
@@ -189,7 +196,7 @@ describe('thread run primary path', () => {
         fetchFn,
       })
 
-      expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+      expect(fetchFn).toHaveBeenCalledWith(LABEL_RUNTIME_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -231,7 +238,7 @@ describe('thread run primary path', () => {
           sessionId,
           sequence: 1,
           payload: {
-            assistantMessageId: 'run-1:assistant',
+            assistantMessageId: LABEL_RUN_1_ASSISTANT,
           },
         },
         {
@@ -240,7 +247,7 @@ describe('thread run primary path', () => {
           sessionId,
           sequence: 2,
           payload: {
-            assistantMessageId: 'run-1:assistant',
+            assistantMessageId: LABEL_RUN_1_ASSISTANT,
             delta: '这是总结结果。',
           },
         },
@@ -263,7 +270,7 @@ describe('thread run primary path', () => {
         fetchFn,
       }))
 
-      expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+      expect(fetchFn).toHaveBeenCalledWith(LABEL_RUNTIME_URL, {
         method: 'POST',
         headers: {
           Accept: 'text/event-stream',
@@ -296,7 +303,7 @@ describe('thread run primary path', () => {
             sessionId,
             sequence: 1,
             payload: {
-              assistantMessageId: 'run-1:assistant',
+              assistantMessageId: LABEL_RUN_1_ASSISTANT,
             },
           },
           {
@@ -305,7 +312,7 @@ describe('thread run primary path', () => {
             sessionId,
             sequence: 1,
             payload: {
-              assistantMessageId: 'run-1:assistant',
+              assistantMessageId: LABEL_RUN_1_ASSISTANT,
               delta: '重复序号',
             },
           },

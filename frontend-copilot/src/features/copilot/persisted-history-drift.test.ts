@@ -8,6 +8,7 @@ const LABEL_2026_13T15 = '2026-04-13T15:05:00Z'
 const LABEL_SUMMARY_MODEL = 'summary-model'
 
 
+/* eslint-disable-next-line max-lines-per-function -- drift 评估覆盖多层优先级回退逻辑，拆分降低语义完整性 */
 describe('persisted history drift evaluation', () => {
   describe('null and legacy results', () => {
     it('returns null when history or backend drift conclusions are unavailable', () => {

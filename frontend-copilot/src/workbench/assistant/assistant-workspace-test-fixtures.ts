@@ -1,5 +1,7 @@
 import { vi } from 'vitest'
 
+const TOOL_ID_FS_READ = 'tool.fs.read'
+
 import type {
   RuntimeAgentsListResponse,
   RuntimeCapabilitiesGetResponse,
@@ -16,7 +18,7 @@ export function createDirectoryResponse(): RuntimeAgentsListResponse {
       {
         agentId: 'general',
         status: 'active',
-        recommendedTools: ['tool.fs.read'],
+        recommendedTools: [TOOL_ID_FS_READ],
         displayName: 'Default',
         description: '默认通用智能体',
         iconKey: 'sparkles',
@@ -48,7 +50,7 @@ export function createSessionResponse(
     },
     createdAt: '2026-03-27T10:00:00Z',
     updatedAt: '2026-03-27T10:00:00Z',
-    recommendedTools: ['tool.fs.read'],
+    recommendedTools: [TOOL_ID_FS_READ],
     capabilities: {
       tools: {
         selectionMode: 'recommendation-only',
@@ -74,7 +76,7 @@ export function createCapabilitiesResponse(
     capabilitiesVersion: 'cap-v12',
     tools: [
       {
-        toolId: 'tool.fs.read',
+        toolId: TOOL_ID_FS_READ,
         kind: 'builtin',
         availability: 'available',
         displayName: '读取文件',
@@ -88,7 +90,7 @@ export function createCapabilitiesResponse(
         description: '访问外部搜索服务',
       },
     ],
-    recommendedTools: ['tool.fs.read'],
+    recommendedTools: [TOOL_ID_FS_READ],
     toolSelectionMode: 'recommendation-only',
     ...overrides,
   }

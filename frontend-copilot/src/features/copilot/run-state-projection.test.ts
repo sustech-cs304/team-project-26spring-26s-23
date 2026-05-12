@@ -9,8 +9,15 @@ import {
   createRuntimeThinkingCapability,
 } from './thread-run-contract.test-support'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_RUN_TOOL_RECOVERED = 'run-tool-recovered'
+const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
+
+/* eslint-disable-next-line max-lines-per-function -- 投影测试覆盖成功/失败/认证失败三种完整 run 场景，集中管理保证完整性 */
 describe('run state projection', () => {
+  /* eslint-disable-next-line max-lines-per-function -- 成功 run 的段到 turn 映射需完整 fixture 构造，拆分削弱语义完整性 */
   describe('successful run', () => {
+    /* eslint-disable-next-line max-lines-per-function -- fixture 构造和断言验证深度内聚，强行拆分降低可读性 */
     it('projects assistant/tool segments into stable legacy turns while preserving prior user turns', () => {
       const userTurns: CopilotConversationTurn[] = [
         {
@@ -37,7 +44,7 @@ describe('run state projection', () => {
         threadId: 'session-1',
         resolvedModelId: 'qwen-plus',
         resolvedModelRoute: createRuntimeModelRoute(),
-        resolvedToolIds: ['tool.remote-search'],
+        resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
         requestOptions: { trace: true },
         requestedThinkingLevel: 'medium',
         appliedThinkingLevel: 'auto',
@@ -66,7 +73,7 @@ describe('run state projection', () => {
             lastSequence: 3,
             status: 'completed',
             toolCallId: 'tool.remote-search:call-1',
-            toolId: 'tool.remote-search',
+            toolId: LABEL_TOOL_REMOTE_SEARCH,
             toolPhase: 'completed',
             title: '天气工具已返回结果',
             summary: '{\n  "condition": "晴",\n  "humidity": 60,\n  "location": "Shenzhen",\n  "summary": "体感舒适，适合外出。",\n  "temperatureC": 24\n}',
@@ -86,7 +93,7 @@ describe('run state projection', () => {
             status: 'completed',
             resolvedModelId: 'qwen-plus',
             resolvedModelRoute: createRuntimeModelRoute(),
-            resolvedToolIds: ['tool.remote-search'],
+            resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
             requestOptions: { trace: true },
           },
           {
@@ -102,7 +109,7 @@ describe('run state projection', () => {
             failure: null,
             resolvedModelId: 'qwen-plus',
             resolvedModelRoute: createRuntimeModelRoute(),
-            resolvedToolIds: ['tool.remote-search'],
+            resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
             requestOptions: { trace: true },
           },
         ],
@@ -140,6 +147,7 @@ describe('run state projection', () => {
     })
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- 工具失败场景需构造完整的段流和恢复逻辑，拆分降低断言连贯性 */
   describe('failed tool', () => {
     it('keeps failed tool turns visible without projecting a terminal error when the run later completes', () => {
       const projectedTurns = projectConversationTurnsFromRunState({
@@ -153,22 +161,22 @@ describe('run state projection', () => {
         runState: {
           ...createIdleCopilotRunState(),
           phase: 'completed',
-          runId: 'run-tool-recovered',
+          runId: LABEL_RUN_TOOL_RECOVERED,
           threadId: 'session-1',
           resolvedModelId: 'qwen-plus',
           resolvedModelRoute: createRuntimeModelRoute(),
-          resolvedToolIds: ['tool.remote-search'],
+          resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
           requestOptions: { trace: true },
           segments: [
             {
               id: 'tool:run-tool-recovered:tool.remote-search:call-1',
               kind: 'tool',
-              runId: 'run-tool-recovered',
+              runId: LABEL_RUN_TOOL_RECOVERED,
               startedSequence: 2,
               lastSequence: 3,
               status: 'failed',
               toolCallId: 'tool.remote-search:call-1',
-              toolId: 'tool.remote-search',
+              toolId: LABEL_TOOL_REMOTE_SEARCH,
               toolPhase: 'failed',
               title: '工具调用失败',
               summary: '工具执行失败。',
@@ -179,7 +187,7 @@ describe('run state projection', () => {
             {
               id: 'assistant:run-tool-recovered:1',
               kind: 'assistant',
-              runId: 'run-tool-recovered',
+              runId: LABEL_RUN_TOOL_RECOVERED,
               assistantMessageId: 'run-tool-recovered:assistant',
               text: '我可以解释失败并继续。',
               firstContentSequence: 4,
@@ -188,13 +196,13 @@ describe('run state projection', () => {
               status: 'completed',
               resolvedModelId: 'qwen-plus',
               resolvedModelRoute: createRuntimeModelRoute(),
-              resolvedToolIds: ['tool.remote-search'],
+              resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
               requestOptions: { trace: true },
             },
             {
               id: 'terminal:run-tool-recovered:completed',
               kind: 'terminal',
-              runId: 'run-tool-recovered',
+              runId: LABEL_RUN_TOOL_RECOVERED,
               startedSequence: 5,
               lastSequence: 5,
               status: 'completed',
@@ -204,7 +212,7 @@ describe('run state projection', () => {
               failure: null,
               resolvedModelId: 'qwen-plus',
               resolvedModelRoute: createRuntimeModelRoute(),
-              resolvedToolIds: ['tool.remote-search'],
+              resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
               requestOptions: { trace: true },
             },
           ],
@@ -260,7 +268,7 @@ describe('run state projection', () => {
               lastSequence: 3,
               status: 'failed',
               toolCallId: 'tool.remote-search:call-1',
-              toolId: 'tool.remote-search',
+              toolId: LABEL_TOOL_REMOTE_SEARCH,
               toolPhase: 'failed',
               title: '工具调用失败',
               summary: '工具执行失败。',

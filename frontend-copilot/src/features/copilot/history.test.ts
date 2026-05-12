@@ -33,6 +33,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/* eslint-disable-next-line max-lines-per-function -- 测试桥接器需要集中覆盖所有 API 函数，拆分削弱端到端可读性 */
 describe('copilot history bridge', () => {
   describe('unavailable api', () => {
     it('returns a structured failure when window is unavailable', async () => {
@@ -73,7 +74,9 @@ describe('copilot history bridge', () => {
     })
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- fixture 构造和断言验证集中于此，拆分不改变语义完整性 */
   describe('delegation to preload api', () => {
+    /* eslint-disable-next-line max-lines-per-function -- 全部 API 调用和验证内聚于单测，强行拆分破坏行为原子性 */
     it('delegates to the injected preload api when available', async () => {
     const listResult: CopilotHistoryListThreadsResult = {
       ok: true,

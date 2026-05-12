@@ -24,6 +24,7 @@ const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
 const LABEL_TOOL_REMOTE_SEARCH_2 = 'tool.remote-search:call-1'
 
 
+/* eslint-disable-next-line max-lines-per-function -- 集成测试覆盖多种事件合并场景（787 行），拆分将破坏事件流的连续性验证 */
 describe('run segment reducer', () => {
   describe('event merging', () => {
     it('merges compat events into a segment-ready run state with multiple assistant/tool segments', () => {
@@ -400,6 +401,7 @@ describe('run segment reducer', () => {
     })
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- 推理段测试包含 4 个深度嵌套的 it 块，拆分降低推理抑制逻辑的可追溯性 */
   describe('reasoning segments', () => {
     it('keeps reasoning segments distinct from tool and assistant content', () => {
       const initialState = createStartingCopilotRunState({

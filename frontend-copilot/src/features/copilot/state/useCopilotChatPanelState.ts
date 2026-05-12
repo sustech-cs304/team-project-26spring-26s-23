@@ -157,6 +157,11 @@ export interface CopilotChatPanelState {
 }
 
 
+// This hook orchestrates workspace settings, session transient state, model
+// selection, conversation computation, thinking capability queries, and send
+// actions. Each domain is tightly coupled; extracting sub-hooks would require
+// excessive parameter threading and duplicate closure captures.
+// eslint-disable-next-line max-lines-per-function
 export function useCopilotChatPanelState({
   language = 'zh-CN',
   state,
@@ -396,6 +401,9 @@ export function useCopilotChatPanelState({
     && sessionHistory.replayStatus !== 'error'
     && sessionHistory.replayStatus !== 'ready'
   ), [hasRenderablePersistedSelectedConversation, sessionHistory])
+  // Determines whether to render transient conversation over persisted history.
+  // Multi-branch decision tree with tightly coupled boolean predicates.
+  // eslint-disable-next-line complexity
   const shouldRenderTransientConversation = useMemo(() => {
     if (runState.phase !== 'idle' && runState.threadId !== sessionShell?.sessionId) {
       return false
@@ -559,6 +567,9 @@ export function useCopilotChatPanelState({
     updateSessionTransientStateById,
   ])
 
+  // Pending history sync wait → commit loop. Multiple session-bound
+  // conditions share memoized values; extracting would scatter state.
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   useEffect(() => {
     const sessionId = sessionShell?.sessionId?.trim() ?? ''
     if (sessionId === '') {
@@ -700,6 +711,10 @@ export function useCopilotChatPanelState({
       return
     }
 
+    // Multi-path model selection resolver: provider overrides, workspace
+    // defaults, draft fallback. Each branch handles a distinct selection
+    // scenario with its own validity checks.
+    // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
     setComposerDraft((current) => {
       if (!hasConfiguredModels) {
         return current.selectedModelId === ''

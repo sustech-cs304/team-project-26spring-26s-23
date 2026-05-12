@@ -144,7 +144,9 @@ afterEach(() => {
   restoreAttachmentManagerApi()
 })
 
+/* eslint-disable-next-line max-lines-per-function -- organizational wrapper for session test groups */
 describe('CopilotChatPanel composer interactions', () => {
+  /* eslint-disable-next-line max-lines-per-function -- integration tests for transient state/session switching scenarios, each requiring full render setup */
   describe('transient state and session switching', () => {
   it('keeps session-scoped transient conversation after switching away and back before persisted replay becomes renderable', async () => {
     const sendMessage = createResolvedSendMessageSpy()
@@ -245,6 +247,7 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  /* eslint-disable-next-line max-lines-per-function -- complex integration test covering debug handoff logging across topic switches with session state verification */
   it('emits debug handoff logs when retained transient state waits for persisted replay across a topic switch', async () => {
     const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
     const sendMessage = createResolvedSendMessageSpy()

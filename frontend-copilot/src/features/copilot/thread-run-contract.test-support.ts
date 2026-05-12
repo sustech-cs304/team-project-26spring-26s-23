@@ -169,6 +169,7 @@ type RuntimeModelRouteFixtureOverrides = Partial<RuntimeResolvedModelRoute> & {
   }
 }
 
+// eslint-disable-next-line complexity -- test-support fixture builder, intentionally verbose
 export function createRuntimeModelRoute(
   overrides: RuntimeModelRouteFixtureOverrides = {},
 ): RuntimeModelRoute & RuntimeResolvedModelRoute {
@@ -237,6 +238,7 @@ type RuntimeRunMetadataEventOverrides = Omit<Partial<RuntimeRunMetadataEvent>, '
   payload?: Partial<RuntimeRunMetadataEvent['payload']>
 }
 
+// eslint-disable-next-line complexity -- test-support fixture builder, intentionally verbose
 export function createRuntimeRunStartResponse(
   overrides: RuntimeRunStartResponseOverrides = {},
 ): RuntimeRunStartResponse {
@@ -281,6 +283,7 @@ export function createRuntimeRunStartResponse(
   }
 }
 
+// eslint-disable-next-line complexity -- test-support fixture builder, intentionally verbose
 export function createRuntimeRunCancelResponse(
   overrides: RuntimeRunCancelResponseOverrides = {},
 ): RuntimeRunCancelResponse {
@@ -313,6 +316,7 @@ export function createRuntimeRunCancelResponse(
   }
 }
 
+// eslint-disable-next-line complexity -- test-support fixture builder, intentionally verbose
 export function createRuntimeThinkingCapability(
   overrides: Partial<RuntimeThinkingCapability> = {},
 ): RuntimeThinkingCapability {
@@ -476,6 +480,7 @@ export function createRuntimeThinkingControlSpec(
   }
 }
 
+// eslint-disable-next-line complexity -- test-support fixture builder, intentionally verbose
 export function createRuntimeThinkingSelectionResult(
   overrides: Partial<NonNullable<RuntimeRunMetadataEvent['payload']['thinkingSeriesDecision']>> = {},
 ): NonNullable<RuntimeRunMetadataEvent['payload']['thinkingSeriesDecision']> {
