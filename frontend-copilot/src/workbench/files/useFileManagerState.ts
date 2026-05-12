@@ -728,6 +728,7 @@ export function useFileManagerState(): FileManagerState {
     setRenameValue('')
   }, [])
 
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- delete flow handles fallback targeting, trash fallback, refresh metadata, and feedback in one operation.
   const deleteSelected = useCallback(async () => {
     const fm = getFileManager()
     if (!fm || !rootPath) return
@@ -796,6 +797,7 @@ export function useFileManagerState(): FileManagerState {
     } finally {
       setBusyOperation('idle')
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- handlePostOperationResult is declared below; keep callback order aligned with neighboring file operations.
   }, [rootPath, selectedPaths, focusedPath, rootEntries, entriesCache])
 
   const confirmPermanentDelete = useCallback(async () => {

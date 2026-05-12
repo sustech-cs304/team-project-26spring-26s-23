@@ -302,7 +302,7 @@ function ModelEditorDialogContent({
   currentValueOptions, budgetModeOptions, locale, updateThinkingCapability,
   onClose, onSave, onStateChange, onToggleCapability, handleKeyDown,
 }: ModelEditorDialogContentProps) {
-  const modelCapabilityOptions = getModelCapabilityOptions('zh-CN') // language derived from locale
+  const modelCapabilityOptions = getModelCapabilityOptions(locale)
   const thinkingDeclarationModeOptions = createThinkingDeclarationModeOptions(locale)
   const currencyOptions = createCurrencyOptions(locale)
   const advancedSectionId = 'settings-model-editor-advanced-panel'

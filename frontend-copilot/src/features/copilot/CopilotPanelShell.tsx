@@ -49,6 +49,13 @@ import {
 } from './useCopilotPanelHistoryLoadingGate'
 
 const RETAINED_SESSION_COMPOSER_DISABLED_REASON = '正在切换话题，请稍候。'
+const EMPTY_ASSISTANT_SESSION_CAPABILITIES: AssistantSessionShell['capabilities'] = {
+  capabilitiesVersion: 'empty',
+  allAvailableTools: [],
+  recommendedToolsForAgent: [],
+  defaultEnabledTools: [],
+  toolSelectionMode: 'none',
+}
 
 export interface CopilotPanelShellProps {
   language?: string
@@ -264,6 +271,7 @@ function renderSessionPlaceholder(props: ConnectableCopilotPanelShellProps, copy
   )
 }
 
+// eslint-disable-next-line complexity -- active shell rendering coordinates persisted-history gates and composer/message surfaces.
 function renderActiveSessionShell(
   props: ConnectableCopilotPanelShellProps,
   copy: ReturnType<typeof getCopilotChatCopy>,
@@ -329,7 +337,7 @@ function renderActiveSessionShell(
         </CrossFade>
         <CopilotComposerShell
           language={props.language}
-          capabilities={props.sessionShell?.capabilities ?? { tools: {} } as any}
+          capabilities={props.sessionShell?.capabilities ?? EMPTY_ASSISTANT_SESSION_CAPABILITIES}
           modelGroups={props.modelGroups}
           thinkingCapability={props.thinkingCapability}
           draft={props.composerDraft}

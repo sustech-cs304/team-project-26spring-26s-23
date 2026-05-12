@@ -452,11 +452,11 @@ export function CopilotComposerShell({
         attachmentControlRef,
         openAttachmentPreview: attachmentActions.openAttachmentPreview,
         removeAttachment: attachmentActions.removeAttachment,
-        handleDragEnter: attachmentActions.handleDragEnter as any,
-        handleDragOver: attachmentActions.handleDragOver as any,
-        handleDragLeave: attachmentActions.handleDragLeave as any,
-        handleDrop: attachmentActions.handleDrop as any,
-        handlePaste: attachmentActions.handlePaste as any,
+        handleDragEnter: attachmentActions.handleDragEnter,
+        handleDragOver: attachmentActions.handleDragOver,
+        handleDragLeave: attachmentActions.handleDragLeave,
+        handleDrop: attachmentActions.handleDrop,
+        handlePaste: attachmentActions.handlePaste,
         attachmentCount: attachmentActions.attachmentCount,
         togglePanel: attachmentActions.togglePanel,
         requestCloseAttachmentPanel,
@@ -684,11 +684,11 @@ function renderComposerSurface(input: {
   attachmentControlRef: RefObject<HTMLDivElement | null>
   openAttachmentPreview: (id: string) => void
   removeAttachment: (id: string) => void
-  handleDragEnter: (event: ReactDragEvent) => void
-  handleDragOver: (event: ReactDragEvent) => void
-  handleDragLeave: (event: ReactDragEvent) => void
-  handleDrop: (event: ReactDragEvent) => void
-  handlePaste: (event: ReactClipboardEvent) => void
+  handleDragEnter: (event: ReactDragEvent<HTMLDivElement>) => void
+  handleDragOver: (event: ReactDragEvent<HTMLDivElement>) => void
+  handleDragLeave: (event: ReactDragEvent<HTMLDivElement>) => void
+  handleDrop: (event: ReactDragEvent<HTMLDivElement>) => void
+  handlePaste: (event: ReactClipboardEvent<HTMLTextAreaElement>) => void
   attachmentCount: number
   togglePanel: () => void
   requestCloseAttachmentPanel: () => void

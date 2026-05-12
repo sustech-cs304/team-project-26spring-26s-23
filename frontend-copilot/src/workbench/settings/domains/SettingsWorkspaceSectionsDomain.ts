@@ -63,8 +63,10 @@ interface UseSettingsWorkspaceSectionsDomainArgs {
 
 interface SectionCreationDeps {
   formState: ReturnType<typeof useSettingsWorkspaceState>['formState']
+  activeProviderId: ReturnType<typeof useSettingsWorkspaceState>['activeProviderId']
   activeProvider: ReturnType<typeof useSettingsWorkspaceProviderController>['activeProvider']
   activeProviderDetail: ReturnType<typeof useSettingsWorkspaceProviderController>['activeProviderDetail']
+  activeProviderPreviewModelId: string | null
   providerQuery: string
   activeProviderApiKeyDraft: string
   apiKeyVisible: boolean
@@ -116,10 +118,10 @@ interface MiscSectionDeps {
 function createProviderSection(deps: SectionCreationDeps): ProviderProfilesSectionDomain {
   return createProviderProfilesSectionDomain({
     providerProfiles: deps.formState.providerProfiles,
-    activeProviderId: (deps.formState as any).activeProviderId ?? null,
+    activeProviderId: deps.activeProviderId,
     activeProvider: deps.activeProvider,
     activeProviderDetail: deps.activeProviderDetail,
-    activeProviderPreviewModelId: (deps.formState as any).activeProviderPreviewModelId ?? null,
+    activeProviderPreviewModelId: deps.activeProviderPreviewModelId,
     providerQuery: deps.providerQuery,
     activeProviderApiKeyDraft: deps.activeProviderApiKeyDraft,
     apiKeyVisible: deps.apiKeyVisible,
@@ -279,6 +281,8 @@ export function useSettingsWorkspaceSectionsDomain({
     clearModelEditorError,
   } = providerController
 
+  const activeProviderPreviewModelId = activeProviderDetail.availableModels[0]?.modelId ?? null
+
   const sideflows = useSettingsWorkspaceSideflows({
     hydratedCasPasswordValue: casPasswordValue,
     wakeupShareLink: formState.wakeupShareLink,
@@ -322,8 +326,10 @@ export function useSettingsWorkspaceSectionsDomain({
 
   const sectionDeps: SectionCreationDeps = {
     formState,
+    activeProviderId,
     activeProvider,
     activeProviderDetail,
+    activeProviderPreviewModelId,
     providerQuery,
     activeProviderApiKeyDraft,
     apiKeyVisible,

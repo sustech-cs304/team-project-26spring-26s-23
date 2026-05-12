@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { act } from 'react'
 import { afterEach, beforeAll, afterAll, describe, expect, it, vi } from 'vitest'

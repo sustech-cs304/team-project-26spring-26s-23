@@ -71,6 +71,7 @@ export function usePersistedHistorySwitchLoadingGate(input: {
       hideTimerRef,
       setGateState,
     })
+    previousSessionIdRef.current = input.sessionId
   }, [input.persistedHistoryViewState, input.sessionHistory?.isPersistedThread, input.sessionId])
 
   return immediateSwitchedPersistedHistoryLoading

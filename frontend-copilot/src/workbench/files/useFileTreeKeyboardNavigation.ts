@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { FileTreeEntry } from '../../../electron/file-manager/ipc'
 import type { VisibleTreeNode } from './types'
 
@@ -59,6 +59,7 @@ export function useFileTreeKeyboardNavigation(params: UseFileTreeKeyboardNavigat
     busyOperation,
     rootEntries,
     entriesCache,
+    selectedPaths,
     setFocusedPath,
     setSelectedPaths,
     setLastClickedPath,
@@ -187,7 +188,7 @@ export function useFileTreeKeyboardNavigation(params: UseFileTreeKeyboardNavigat
   }, [focusedPath, setSelectedPaths, setSelectionAnchorPath])
 
   // ── Key handler map ──────────────────────────────────────
-  const keyHandlers: Record<string, KeyHandler> = {
+  const keyHandlers = useMemo<Record<string, KeyHandler>>(() => ({
     ArrowUp: (e, ctrl, shift) => {
       e.preventDefault()
       e.stopPropagation()
@@ -239,22 +240,32 @@ export function useFileTreeKeyboardNavigation(params: UseFileTreeKeyboardNavigat
       e.stopPropagation()
       if (focusedPath) {
         startRename(focusedPath)
-      } else if (params.selectedPaths.size === 1) {
-        const [single] = params.selectedPaths
+      } else if (selectedPaths.size === 1) {
+        const [single] = selectedPaths
         startRename(single)
       }
       return true
     },
-  }
+  }), [
+    moveFocusVertical,
+    handleArrowRight,
+    handleArrowLeft,
+    handleEnter,
+    toggleFocusedSelection,
+    deleteSelected,
+    focusedPath,
+    selectedPaths,
+    startRename,
+  ])
 
-  const ctrlKeyHandlers: Record<string, KeyHandler> = {
+  const ctrlKeyHandlers = useMemo<Record<string, KeyHandler>>(() => ({
     c: (e) => { e.preventDefault(); e.stopPropagation(); copySelected(); return true },
     C: (e) => { e.preventDefault(); e.stopPropagation(); copySelected(); return true },
     x: (e) => { e.preventDefault(); e.stopPropagation(); cutSelected(); return true },
     X: (e) => { e.preventDefault(); e.stopPropagation(); cutSelected(); return true },
     v: (e) => { e.preventDefault(); e.stopPropagation(); void pasteEntries(); return true },
     V: (e) => { e.preventDefault(); e.stopPropagation(); void pasteEntries(); return true },
-  }
+  }), [copySelected, cutSelected, pasteEntries])
 
   const handleTreeKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -274,15 +285,10 @@ export function useFileTreeKeyboardNavigation(params: UseFileTreeKeyboardNavigat
         handler(e, ctrl, e.shiftKey)
       }
     },
-    // ctrlKeyHandlers / keyHandlers are stable object lookups defined in the same scope.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       shouldHandleTreeKeyboard,
-      moveFocusVertical,
-      handleArrowRight,
-      handleArrowLeft,
-      handleEnter,
-      toggleFocusedSelection,
+      ctrlKeyHandlers,
+      keyHandlers,
     ],
   )
 
