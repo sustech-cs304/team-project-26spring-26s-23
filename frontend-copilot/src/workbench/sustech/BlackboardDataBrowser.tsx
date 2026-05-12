@@ -1840,7 +1840,7 @@ function DetailTabPanel({
   )
 }
 
-function useDetailTabTransition(activeTab: DetailTab) {
+function useDetailTabTransition(activeTab: DetailTab, resetKey: string | null) {
   const [visitedDetailTabs, setVisitedDetailTabs] = useState<Set<DetailTab>>(
     () => new Set<DetailTab>(['announcements']),
   )
@@ -1855,6 +1855,18 @@ function useDetailTabTransition(activeTab: DetailTab) {
       window.clearTimeout(detailTabTransitionTimerRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    setVisitedDetailTabs(new Set<DetailTab>(['announcements']))
+    setVisibleDetailTab('announcements')
+    setExitingDetailTab(null)
+    targetDetailTabRef.current = 'announcements'
+    visibleDetailTabRef.current = 'announcements'
+    if (detailTabTransitionTimerRef.current !== null) {
+      window.clearTimeout(detailTabTransitionTimerRef.current)
+      detailTabTransitionTimerRef.current = null
+    }
+  }, [resetKey])
 
   useEffect(() => {
     targetDetailTabRef.current = activeTab
@@ -1922,7 +1934,7 @@ export function BlackboardDataBrowser({ language, baseUrl, refreshToken = 0 }: B
   const [loadingCourses, setLoadingCourses] = useState(false)
   const [coursesError, setCoursesError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<DetailTab>('announcements')
-  const { visitedDetailTabs, visibleDetailTab, exitingDetailTab } = useDetailTabTransition(activeTab)
+  const { visitedDetailTabs, visibleDetailTab, exitingDetailTab } = useDetailTabTransition(activeTab, selectedCourseId)
   const [detailStateByTab, setDetailStateByTab] = useState<Record<DetailTab, DetailTabState>>(
     createInitialDetailTabState,
   )

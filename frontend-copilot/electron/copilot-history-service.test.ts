@@ -178,7 +178,7 @@ function createHistoryService(input: {
   ) => Promise<void> | void
 } = {}) {
   const hostedBackendService = input.hostedBackendService ?? createHostedBackendServiceStub({
-    runtimeBaseUrl: input.runtimeBaseUrl ?? HISTORY_RUNTIME_BASE_URL,
+    runtimeBaseUrl: input.runtimeBaseUrl !== undefined ? input.runtimeBaseUrl : HISTORY_RUNTIME_BASE_URL,
     localToken: input.localToken,
   })
 
