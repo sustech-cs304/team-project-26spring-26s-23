@@ -1,93 +1,82 @@
-// 这里为了通用，可以直接引入外部定义，先暂时在内部简单声明
-const EDITOR_BACKGROUND = 'var(--vscode-editor-background)'
-const WIDGET_BORDER = '1px solid var(--vscode-widget-border)'
-const DESCRIPTION_FOREGROUND = 'var(--vscode-descriptionForeground)'
-
-interface UnifiedCalendarEvent {
-  id: string | number
-  source: string
-  source_id: string | null
-  title: string
-  description: string | null
-  start_time: string
-  end_time: string
-  is_all_day: boolean
-  location: string | null
-  status: string
-}
+import type { UnifiedCalendarEvent } from '../calendar-types'
 
 interface KanbanTrackerProps {
   events?: UnifiedCalendarEvent[]
 }
 
+const SOURCE_LABEL_CLASS: Record<string, string> = {
+  bb: 'kanban-card__source--bb',
+  course: 'kanban-card__source--course',
+  custom: 'kanban-card__source--custom',
+}
+
 export function KanbanTracker({ events = [] }: KanbanTrackerProps) {
-  // 按照 status 过滤数据
-  const notStartedEvents = events.filter(e => e.status === 'not_started')
-  const inProgressEvents = events.filter(e => e.status === 'in_progress')
-  const completedEvents = events.filter(e => e.status === 'completed')
+  const notStarted = events.filter((e) => e.status === 'not_started')
+  const inProgress = events.filter((e) => e.status === 'in_progress')
+  const completed = events.filter((e) => e.status === 'completed')
 
   return (
-    <section
-      className="calendar-kanban-view"
-      style={{
-        flex: '1 1 50%',
-        minHeight: '300px',
-
-        backgroundColor: EDITOR_BACKGROUND,
-        borderRadius: '8px',
-        border: WIDGET_BORDER,
-        padding: '1rem',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden'
-      }}
-    >
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h3 style={{ margin: 0, fontSize: '1.1em', fontWeight: 600 }}>任务跟踪器</h3>
+    <section className="kanban-tracker">
+      <header className="kanban-tracker__head">
+        <p className="kanban-tracker__eyebrow">Task Board</p>
+        <h3 className="kanban-tracker__title">任务跟踪</h3>
       </header>
 
-      <div style={{ flex: 1, display: 'flex', gap: '1rem', overflowX: 'auto' }}>
-        {/* Kanban Column: 未开始 */}
-        <div style={{ flex: 1, minWidth: '220px', backgroundColor: 'var(--vscode-editorWidget-background)', borderRadius: '6px', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9em', marginBottom: '0.5rem' }}>
-            <span style={{ color: 'var(--vscode-list-warningForeground)' }}>●</span> 未开始 ({notStartedEvents.length})
-          </div>
-          {notStartedEvents.map((evt) => (
-            <div key={evt.id} style={{ backgroundColor: EDITOR_BACKGROUND, border: WIDGET_BORDER, borderRadius: '4px', padding: '0.5rem', fontSize: '0.85em' }}>
-              <div style={{ fontWeight: 500, marginBottom: '0.25rem' }}>{evt.title}</div>
-              <div style={{ color: DESCRIPTION_FOREGROUND }}>{evt.source.toUpperCase()}</div>
-            </div>
-          ))}
-          <button style={{ background: 'none', border: '1px dashed var(--vscode-widget-border)', color: 'var(--vscode-textLink-foreground)', borderRadius: '4px', padding: '0.25rem', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'center' }}>+ 新建任务</button>
-        </div>
-
-        {/* Kanban Column: 进行中 */}
-        <div style={{ flex: 1, minWidth: '220px', backgroundColor: 'var(--vscode-editorWidget-background)', borderRadius: '6px', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9em', marginBottom: '0.5rem' }}>
-            <span style={{ color: 'var(--vscode-list-activeSelectionBackground)' }}>●</span> 进行中 ({inProgressEvents.length})
-          </div>
-          {inProgressEvents.map((evt) => (
-            <div key={evt.id} style={{ backgroundColor: EDITOR_BACKGROUND, border: WIDGET_BORDER, borderRadius: '4px', padding: '0.5rem', fontSize: '0.85em' }}>
-              <div style={{ fontWeight: 500, marginBottom: '0.25rem' }}>{evt.title}</div>
-              <div style={{ color: DESCRIPTION_FOREGROUND }}>{evt.source.toUpperCase()}</div>
-            </div>
-          ))}
-          <button style={{ background: 'none', border: '1px dashed var(--vscode-widget-border)', color: 'var(--vscode-textLink-foreground)', borderRadius: '4px', padding: '0.25rem', cursor: 'pointer', marginTop: '0.5rem', textAlign: 'center' }}>+ 新建任务</button>
-        </div>
-
-        {/* Kanban Column: 已完成 */}
-        <div style={{ flex: 1, minWidth: '220px', backgroundColor: 'var(--vscode-editorWidget-background)', borderRadius: '6px', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9em', marginBottom: '0.5rem' }}>
-            <span style={{ color: 'var(--vscode-testing-iconPassed)' }}>●</span> 已完成 ({completedEvents.length})
-          </div>
-          {completedEvents.map((evt) => (
-            <div key={evt.id} style={{ backgroundColor: EDITOR_BACKGROUND, border: WIDGET_BORDER, borderRadius: '4px', padding: '0.5rem', fontSize: '0.85em' }}>
-              <div style={{ fontWeight: 500, marginBottom: '0.25rem', textDecoration: 'line-through', color: DESCRIPTION_FOREGROUND }}>{evt.title}</div>
-              <div style={{ color: DESCRIPTION_FOREGROUND }}>{evt.source.toUpperCase()}</div>
-            </div>
-          ))}
-        </div>
+      <div className="kanban-tracker__columns">
+        <KanbanColumn label="未开始" tone="warn" events={notStarted} showAdd />
+        <KanbanColumn label="进行中" tone="active" events={inProgress} showAdd />
+        <KanbanColumn label="已完成" tone="done" events={completed} />
       </div>
     </section>
-  );
+  )
+}
+
+function KanbanColumn({ label, tone, events, showAdd = false }: {
+  label: string
+  tone: 'warn' | 'active' | 'done'
+  events: UnifiedCalendarEvent[]
+  showAdd?: boolean
+}) {
+  return (
+    <div className={`kanban-column kanban-column--${tone}`}>
+      <div className="kanban-column__head">
+        <span className={`kanban-column__dot kanban-column__dot--${tone}`} />
+        <span className="kanban-column__label">{label}</span>
+        <span className="kanban-column__count">{events.length}</span>
+      </div>
+      <div className="kanban-column__body">
+        {events.map((evt) => (
+          <KanbanCard key={evt.id} event={evt} tone={tone} />
+        ))}
+        {events.length === 0 && (
+          <p className="kanban-column__empty">—</p>
+        )}
+      </div>
+      {showAdd ? (
+        <button type="button" className="kanban-column__add-btn">+ 新建任务</button>
+      ) : null}
+    </div>
+  )
+}
+
+function KanbanCard({ event, tone }: { event: UnifiedCalendarEvent; tone: string }) {
+  const done = tone === 'done'
+  const sourceClass = SOURCE_LABEL_CLASS[event.source] ?? ''
+
+  return (
+    <article className={`kanban-card${done ? ' kanban-card--done' : ''}`}>
+      <div className="kanban-card__body">
+        <span className={`kanban-card__source-dot${sourceClass ? ` ${sourceClass}` : ''}`} />
+        <span className={done ? 'kanban-card__title--done' : 'kanban-card__title'}>
+          {event.title}
+        </span>
+      </div>
+      <div className="kanban-card__meta">
+        <span>{event.source.toUpperCase()}</span>
+        {typeof event.progress === 'number' && (
+          <span>{event.progress}%</span>
+        )}
+      </div>
+    </article>
+  )
 }
