@@ -1,22 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import { getHubWorkspaceContent, type WorkbenchLanguage } from '../locale'
 import type { HubWorkspaceView } from '../types'
-import { TimelineView } from './components/TimelineView'
+import { CalendarGanttView } from './components/CalendarGanttView'
 import { KanbanTracker } from './components/KanbanTracker'
-
-interface UnifiedCalendarEvent {
-  id: string | number
-  source: string
-  source_id: string | null
-  title: string
-  description: string | null
-  start_time: string
-  end_time: string
-  is_all_day: boolean
-  location: string | null
-  status: string
-}
+import type { CalendarEventPatch, UnifiedCalendarEvent } from './calendar-types'
+import { mergeCalendarEventPatch } from './calendar-gantt-model'
 
 interface HubWorkspaceProps {
   view: HubWorkspaceView
@@ -31,13 +20,14 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // 决定实际要用的 Base URL
+    const controller = new AbortController()
+    let active = true
+
     let actualRuntimeUrl = 'http://127.0.0.1:8765'
     if (bootstrap) {
       if (bootstrap.state.status === 'ready' || bootstrap.state.status === 'degraded') {
         actualRuntimeUrl = bootstrap.state.runtimeUrl
       } else {
-        // Electron 环境下，系统还在初始化或者异常状态，暂不请求
         return
       }
     }
@@ -46,21 +36,41 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       setIsLoading(true)
       setError(null)
       try {
-        const response = await fetch(`${actualRuntimeUrl}/calendar/events`)
+        const response = await fetch(`${actualRuntimeUrl}/calendar/events`, {
+          signal: controller.signal,
+        })
         if (!response.ok) {
           const errText = await response.text().catch(() => 'No text')
           throw new Error(`Failed to fetch events: ${response.status} ${response.statusText} ${errText}`)
         }
         const data = await response.json()
-        setEvents(data.items || [])
+        if (active) {
+          setEvents(data.items || [])
+        }
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : String(err))
+        if (controller.signal.aborted) {
+          return
+        }
+        if (active) {
+          setError(err instanceof Error ? err.message : String(err))
+        }
       } finally {
-        setIsLoading(false)
+        if (active) {
+          setIsLoading(false)
+        }
       }
     }
     fetchEvents()
+
+    return () => {
+      active = false
+      controller.abort()
+    }
   }, [bootstrap])
+
+  const handleCalendarEventChange = useCallback((eventId: string | number, patch: CalendarEventPatch) => {
+    setEvents((currentEvents) => mergeCalendarEventPatch(currentEvents, eventId, patch))
+  }, [])
 
   return (
     <section className="workspace-stage hub-workspace" aria-label={`${content.title}工作区`}>
@@ -89,39 +99,46 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
           </div>
         </header>
 
-        <section className="workspace-main__content" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', height: '100%', overflow: 'hidden' }}>
-          {/* 顶部：时间轴 (Timeline / Roadmap) 视图 */}
-          <TimelineView events={events} />
+        <section className="workspace-main__content calendar-workspace-content" style={{ display: 'flex', flexDirection: 'column' }}>
+          <CalendarGanttView events={events} onEventChange={handleCalendarEventChange} />
 
-          {/* 底部：任务跟踪器 (Kanban) 视图 */}
           <KanbanTracker events={events} />
 
-          {/* 暂时保留原本获取的数据用于 debug 和对照，用一个折叠面板包起来 */}
-          <details style={{ marginTop: 'auto', border: '1px solid var(--vscode-widget-border)', borderRadius: '4px', padding: '0.5rem' }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.9em' }}>
-              后端原始事件数据 Debug (Error: {error || 'None'})
-            </summary>
-            <div style={{ marginTop: '0.5rem', maxHeight: '150px', overflowY: 'auto', fontSize: '0.85em' }}>
-              {isLoading ? (
-                <p>Loading events...</p>
-              ) : events.length === 0 ? (
-                <p>No events found.</p>
-              ) : (
-                <ul style={{ paddingLeft: '1rem' }}>
-                  {events.map((evt) => (
-                    <li key={evt.id} style={{ marginBottom: '0.25rem' }}>
-                      <strong>{evt.title}</strong>
-                      <div style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                        {new Date(evt.start_time).toLocaleString()} - {evt.source.toUpperCase()}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </details>
+          <CalendarDebugPanel events={events} error={error} isLoading={isLoading} />
         </section>
       </main>
     </section>
+  )
+}
+
+function CalendarDebugPanel({ events, error, isLoading }: {
+  events: UnifiedCalendarEvent[]
+  error: string | null
+  isLoading: boolean
+}) {
+  return (
+    <details className="calendar-debug-panel">
+      <summary className="calendar-debug-panel__summary">
+        后端原始事件数据 Debug (Error: {error || 'None'})
+      </summary>
+      <div className="calendar-debug-panel__body">
+        {isLoading ? (
+          <p>Loading events...</p>
+        ) : events.length === 0 ? (
+          <p>No events found.</p>
+        ) : (
+          <ul>
+            {events.map((event) => (
+              <li key={event.id}>
+                <strong>{event.title}</strong>
+                <div>
+                  {new Date(event.start_time).toLocaleString()} - {event.source.toUpperCase()}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </details>
   )
 }
