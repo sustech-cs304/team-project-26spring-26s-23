@@ -25,26 +25,26 @@
   gap: 0.75rem;
   padding: 1rem;
   border-radius: 6px;
-  background: var(--vscode-editorWidget-background, var(--surface-subtle));
+  background: var(--surface-subtle, var(--vscode-editorWidget-background));
   overflow: hidden;
 
-  --g-bar-color: var(--vscode-textLink-foreground, #3794ff);
+  --g-bar-color: var(--accent-color, var(--vscode-textLink-foreground));
   --g-bar-border: transparent;
-  --g-progress-color: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 78%, transparent);
-  --g-handle-color: var(--vscode-focusBorder, var(--accent-color));
+  --g-progress-color: color-mix(in srgb, var(--accent-color, var(--vscode-testing-iconPassed)) 78%, transparent);
+  --g-handle-color: var(--accent-color, var(--vscode-focusBorder));
   --g-header-background: transparent;
   --g-row-color: transparent;
-  --g-row-border-color: var(--vscode-widget-border, var(--border-color));
-  --g-border-color: var(--vscode-widget-border, var(--border-color));
+  --g-row-border-color: var(--border-color, var(--vscode-widget-border));
+  --g-border-color: var(--border-color, var(--vscode-widget-border));
   --g-text-muted: var(--text-muted);
   --g-text-dark: var(--text-primary);
-  --g-text-light: var(--vscode-button-foreground, #ffffff);
+  --g-text-light: var(--text-primary, var(--vscode-button-foreground));
   --g-actions-background: var(--interactive-hover-bg);
-  --g-tick-color: color-mix(in srgb, var(--vscode-widget-border, #3c3c3c) 40%, transparent);
-  --g-tick-color-thick: color-mix(in srgb, var(--vscode-widget-border, #3c3c3c) 68%, transparent);
-  --g-today-highlight: var(--vscode-textLink-foreground, #3794ff);
+  --g-tick-color: color-mix(in srgb, var(--border-color, var(--vscode-widget-border)) 40%, transparent);
+  --g-tick-color-thick: color-mix(in srgb, var(--border-color, var(--vscode-widget-border)) 68%, transparent);
+  --g-today-highlight: var(--accent-color, var(--vscode-textLink-foreground));
   --g-popup-actions: var(--surface-subtle);
-  --g-weekend-highlight-color: color-mix(in srgb, var(--vscode-editorWidget-background, #252526) 48%, transparent);
+  --g-weekend-highlight-color: color-mix(in srgb, var(--surface-subtle, var(--vscode-editorWidget-background)) 48%, transparent);
   --g-arrow-color: var(--text-muted);
 }
 
