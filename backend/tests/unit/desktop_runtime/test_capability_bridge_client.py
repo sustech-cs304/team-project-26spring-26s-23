@@ -15,7 +15,13 @@ from app.desktop_runtime.capability_bridge_client import (
     HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME,
     DesktopCapabilityBridgeClient,
 )
-from app.tooling import HostCapabilityOperationError, ToolInvocationContext
+from app.tooling import (
+    HostArtifact,
+    HostBrowserPage,
+    HostBrowserScreenshot,
+    HostCapabilityOperationError,
+    ToolInvocationContext,
+)
 
 
 def _build_invocation_context(
@@ -353,23 +359,27 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         "snapshotRevision": 8,
         "isError": False,
     }
-    assert browser_page == {
-        "tabId": "main-window",
-        "currentUrl": "https://example.com/",
-        "title": "Example Domain",
-        "windowVisible": True,
-    }
-    assert browser_screenshot == {
-        "tabId": "main-window",
-        "currentUrl": "https://example.com/",
-        "title": "Example Domain",
-        "windowVisible": True,
-        "artifactId": "artifact-browser-screenshot",
-        "uri": "artifact://desktop/browser-screenshot.png",
-        "name": "browser-capture",
-        "contentType": "image/png",
-        "metadata": {"source": "browser.screenshot"},
-    }
+    assert browser_page == HostBrowserPage(
+        tab_id="main-window",
+        current_url="https://example.com/",
+        title="Example Domain",
+        window_visible=True,
+    )
+    assert browser_screenshot == HostBrowserScreenshot(
+        page=HostBrowserPage(
+            tab_id="main-window",
+            current_url="https://example.com/",
+            title="Example Domain",
+            window_visible=True,
+        ),
+        artifact=HostArtifact(
+            artifact_id="artifact-browser-screenshot",
+            uri="artifact://desktop/browser-screenshot.png",
+            name="browser-capture",
+            content_type="image/png",
+            metadata={"source": "browser.screenshot"},
+        ),
+    )
 
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_payloads] == [
@@ -389,14 +399,23 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         ("browser", "open"),
         ("browser", "screenshot"),
     ]
-    assert all(item["toolId"] == context.tool_id for item in captured_payloads[:-1])
+    assert all(
+        item["toolId"] == context.tool_id
+        for item in captured_payloads
+        if item["operation"] != "call_tool"
+    )
+    assert captured_payloads[-3]["toolId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d"
     assert captured_payloads[-2]["toolId"] == context.tool_id
     assert captured_payloads[-2]["payload"] == {"url": "https://example.com/", "showWindow": True}
     assert captured_payloads[-1]["toolId"] == context.tool_id
     assert captured_payloads[-1]["payload"] == {"name": "browser-capture"}
     assert all(item["runId"] == context.run_id for item in captured_payloads)
-    assert all(item["toolCallId"] == context.invocation_id for item in captured_payloads[:-1])
-    assert captured_payloads[-1]["toolCallId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d:call-1"
+    assert all(
+        item["toolCallId"] == context.invocation_id
+        for item in captured_payloads
+        if item["operation"] != "call_tool"
+    )
+    assert captured_payloads[-3]["toolCallId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d:call-1"
     save_bytes_payload = captured_payloads[6]["payload"]
     assert isinstance(save_bytes_payload, dict)
     assert (

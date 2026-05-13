@@ -10,6 +10,8 @@ import pytest
 from app.tooling.contract import HostCapabilityRequirement
 from app.tooling.host_capabilities import (
     HostArtifact,
+    HostBrowserPage,
+    HostBrowserScreenshot,
     HostEvent,
     MissingHostCapabilityError,
     ToolHostCapabilities,
@@ -123,6 +125,22 @@ def test_host_capability_models_serialize_to_stable_shape() -> None:
         occurred_at=occurred_at,
         data={"progress": 50},
     )
+    browser_page = HostBrowserPage(
+        tab_id="browser-tab-1",
+        current_url="https://example.com/",
+        title="Example Domain",
+        window_visible=False,
+    )
+    browser_screenshot = HostBrowserScreenshot(
+        page=browser_page,
+        artifact=HostArtifact(
+            artifact_id="artifact-browser-screenshot",
+            uri="artifact://desktop/browser-screenshot.png",
+            name="browser-screenshot.png",
+            content_type="image/png",
+            metadata={"source": "browser.screenshot"},
+        ),
+    )
 
     assert artifact.to_dict() == {
         "artifactId": "artifact-1",
@@ -137,6 +155,17 @@ def test_host_capability_models_serialize_to_stable_shape() -> None:
         "invocationId": "invoke-1",
         "occurredAt": occurred_at.isoformat(),
         "data": {"progress": 50},
+    }
+    assert browser_screenshot.to_dict() == {
+        "tabId": "browser-tab-1",
+        "currentUrl": "https://example.com/",
+        "title": "Example Domain",
+        "windowVisible": False,
+        "artifactId": "artifact-browser-screenshot",
+        "uri": "artifact://desktop/browser-screenshot.png",
+        "name": "browser-screenshot.png",
+        "contentType": "image/png",
+        "metadata": {"source": "browser.screenshot"},
     }
 
     with pytest.raises(ValueError, match="timezone-aware"):

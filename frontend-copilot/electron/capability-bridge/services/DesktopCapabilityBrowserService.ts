@@ -327,7 +327,7 @@ async function extractPageContent(
           }
         }
 
-        const htmlTarget = selectedNode ?? document.documentElement
+        const markupTarget = selectedNode ?? document.body ?? document.documentElement
         const textTarget = selectedNode ?? document.body ?? document.documentElement
         const readText = () => {
           const raw = textTarget instanceof HTMLElement
@@ -338,12 +338,12 @@ async function extractPageContent(
 
         switch (format) {
           case 'html':
+          case 'markdown':
             return {
               ok: true,
-              content: htmlTarget instanceof Element ? htmlTarget.outerHTML : '',
+              content: markupTarget instanceof Element ? markupTarget.outerHTML : '',
             }
           case 'text':
-          case 'markdown':
             return {
               ok: true,
               content: readText(),
@@ -393,7 +393,118 @@ async function extractPageContent(
     })
   }
 
+  if (input.format === 'markdown') {
+    return convertHtmlToMarkdown(record.content)
+  }
+
   return record.content
+}
+
+function convertHtmlToMarkdown(value: string): string {
+  const html = value.trim()
+  if (html === '') {
+    return ''
+  }
+
+  const codeBlocks: string[] = []
+  let markdown = html.replace(/<pre\b[^>]*>\s*<code\b[^>]*>([\s\S]*?)<\/code>\s*<\/pre>/gi, (_, code: string) => {
+    const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`
+    const normalized_code = decodeHtmlEntities(stripHtmlTags(code)).trim()
+    codeBlocks.push(`\n\n\`\`\`\n${normalized_code}\n\`\`\`\n\n`)
+    return placeholder
+  })
+
+  markdown = markdown
+    .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_, level: string, content: string) => {
+      return `\n\n${'#'.repeat(Number(level))} ${convertInlineHtmlToMarkdown(content)}\n\n`
+    })
+    .replace(/<blockquote\b[^>]*>([\s\S]*?)<\/blockquote>/gi, (_, content: string) => {
+      const rendered = convertInlineHtmlToMarkdown(content)
+      const lines = rendered.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '')
+      return lines.length === 0 ? '' : `\n\n${lines.map((line) => `> ${line}`).join('\n')}\n\n`
+    })
+    .replace(/<ol\b[^>]*>([\s\S]*?)<\/ol>/gi, (_, content: string) => {
+      return `\n\n${convertListHtmlToMarkdown(content, true)}\n\n`
+    })
+    .replace(/<ul\b[^>]*>([\s\S]*?)<\/ul>/gi, (_, content: string) => {
+      return `\n\n${convertListHtmlToMarkdown(content, false)}\n\n`
+    })
+    .replace(/<(p|div|section|article|header|footer|aside|nav|figure)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_, _tag: string, content: string) => {
+      const rendered = convertInlineHtmlToMarkdown(content)
+      return rendered === '' ? '' : `\n\n${rendered}\n\n`
+    })
+    .replace(/<br\s*\/?>/gi, '\n')
+
+  markdown = convertInlineHtmlToMarkdown(markdown)
+  for (let index = 0; index < codeBlocks.length; index += 1) {
+    markdown = markdown.replace(`__CODE_BLOCK_${index}__`, codeBlocks[index])
+  }
+
+  return normalizeMarkdownWhitespace(markdown)
+}
+
+function convertListHtmlToMarkdown(value: string, ordered: boolean): string {
+  const items = Array.from(value.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi))
+    .map((match) => convertInlineHtmlToMarkdown(match[1] ?? ''))
+    .filter((item) => item !== '')
+  return items
+    .map((item, index) => `${ordered ? `${index + 1}.` : '-'} ${item}`)
+    .join('\n')
+}
+
+function convertInlineHtmlToMarkdown(value: string): string {
+  return decodeHtmlEntities(value)
+    .replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href: string, text: string) => {
+      const rendered_text = convertInlineHtmlToMarkdown(text)
+      return `[${rendered_text || href}](${href})`
+    })
+    .replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_, _tag: string, text: string) => {
+      const rendered_text = convertInlineHtmlToMarkdown(text)
+      return rendered_text === '' ? '' : `**${rendered_text}**`
+    })
+    .replace(/<(em|i)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_, _tag: string, text: string) => {
+      const rendered_text = convertInlineHtmlToMarkdown(text)
+      return rendered_text === '' ? '' : `*${rendered_text}*`
+    })
+    .replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_, text: string) => {
+      const rendered_text = decodeHtmlEntities(stripHtmlTags(text)).trim()
+      return rendered_text === '' ? '' : `\`${rendered_text}\``
+    })
+    .replace(/<img\b[^>]*alt=["']([^"']*)["'][^>]*src=["']([^"']+)["'][^>]*>/gi, (_, alt: string, src: string) => {
+      return `![${alt}](${src})`
+    })
+    .replace(/<img\b[^>]*src=["']([^"']+)["'][^>]*alt=["']([^"']*)["'][^>]*>/gi, (_, src: string, alt: string) => {
+      return `![${alt}](${src})`
+    })
+    .replace(/<hr\s*\/?>/gi, '\n---\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
+function stripHtmlTags(value: string): string {
+  return value.replace(/<[^>]+>/g, ' ')
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&/gi, '&')
+    .replace(/</gi, '<')
+    .replace(/>/gi, '>')
+    .replace(/"/gi, '"')
+    .replace(/'/gi, "'")
+}
+
+function normalizeMarkdownWhitespace(value: string): string {
+  return value
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function normalizeOpenRequestPayload(payload: Record<string, unknown>): BrowserOpenRequestPayload {

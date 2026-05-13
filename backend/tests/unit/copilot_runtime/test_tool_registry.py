@@ -109,8 +109,6 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         FILE_CONVERT_TOOL_ID,
         WEATHER_CURRENT_TOOL_ID,
         REQUEST_USER_FORM_TOOL_ID,
-        "browser.open",
-        "browser.screenshot",
         SKILL_ACTIVATE_TOOL_ID,
         SKILL_READ_RESOURCE_TOOL_ID,
         *CONTRACT_TOOL_IDS,

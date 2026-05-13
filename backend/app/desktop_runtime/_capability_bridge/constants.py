@@ -162,13 +162,17 @@ _BROWSER_PAGE_SCHEMA: dict[str, Any] = {
 _BROWSER_SCREENSHOT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["tabId", "currentUrl", "artifact"],
+    "required": ["tabId", "currentUrl", "artifactId", "metadata"],
     "properties": {
         "tabId": {"type": "string", "minLength": 1},
         "currentUrl": {"type": "string"},
         "title": {"type": "string", "minLength": 1},
         "windowVisible": {"type": "boolean"},
-        "artifact": deepcopy(_ARTIFACT_DESCRIPTOR_SCHEMA),
+        "artifactId": {"type": "string", "minLength": 1},
+        "uri": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "contentType": {"type": "string", "minLength": 1},
+        "metadata": {"type": "object"},
     },
 }
 

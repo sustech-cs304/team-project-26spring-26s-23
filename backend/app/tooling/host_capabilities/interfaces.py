@@ -220,7 +220,7 @@ class HostBrowserScreenshot:
 
     def to_dict(self) -> dict[str, Any]:
         payload = self.page.to_dict()
-        payload["artifact"] = self.artifact.to_dict()
+        payload.update(self.artifact.to_dict())
         return payload
 
 
