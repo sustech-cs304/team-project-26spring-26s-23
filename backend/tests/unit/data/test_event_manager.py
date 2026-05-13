@@ -380,3 +380,121 @@ def test_unified_calendar_allows_reinserting_source_after_soft_delete(tmp_path: 
     assert rows[0].is_deleted is True
     assert rows[1].is_deleted is False
 
+
+# ── UnifiedCalendarEvent CRUD ────────────────────────────────────────
+
+def _make_unified_event(**overrides) -> UnifiedCalendarEvent:
+    payload = {
+        "title": "Test Event",
+        "start_time": datetime(2026, 5, 1, 10, 0),
+        "source": "bb",
+        "source_id": "bb_test_001",
+        "description": "A test event",
+        "end_time": datetime(2026, 5, 1, 12, 0),
+        "is_all_day": False,
+        "status": "not_started",
+        "metadata_payload": {"location": "Room 101"},
+    }
+    payload.update(overrides)
+    return UnifiedCalendarEvent(**payload)
+
+
+def test_upsert_unified_calendar_event_insert(tmp_path: Path):
+    """插入新统一日历事件。"""
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
+    event = _make_unified_event()
+    assert db_manager.upsert_unified_calendar_event(event)
+    assert event.id is not None
+
+    events = db_manager.list_unified_calendar_events()
+    assert len(events) == 1
+    assert events[0].title == "Test Event"
+    assert events[0].source == "bb"
+    assert events[0].source_id == "bb_test_001"
+    db_manager.engine.dispose()
+
+
+def test_upsert_unified_calendar_event_update(tmp_path: Path):
+    """更新已有统一日历事件。"""
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
+    event = _make_unified_event()
+    assert db_manager.upsert_unified_calendar_event(event)
+
+    event.title = "Updated Title"
+    event.status = "completed"
+    assert db_manager.upsert_unified_calendar_event(event)
+
+    events = db_manager.list_unified_calendar_events()
+    assert len(events) == 1
+    assert events[0].title == "Updated Title"
+    assert events[0].status == "completed"
+    assert events[0].id == event.id
+    db_manager.engine.dispose()
+
+
+def test_sync_unified_calendar_events_inserts_and_deletes(tmp_path: Path):
+    """同步一个 source 的事件列表，新事件插入，缺失事件软删除。"""
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
+
+    # 先插入两个已有事件
+    event1 = _make_unified_event(source_id="keep_001", title="Keep Me")
+    event2 = _make_unified_event(source_id="remove_001", title="Remove Me")
+    db_manager.upsert_unified_calendar_event(event1)
+    db_manager.upsert_unified_calendar_event(event2)
+    assert len(db_manager.list_unified_calendar_events()) == 2
+
+    # 同步：保留 keep_001，新增 new_001，remove_001 应被软删除
+    synced = [
+        _make_unified_event(source_id="keep_001", title="Keep Me Updated"),
+        _make_unified_event(source_id="new_001", title="New Event"),
+    ]
+    stats = db_manager.sync_unified_calendar_events("bb", synced)
+    assert stats["inserted"] == 1
+    assert stats["updated"] == 1
+    assert stats["deleted"] == 1
+
+    active = db_manager.list_unified_calendar_events()
+    assert len(active) == 2
+    titles = {e.title for e in active}
+    assert titles == {"Keep Me Updated", "New Event"}
+
+    # 被删除的事件在 DB 中标记为 is_deleted
+    session = db_manager.SessionLocal()
+    try:
+        removed = (
+            session.query(UnifiedCalendarEventModel)
+            .filter(UnifiedCalendarEventModel.source_id == "remove_001")
+            .one()
+        )
+        assert removed.is_deleted is True
+    finally:
+        session.close()
+        db_manager.engine.dispose()
+
+
+def test_list_unified_calendar_events_by_source(tmp_path: Path):
+    """按 source 过滤列出统一日历事件。"""
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
+    db_manager.upsert_unified_calendar_event(
+        _make_unified_event(source="bb", source_id="bb_1", title="BB Event")
+    )
+    db_manager.upsert_unified_calendar_event(
+        _make_unified_event(source="custom", source_id="cu_1", title="Custom Event")
+    )
+
+    bb_events = db_manager.list_unified_calendar_events(source="bb")
+    assert len(bb_events) == 1
+    assert bb_events[0].source == "bb"
+
+    all_events = db_manager.list_unified_calendar_events()
+    assert len(all_events) == 2
+    db_manager.engine.dispose()
+

@@ -11,6 +11,11 @@ import {
   type SetStateAction,
 } from 'react'
 
+import {
+  createEmptyComposerAttachmentsState,
+  revokeComposerAttachmentPreviewUrls,
+} from '../attachments/state'
+import type { CopilotComposerAttachmentsState } from '../attachments/types'
 import type {
   AgentType,
   AssistantSessionShell,
@@ -27,6 +32,8 @@ import {
 } from '../chat-contract'
 import { resolveRuntimeToolApproval } from '../tool-approval'
 import { appendCopilotDebugLog, isCopilotDebugModeEnabled } from '../debug-mode-log'
+
+const DEBUG_LOG_CATEGORY = 'copilot-chat-panel'
 import {
   expirePendingCopilotInlineFormSegments,
   markCopilotInlineFormSubmitted,
@@ -113,8 +120,10 @@ export interface CopilotChatPanelState {
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
   composerDraft: CopilotChatComposerDraft
+  composerAttachments: CopilotComposerAttachmentsState
   toolPermissionPolicy: Parameters<typeof buildRuntimeToolPermissionPolicy>[0]['policy']
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+  onComposerAttachmentsChange: Dispatch<SetStateAction<CopilotComposerAttachmentsState>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
   onSubmitInlineForm: (input: {
     toolCallId: string
@@ -148,6 +157,11 @@ export interface CopilotChatPanelState {
 }
 
 
+// This hook orchestrates workspace settings, session transient state, model
+// selection, conversation computation, thinking capability queries, and send
+// actions. Each domain is tightly coupled; extracting sub-hooks would require
+// excessive parameter threading and duplicate closure captures.
+// eslint-disable-next-line max-lines-per-function
 export function useCopilotChatPanelState({
   language = 'zh-CN',
   state,
@@ -183,6 +197,7 @@ export function useCopilotChatPanelState({
     [activeSessionId, transientStateBySessionId],
   )
   const composerDraft = activeTransientState.composerDraft
+  const composerAttachments = activeTransientState.composerAttachments
   const conversation = activeTransientState.conversation
   const runState = activeTransientState.runState
   const thinkingCapability = activeTransientState.thinkingCapability
@@ -199,7 +214,7 @@ export function useCopilotChatPanelState({
     }
 
     setTransientStateBySessionId((current) => updateCopilotSessionTransientState(current, normalizedSessionId, updater))
-  }, [])
+  }, [setTransientStateBySessionId])
 
   const setActiveSessionTransientState = useCallback((
     updater: (state: CopilotSessionTransientState) => CopilotSessionTransientState,
@@ -215,6 +230,20 @@ export function useCopilotChatPanelState({
         : {
             ...sessionState,
             composerDraft: nextComposerDraft,
+          }
+    })
+  }, [setActiveSessionTransientState])
+
+  const setComposerAttachments: Dispatch<SetStateAction<CopilotComposerAttachmentsState>> = useCallback((value) => {
+    setActiveSessionTransientState((sessionState) => {
+      const nextComposerAttachments = typeof value === 'function'
+        ? value(sessionState.composerAttachments)
+        : value
+      return nextComposerAttachments === sessionState.composerAttachments
+        ? sessionState
+        : {
+            ...sessionState,
+            composerAttachments: nextComposerAttachments,
           }
     })
   }, [setActiveSessionTransientState])
@@ -372,6 +401,9 @@ export function useCopilotChatPanelState({
     && sessionHistory.replayStatus !== 'error'
     && sessionHistory.replayStatus !== 'ready'
   ), [hasRenderablePersistedSelectedConversation, sessionHistory])
+  // Determines whether to render transient conversation over persisted history.
+  // Multi-branch decision tree with tightly coupled boolean predicates.
+  // eslint-disable-next-line complexity
   const shouldRenderTransientConversation = useMemo(() => {
     if (runState.phase !== 'idle' && runState.threadId !== sessionShell?.sessionId) {
       return false
@@ -477,11 +509,11 @@ export function useCopilotChatPanelState({
       sessionShell.sessionId,
       (sessionState) => sessionState,
     ))
-  }, [sessionIdentity, sessionShell])
+  }, [sessionIdentity, sessionShell, setTransientStateBySessionId])
 
   useEffect(() => {
     setHistoryRebindAcknowledged(false)
-  }, [historyDriftResetKey])
+  }, [historyDriftResetKey, setHistoryRebindAcknowledged])
 
   useEffect(() => {
     transientStateBySessionIdRef.current = transientStateBySessionId
@@ -513,7 +545,7 @@ export function useCopilotChatPanelState({
         pendingHistorySyncLogKey: tracksPendingHistorySync ? null : sessionState.pendingHistorySyncLogKey,
       }))
 
-      appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'run-settled-pending-history-sync', {
+      appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'run-settled-pending-history-sync', {
         sessionId: settledSessionId,
         transientSessionId: sessionId,
         activeSessionId: sessionShell?.sessionId ?? null,
@@ -532,8 +564,12 @@ export function useCopilotChatPanelState({
     sessionHistory?.selectedRunId,
     sessionShell?.sessionId,
     transientStateBySessionId,
+    updateSessionTransientStateById,
   ])
 
+  // Pending history sync wait → commit loop. Multiple session-bound
+  // conditions share memoized values; extracting would scatter state.
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   useEffect(() => {
     const sessionId = sessionShell?.sessionId?.trim() ?? ''
     if (sessionId === '') {
@@ -572,7 +608,7 @@ export function useCopilotChatPanelState({
           ...sessionState,
           pendingHistorySyncLogKey: logKey,
         }))
-        appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'pending-history-sync-waiting', {
+        appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'pending-history-sync-waiting', {
           sessionId,
           pendingRunId,
           selectedRunId: sessionHistory?.selectedRunId ?? null,
@@ -596,7 +632,7 @@ export function useCopilotChatPanelState({
       return
     }
 
-    appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'pending-history-sync-committed', {
+    appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'pending-history-sync-committed', {
       sessionId,
       pendingRunId,
       selectedRunId: readySessionHistory.selectedRunId,
@@ -675,6 +711,10 @@ export function useCopilotChatPanelState({
       return
     }
 
+    // Multi-path model selection resolver: provider overrides, workspace
+    // defaults, draft fallback. Each branch handles a distinct selection
+    // scenario with its own validity checks.
+    // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
     setComposerDraft((current) => {
       if (!hasConfiguredModels) {
         return current.selectedModelId === ''
@@ -767,6 +807,7 @@ export function useCopilotChatPanelState({
     preferredWorkspaceModel,
     workspacePrimaryModelRoute,
     workspaceStateLoaded,
+    setComposerDraft,
   ])
 
   useEffect(() => {
@@ -775,7 +816,7 @@ export function useCopilotChatPanelState({
     const nextSessionId = sessionShell?.sessionId ?? null
     const nextTransientState = resolveCopilotSessionTransientState(transientStateBySessionIdRef.current, nextSessionId)
 
-    appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'session-switch-retained-transient', {
+    appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'session-switch-retained-transient', {
       previousSessionId,
       nextSessionId,
       previousTransientConversationLength: previousTransientState.conversation.length,
@@ -795,7 +836,7 @@ export function useCopilotChatPanelState({
         (sessionState) => sessionState,
       ))
     }
-  }, [debugModeEnabled, sessionShell?.sessionId])
+  }, [debugModeEnabled, sessionShell?.sessionId, setTransientStateBySessionId])
 
   useEffect(() => {
     const selectedModelRoute = selectedModelRouteFromDraft
@@ -826,7 +867,7 @@ export function useCopilotChatPanelState({
           return
         }
 
-        appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'thinking-capability-query-failed', {
+        appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'thinking-capability-query-failed', {
           sessionId: sessionShell.sessionId,
           modelId: effectiveComposerDraft.selectedModelId,
           route: selectedModelRoute,
@@ -855,22 +896,23 @@ export function useCopilotChatPanelState({
     state,
     selectedModelRouteFromDraft,
     workspaceStateLoaded,
+    setThinkingCapability,
   ])
 
   useEffect(() => {
     if (runtimeDebugSummary !== null) {
-      appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'runtime-summary', runtimeDebugSummary)
+      appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'runtime-summary', runtimeDebugSummary)
     }
   }, [debugModeEnabled, runtimeDebugSummary])
 
   useEffect(() => {
     if (sessionDebugSummary !== null) {
-      appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'session-summary', sessionDebugSummary)
+      appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'session-summary', sessionDebugSummary)
     }
   }, [debugModeEnabled, sessionDebugSummary])
 
   useEffect(() => {
-    appendCopilotDebugLog(debugModeEnabled, 'copilot-chat-panel', 'conversation-source-evaluated', {
+    appendCopilotDebugLog(debugModeEnabled, DEBUG_LOG_CATEGORY, 'conversation-source-evaluated', {
       sessionId: sessionShell?.sessionId ?? null,
       selectedRunId: sessionHistory?.selectedRunId ?? null,
       pendingHistorySyncRunId,
@@ -925,11 +967,13 @@ export function useCopilotChatPanelState({
       sessionShell,
       runState,
       composerDraft: effectiveComposerDraft,
+      hasAttachments: composerAttachments.items.length > 0,
       hasConfiguredModels,
       hasAvailableModels,
       selectedModelOption,
     }),
     [
+      composerAttachments.items.length,
       effectiveComposerDraft,
       hasAvailableModels,
       hasConfiguredModels,
@@ -1013,11 +1057,26 @@ export function useCopilotChatPanelState({
       })
     }
 
+    const setBoundComposerAttachments: Dispatch<SetStateAction<CopilotComposerAttachmentsState>> = (value) => {
+      updateSessionTransientStateById(boundSessionId, (sessionState) => {
+        const nextComposerAttachments = typeof value === 'function'
+          ? value(sessionState.composerAttachments)
+          : value
+        return nextComposerAttachments === sessionState.composerAttachments
+          ? sessionState
+          : {
+              ...sessionState,
+              composerAttachments: nextComposerAttachments,
+            }
+      })
+    }
+
     return {
       setBoundRunState,
       setBoundConversation,
       setBoundSendError,
       setBoundComposerDraft,
+      setBoundComposerAttachments,
     }
   }, [updateSessionTransientStateById])
 
@@ -1035,7 +1094,15 @@ export function useCopilotChatPanelState({
       setBoundConversation,
       setBoundSendError,
       setBoundComposerDraft,
+      setBoundComposerAttachments,
     } = createBoundSessionDispatchers(boundSessionId)
+    const attachmentsSnapshot = composerAttachments.items.slice()
+
+    setBoundComposerAttachments((current) => {
+      revokeComposerAttachmentPreviewUrls(current.items)
+      return createEmptyComposerAttachmentsState()
+    })
+
     updateSessionTransientStateById(boundSessionId, (sessionState) => (
       sessionState.activeAbortController === abortController
         ? sessionState
@@ -1050,6 +1117,7 @@ export function useCopilotChatPanelState({
         state,
         sessionShell,
         composerDraft: effectiveComposerDraft,
+        attachments: attachmentsSnapshot,
         runState: expirePendingCopilotInlineFormSegments(runState),
         hasConfiguredModels,
         hasAvailableModels,
@@ -1175,8 +1243,10 @@ export function useCopilotChatPanelState({
     modelGroups: modelCatalog.groups,
     thinkingCapability: effectiveThinkingCapability,
     composerDraft: effectiveComposerDraft,
+    composerAttachments,
     toolPermissionPolicy: workspaceToolPermissionPolicy,
     onComposerDraftChange: setComposerDraft,
+    onComposerAttachmentsChange: setComposerAttachments,
     onSend: handleSend,
     onSubmitInlineForm: handleSubmitInlineForm,
     onCancelCurrentRun: handleCancelCurrentRun,

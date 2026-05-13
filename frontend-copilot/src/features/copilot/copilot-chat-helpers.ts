@@ -4,6 +4,7 @@ import type {
   ThinkingLevelIntent,
 } from '../../workbench/types'
 import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
+import type { CopilotComposerAttachment } from './attachments/types'
 import { sanitizeEnabledToolIds } from './tool-picker'
 import type { CopilotTransientErrorState } from './copilot-conversation-turns'
 import {
@@ -126,10 +127,47 @@ export function createComposerDraftFromSession(
   }
 }
 
+export function createComposerDraftFromPersistedHistoryRun(input: {
+  selectedModelId?: string | null
+  resolvedModelId?: string | null
+  selectedModelRoute?: RuntimeModelRoute | null
+  appliedThinkingSelection?: RuntimeThinkingSelection | null
+  enabledTools?: readonly string[] | null
+  requestOptions?: Record<string, unknown> | null
+}): CopilotChatComposerDraft {
+  const baseDraft = createEmptyComposerDraft()
+  const selectedModelRoute = input.selectedModelRoute === undefined || input.selectedModelRoute === null
+    ? null
+    : cloneRuntimeModelRoute(input.selectedModelRoute)
+  const thinkingSelection = input.appliedThinkingSelection === undefined
+    ? null
+    : cloneRuntimeThinkingSelection(input.appliedThinkingSelection)
+  const selectedModelId = input.selectedModelId?.trim()
+    || (selectedModelRoute === null || selectedModelRoute.routeRef === undefined || selectedModelRoute.routeRef === null
+      ? ''
+      : serializeModelRouteRef(selectedModelRoute.routeRef))
+    || input.resolvedModelId?.trim()
+    || ''
+
+  return {
+    ...baseDraft,
+    selectedModelId,
+    selectedModelRoute,
+    thinkingSelection,
+    enabledTools: Array.isArray(input.enabledTools)
+      ? dedupeToolIds([...input.enabledTools])
+      : [],
+    requestOptionsText: input.requestOptions === null || input.requestOptions === undefined
+      ? baseDraft.requestOptionsText
+      : JSON.stringify(input.requestOptions),
+  }
+}
+
 export function buildRuntimeMessageSendInput(input: {
   runtimeUrl: string
   sessionShell: AssistantSessionShell
   draft: CopilotChatComposerDraft
+  attachments?: readonly Pick<CopilotComposerAttachment, 'path'>[]
   requestOptions: Record<string, unknown>
   structuredPayload?: Record<string, unknown> | null
   toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
@@ -156,7 +194,7 @@ export function buildRuntimeMessageSendInput(input: {
     agent: input.sessionShell.boundAgent.id,
     message: {
       role: 'user',
-      content: input.draft.messageText.trim(),
+      content: buildComposerMessageContentWithAttachments(input.draft.messageText, input.attachments ?? []),
       ...(input.structuredPayload === undefined ? {} : { structuredPayload: input.structuredPayload }),
     },
     modelRoute: cloneRuntimeModelRoute(input.draft.selectedModelRoute),
@@ -172,6 +210,50 @@ export function buildRuntimeMessageSendInput(input: {
     ...(toolPermissionPolicy === null ? {} : { toolPermissionPolicy }),
     requestOptions: { ...input.requestOptions },
   }
+}
+
+export function buildComposerMessageContentWithAttachments(
+  messageText: string,
+  attachments: readonly Pick<CopilotComposerAttachment, 'path'>[],
+): string {
+  const trimmedMessage = messageText.trim()
+  const normalizedPaths = dedupeComposerAttachmentPaths(attachments)
+  if (normalizedPaths.length === 0) {
+    return trimmedMessage
+  }
+
+  const attachmentSection = [
+    'User attached files:',
+    ...normalizedPaths.map((path) => `- ${path}`),
+    'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
+  ].join('\n')
+
+  return trimmedMessage === ''
+    ? attachmentSection
+    : `${trimmedMessage}\n\n${attachmentSection}`
+}
+
+function dedupeComposerAttachmentPaths(
+  attachments: readonly Pick<CopilotComposerAttachment, 'path'>[],
+): string[] {
+  const seen = new Set<string>()
+  const normalizedPaths: string[] = []
+
+  for (const attachment of attachments) {
+    const normalizedPath = sanitizeComposerAttachmentPath(attachment.path)
+    if (normalizedPath === '' || seen.has(normalizedPath)) {
+      continue
+    }
+
+    seen.add(normalizedPath)
+    normalizedPaths.push(normalizedPath)
+  }
+
+  return normalizedPaths
+}
+
+function sanitizeComposerAttachmentPath(path: string): string {
+  return path.trim().replace(/[\r\n]+/g, ' ')
 }
 
 export function buildRuntimeToolPermissionPolicy(input: {
@@ -385,34 +467,43 @@ function normalizeRuntimeThinkingValueForCapability(
       return cloneRuntimeThinkingValue(fixedValue)
     }
     case 'budget':
-      if (value.valueType !== 'budget') {
-        return null
-      }
-      if (value.mode === 'budget' && typeof value.budgetTokens === 'number') {
-        if (!supportsExactBudgetThinkingSelection(capability)) {
-          return null
-        }
-        const budgetTokens = normalizeBudgetTokens(value.budgetTokens)
-        return budgetTokens === null
-          ? null
-          : {
-              valueType: 'budget',
-              mode: 'budget',
-              budgetTokens,
-              labelZh: formatThinkingTokenCount(budgetTokens),
-            }
-      }
-      return cloneRuntimeThinkingValue(
-        capability.allowedValues.find((candidate) => (
-          candidate.valueType === 'budget' && candidate.mode === value.mode
-        )) ?? null,
-      )
+      return normalizeBudgetThinkingValue(value, capability)
     case 'discrete':
       if (value.valueType !== 'code') {
         return null
       }
       return cloneRuntimeThinkingValue(findThinkingCodeValue(capability.allowedValues, value.code))
   }
+}
+
+function normalizeBudgetThinkingValue(
+  value: NonNullable<RuntimeThinkingSelection['value']> | null | undefined,
+  capability: RuntimeThinkingCapability,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  if (value?.valueType !== 'budget') {
+    return null
+  }
+
+  if (value.mode === 'budget' && typeof value.budgetTokens === 'number') {
+    if (!supportsExactBudgetThinkingSelection(capability)) {
+      return null
+    }
+    const budgetTokens = normalizeBudgetTokens(value.budgetTokens)
+    return budgetTokens === null
+      ? null
+      : {
+          valueType: 'budget',
+          mode: 'budget',
+          budgetTokens,
+          labelZh: formatThinkingTokenCount(budgetTokens),
+        }
+  }
+
+  return cloneRuntimeThinkingValue(
+    capability.allowedValues.find((candidate) => (
+      candidate.valueType === 'budget' && candidate.mode === value.mode
+    )) ?? null,
+  )
 }
 
 function supportsExactBudgetThinkingSelection(capability: RuntimeThinkingCapability): boolean {
@@ -614,37 +705,40 @@ export function parseRequestOptionsText(requestOptionsText: string): Record<stri
   return { ...(parsed as Record<string, unknown>) }
 }
 
+const SESSION_STALE_CODES = new Set(['agent_mismatch', 'capabilities_version_stale'])
+const TOOL_UNAVAILABLE_CODES = new Set(['tool_not_found', 'tool_unavailable'])
+const MODEL_UNAVAILABLE_CODES = new Set([
+  'provider_catalog_only', 'provider_legacy_unsupported', 'provider_runtime_not_enabled',
+  'adapter_missing', 'provider_adapter_mismatch', 'provider_profile_not_found',
+  'route_ref_snapshot_mismatch', 'host_model_route_unavailable', 'host_model_route_access_denied',
+])
+const PROVIDER_CONFIG_CODES = new Set([
+  'provider_auth_missing', 'provider_secret_missing',
+  'provider_auth_kind_unsupported', 'provider_base_url_missing',
+])
+
 export function formatRuntimeMessageSendError(error: unknown): string {
   if (error instanceof RuntimeRequestError) {
-    switch (error.code) {
-      case 'agent_mismatch':
-      case 'capabilities_version_stale':
-        return '当前会话已更新，请重新发送。'
-      case 'tool_not_found':
-      case 'tool_unavailable':
-        return '当前所选工具暂不可用，请调整后重试。'
-      case 'invalid_request':
-        return '当前消息暂时无法发送，请调整内容后重试。'
-      case 'thinking_not_supported_for_route':
-        return '当前模型暂不支持所选思考设置，请调整后重试。'
-      case 'provider_catalog_only':
-      case 'provider_legacy_unsupported':
-      case 'provider_runtime_not_enabled':
-      case 'adapter_missing':
-      case 'provider_adapter_mismatch':
-      case 'provider_profile_not_found':
-      case 'route_ref_snapshot_mismatch':
-      case 'host_model_route_unavailable':
-      case 'host_model_route_access_denied':
-        return '当前模型不可用，请重新选择模型。'
-      case 'provider_auth_missing':
-      case 'provider_secret_missing':
-      case 'provider_auth_kind_unsupported':
-      case 'provider_base_url_missing':
-        return '请先完成模型服务配置后再试。'
-      default:
-        return error.message
+    const code = error.code ?? ''
+    if (SESSION_STALE_CODES.has(code)) {
+      return '当前会话已更新，请重新发送。'
     }
+    if (TOOL_UNAVAILABLE_CODES.has(code)) {
+      return '当前所选工具暂不可用，请调整后重试。'
+    }
+    if (code === 'invalid_request') {
+      return '当前消息暂时无法发送，请调整内容后重试。'
+    }
+    if (code === 'thinking_not_supported_for_route') {
+      return '当前模型暂不支持所选思考设置，请调整后重试。'
+    }
+    if (MODEL_UNAVAILABLE_CODES.has(code)) {
+      return '当前模型不可用，请重新选择模型。'
+    }
+    if (PROVIDER_CONFIG_CODES.has(code)) {
+      return '请先完成模型服务配置后再试。'
+    }
+    return error.message
   }
 
   return error instanceof Error ? error.message : String(error)

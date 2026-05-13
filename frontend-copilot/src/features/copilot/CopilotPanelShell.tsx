@@ -12,6 +12,7 @@ import {
 } from 'react'
 
 import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
+import type { CopilotComposerAttachmentsState } from './attachments/types'
 import { getCopilotChatCopy } from '../../workbench/locale'
 import type { AgentType, AssistantSessionShell } from '../../workbench/types'
 import type { AssistantAgentDirectoryState } from '../../workbench/assistant/assistant-workspace-controller'
@@ -48,6 +49,13 @@ import {
 } from './useCopilotPanelHistoryLoadingGate'
 
 const RETAINED_SESSION_COMPOSER_DISABLED_REASON = '正在切换话题，请稍候。'
+const EMPTY_ASSISTANT_SESSION_CAPABILITIES: AssistantSessionShell['capabilities'] = {
+  capabilitiesVersion: 'empty',
+  allAvailableTools: [],
+  recommendedToolsForAgent: [],
+  defaultEnabledTools: [],
+  toolSelectionMode: 'none',
+}
 
 export interface CopilotPanelShellProps {
   language?: string
@@ -68,8 +76,10 @@ export interface CopilotPanelShellProps {
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
   composerDraft: CopilotChatComposerDraft
+  composerAttachments?: CopilotComposerAttachmentsState
   toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   onComposerDraftChange: Dispatch<SetStateAction<CopilotChatComposerDraft>>
+  onComposerAttachmentsChange?: Dispatch<SetStateAction<CopilotComposerAttachmentsState>>
   onSend: (event: FormEvent<HTMLFormElement>) => void
   onSubmitInlineForm?: (input: {
     toolCallId: string
@@ -199,14 +209,11 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
   const hasAvailableModels = props.modelGroups.some((group) => group.models.length > 0)
   const copy = getCopilotChatCopy(props.language ?? 'zh-CN')
 
-  // Build the shell content based on current stage
-  let content: ReactNode
-
   if (
     props.sessionShell === null
     && (props.directoryState.status === 'loading' || props.directoryState.status === 'idle')
   ) {
-    content = (
+    return (
       <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
         <p className="copilot-panel__eyebrow">{copy.panel.eyebrow}</p>
         <h2 className="copilot-panel__title">{copy.panel.loadingAgentsTitle}</h2>
@@ -215,8 +222,10 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
         </p>
       </section>
     )
-  } else if (props.directoryState.status === 'error') {
-    content = (
+  }
+
+  if (props.directoryState.status === 'error') {
+    return (
       <section className="copilot-panel__card copilot-panel__card--error" aria-live="assertive">
         <p className="copilot-panel__eyebrow">{copy.panel.eyebrow}</p>
         <h2 className="copilot-panel__title">{copy.panel.loadAgentsFailedTitle}</h2>
@@ -225,116 +234,131 @@ function renderSessionShell(props: ConnectableCopilotPanelShellProps) {
         </p>
       </section>
     )
-  } else if (props.sessionShell === null) {
-    if (props.selectedAgent === null) {
-      content = (
-        <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
-          <p className="copilot-panel__eyebrow">{copy.panel.eyebrow}</p>
-          <h2 className="copilot-panel__title">{copy.panel.noAgentsTitle}</h2>
-          <p className="copilot-panel__description">
-            {copy.panel.noAgentsDescription}
-          </p>
-        </section>
-      )
-    } else {
-      content = (
-        <section className="copilot-panel__inline-placeholder" aria-live="polite" data-testid="chat-session-placeholder">
-          <p className="copilot-panel__inline-placeholder-text">{copy.panel.sessionPlaceholder}</p>
-          {props.historyRestoreError !== null && props.historyRestoreError !== undefined && (
-            <p className="copilot-panel__error" data-testid="chat-history-restore-error">
-              历史话题恢复失败，稍后自动重试。
-            </p>
-          )}
-          {props.sessionError !== null && (
-            <p className="copilot-panel__error">{copy.panel.sessionCreateError}</p>
-          )}
-        </section>
-      )
-    }
-  } else {
-    const shouldRenderSuppressedLoadingAsMessageSurface = props.persistedHistoryViewState === 'loading'
-      && props.renderLoadingSkeleton === false
-    const shouldRenderMessageSurface = props.persistedHistoryViewState === 'none'
-      || props.persistedHistoryViewState === 'ready'
-      || shouldRenderSuppressedLoadingAsMessageSurface
-    const persistedHistoryTransitionKey = shouldRenderMessageSurface
-      ? 'messages'
-      : props.persistedHistoryViewState
-    const persistedConversationSource = props.persistedSelectedRunConversationSource ?? 'none'
+  }
 
-    content = (
-      <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
-        <section className="copilot-chat" data-testid="chat-send-shell">
-          {props.historyRestoreError !== null && props.historyRestoreError !== undefined && renderHistoryRestoreNotice()}
-          {renderPersistedHistoryCapabilitiesNotice({
-            sessionShell: props.sessionShell,
-            sessionHistory: props.sessionHistory,
-            onRetrySessionHistory: props.onRetrySessionHistory,
-          })}
-          {renderPersistedHistoryReplayNotice({
-            sessionHistory: props.sessionHistory,
-            selectedRunConversationSource: persistedConversationSource,
-            onRetrySessionHistory: props.onRetrySessionHistory,
-          })}
-          {shouldRenderMessageSurface && props.historyDrift !== null && renderHistoryDriftNotice({
-            historyDrift: props.historyDrift,
-            acknowledged: props.historyRebindAcknowledged,
-            onAcknowledge: props.onAcknowledgeHistoryRebind,
-          })}
-          {shouldRenderMessageSurface && renderPersistedHistoryRunSelector({
-            sessionHistory: props.sessionHistory,
-            onSelectSessionHistoryRun: props.onSelectSessionHistoryRun,
-          })}
-          <CrossFade transitionKey={persistedHistoryTransitionKey} className="copilot-chat-workspace__content">
-            {props.persistedHistoryViewState === 'loading' && props.renderLoadingSkeleton !== false
-              ? renderPersistedHistoryLoading()
-              : props.persistedHistoryViewState === 'error'
-                ? renderPersistedHistoryRetryPrompt(props.onRetrySessionHistory)
-                : (
-                    <CopilotMessagesShell
-                      language={props.language}
-                      conversation={props.conversation}
-                      assistantPlaceholder={props.assistantPlaceholder}
-                      models={props.modelGroups.flatMap((group) => group.models)}
-                      transientError={props.sendError ?? createTransientSessionError(props.sessionError)}
-                      runtimeUrl={props.runtimeUrl}
-                      onSubmitInlineForm={props.onSubmitInlineForm}
-                      onResolveToolApproval={props.onResolveToolApproval}
-                      onOpenErrorDetail={props.onOpenErrorDetail}
-                      emptyState={hasAvailableModels
-                        ? null
-                        : {
-                            title: copy.panel.noModelTitle,
-                            description: copy.panel.noModelDescription,
-                          }}
-                    />
-                  )}
-          </CrossFade>
-          <CopilotComposerShell
-            language={props.language}
-            capabilities={props.sessionShell.capabilities}
-            modelGroups={props.modelGroups}
-            thinkingCapability={props.thinkingCapability}
-            draft={props.composerDraft}
-            toolPermissionPolicy={props.toolPermissionPolicy}
-            onDraftChange={props.onComposerDraftChange}
-            onSubmit={props.onSend}
-            onCancel={props.onCancelCurrentRun}
-            sendStatus={props.sendStatus}
-            canCancel={props.canCancelSend}
-            sendDisabledReason={props.sendDisabledReason}
-            controlsLockedReason={props.composerLockedReason}
-            interactionLocked={props.composerInteractionLocked}
-            composerInputRef={props.composerInputRef}
-            composerHeight={props.composerHeight}
-            onResizeStart={props.onComposerResizeStart}
-          />
-        </section>
+  if (props.sessionShell === null) {
+    return renderSessionPlaceholder(props, copy)
+  }
+
+  return renderActiveSessionShell(props, copy, hasAvailableModels)
+}
+
+function renderSessionPlaceholder(props: ConnectableCopilotPanelShellProps, copy: ReturnType<typeof getCopilotChatCopy>) {
+  if (props.selectedAgent === null) {
+    return (
+      <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
+        <p className="copilot-panel__eyebrow">{copy.panel.eyebrow}</p>
+        <h2 className="copilot-panel__title">{copy.panel.noAgentsTitle}</h2>
+        <p className="copilot-panel__description">
+          {copy.panel.noAgentsDescription}
+        </p>
       </section>
     )
   }
 
-  return content
+  return (
+    <section className="copilot-panel__inline-placeholder" aria-live="polite" data-testid="chat-session-placeholder">
+      <p className="copilot-panel__inline-placeholder-text">{copy.panel.sessionPlaceholder}</p>
+      {props.historyRestoreError !== null && props.historyRestoreError !== undefined && (
+        <p className="copilot-panel__error" data-testid="chat-history-restore-error">
+          历史话题恢复失败，稍后自动重试。
+        </p>
+      )}
+      {props.sessionError !== null && (
+        <p className="copilot-panel__error">{copy.panel.sessionCreateError}</p>
+      )}
+    </section>
+  )
+}
+
+// eslint-disable-next-line complexity -- active shell rendering coordinates persisted-history gates and composer/message surfaces.
+function renderActiveSessionShell(
+  props: ConnectableCopilotPanelShellProps,
+  copy: ReturnType<typeof getCopilotChatCopy>,
+  hasAvailableModels: boolean,
+): ReactNode {
+  const shouldRenderSuppressedLoadingAsMessageSurface = props.persistedHistoryViewState === 'loading'
+    && props.renderLoadingSkeleton === false
+  const shouldRenderMessageSurface = props.persistedHistoryViewState === 'none'
+    || props.persistedHistoryViewState === 'ready'
+    || shouldRenderSuppressedLoadingAsMessageSurface
+  const persistedHistoryTransitionKey = shouldRenderMessageSurface
+    ? 'messages'
+    : props.persistedHistoryViewState
+  const persistedConversationSource = props.persistedSelectedRunConversationSource ?? 'none'
+
+  return (
+    <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
+      <section className="copilot-chat" data-testid="chat-send-shell">
+        {props.historyRestoreError !== null && props.historyRestoreError !== undefined && renderHistoryRestoreNotice()}
+        {props.sessionShell !== null && renderPersistedHistoryCapabilitiesNotice({
+          sessionShell: props.sessionShell,
+          sessionHistory: props.sessionHistory,
+          onRetrySessionHistory: props.onRetrySessionHistory,
+        })}
+        {renderPersistedHistoryReplayNotice({
+          sessionHistory: props.sessionHistory,
+          selectedRunConversationSource: persistedConversationSource,
+          onRetrySessionHistory: props.onRetrySessionHistory,
+        })}
+        {shouldRenderMessageSurface && props.historyDrift !== null && renderHistoryDriftNotice({
+          historyDrift: props.historyDrift,
+          acknowledged: props.historyRebindAcknowledged,
+          onAcknowledge: props.onAcknowledgeHistoryRebind,
+        })}
+        {shouldRenderMessageSurface && renderPersistedHistoryRunSelector({
+          sessionHistory: props.sessionHistory,
+          onSelectSessionHistoryRun: props.onSelectSessionHistoryRun,
+        })}
+        <CrossFade transitionKey={persistedHistoryTransitionKey} className="copilot-chat-workspace__content">
+          {props.persistedHistoryViewState === 'loading' && props.renderLoadingSkeleton !== false
+            ? renderPersistedHistoryLoading()
+            : props.persistedHistoryViewState === 'error'
+              ? renderPersistedHistoryRetryPrompt(props.onRetrySessionHistory)
+              : (
+                  <CopilotMessagesShell
+                    language={props.language}
+                    conversation={props.conversation}
+                    assistantPlaceholder={props.assistantPlaceholder}
+                    models={props.modelGroups.flatMap((group) => group.models)}
+                    transientError={props.sendError ?? createTransientSessionError(props.sessionError)}
+                    runtimeUrl={props.runtimeUrl}
+                    onSubmitInlineForm={props.onSubmitInlineForm}
+                    onResolveToolApproval={props.onResolveToolApproval}
+                    onOpenErrorDetail={props.onOpenErrorDetail}
+                    emptyState={hasAvailableModels
+                      ? null
+                      : {
+                          title: copy.panel.noModelTitle,
+                          description: copy.panel.noModelDescription,
+                        }}
+                  />
+                )}
+        </CrossFade>
+        <CopilotComposerShell
+          language={props.language}
+          capabilities={props.sessionShell?.capabilities ?? EMPTY_ASSISTANT_SESSION_CAPABILITIES}
+          modelGroups={props.modelGroups}
+          thinkingCapability={props.thinkingCapability}
+          draft={props.composerDraft}
+          attachments={props.composerAttachments}
+          toolPermissionPolicy={props.toolPermissionPolicy}
+          onDraftChange={props.onComposerDraftChange}
+          onAttachmentsChange={props.onComposerAttachmentsChange}
+          onSubmit={props.onSend}
+          onCancel={props.onCancelCurrentRun}
+          sendStatus={props.sendStatus}
+          canCancel={props.canCancelSend}
+          sendDisabledReason={props.sendDisabledReason}
+          controlsLockedReason={props.composerLockedReason}
+          interactionLocked={props.composerInteractionLocked}
+          composerInputRef={props.composerInputRef}
+          composerHeight={props.composerHeight}
+          onResizeStart={props.onComposerResizeStart}
+        />
+      </section>
+    </section>
+  )
 }
 
 function resolveEffectivePersistedHistoryViewState(input: {

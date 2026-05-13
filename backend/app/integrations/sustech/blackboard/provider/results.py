@@ -51,6 +51,12 @@ class CalendarICSSyncResult:
     active_events: list[CalendarEventDTO]
     all_events: list[CalendarEventDTO]
     logs: list[BlackboardLogEvent] = dataclass_field(default_factory=list)
+    unified_stats: dict[str, int] | None = None
+    unified_error: str | None = None
+
+    @property
+    def unified_ok(self) -> bool:
+        return self.unified_error is None and self.unified_stats is not None
 
     @property
     def active_event_count(self) -> int:

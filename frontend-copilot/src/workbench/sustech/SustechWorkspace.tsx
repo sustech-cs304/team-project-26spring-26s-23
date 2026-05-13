@@ -1,36 +1,17 @@
 import { Database, GraduationCap, Settings } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
 import type { WorkbenchLanguage } from '../_locale/types'
-import { createSettingsWorkspaceFormStateFromEditableState } from '../settings/settings-workspace-form-state'
-import { createSettingsWorkspaceStateSaveInput } from '../settings/settings-workspace-save-input'
-import { loadSettingsWorkspaceState, saveSettingsWorkspaceState } from '../settings/workspace-state'
+import { loadSettingsWorkspaceState } from '../settings/workspace-state'
 import { BlackboardDataBrowser } from './BlackboardDataBrowser'
 import { BlackboardSyncPanel } from './BlackboardSyncPanel'
+import { useBlackboardSync, type SyncState } from './use-blackboard-sync'
 
 function resolveRuntimeBaseUrl(state: CopilotBootstrapController['state']): string {
   if (state && 'runtimeUrl' in state && state.runtimeUrl) {
     return state.runtimeUrl
   }
   return 'http://127.0.0.1:8765'
-}
-
-interface SyncState {
-  status: 'idle' | 'running' | 'completed' | 'failed'
-  lastSyncAt: string | null
-  nextSyncAt: string | null
-  lastSyncError: string | null
-  syncInterval: 'off' | 'two_hours' | 'daily'
-  progressMessage: string | null
-  progressStage: string | null
-  progressLogs: string[]
-  canCancel?: boolean
-  timeoutSeconds?: number | null
-}
-
-const DEFAULT_SYNC_STATE: SyncState = {
-  status: 'idle', lastSyncAt: null, nextSyncAt: null,
-  lastSyncError: null, syncInterval: 'off', progressMessage: null, progressStage: null, progressLogs: [], canCancel: false, timeoutSeconds: null,
 }
 
 type SustechModule = 'blackboard' | 'tis'
@@ -42,6 +23,7 @@ interface SustechWorkspaceProps {
   language?: WorkbenchLanguage
 }
 
+// eslint-disable-next-line max-lines-per-function
 export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorkspaceProps) {
   const lang: WorkbenchLanguage = language === 'en-US' ? 'en-US' : 'zh-CN'
   const isEnglish = lang === 'en-US'
@@ -52,184 +34,31 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
   const targetModuleRef = useRef<SustechModule>('blackboard')
   const visibleModuleRef = useRef<SustechModule>('blackboard')
   const moduleTransitionTimerRef = useRef<number | null>(null)
-  const previousSyncStatusRef = useRef<SyncState['status']>('idle')
-  const [syncState, setSyncState] = useState<SyncState>(DEFAULT_SYNC_STATE)
   const [showSettings, setShowSettings] = useState(false)
-  const [dataRefreshToken, setDataRefreshToken] = useState(0)
   const runtimeBaseUrl = useMemo(() => resolveRuntimeBaseUrl(bootstrap.state), [bootstrap.state])
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch(`${runtimeBaseUrl}/api/blackboard/sync/status`)
-      if (!res.ok) {
-        const message = `HTTP ${res.status}`
-        setSyncState((prev) => ({
-          ...prev,
-          lastSyncError: message,
-          progressLogs: [...prev.progressLogs, message],
-        }))
-        return
-      }
-      const data = await res.json()
-      setSyncState((prev) => {
-        const status = data.status ?? prev.status
-        const progressLogs = Array.isArray(data.progressLogs) ? data.progressLogs : prev.progressLogs
-        return {
-          ...prev, status,
-          lastSyncAt: data.lastSyncAt ?? prev.lastSyncAt,
-          lastSyncError: data.lastSyncError ?? prev.lastSyncError,
-          progressMessage: data.progressMessage ?? (status === 'completed' ? null : prev.progressMessage),
-          progressStage: data.progressStage ?? (status === 'completed' ? null : prev.progressStage),
-          progressLogs,
-          canCancel: data.canCancel ?? prev.canCancel,
-          timeoutSeconds: data.timeoutSeconds ?? prev.timeoutSeconds,
-        }
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setSyncState((prev) => ({
-        ...prev,
-        lastSyncError: message,
-        progressLogs: [...prev.progressLogs, message],
-      }))
-    }
-  }, [runtimeBaseUrl])
+  const {
+    syncState,
+    isSyncRunning,
+    dataRefreshToken,
+    fetchStatus,
+    handleTriggerSync,
+    handleCancelSync,
+    handleSyncIntervalChange,
+  } = useBlackboardSync({ runtimeBaseUrl, language: lang })
 
   useEffect(() => {
     void (async () => {
       const settingsResult = await loadSettingsWorkspaceState()
-      if (!settingsResult.ok) {
-        return
-      }
-      setSyncState((prev) => ({
-        ...prev,
-        syncInterval: settingsResult.state.sustech.blackboardSyncInterval as SyncState['syncInterval'],
-      }))
+      if (!settingsResult.ok) return
+      void handleSyncIntervalChange(
+        settingsResult.state.sustech.blackboardSyncInterval as SyncState['syncInterval'],
+      )
     })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => { void fetchStatus() }, [fetchStatus])
-
-  const handleTriggerSync = useCallback(async () => {
-    setSyncState((prev) => ({
-      ...prev,
-      status: 'running',
-      lastSyncError: null,
-      progressMessage: isEnglish ? 'Starting sync…' : '开始同步...',
-      progressStage: 'authenticating',
-      progressLogs: [isEnglish ? 'Starting sync…' : '开始同步...'],
-      canCancel: true,
-    }))
-    try {
-      const settingsResult = await loadSettingsWorkspaceState()
-      const parallelWorkersRaw = settingsResult.ok
-        ? settingsResult.state.sustech.blackboardParallelSyncWorkers
-        : '1'
-      const currentTermOnly = settingsResult.ok
-        ? settingsResult.state.sustech.blackboardCurrentTermOnly === true
-        : false
-      const parallelWorkers = Math.min(6, Math.max(1, Number.parseInt(parallelWorkersRaw, 10) || 1))
-
-      const res = await fetch(`${runtimeBaseUrl}/api/blackboard/sync/trigger`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parallelWorkers, currentTermOnly }),
-      })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        const serverError = (body as { error?: string }).error ?? `HTTP ${res.status}`
-        setSyncState((prev) => ({ ...prev, status: 'failed', lastSyncError: serverError }))
-        return
-      }
-      const data = await res.json()
-      const status = data.status ?? 'idle'
-      setSyncState((prev) => ({
-        ...prev, status,
-        lastSyncAt: data.lastSyncAt ?? prev.lastSyncAt,
-        lastSyncError: data.lastSyncError ?? null,
-        progressMessage: data.progressMessage ?? (status === 'completed' ? null : prev.progressMessage),
-        progressStage: data.progressStage ?? (status === 'completed' ? null : prev.progressStage),
-        progressLogs: Array.isArray(data.progressLogs) ? data.progressLogs : prev.progressLogs,
-        canCancel: data.canCancel ?? prev.canCancel,
-        timeoutSeconds: data.timeoutSeconds ?? prev.timeoutSeconds,
-      }))
-    } catch (err) {
-      const message = err instanceof TypeError && err.message === 'Failed to fetch'
-        ? (isEnglish
-          ? `Unable to connect to backend at ${runtimeBaseUrl}. Please ensure the desktop runtime is running.`
-          : `无法连接到后端 ${runtimeBaseUrl}，请确认桌面运行时已启动。`)
-        : String(err)
-      setSyncState((prev) => ({
-        ...prev,
-        status: 'failed',
-        lastSyncError: message,
-        progressMessage: message,
-        progressLogs: [...prev.progressLogs, message],
-        canCancel: false,
-      }))
-    }
-  }, [runtimeBaseUrl, isEnglish])
-
-  const handleCancelSync = useCallback(async () => {
-    try {
-      const res = await fetch(`${runtimeBaseUrl}/api/blackboard/sync/cancel`, {
-        method: 'POST',
-      })
-      const data = await res.json().catch(() => ({}))
-      setSyncState((prev) => ({
-        ...prev,
-        status: data.status ?? prev.status,
-        progressMessage: data.progressMessage ?? prev.progressMessage,
-        progressStage: data.progressStage ?? prev.progressStage,
-        progressLogs: Array.isArray(data.progressLogs) ? data.progressLogs : prev.progressLogs,
-        canCancel: data.canCancel ?? false,
-        timeoutSeconds: data.timeoutSeconds ?? prev.timeoutSeconds,
-      }))
-    } catch (err) {
-      const message = err instanceof TypeError && err.message === 'Failed to fetch'
-        ? (isEnglish
-          ? `Unable to connect to backend at ${runtimeBaseUrl}. Please ensure the desktop runtime is running.`
-          : `无法连接到后端 ${runtimeBaseUrl}，请确认桌面运行时已启动。`)
-        : String(err)
-      setSyncState((prev) => ({
-        ...prev,
-        status: 'failed',
-        lastSyncError: message,
-        progressMessage: message,
-        progressLogs: [...prev.progressLogs, message],
-        canCancel: false,
-      }))
-    }
-  }, [runtimeBaseUrl, isEnglish])
-
-  const handleSyncIntervalChange = useCallback(async (nextInterval: SyncState['syncInterval']) => {
-    setSyncState((prev) => ({ ...prev, syncInterval: nextInterval }))
-    const settingsResult = await loadSettingsWorkspaceState()
-    if (!settingsResult.ok) {
-      return
-    }
-    const formState = createSettingsWorkspaceFormStateFromEditableState(settingsResult.state)
-    await saveSettingsWorkspaceState(createSettingsWorkspaceStateSaveInput({
-      ...formState,
-      blackboardSyncInterval: nextInterval,
-    }))
-  }, [])
-
-  const isSyncRunning = syncState.status === 'running'
-
-  useEffect(() => {
-    if (syncState.status === 'completed' && previousSyncStatusRef.current !== 'completed') {
-      setDataRefreshToken((value) => value + 1)
-    }
-    previousSyncStatusRef.current = syncState.status
-  }, [syncState.status])
-
-  useEffect(() => {
-    if (syncState.status === 'running') {
-      const i = setInterval(() => { void fetchStatus() }, 2000)
-      return () => clearInterval(i)
-    }
-  }, [syncState.status, fetchStatus])
 
   useEffect(() => () => {
     if (moduleTransitionTimerRef.current !== null) {
@@ -303,106 +132,170 @@ export function SustechWorkspace({ bootstrap, language = 'zh-CN' }: SustechWorks
       </aside>
 
       <main className="workspace-main sustech-workspace__main" aria-label={activeModule === 'blackboard' ? 'Blackboard' : 'TIS'}>
-        {(['blackboard', 'tis'] as SustechModule[]).map((module) => {
-          if (!visitedModules.has(module)) {
-            return null
-          }
-
-          const isExiting = module === exitingModule
-          const isActive = module === visibleModule && !isExiting
-          const isVisible = module === visibleModule || isExiting
-
-          return (
-            <div
-              key={module}
-              className={[
-                'sustech-module-keepalive-panel',
-                isActive ? 'sustech-module-keepalive-panel--active' : null,
-                isExiting ? 'sustech-module-keepalive-panel--exiting' : null,
-              ].filter(Boolean).join(' ')}
-              data-sustech-module={module}
-              hidden={!isVisible}
-              aria-hidden={!isActive}
-            >
-              {module === 'blackboard' ? (
-                <>
-                  <header className="workspace-main__header">
-                    <div>
-                      <p className="workspace-main__eyebrow">{isEnglish ? 'Blackboard' : 'Blackboard'}</p>
-                      <h2 className="workspace-main__title">
-                        {isEnglish ? 'Blackboard Management' : 'Blackboard 管理系统'}
-                      </h2>
-                    </div>
-                    <div className="toolbar-actions">
-                      <button type="button" className="icon-button" title={isEnglish ? 'Sync now' : '手动同步'} onClick={handleTriggerSync} disabled={isSyncRunning}>
-                        <span className="icon-button__label">↻</span>
-                      </button>
-                      <button type="button" className="icon-button" title={isEnglish ? 'Settings' : '设置'} onClick={() => setShowSettings(true)}>
-                        <Settings size={16} />
-                      </button>
-                    </div>
-                  </header>
-                  <section className={`workspace-main__content sustech-workspace__content${isSyncRunning ? ' sustech-workspace__content--syncing' : ''}`}>
-                    <div className={`sustech-sync-panel-slot${isSyncRunning ? ' sustech-sync-panel-slot--visible' : ''}`}>
-                      <BlackboardSyncPanel language={lang} syncState={syncState} onCancelSync={handleCancelSync} />
-                    </div>
-                    <div className={`sustech-data-browser-slot${isSyncRunning ? ' sustech-data-browser-slot--shifted' : ''}`}>
-                      <BlackboardDataBrowser language={lang} baseUrl={runtimeBaseUrl} refreshToken={dataRefreshToken} />
-                    </div>
-                  </section>
-                </>
-              ) : (
-                <>
-                  <header className="workspace-main__header">
-                    <div>
-                      <p className="workspace-main__eyebrow">TIS</p>
-                      <h2 className="workspace-main__title">{isEnglish ? 'Teaching Information System' : '教学信息系统'}</h2>
-                    </div>
-                  </header>
-                  <section className="workspace-main__content sustech-workspace__content">
-                    <div className="hub-card">
-                      <p className="sustech-home-card__desc">{isEnglish ? 'Coming soon.' : '即将推出。'}</p>
-                    </div>
-                  </section>
-                </>
-              )}
-            </div>
-          )
+        {renderSustechModules({
+          visitedModules,
+          exitingModule,
+          visibleModule,
+          isEnglish,
+          handleTriggerSync,
+          isSyncRunning,
+          setShowSettings,
+          lang,
+          syncState,
+          handleCancelSync,
+          runtimeBaseUrl,
+          dataRefreshToken,
         })}
       </main>
 
-      {showSettings && (
-        <div className="capabilities-dialog-backdrop" onClick={() => setShowSettings(false)}>
-          <div className="capabilities-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
-            <header className="capabilities-dialog__header">
-              <div>
-                <p className="capabilities-dialog__eyebrow">Blackboard</p>
-                <h2 className="capabilities-dialog__title">{isEnglish ? 'Sync Settings' : '同步设置'}</h2>
-                <p className="capabilities-dialog__description">
-                  {isEnglish ? 'Configure automatic background sync interval.' : '配置后台自动同步间隔。'}
-                </p>
-              </div>
-              <button type="button" className="capabilities-dialog__close" onClick={() => setShowSettings(false)}>✕</button>
-            </header>
-            <div className="capabilities-dialog__body">
-              <div className="settings-stack">
-                <label className="form-field">
-                  <span className="form-field__label">{isEnglish ? 'Sync interval' : '同步间隔'}</span>
-                  <select className="text-input" value={syncState.syncInterval}
-                    onChange={(e) => { void handleSyncIntervalChange(e.target.value as SyncState['syncInterval']) }}>
-                    <option value="off">{isEnglish ? 'Off' : '关闭'}</option>
-                    <option value="two_hours">{isEnglish ? 'Every 2 hours' : '每两小时'}</option>
-                    <option value="daily">{isEnglish ? 'Daily' : '每天'}</option>
-                  </select>
-                </label>
-                {syncState.lastSyncAt && (
-                  <p className="form-field__description">{isEnglish ? 'Last sync: ' : '上次同步：'}{syncState.lastSyncAt}</p>
-                )}
-              </div>
-            </div>
+      {showSettings && renderSustechSyncSettingsDialog({
+        isEnglish,
+        syncState,
+        handleSyncIntervalChange,
+        onClose: () => setShowSettings(false),
+      })}
+    </section>
+  )
+}
+
+function renderSustechModules(input: {
+  visitedModules: Set<SustechModule>
+  exitingModule: SustechModule | null
+  visibleModule: SustechModule
+  isEnglish: boolean
+  handleTriggerSync: () => Promise<void>
+  isSyncRunning: boolean
+  setShowSettings: (value: boolean) => void
+  lang: WorkbenchLanguage
+  syncState: SyncState
+  handleCancelSync: () => Promise<void>
+  runtimeBaseUrl: string
+  dataRefreshToken: number
+}) {
+  return (['blackboard', 'tis'] as SustechModule[]).map((module) => {
+    if (!input.visitedModules.has(module)) {
+      return null
+    }
+
+    const isExiting = module === input.exitingModule
+    const isActive = module === input.visibleModule && !isExiting
+    const isVisible = module === input.visibleModule || isExiting
+
+    return (
+      <div
+        key={module}
+        className={[
+          'sustech-module-keepalive-panel',
+          isActive ? 'sustech-module-keepalive-panel--active' : null,
+          isExiting ? 'sustech-module-keepalive-panel--exiting' : null,
+        ].filter(Boolean).join(' ')}
+        data-sustech-module={module}
+        hidden={!isVisible}
+        aria-hidden={!isActive}
+      >
+        {module === 'blackboard'
+          ? renderBlackboardModule(input)
+          : renderTisModule(input.isEnglish)}
+      </div>
+    )
+  })
+}
+
+function renderBlackboardModule(input: {
+  isEnglish: boolean
+  handleTriggerSync: () => Promise<void>
+  isSyncRunning: boolean
+  setShowSettings: (value: boolean) => void
+  lang: WorkbenchLanguage
+  syncState: SyncState
+  handleCancelSync: () => Promise<void>
+  runtimeBaseUrl: string
+  dataRefreshToken: number
+}) {
+  return (
+    <>
+      <header className="workspace-main__header">
+        <div>
+          <p className="workspace-main__eyebrow">{input.isEnglish ? 'Blackboard' : 'Blackboard'}</p>
+          <h2 className="workspace-main__title">
+            {input.isEnglish ? 'Blackboard Management' : 'Blackboard 管理系统'}
+          </h2>
+        </div>
+        <div className="toolbar-actions">
+          <button type="button" className="icon-button" title={input.isEnglish ? 'Sync now' : '手动同步'} onClick={input.handleTriggerSync} disabled={input.isSyncRunning}>
+            <span className="icon-button__label">↻</span>
+          </button>
+          <button type="button" className="icon-button" title={input.isEnglish ? 'Settings' : '设置'} onClick={() => input.setShowSettings(true)}>
+            <Settings size={16} />
+          </button>
+        </div>
+      </header>
+      <section className={`workspace-main__content sustech-workspace__content${input.isSyncRunning ? ' sustech-workspace__content--syncing' : ''}`}>
+        <div className={`sustech-sync-panel-slot${input.isSyncRunning ? ' sustech-sync-panel-slot--visible' : ''}`}>
+          <BlackboardSyncPanel language={input.lang} syncState={input.syncState} onCancelSync={input.handleCancelSync} />
+        </div>
+        <div className={`sustech-data-browser-slot${input.isSyncRunning ? ' sustech-data-browser-slot--shifted' : ''}`}>
+          <BlackboardDataBrowser language={input.lang} baseUrl={input.runtimeBaseUrl} refreshToken={input.dataRefreshToken} />
+        </div>
+      </section>
+    </>
+  )
+}
+
+function renderTisModule(isEnglish: boolean) {
+  return (
+    <>
+      <header className="workspace-main__header">
+        <div>
+          <p className="workspace-main__eyebrow">TIS</p>
+          <h2 className="workspace-main__title">{isEnglish ? 'Teaching Information System' : '教学信息系统'}</h2>
+        </div>
+      </header>
+      <section className="workspace-main__content sustech-workspace__content">
+        <div className="hub-card">
+          <p className="sustech-home-card__desc">{isEnglish ? 'Coming soon.' : '即将推出。'}</p>
+        </div>
+      </section>
+    </>
+  )
+}
+
+function renderSustechSyncSettingsDialog(input: {
+  isEnglish: boolean
+  syncState: SyncState
+  handleSyncIntervalChange: (nextInterval: SyncState['syncInterval']) => Promise<void>
+  onClose: () => void
+}) {
+  return (
+    <div className="capabilities-dialog-backdrop" onClick={input.onClose}>
+      <div className="capabilities-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <header className="capabilities-dialog__header">
+          <div>
+            <p className="capabilities-dialog__eyebrow">Blackboard</p>
+            <h2 className="capabilities-dialog__title">{input.isEnglish ? 'Sync Settings' : '同步设置'}</h2>
+            <p className="capabilities-dialog__description">
+              {input.isEnglish ? 'Configure automatic background sync interval.' : '配置后台自动同步间隔。'}
+            </p>
+          </div>
+          <button type="button" className="capabilities-dialog__close" onClick={input.onClose}>✕</button>
+        </header>
+        <div className="capabilities-dialog__body">
+          <div className="settings-stack">
+            <label className="form-field">
+              <span className="form-field__label">{input.isEnglish ? 'Sync interval' : '同步间隔'}</span>
+              <select className="text-input" value={input.syncState.syncInterval}
+                onChange={(e) => { void input.handleSyncIntervalChange(e.target.value as SyncState['syncInterval']) }}>
+                <option value="off">{input.isEnglish ? 'Off' : '关闭'}</option>
+                <option value="two_hours">{input.isEnglish ? 'Every 2 hours' : '每两小时'}</option>
+                <option value="daily">{input.isEnglish ? 'Daily' : '每天'}</option>
+              </select>
+            </label>
+            {input.syncState.lastSyncAt && (
+              <p className="form-field__description">{input.isEnglish ? 'Last sync: ' : '上次同步：'}{input.syncState.lastSyncAt}</p>
+            )}
           </div>
         </div>
-      )}
-    </section>
+      </div>
+    </div>
   )
 }

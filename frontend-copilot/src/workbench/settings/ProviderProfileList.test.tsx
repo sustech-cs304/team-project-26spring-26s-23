@@ -6,6 +6,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import { ProviderProfileList } from './ProviderProfileList'
 
+const PROVIDER_A_ID = 'provider-a'
+const PROVIDER_A_TEST_ID = 'settings-provider-card-provider-a'
+
 declare global {
   // eslint-disable-next-line no-var
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
@@ -43,7 +46,7 @@ describe('ProviderProfileList', () => {
     })
 
     await act(async () => {
-      rendered.getByTestId('settings-provider-card-provider-a').dispatchEvent(
+      rendered.getByTestId(PROVIDER_A_TEST_ID).dispatchEvent(
         new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 24, clientY: 18 }),
       )
     })
@@ -56,7 +59,7 @@ describe('ProviderProfileList', () => {
     expect(rendered.queryByTestId('provider-context-menu')).toBeNull()
 
     await act(async () => {
-      rendered.getByTestId('settings-provider-card-provider-a').dispatchEvent(
+      rendered.getByTestId(PROVIDER_A_TEST_ID).dispatchEvent(
         new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 30, clientY: 22 }),
       )
     })
@@ -66,8 +69,8 @@ describe('ProviderProfileList', () => {
     })
     expect(rendered.queryByTestId('provider-context-menu')).toBeNull()
 
-    expect(onCopyProvider).toHaveBeenCalledWith('provider-a')
-    expect(onDeleteProvider).toHaveBeenCalledWith('provider-a')
+    expect(onCopyProvider).toHaveBeenCalledWith(PROVIDER_A_ID)
+    expect(onDeleteProvider).toHaveBeenCalledWith(PROVIDER_A_ID)
 
     rendered.unmount()
   })
@@ -79,12 +82,12 @@ describe('ProviderProfileList', () => {
       onReorderProviders,
     })
 
-    mockListItemRect(rendered.getByTestId('settings-provider-list-item-provider-a'), 0)
+    mockListItemRect(rendered.getByTestId(`settings-provider-list-item-${PROVIDER_A_ID}`), 0)
     mockListItemRect(rendered.getByTestId('settings-provider-list-item-provider-b'), 60)
-    mockButtonRect(rendered.getByTestId('settings-provider-card-provider-a'))
+    mockButtonRect(rendered.getByTestId(PROVIDER_A_TEST_ID))
 
     await act(async () => {
-      rendered.getByTestId('settings-provider-card-provider-a').dispatchEvent(
+      rendered.getByTestId(PROVIDER_A_TEST_ID).dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 10, clientY: 10 }),
       )
     })
@@ -99,7 +102,7 @@ describe('ProviderProfileList', () => {
       await Promise.resolve()
     })
 
-    expect(onReorderProviders).toHaveBeenCalledWith('provider-a', 2)
+    expect(onReorderProviders).toHaveBeenCalledWith(PROVIDER_A_ID, 2)
 
     rendered.unmount()
   })
@@ -119,7 +122,7 @@ function renderList(overrides?: {
       <ProviderProfileList
         providerProfiles={[
           {
-            id: 'provider-a',
+            id: PROVIDER_A_ID,
             name: 'Alpha Provider',
             protocol: 'openai',
             endpoint: 'https://alpha.example.com/v1',

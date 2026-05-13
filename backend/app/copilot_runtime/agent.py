@@ -160,6 +160,7 @@ class _PydanticAIAgentRunDeps:
     default_root: str
     tool_permission_resolver: RuntimeToolPermissionResolver
     approval_coordinator: RuntimeToolApprovalCoordinator
+    resolved_model_route: dict[str, Any] | None = None
     run_id: str | None = None
     debug_enabled: bool = False
     skill_runtime_index: SkillRuntimeIndex | None = None
@@ -684,6 +685,7 @@ class PydanticAIAgentExecutor:
         deps = self._build_runtime_deps(
             enabled_tools=enabled_tool_ids,
             emit_tool_event=emit_tool_event,
+            resolved_model_route=model_route,
             run_id=run_id,
             debug_enabled=debug_enabled,
             tool_permission_resolver=tool_permission_resolver,
@@ -733,6 +735,7 @@ class PydanticAIAgentExecutor:
         *,
         enabled_tools: Sequence[str],
         emit_tool_event: ToolLifecycleSink,
+        resolved_model_route: ResolvedRuntimeModelRoute | None = None,
         run_id: str | None = None,
         debug_enabled: bool = False,
         tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
@@ -747,6 +750,11 @@ class PydanticAIAgentExecutor:
             tool_permission_resolver=tool_permission_resolver
             or RuntimeToolPermissionResolver(),
             approval_coordinator=self._approval_coordinator,
+            resolved_model_route=(
+                None
+                if resolved_model_route is None
+                else resolved_model_route.to_resolved_route_dict()
+            ),
             run_id=run_id,
             debug_enabled=debug_enabled,
             skill_runtime_index=skill_runtime_index,
@@ -1148,20 +1156,22 @@ class PydanticAIAgentExecutor:
         display_name: str,
         enabled_tool_ids: Sequence[str],
     ) -> RuntimeToolExecutionContext:
+        metadata: dict[str, Any] = {
+            "displayName": display_name,
+            "enabledToolIds": list(enabled_tool_ids),
+            "fileSystemState": self._build_bound_tool_file_system_state(ctx),
+            "skillRuntime": self._build_bound_tool_skill_runtime_state(ctx, tool_id),
+        }
+        resolved_model_route = getattr(ctx.deps, "resolved_model_route", None)
+        if isinstance(resolved_model_route, Mapping):
+            metadata["resolvedModelRoute"] = dict(resolved_model_route)
         return RuntimeToolExecutionContext(
             tool_call_id=tool_call_id,
             run_id=ctx.deps.run_id,
             actor="agent",
             requested_at=datetime.now(UTC),
             trace={"toolCallId": tool_call_id, "toolId": tool_id},
-            metadata={
-                "displayName": display_name,
-                "enabledToolIds": list(enabled_tool_ids),
-                "fileSystemState": self._build_bound_tool_file_system_state(ctx),
-                "skillRuntime": self._build_bound_tool_skill_runtime_state(
-                    ctx, tool_id
-                ),
-            },
+            metadata=metadata,
         )
 
     def _build_bound_tool_file_system_state(

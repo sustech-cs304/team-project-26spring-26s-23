@@ -34,6 +34,8 @@ import type {
 } from './run-segment-types'
 import type { CopilotRunState } from './types'
 
+const SEGMENT_KIND_INLINE_FORM = 'inline-form'
+
 export function createIdleCopilotRunState(): CopilotRunState {
   return {
     phase: 'idle',
@@ -92,7 +94,7 @@ export function expirePendingCopilotInlineFormSegments(
   state: CopilotRunState,
 ): CopilotRunState {
   const nextSegments = state.segments.map((segment) => {
-    if (segment.kind !== 'inline-form' || segment.formState !== 'pending') {
+    if (segment.kind !== SEGMENT_KIND_INLINE_FORM || segment.formState !== 'pending') {
       return segment
     }
 
@@ -119,7 +121,7 @@ export function markCopilotInlineFormSubmitted(
   return {
     ...state,
     segments: state.segments.map((segment) => {
-      if (segment.kind !== 'inline-form' || segment.toolCallId !== input.toolCallId) {
+      if (segment.kind !== SEGMENT_KIND_INLINE_FORM || segment.toolCallId !== input.toolCallId) {
         return segment
       }
 
@@ -627,9 +629,9 @@ function upsertInlineFormSegment(
     return segments
   }
 
-  const segmentId = `inline-form:${event.runId}:${event.payload.toolCallId}`
+  const segmentId = `${SEGMENT_KIND_INLINE_FORM}:${event.runId}:${event.payload.toolCallId}`
   const existingIndex = segments.findIndex((segment) => segment.id === segmentId)
-  const existingSegment = existingIndex >= 0 && segments[existingIndex]?.kind === 'inline-form'
+  const existingSegment = existingIndex >= 0 && segments[existingIndex]?.kind === SEGMENT_KIND_INLINE_FORM
     ? segments[existingIndex]
     : null
   const sanitizedSegments = segments.filter((segment) => (

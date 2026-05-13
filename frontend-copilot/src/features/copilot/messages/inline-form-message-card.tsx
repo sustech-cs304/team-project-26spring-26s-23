@@ -95,132 +95,25 @@ export function InlineFormMessageCard({
 
   return (
     <div className="copilot-chat__inline-form-card" data-testid={`chat-message-inline-form-card-${index}`}>
-      <div className="copilot-chat__inline-form-header">
-        <div className="copilot-chat__inline-form-header-copy">
-          <span className="copilot-chat__step-icon copilot-chat__step-icon--form" aria-hidden="true">
-            <ClipboardList size={14} strokeWidth={2.2} />
-          </span>
-          <div className="copilot-chat__inline-form-heading-copy">
-            <p className="copilot-chat__inline-form-eyebrow">需要你补充信息</p>
-            <p className="copilot-chat__inline-form-title">{turn.title}</p>
-          </div>
-        </div>
-        <span className={`copilot-chat__inline-form-status copilot-chat__inline-form-status--${turn.formState}`}>{statusText}</span>
-      </div>
+      <InlineFormHeader turn={turn} statusText={statusText} />
       <div className="copilot-chat__inline-form-panel" data-testid={`chat-message-inline-form-panel-${index}`}>
         <p className="copilot-chat__inline-form-description">{turn.content}</p>
         {helperDescription !== null && <p className="copilot-chat__inline-form-description copilot-chat__inline-form-description--secondary">{helperDescription}</p>}
-        {turn.fields.map((field) => {
-          const fieldId = `chat-inline-form-${turn.id}-${field.name}`
-          const value = draftValues[field.name] ?? (field.type === 'checkbox' ? false : '')
-          const submittedValue = formatInlineFormValue(turn.formValues[field.name])
-          return (
-            <div
-              key={field.name}
-              className={`copilot-chat__inline-form-field copilot-chat__inline-form-field--${field.type}`}
-              data-testid={`chat-message-inline-form-field-${field.name}-${index}`}
-            >
-              <div className="copilot-chat__inline-form-field-header">
-                <label className="copilot-chat__inline-form-label" htmlFor={fieldId}>{field.label}</label>
-                {field.required === true && <span className="copilot-chat__inline-form-required">必填</span>}
-              </div>
-              {field.description !== undefined && field.description.trim() !== '' && (
-                <p className="copilot-chat__inline-form-field-description">{field.description}</p>
-              )}
-              {!readOnly && (field.type === 'textarea'
-                ? (
-                    <textarea
-                      id={fieldId}
-                      className="copilot-chat__inline-form-control copilot-chat__inline-form-control--textarea"
-                      value={typeof value === 'boolean' ? '' : value}
-                      placeholder={field.placeholder ?? ''}
-                      readOnly={readOnly}
-                      onChange={(event) => {
-                        const nextValue = event.currentTarget.value
-                        setDraftValues((current) => ({ ...current, [field.name]: nextValue }))
-                      }}
-                    />
-                  )
-                : field.type === 'number'
-                  ? (
-                      <input
-                        id={fieldId}
-                        className="copilot-chat__inline-form-control"
-                        type="number"
-                        value={typeof value === 'boolean' ? '' : value}
-                        placeholder={field.placeholder ?? ''}
-                        readOnly={readOnly}
-                        onChange={(event) => {
-                          const nextValue = event.currentTarget.value
-                          setDraftValues((current) => ({ ...current, [field.name]: nextValue }))
-                        }}
-                      />
-                    )
-                  : field.type === 'select'
-                    ? (
-                        <InlineFormSelectControl
-                          id={fieldId}
-                          value={typeof value === 'boolean' ? '' : value}
-                          disabled={readOnly}
-                          placeholder="请选择"
-                          options={field.options ?? []}
-                          onChange={(nextValue) => {
-                            setDraftValues((current) => ({ ...current, [field.name]: nextValue }))
-                          }}
-                        />
-                      )
-                    : field.type === 'checkbox'
-                      ? (
-                          <label
-                            className={[
-                              'copilot-chat__inline-form-checkbox',
-                              value === true ? 'copilot-chat__inline-form-checkbox--checked' : '',
-                              readOnly ? 'copilot-chat__inline-form-checkbox--readonly' : '',
-                            ].filter((className) => className !== '').join(' ')}
-                            htmlFor={fieldId}
-                          >
-                            <input
-                              id={fieldId}
-                              className="copilot-chat__inline-form-checkbox-input"
-                              type="checkbox"
-                              checked={value === true}
-                              disabled={readOnly}
-                              onChange={(event) => {
-                                const nextChecked = event.currentTarget.checked
-                                setDraftValues((current) => ({ ...current, [field.name]: nextChecked }))
-                              }}
-                            />
-                            <span className="copilot-chat__inline-form-checkbox-box" aria-hidden="true">
-                              <span className="copilot-chat__inline-form-checkbox-checkmark" />
-                            </span>
-                            <span className="copilot-chat__inline-form-checkbox-body">
-                              <span className="copilot-chat__inline-form-checkbox-copy">{field.placeholder ?? '确认此项'}</span>
-                            </span>
-                          </label>
-                        )
-                      : (
-                          <input
-                            id={fieldId}
-                            className="copilot-chat__inline-form-control"
-                            type="text"
-                            value={typeof value === 'boolean' ? '' : value}
-                            placeholder={field.placeholder ?? ''}
-                            readOnly={readOnly}
-                            onChange={(event) => {
-                              const nextValue = event.currentTarget.value
-                              setDraftValues((current) => ({ ...current, [field.name]: nextValue }))
-                            }}
-                          />
-                        ))}
-              {readOnly && (
-                <div className="copilot-chat__inline-form-readonly" data-testid={`chat-message-inline-form-value-${field.name}-${index}`}>{submittedValue}</div>
-              )}
-              {errors[field.name] !== undefined && (
-                <span className="copilot-chat__inline-form-error" data-testid={`chat-message-inline-form-error-${field.name}-${index}`}>{errors[field.name]}</span>
-              )}
-            </div>
-          )
-        })}
+        {turn.fields.map((field) => (
+          <InlineFormField
+            key={field.name}
+            field={field}
+            turnId={turn.id}
+            index={index}
+            value={draftValues[field.name] ?? (field.type === 'checkbox' ? false : '')}
+            submittedValue={formatInlineFormValue(turn.formValues[field.name])}
+            readOnly={readOnly}
+            error={errors[field.name]}
+            onValueChange={(nextValue) => {
+              setDraftValues((current) => ({ ...current, [field.name]: nextValue }))
+            }}
+          />
+        ))}
         {turn.formState === 'expired' && (
           <p className="copilot-chat__inline-form-notice copilot-chat__inline-form-notice--expired" data-testid={`chat-message-inline-form-expired-${index}`}>该表单已过期，不能继续提交。</p>
         )}
@@ -240,6 +133,198 @@ export function InlineFormMessageCard({
         )}
       </div>
     </div>
+  )
+}
+
+function InlineFormHeader({
+  turn,
+  statusText,
+}: {
+  turn: CopilotInlineFormMessageItem
+  statusText: string
+}) {
+  return (
+    <div className="copilot-chat__inline-form-header">
+      <div className="copilot-chat__inline-form-header-copy">
+        <span className="copilot-chat__step-icon copilot-chat__step-icon--form" aria-hidden="true">
+          <ClipboardList size={14} strokeWidth={2.2} />
+        </span>
+        <div className="copilot-chat__inline-form-heading-copy">
+          <p className="copilot-chat__inline-form-eyebrow">需要你补充信息</p>
+          <p className="copilot-chat__inline-form-title">{turn.title}</p>
+        </div>
+      </div>
+      <span className={`copilot-chat__inline-form-status copilot-chat__inline-form-status--${turn.formState}`}>{statusText}</span>
+    </div>
+  )
+}
+
+function InlineFormField({
+  field,
+  turnId,
+  index,
+  value,
+  submittedValue,
+  readOnly,
+  error,
+  onValueChange,
+}: {
+  field: CopilotInlineFormMessageItem['fields'][number]
+  turnId: string
+  index: number
+  value: string | number | boolean
+  submittedValue: string
+  readOnly: boolean
+  error: string | undefined
+  onValueChange: (value: string | boolean) => void
+}) {
+  const fieldId = `chat-inline-form-${turnId}-${field.name}`
+
+  return (
+    <div
+      className={`copilot-chat__inline-form-field copilot-chat__inline-form-field--${field.type}`}
+      data-testid={`chat-message-inline-form-field-${field.name}-${index}`}
+    >
+      <div className="copilot-chat__inline-form-field-header">
+        <label className="copilot-chat__inline-form-label" htmlFor={fieldId}>{field.label}</label>
+        {field.required === true && <span className="copilot-chat__inline-form-required">必填</span>}
+      </div>
+      {field.description !== undefined && field.description.trim() !== '' && (
+        <p className="copilot-chat__inline-form-field-description">{field.description}</p>
+      )}
+      {!readOnly && renderInlineFormControl({ field, fieldId, value, readOnly, onValueChange })}
+      {readOnly && (
+        <div className="copilot-chat__inline-form-readonly" data-testid={`chat-message-inline-form-value-${field.name}-${index}`}>{submittedValue}</div>
+      )}
+      {error !== undefined && (
+        <span className="copilot-chat__inline-form-error" data-testid={`chat-message-inline-form-error-${field.name}-${index}`}>{error}</span>
+      )}
+    </div>
+  )
+}
+
+function renderInlineFormControl({
+  field,
+  fieldId,
+  value,
+  readOnly,
+  onValueChange,
+}: {
+  field: CopilotInlineFormMessageItem['fields'][number]
+  fieldId: string
+  value: string | number | boolean
+  readOnly: boolean
+  onValueChange: (value: string | boolean) => void
+}) {
+  switch (field.type) {
+    case 'textarea':
+      return (
+        <textarea
+          id={fieldId}
+          className="copilot-chat__inline-form-control copilot-chat__inline-form-control--textarea"
+          value={typeof value === 'boolean' ? '' : value}
+          placeholder={field.placeholder ?? ''}
+          readOnly={readOnly}
+          onChange={(event) => {
+            onValueChange(event.currentTarget.value)
+          }}
+        />
+      )
+    case 'number':
+      return (
+        <input
+          id={fieldId}
+          className="copilot-chat__inline-form-control"
+          type="number"
+          value={typeof value === 'boolean' ? '' : value}
+          placeholder={field.placeholder ?? ''}
+          readOnly={readOnly}
+          onChange={(event) => {
+            onValueChange(event.currentTarget.value)
+          }}
+        />
+      )
+    case 'select':
+      return (
+        <InlineFormSelectControl
+          id={fieldId}
+          value={typeof value === 'boolean' || typeof value === 'number' ? String(value) : value}
+          disabled={readOnly}
+          placeholder="请选择"
+          options={field.options ?? []}
+          onChange={(nextValue) => {
+            onValueChange(nextValue)
+          }}
+        />
+      )
+    case 'checkbox':
+      return (
+        <InlineFormCheckboxControl
+          fieldId={fieldId}
+          checked={value === true}
+          disabled={readOnly}
+          placeholder={field.placeholder ?? '确认此项'}
+          onChange={(nextChecked) => {
+            onValueChange(nextChecked)
+          }}
+        />
+      )
+    default:
+      return (
+        <input
+          id={fieldId}
+          className="copilot-chat__inline-form-control"
+          type="text"
+          value={typeof value === 'boolean' ? '' : value}
+          placeholder={field.placeholder ?? ''}
+          readOnly={readOnly}
+          onChange={(event) => {
+            onValueChange(event.currentTarget.value)
+          }}
+        />
+      )
+  }
+}
+
+function InlineFormCheckboxControl({
+  fieldId,
+  checked,
+  disabled,
+  placeholder,
+  onChange,
+}: {
+  fieldId: string
+  checked: boolean
+  disabled: boolean
+  placeholder: string
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label
+      className={[
+        'copilot-chat__inline-form-checkbox',
+        checked ? 'copilot-chat__inline-form-checkbox--checked' : '',
+        disabled ? 'copilot-chat__inline-form-checkbox--readonly' : '',
+      ].filter((className) => className !== '').join(' ')}
+      htmlFor={fieldId}
+    >
+      <input
+        id={fieldId}
+        className="copilot-chat__inline-form-checkbox-input"
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => {
+          onChange(event.currentTarget.checked)
+        }}
+      />
+      <span className="copilot-chat__inline-form-checkbox-box" aria-hidden="true">
+        <span className="copilot-chat__inline-form-checkbox-checkmark" />
+      </span>
+      <span className="copilot-chat__inline-form-checkbox-body">
+        <span className="copilot-chat__inline-form-checkbox-copy">{placeholder}</span>
+      </span>
+    </label>
   )
 }
 

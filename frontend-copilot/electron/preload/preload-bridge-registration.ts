@@ -18,6 +18,7 @@ const PRELOAD_BRIDGE_KEYS = [
   'skillRegistry',
   'skillRegistrySubscription',
   'toolCatalog',
+  'attachmentManager',
   'desktopNotification',
   'windowControls',
   'bootstrapWindow',

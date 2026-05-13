@@ -10,6 +10,8 @@ import type {
   ManagedRuntimeTarget,
 } from './types'
 
+const PORTABLE_ARCHIVE_STRATEGY = 'portable-archive'
+
 export const MANAGED_RUNTIME_MANIFEST: ManagedRuntimeManifest = {
   manifestVersion: 1,
   generatedAt: '2026-04-22T00:00:00.000Z',
@@ -220,7 +222,7 @@ export function matchesManagedRuntimeTarget(candidate: ManagedRuntimeTarget, tar
 }
 
 export function isManagedRuntimeDistributionInstallable(distribution: ManagedRuntimeDistribution): boolean {
-  return distribution.installStrategy === 'portable-archive' && typeof distribution.url === 'string' && distribution.url.trim() !== ''
+  return distribution.installStrategy === PORTABLE_ARCHIVE_STRATEGY && typeof distribution.url === 'string' && distribution.url.trim() !== ''
 }
 
 function findManagedRuntimeDistribution(
@@ -242,7 +244,7 @@ function createNodeDistribution(
     url: `https://nodejs.org/dist/v24.15.0/${fileName}`,
     checksumUrl: 'https://nodejs.org/dist/v24.15.0/SHASUMS256.txt',
     archiveFormat,
-    installStrategy: 'portable-archive',
+    installStrategy: PORTABLE_ARCHIVE_STRATEGY,
     launcherRelativePaths: platform === 'win32'
       ? { node: 'node.exe', npm: 'npm.cmd', npx: 'npx.cmd' }
       : { node: 'bin/node', npm: 'bin/npm', npx: 'bin/npx' },
@@ -262,7 +264,7 @@ function createPythonDistribution(
     url: `https://github.com/astral-sh/python-build-standalone/releases/download/20260414/${fileName}`,
     checksumUrl: 'https://github.com/astral-sh/python-build-standalone/releases/download/20260414/SHA256SUMS',
     archiveFormat,
-    installStrategy: 'portable-archive',
+    installStrategy: PORTABLE_ARCHIVE_STRATEGY,
     launcherRelativePaths: platform === 'win32'
       ? { python: 'python.exe' }
       : { python: 'install/bin/python3' },
@@ -282,7 +284,7 @@ function createUvDistribution(
     url: `https://github.com/astral-sh/uv/releases/download/0.11.7/${fileName}`,
     checksumUrl: `https://github.com/astral-sh/uv/releases/download/0.11.7/${fileName}.sha256`,
     archiveFormat,
-    installStrategy: 'portable-archive',
+    installStrategy: PORTABLE_ARCHIVE_STRATEGY,
     launcherRelativePaths: platform === 'win32'
       ? { uv: 'uv.exe', uvx: 'uvx.exe' }
       : { uv: 'uv', uvx: 'uvx' },

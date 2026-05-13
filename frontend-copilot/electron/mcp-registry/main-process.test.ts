@@ -6,24 +6,33 @@ import { describe, expect, it, vi } from 'vitest'
 import { createHostedRuntimePaths } from '../runtime/runtime-paths'
 import { createElectronMcpRegistryService } from './main-process'
 
+const MCP_TOOL_ID_STUB = 'mcp.mcp-stdio-stub.search-campus.00004d8d'
+const MCP_SERVER_ID_STUB = 'mcp-stdio-stub'
+const MCP_REMOTE_TOOL_NAME = 'search-campus'
+const MCP_RUN_ID = 'run-1'
+const MCP_TOOL_CALL_ID = 'tool-call-1'
+const MCP_FIXED_NOW = '2026-04-21T12:00:00.000Z'
+const MCP_BOOTSTRAP_FAILED = 'runtime path bootstrap failed'
+
+// eslint-disable-next-line max-lines-per-function -- This describe groups related main-process integration tests; splitting would scatter coordinated lifecycle logic.
 describe('createElectronMcpRegistryService', () => {
   it('retries runtime path initialization after a failed first attempt and caches the recovered service', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-mcp-main-process-'))
     const appendLog = vi.fn()
     const hostedPaths = createHostedRuntimePaths(tempRoot)
     const prepareRuntimePaths = vi.fn(async () => hostedPaths)
-    prepareRuntimePaths.mockRejectedValueOnce(new Error('runtime path bootstrap failed.'))
+    prepareRuntimePaths.mockRejectedValueOnce(new Error(MCP_BOOTSTRAP_FAILED))
 
     const service = createElectronMcpRegistryService({
       prepareRuntimePaths,
       appendLog,
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
     })
 
     try {
       await expect(service.loadRegistry({ includeDisabled: true })).resolves.toEqual({
         ok: false,
-        error: 'Failed to load the MCP registry: runtime path bootstrap failed.',
+        error: `Failed to load the MCP registry: ${MCP_BOOTSTRAP_FAILED}`,
         code: 'internal_error',
       })
 
@@ -42,7 +51,7 @@ describe('createElectronMcpRegistryService', () => {
       expect(appendLog).toHaveBeenCalledWith(
         'error',
         '[mcp-registry] Failed to load the MCP registry.',
-        { detail: 'runtime path bootstrap failed.' },
+        { detail: MCP_BOOTSTRAP_FAILED },
       )
     } finally {
       await rm(tempRoot, { recursive: true, force: true })
@@ -58,7 +67,7 @@ describe('createElectronMcpRegistryService', () => {
     const service = createElectronMcpRegistryService({
       prepareRuntimePaths,
       appendLog,
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
     })
 
     try {
@@ -86,7 +95,7 @@ describe('createElectronMcpRegistryService', () => {
     const service = createElectronMcpRegistryService({
       prepareRuntimePaths: async () => hostedPaths,
       appendLog,
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
       processPlatform: 'linux',
       processArch: 'x64',
     })
@@ -118,7 +127,7 @@ describe('createElectronMcpRegistryService', () => {
     const service = createElectronMcpRegistryService({
       prepareRuntimePaths,
       appendLog,
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
     })
 
     try {
@@ -126,29 +135,29 @@ describe('createElectronMcpRegistryService', () => {
       expect(loadResult.ok).toBe(true)
 
       const toolResult = await service.executeTool({
-        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
+        toolId: MCP_TOOL_ID_STUB,
+        serverId: MCP_SERVER_ID_STUB,
+        remoteToolName: MCP_REMOTE_TOOL_NAME,
         arguments: { keyword: 'calendar' },
-        runId: 'run-1',
-        toolCallId: 'tool-call-1',
+        runId: MCP_RUN_ID,
+        toolCallId: MCP_TOOL_CALL_ID,
         snapshotRevision: 8,
       })
 
       expect(toolResult).toEqual({
         ok: false,
-        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
+        toolId: MCP_TOOL_ID_STUB,
+        serverId: MCP_SERVER_ID_STUB,
+        remoteToolName: MCP_REMOTE_TOOL_NAME,
         snapshotRevision: 8,
         error: {
           code: 'directory_drift',
           message: 'The requested MCP tool no longer exists in the current snapshot.',
           retryable: false,
-          observedAt: '2026-04-21T12:00:00.000Z',
+          observedAt: MCP_FIXED_NOW,
           details: {
-            requestedServerId: 'mcp-stdio-stub',
-            requestedRemoteToolName: 'search-campus',
+            requestedServerId: MCP_SERVER_ID_STUB,
+            requestedRemoteToolName: MCP_REMOTE_TOOL_NAME,
             connectorToolCount: 0,
             requestedSnapshotRevision: 8,
             snapshotRevision: 0,
@@ -167,40 +176,40 @@ describe('createElectronMcpRegistryService', () => {
     const appendLog = vi.fn()
     const hostedPaths = createHostedRuntimePaths(tempRoot)
     const prepareRuntimePaths = vi.fn(async () => hostedPaths)
-    prepareRuntimePaths.mockRejectedValueOnce(new Error('runtime path bootstrap failed.'))
+    prepareRuntimePaths.mockRejectedValueOnce(new Error(MCP_BOOTSTRAP_FAILED))
 
     const service = createElectronMcpRegistryService({
       prepareRuntimePaths,
       appendLog,
-      now: () => '2026-04-21T12:00:00.000Z',
+      now: () => MCP_FIXED_NOW,
     })
 
     try {
       await expect(service.executeTool({
-        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
+        toolId: MCP_TOOL_ID_STUB,
+        serverId: MCP_SERVER_ID_STUB,
+        remoteToolName: MCP_REMOTE_TOOL_NAME,
         arguments: { keyword: 'calendar' },
-        runId: 'run-1',
-        toolCallId: 'tool-call-1',
+        runId: MCP_RUN_ID,
+        toolCallId: MCP_TOOL_CALL_ID,
         snapshotRevision: 8,
       })).resolves.toEqual({
         ok: false,
-        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
+        toolId: MCP_TOOL_ID_STUB,
+        serverId: MCP_SERVER_ID_STUB,
+        remoteToolName: MCP_REMOTE_TOOL_NAME,
         snapshotRevision: 8,
         error: {
           code: 'internal_error',
-          message: 'Failed to execute the MCP tool: runtime path bootstrap failed.',
+          message: `Failed to execute the MCP tool: ${MCP_BOOTSTRAP_FAILED}`,
           retryable: false,
           details: {
-            toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-            serverId: 'mcp-stdio-stub',
-            remoteToolName: 'search-campus',
+            toolId: MCP_TOOL_ID_STUB,
+            serverId: MCP_SERVER_ID_STUB,
+            remoteToolName: MCP_REMOTE_TOOL_NAME,
             snapshotRevision: 8,
-            runId: 'run-1',
-            toolCallId: 'tool-call-1',
+            runId: MCP_RUN_ID,
+            toolCallId: MCP_TOOL_CALL_ID,
           },
         },
       })
@@ -209,13 +218,13 @@ describe('createElectronMcpRegistryService', () => {
         'error',
         '[mcp-registry] Failed to execute the MCP tool.',
         {
-          detail: 'runtime path bootstrap failed.',
-          toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-          serverId: 'mcp-stdio-stub',
-          remoteToolName: 'search-campus',
+          detail: MCP_BOOTSTRAP_FAILED,
+          toolId: MCP_TOOL_ID_STUB,
+          serverId: MCP_SERVER_ID_STUB,
+          remoteToolName: MCP_REMOTE_TOOL_NAME,
           snapshotRevision: 8,
-          runId: 'run-1',
-          toolCallId: 'tool-call-1',
+          runId: MCP_RUN_ID,
+          toolCallId: MCP_TOOL_CALL_ID,
         },
       )
     } finally {
