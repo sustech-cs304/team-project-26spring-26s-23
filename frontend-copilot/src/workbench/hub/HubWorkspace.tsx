@@ -20,6 +20,9 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+
     let actualRuntimeUrl = 'http://127.0.0.1:8765'
     if (bootstrap) {
       if (bootstrap.state.status === 'ready' || bootstrap.state.status === 'degraded') {
@@ -33,20 +36,36 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       setIsLoading(true)
       setError(null)
       try {
-        const response = await fetch(`${actualRuntimeUrl}/calendar/events`)
+        const response = await fetch(`${actualRuntimeUrl}/calendar/events`, {
+          signal: controller.signal,
+        })
         if (!response.ok) {
           const errText = await response.text().catch(() => 'No text')
           throw new Error(`Failed to fetch events: ${response.status} ${response.statusText} ${errText}`)
         }
         const data = await response.json()
-        setEvents(data.items || [])
+        if (active) {
+          setEvents(data.items || [])
+        }
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : String(err))
+        if (controller.signal.aborted) {
+          return
+        }
+        if (active) {
+          setError(err instanceof Error ? err.message : String(err))
+        }
       } finally {
-        setIsLoading(false)
+        if (active) {
+          setIsLoading(false)
+        }
       }
     }
     fetchEvents()
+
+    return () => {
+      active = false
+      controller.abort()
+    }
   }, [bootstrap])
 
   const handleCalendarEventChange = useCallback((eventId: string | number, patch: CalendarEventPatch) => {

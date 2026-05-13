@@ -175,11 +175,16 @@ function formatDate(date: Date): string {
   })
 }
 
+const AMP = '&'
+const LT = '<'
+const GT = '>'
+const QUOT = '"'
+
 function escapeHtml(value: string): string {
   return value
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"')
+    .replace(/&/g, AMP)
+    .replace(/</g, LT)
+    .replace(/>/g, GT)
+    .replace(/"/g, QUOT)
     .replace(/'/g, '&#039;')
 }
