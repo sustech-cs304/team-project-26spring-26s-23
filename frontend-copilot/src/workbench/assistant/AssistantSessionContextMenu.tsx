@@ -29,6 +29,7 @@ function clampMenuTop(top: number): number {
   return Math.max(margin, Math.min(top, viewportHeight - estimatedMenuHeight - margin))
 }
 
+/* eslint-disable-next-line max-lines-per-function -- 右键菜单是一个紧凑的内聚组件，拆分会造成碎片化。 */
 export function AssistantSessionContextMenu({
   language = 'zh-CN',
   sessionContextMenu,

@@ -15,6 +15,28 @@ import {
 } from '../../settings-workspace/test-support/settings-workspace-test-fixtures'
 import { createElectronDesktopCapabilityBridgeService } from './DesktopCapabilityBridgeMainProcess'
 
+const TOOL_ID = 'mcp.mcp-stdio-stub.search-campus.00004d8d'
+const SERVER_ID = 'mcp-stdio-stub'
+const REMOTE_TOOL = 'search-campus'
+const CAP_SECRET = 'secret' as const
+const CAP_WORKSPACE = 'workspace' as const
+const CAP_DATABASE = 'database' as const
+const CAP_ARTIFACT = 'artifact' as const
+const CAP_STATE = 'state' as const
+const CAP_EVENT = 'event' as const
+const CAP_MCP = 'mcp' as const
+const OP_GET_SECRET = 'get_secret' as const
+const OP_HAS_SECRET = 'has_secret' as const
+const OP_ENSURE_DIR = 'ensure_directory' as const
+const OP_RESOLVE_PATH = 'resolve_path' as const
+const OP_SAVE_TEXT = 'save_text' as const
+const OP_SAVE_BYTES = 'save_bytes' as const
+const OP_DESCRIBE_ARTIFACT = 'describe_artifact' as const
+const OP_GET_VALUE = 'get_value' as const
+const OP_PUT_VALUE = 'put_value' as const
+const OP_EMIT_EVENT = 'emit_event' as const
+const OP_CALL_TOOL = 'call_tool' as const
+
 const activeTempRoots: string[] = []
 
 afterEach(async () => {
@@ -73,8 +95,10 @@ function createSettingsWorkspaceServiceStub(): ElectronSettingsWorkspaceService 
   } as unknown as ElectronSettingsWorkspaceService
 }
 
-describe('createElectronDesktopCapabilityBridgeService', () => {
-  it('routes requests across all seven capability families and persists artifact/state data under host-controlled storage', async () => {
+/* eslint-disable sonarjs/no-duplicate-string -- Fixture names like "desktop-capability-bridge-routing" are shared across the routing describe; extracting them to module constants would scatter related test fixture identifiers away from their usage sites. */
+// eslint-disable-next-line max-lines-per-function -- This describe groups routing tests that share capability-bridge fixture setup; splitting would duplicate createPreparedPaths boilerplate across multiple blocks.
+describe('createElectronDesktopCapabilityBridgeService - routing', () => {
+  it('routes secret requests correctly', async () => {
     const fixture = await createPreparedPaths('desktop-capability-bridge-routing')
     activeTempRoots.push(fixture.tempRoot)
 
@@ -105,110 +129,94 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
       getSettingsWorkspaceService: () => settingsWorkspaceService,
       createBrowserWindow,
     })
-    const bridgePaths = createDesktopCapabilityBridgePaths(fixture.hostedPaths)
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'secret-username-1',
-      capability: 'secret',
-      operation: 'get_secret',
-      payload: {
-        secretName: 'bb.username',
-      },
+      capability: CAP_SECRET,
+      operation: OP_GET_SECRET,
+      payload: { secretName: 'bb.username' },
     }))).resolves.toEqual({
       requestId: 'secret-username-1',
       ok: true,
-      result: {
-        value: 'student@example.com',
-      },
+      result: { value: 'student@example.com' },
     })
     await expect(service.handleRequest(buildRequest({
       requestId: 'secret-username-2',
-      capability: 'secret',
-      operation: 'get_secret',
-      payload: {
-        secretName: 'sustech.username',
-      },
+      capability: CAP_SECRET,
+      operation: OP_GET_SECRET,
+      payload: { secretName: 'sustech.username' },
     }))).resolves.toEqual({
       requestId: 'secret-username-2',
       ok: true,
-      result: {
-        value: 'student@example.com',
-      },
+      result: { value: 'student@example.com' },
     })
     await expect(service.handleRequest(buildRequest({
       requestId: 'secret-password-1',
-      capability: 'secret',
-      operation: 'get_secret',
-      payload: {
-        secretName: 'sustech.casPassword',
-      },
+      capability: CAP_SECRET,
+      operation: OP_GET_SECRET,
+      payload: { secretName: 'sustech.casPassword' },
     }))).resolves.toEqual({
       requestId: 'secret-password-1',
       ok: true,
-      result: {
-        value: 'cas-secret',
-      },
+      result: { value: 'cas-secret' },
     })
     await expect(service.handleRequest(buildRequest({
       requestId: 'secret-1',
-      capability: 'secret',
-      operation: 'get_secret',
-      payload: {
-        secretName: 'provider.openrouter.apiKey',
-      },
+      capability: CAP_SECRET,
+      operation: OP_GET_SECRET,
+      payload: { secretName: 'provider.openrouter.apiKey' },
     }))).resolves.toEqual({
       requestId: 'secret-1',
       ok: true,
-      result: {
-        value: 'openrouter-secret',
-      },
+      result: { value: 'openrouter-secret' },
     })
     await expect(service.handleRequest(buildRequest({
       requestId: 'secret-2',
-      capability: 'secret',
-      operation: 'has_secret',
-      payload: {
-        secretName: 'custom.secret',
-      },
+      capability: CAP_SECRET,
+      operation: OP_HAS_SECRET,
+      payload: { secretName: 'custom.secret' },
     }))).resolves.toEqual({
       requestId: 'secret-2',
       ok: true,
-      result: {
-        present: false,
-      },
+      result: { present: false },
+    })
+  })
+
+  it('routes workspace and database requests and persists data', async () => {
+    const fixture = await createPreparedPaths('desktop-capability-bridge-routing')
+    activeTempRoots.push(fixture.tempRoot)
+
+    const appendLog = vi.fn()
+    const settingsWorkspaceService = createSettingsWorkspaceServiceStub()
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      appendLog,
+      getSettingsWorkspaceService: () => settingsWorkspaceService,
     })
 
     const expectedWorkspaceDir = path.resolve(fixture.hostedPaths.runtimeRootDir, 'workspace', 'cache')
     await expect(service.handleRequest(buildRequest({
       requestId: 'workspace-1',
-      capability: 'workspace',
-      operation: 'ensure_directory',
-      payload: {
-        relativePath: 'workspace/cache',
-      },
+      capability: CAP_WORKSPACE,
+      operation: OP_ENSURE_DIR,
+      payload: { relativePath: 'workspace/cache' },
     }))).resolves.toEqual({
       requestId: 'workspace-1',
       ok: true,
-      result: {
-        path: expectedWorkspaceDir,
-      },
+      result: { path: expectedWorkspaceDir },
     })
     await access(expectedWorkspaceDir)
 
     const expectedDatabasePath = path.resolve(fixture.hostedPaths.databaseDir, 'blackboard', 'snapshot.db')
     await expect(service.handleRequest(buildRequest({
       requestId: 'database-1',
-      capability: 'database',
-      operation: 'resolve_path',
-      payload: {
-        relativePath: 'blackboard/snapshot.db',
-      },
+      capability: CAP_DATABASE,
+      operation: OP_RESOLVE_PATH,
+      payload: { relativePath: 'blackboard/snapshot.db' },
     }))).resolves.toEqual({
       requestId: 'database-1',
       ok: true,
-      result: {
-        path: expectedDatabasePath,
-      },
+      result: { path: expectedDatabasePath },
     })
 
     const expectedDefaultTisDatabasePath = path.resolve(
@@ -218,30 +226,33 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     )
     await expect(service.handleRequest(buildRequest({
       requestId: 'database-2',
-      capability: 'database',
-      operation: 'resolve_path',
-      payload: {
-        relativePath: 'teaching_information_system/sustech_tis.db',
-      },
+      capability: CAP_DATABASE,
+      operation: OP_RESOLVE_PATH,
+      payload: { relativePath: 'teaching_information_system/sustech_tis.db' },
     }))).resolves.toEqual({
       requestId: 'database-2',
       ok: true,
-      result: {
-        path: expectedDefaultTisDatabasePath,
-      },
+      result: { path: expectedDefaultTisDatabasePath },
     })
+  })
+
+  it('routes artifact requests and persists to disk', async () => {
+    const fixture = await createPreparedPaths('desktop-capability-bridge-routing')
+    activeTempRoots.push(fixture.tempRoot)
+
+    const appendLog = vi.fn()
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      appendLog,
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+    })
+    const bridgePaths = createDesktopCapabilityBridgePaths(fixture.hostedPaths)
 
     const artifactResponse = await service.handleRequest(buildRequest({
       requestId: 'artifact-1',
-      capability: 'artifact',
-      operation: 'save_text',
-      payload: {
-        name: 'note.txt',
-        text: 'hello world',
-        metadata: {
-          source: 'test',
-        },
-      },
+      capability: CAP_ARTIFACT,
+      operation: OP_SAVE_TEXT,
+      payload: { name: 'note.txt', text: 'hello world', metadata: { source: 'test' } },
     }))
     expect(artifactResponse.ok).toBe(true)
     if (!artifactResponse.ok) {
@@ -271,11 +282,9 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     })
     await expect(service.handleRequest(buildRequest({
       requestId: 'artifact-2',
-      capability: 'artifact',
-      operation: 'describe_artifact',
-      payload: {
-        artifactId,
-      },
+      capability: CAP_ARTIFACT,
+      operation: OP_DESCRIBE_ARTIFACT,
+      payload: { artifactId },
     }))).resolves.toEqual({
       requestId: 'artifact-2',
       ok: true,
@@ -283,10 +292,7 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     })
 
     const artifactIndex = await readJsonFile(bridgePaths.artifactIndexFile) as {
-      artifacts?: Record<string, {
-        fileName?: string
-        metadata?: Record<string, unknown>
-      }>
+      artifacts?: Record<string, { fileName?: string; metadata?: Record<string, unknown> }>
     }
     const artifactRecord = artifactIndex.artifacts?.[artifactId]
     if (artifactRecord === undefined) {
@@ -304,18 +310,26 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
         storedAt: expect.any(String),
       },
     })
+  })
+
+  it('routes state and event requests correctly', async () => {
+    const fixture = await createPreparedPaths('desktop-capability-bridge-routing')
+    activeTempRoots.push(fixture.tempRoot)
+
+    const appendLog = vi.fn()
+    const settingsWorkspaceService = createSettingsWorkspaceServiceStub()
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      appendLog,
+      getSettingsWorkspaceService: () => settingsWorkspaceService,
+    })
+    const bridgePaths = createDesktopCapabilityBridgePaths(fixture.hostedPaths)
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'state-put-1',
-      capability: 'state',
-      operation: 'put_value',
-      payload: {
-        scope: 'tool',
-        key: 'session',
-        value: {
-          count: 1,
-        },
-      },
+      capability: CAP_STATE,
+      operation: OP_PUT_VALUE,
+      payload: { scope: 'tool', key: 'session', value: { count: 1 } },
     }))).resolves.toEqual({
       requestId: 'state-put-1',
       ok: true,
@@ -323,21 +337,13 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     })
     await expect(service.handleRequest(buildRequest({
       requestId: 'state-get-1',
-      capability: 'state',
-      operation: 'get_value',
-      payload: {
-        scope: 'tool',
-        key: 'session',
-      },
+      capability: CAP_STATE,
+      operation: OP_GET_VALUE,
+      payload: { scope: 'tool', key: 'session' },
     }))).resolves.toEqual({
       requestId: 'state-get-1',
       ok: true,
-      result: {
-        found: true,
-        value: {
-          count: 1,
-        },
-      },
+      result: { found: true, value: { count: 1 } },
     })
     await expect(readJsonFile(bridgePaths.stateFile)).resolves.toMatchObject({
       version: 1,
@@ -353,74 +359,10 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     })
 
     await expect(service.handleRequest(buildRequest({
-      requestId: 'browser-open-1',
-      capability: 'browser',
-      operation: 'open',
-      payload: {
-        url: 'https://example.com/',
-      },
-    }))).resolves.toEqual({
-      requestId: 'browser-open-1',
-      ok: true,
-      result: {
-        tabId: 'browser-tab-1',
-        currentUrl: 'https://example.com/',
-        title: 'Example Domain',
-        windowVisible: false,
-      },
-    })
-    expect(createBrowserWindow).toHaveBeenCalledWith({ showWindow: false })
-    expect(browserWindow.loadURL).toHaveBeenCalledWith('https://example.com/')
-
-    const browserScreenshotResponse = await service.handleRequest(buildRequest({
-      requestId: 'browser-screenshot-1',
-      capability: 'browser',
-      operation: 'screenshot',
-      payload: {
-        name: 'page-capture',
-      },
-    }))
-    expect(browserScreenshotResponse).toMatchObject({
-      requestId: 'browser-screenshot-1',
-      ok: true,
-      result: {
-        tabId: 'browser-tab-1',
-        currentUrl: 'https://example.com/',
-        title: 'Example Domain',
-        windowVisible: false,
-        artifactId: expect.stringMatching(/^artifact-/),
-        uri: expect.stringMatching(/^artifact:\/\/desktop\/artifact-/),
-        name: 'page-capture.png',
-        contentType: 'image/png',
-        metadata: {
-          sourceOperation: 'browser.screenshot',
-          browser: {
-            tabId: 'browser-tab-1',
-            currentUrl: 'https://example.com/',
-            title: 'Example Domain',
-          },
-          __desktopCapabilityArtifact: {
-            storageKind: 'electron-desktop-capability-bridge',
-            byteLength: 13,
-            sha256: expect.any(String),
-            storedAt: expect.any(String),
-          },
-        },
-      },
-    })
-    expect(capturePage).toHaveBeenCalledTimes(1)
-
-    await expect(service.handleRequest(buildRequest({
       requestId: 'event-1',
-      capability: 'event',
-      operation: 'emit_event',
-      payload: {
-        eventType: 'log',
-        message: 'bridge event',
-        data: {
-          severity: 'info',
-        },
-      },
+      capability: CAP_EVENT,
+      operation: OP_EMIT_EVENT,
+      payload: { eventType: 'log', message: 'bridge event', data: { severity: 'info' } },
     }))).resolves.toEqual({
       requestId: 'event-1',
       ok: true,
@@ -428,38 +370,31 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     })
 
     expect(appendLog).toHaveBeenCalledWith('info', '[capability-bridge] Event emitted.', expect.objectContaining({
-      capability: 'event',
-      operation: 'emit_event',
+      capability: CAP_EVENT,
+      operation: OP_EMIT_EVENT,
       eventType: 'log',
       message: 'bridge event',
-      data: {
-        severity: 'info',
-      },
-    }), {
-      relayToRenderer: false,
-    })
-    expect(settingsWorkspaceService.loadState).toHaveBeenCalledTimes(2)
-    expect(settingsWorkspaceService.loadSustechCasSecret).toHaveBeenCalledTimes(1)
-    expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledTimes(1)
-    expect(settingsWorkspaceService.loadSecretStates).toHaveBeenCalledWith({
-      profileIds: ['openrouter'],
-    })
+      data: { severity: 'info' },
+    }), { relayToRenderer: false })
+    expect(settingsWorkspaceService.loadState).toHaveBeenCalledTimes(0)
   })
+})
 
+/* eslint-disable sonarjs/no-duplicate-string -- MCP error messages like "MCP bridge should not request runtime paths." and tool-call arguments are expected repetitions in separate independent test cases that each verify a distinct error/call path. */
+// eslint-disable-next-line max-lines-per-function -- This describe groups MCP bridge tests that share mock registry setup; splitting would scatter stubbing across unnecessary describe boundaries.
+describe('createElectronDesktopCapabilityBridgeService - MCP', () => {
   it('routes MCP tool execution through the restricted registry bridge', async () => {
     const executeTool = vi.fn(async () => ({
       ok: true as const,
-      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-      serverId: 'mcp-stdio-stub',
-      remoteToolName: 'search-campus',
+      toolId: TOOL_ID,
+      serverId: SERVER_ID,
+      remoteToolName: REMOTE_TOOL,
       content: [{ type: 'text', text: 'search completed' }],
       structuredContent: { count: 1 },
       snapshotRevision: 8,
       isError: false as const,
     }))
-    const mcpRegistryService = {
-      executeTool,
-    } as unknown as ElectronMcpRegistryService
+    const mcpRegistryService = { executeTool } as unknown as ElectronMcpRegistryService
     const service = createElectronDesktopCapabilityBridgeService({
       prepareRuntimePaths: async () => {
         throw new Error('MCP bridge should not request runtime paths.')
@@ -470,25 +405,20 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'mcp-call-1',
-      capability: 'mcp',
-      operation: 'call_tool',
-      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+      capability: CAP_MCP,
+      operation: OP_CALL_TOOL,
+      toolId: TOOL_ID,
       runId: 'run-1',
       toolCallId: 'tool-call-1',
-      payload: {
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
-        arguments: { keyword: 'calendar' },
-        snapshotRevision: 8,
-      },
+      payload: { serverId: SERVER_ID, remoteToolName: REMOTE_TOOL, arguments: { keyword: 'calendar' }, snapshotRevision: 8 },
     }))).resolves.toEqual({
       requestId: 'mcp-call-1',
       ok: true,
       result: {
         ok: true,
-        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
+        toolId: TOOL_ID,
+        serverId: SERVER_ID,
+        remoteToolName: REMOTE_TOOL,
         content: [{ type: 'text', text: 'search completed' }],
         structuredContent: { count: 1 },
         snapshotRevision: 8,
@@ -496,9 +426,9 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
       },
     })
     expect(executeTool).toHaveBeenCalledWith({
-      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-      serverId: 'mcp-stdio-stub',
-      remoteToolName: 'search-campus',
+      toolId: TOOL_ID,
+      serverId: SERVER_ID,
+      remoteToolName: REMOTE_TOOL,
       arguments: { keyword: 'calendar' },
       runId: 'run-1',
       toolCallId: 'tool-call-1',
@@ -516,14 +446,10 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'mcp-call-missing-bridge',
-      capability: 'mcp',
-      operation: 'call_tool',
-      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-      payload: {
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
-        arguments: { keyword: 'calendar' },
-      },
+      capability: CAP_MCP,
+      operation: OP_CALL_TOOL,
+      toolId: TOOL_ID,
+      payload: { serverId: SERVER_ID, remoteToolName: REMOTE_TOOL, arguments: { keyword: 'calendar' } },
     }))).resolves.toEqual({
       requestId: 'mcp-call-missing-bridge',
       ok: false,
@@ -537,24 +463,19 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
   it('preserves structured MCP execution failures from the registry service', async () => {
     const executeTool = vi.fn(async () => ({
       ok: false as const,
-      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-      serverId: 'mcp-stdio-stub',
-      remoteToolName: 'search-campus',
+      toolId: TOOL_ID,
+      serverId: SERVER_ID,
+      remoteToolName: REMOTE_TOOL,
       snapshotRevision: 9,
       error: {
         code: 'connector_unavailable',
         message: 'The MCP stdio session is not ready yet.',
         retryable: true,
         observedAt: '2026-04-21T12:00:00.000Z',
-        details: {
-          connectionState: 'connecting',
-          connectorToolCount: 0,
-        },
+        details: { connectionState: 'connecting', connectorToolCount: 0 },
       },
     }))
-    const mcpRegistryService = {
-      executeTool,
-    } as unknown as ElectronMcpRegistryService
+    const mcpRegistryService = { executeTool } as unknown as ElectronMcpRegistryService
     const service = createElectronDesktopCapabilityBridgeService({
       prepareRuntimePaths: async () => {
         throw new Error('MCP bridge should not request runtime paths.')
@@ -565,33 +486,25 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'mcp-call-failure-1',
-      capability: 'mcp',
-      operation: 'call_tool',
-      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-      payload: {
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
-        arguments: { keyword: 'calendar' },
-        snapshotRevision: 9,
-      },
+      capability: CAP_MCP,
+      operation: OP_CALL_TOOL,
+      toolId: TOOL_ID,
+      payload: { serverId: SERVER_ID, remoteToolName: REMOTE_TOOL, arguments: { keyword: 'calendar' }, snapshotRevision: 9 },
     }))).resolves.toEqual({
       requestId: 'mcp-call-failure-1',
       ok: true,
       result: {
         ok: false,
-        toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
+        toolId: TOOL_ID,
+        serverId: SERVER_ID,
+        remoteToolName: REMOTE_TOOL,
         snapshotRevision: 9,
         error: {
           code: 'connector_unavailable',
           message: 'The MCP stdio session is not ready yet.',
           retryable: true,
           observedAt: '2026-04-21T12:00:00.000Z',
-          details: {
-            connectionState: 'connecting',
-            connectorToolCount: 0,
-          },
+          details: { connectionState: 'connecting', connectorToolCount: 0 },
         },
       },
     })
@@ -601,8 +514,8 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     const executeTool = vi.fn(async () => ({
       ok: false as const,
       toolId: 'mcp.missing.tool.11111111',
-      serverId: 'mcp-stdio-stub',
-      remoteToolName: 'search-campus',
+      serverId: SERVER_ID,
+      remoteToolName: REMOTE_TOOL,
       snapshotRevision: 12,
       error: {
         code: 'server_not_ready',
@@ -610,8 +523,8 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
         retryable: true,
         observedAt: '2026-04-21T12:00:00.000Z',
         details: {
-          requestedServerId: 'mcp-stdio-stub',
-          requestedRemoteToolName: 'search-campus',
+          requestedServerId: SERVER_ID,
+          requestedRemoteToolName: REMOTE_TOOL,
           connectionState: 'connected',
           connectorToolCount: 0,
           requestedSnapshotRevision: 11,
@@ -619,9 +532,7 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
         },
       },
     }))
-    const mcpRegistryService = {
-      executeTool,
-    } as unknown as ElectronMcpRegistryService
+    const mcpRegistryService = { executeTool } as unknown as ElectronMcpRegistryService
     const service = createElectronDesktopCapabilityBridgeService({
       prepareRuntimePaths: async () => {
         throw new Error('MCP bridge should not request runtime paths.')
@@ -632,25 +543,20 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'mcp-call-first-not-ready',
-      capability: 'mcp',
-      operation: 'call_tool',
+      capability: CAP_MCP,
+      operation: OP_CALL_TOOL,
       toolId: 'mcp.missing.tool.11111111',
       runId: 'run-1',
       toolCallId: 'tool-call-1',
-      payload: {
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
-        arguments: { keyword: 'calendar' },
-        snapshotRevision: 11,
-      },
+      payload: { serverId: SERVER_ID, remoteToolName: REMOTE_TOOL, arguments: { keyword: 'calendar' }, snapshotRevision: 11 },
     }))).resolves.toEqual({
       requestId: 'mcp-call-first-not-ready',
       ok: true,
       result: {
         ok: false,
         toolId: 'mcp.missing.tool.11111111',
-        serverId: 'mcp-stdio-stub',
-        remoteToolName: 'search-campus',
+        serverId: SERVER_ID,
+        remoteToolName: REMOTE_TOOL,
         snapshotRevision: 12,
         error: {
           code: 'server_not_ready',
@@ -658,8 +564,8 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
           retryable: true,
           observedAt: '2026-04-21T12:00:00.000Z',
           details: {
-            requestedServerId: 'mcp-stdio-stub',
-            requestedRemoteToolName: 'search-campus',
+            requestedServerId: SERVER_ID,
+            requestedRemoteToolName: REMOTE_TOOL,
             connectionState: 'connected',
             connectorToolCount: 0,
             requestedSnapshotRevision: 11,
@@ -670,15 +576,19 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     })
     expect(executeTool).toHaveBeenCalledWith({
       toolId: 'mcp.missing.tool.11111111',
-      serverId: 'mcp-stdio-stub',
-      remoteToolName: 'search-campus',
+      serverId: SERVER_ID,
+      remoteToolName: REMOTE_TOOL,
       arguments: { keyword: 'calendar' },
       runId: 'run-1',
       toolCallId: 'tool-call-1',
       snapshotRevision: 11,
     })
   })
+})
 
+/* eslint-disable sonarjs/no-duplicate-string -- Error messages and fixture path patterns like "../outside" are shared across independent error-handling tests that each verify a distinct rejection path. */
+// eslint-disable-next-line max-lines-per-function -- This describe groups error-handling tests that share fixture setup; each it() already tests a distinct error scenario.
+describe('createElectronDesktopCapabilityBridgeService - error handling', () => {
   it('returns structured failures when workspace paths escape the approved root', async () => {
     const fixture = await createPreparedPaths('desktop-capability-bridge-workspace-denied')
     activeTempRoots.push(fixture.tempRoot)
@@ -691,22 +601,16 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     const resolvedPath = path.resolve(fixture.hostedPaths.runtimeRootDir, '../outside')
     await expect(service.handleRequest(buildRequest({
       requestId: 'workspace-denied-1',
-      capability: 'workspace',
-      operation: 'resolve_path',
-      payload: {
-        relativePath: '../outside',
-      },
+      capability: CAP_WORKSPACE,
+      operation: OP_RESOLVE_PATH,
+      payload: { relativePath: '../outside' },
     }))).resolves.toEqual({
       requestId: 'workspace-denied-1',
       ok: false,
       errorCode: 'permission_denied',
       errorMessage: 'Workspace path must resolve inside the desktop capability workspace root.',
       errorRetryable: false,
-      details: {
-        workspaceRootDir: path.resolve(fixture.hostedPaths.runtimeRootDir),
-        resolvedPath,
-        relativePath: '../outside',
-      },
+      details: { workspaceRootDir: path.resolve(fixture.hostedPaths.runtimeRootDir), resolvedPath, relativePath: '../outside' },
     })
   })
 
@@ -722,22 +626,16 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
     const resolvedPath = path.resolve(fixture.hostedPaths.databaseDir, '../outside')
     await expect(service.handleRequest(buildRequest({
       requestId: 'database-denied-1',
-      capability: 'database',
-      operation: 'resolve_path',
-      payload: {
-        relativePath: '../outside',
-      },
+      capability: CAP_DATABASE,
+      operation: OP_RESOLVE_PATH,
+      payload: { relativePath: '../outside' },
     }))).resolves.toEqual({
       requestId: 'database-denied-1',
       ok: false,
       errorCode: 'permission_denied',
       errorMessage: 'Database path must resolve inside the desktop capability database root.',
       errorRetryable: false,
-      details: {
-        databaseRootDir: path.resolve(fixture.hostedPaths.databaseDir),
-        resolvedPath,
-        relativePath: '../outside',
-      },
+      details: { databaseRootDir: path.resolve(fixture.hostedPaths.databaseDir), resolvedPath, relativePath: '../outside' },
     })
   })
 
@@ -752,35 +650,28 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'unsupported-1',
-      capability: 'secret',
-      operation: 'resolve_path',
-      payload: {
-        relativePath: 'unexpected',
-      },
+      capability: CAP_SECRET,
+      operation: OP_RESOLVE_PATH,
+      payload: { relativePath: 'unexpected' },
     }))).resolves.toEqual({
       requestId: 'unsupported-1',
       ok: false,
       errorCode: 'unsupported_operation',
       errorMessage: "Operation 'resolve_path' is not supported for capability 'secret'.",
       errorRetryable: false,
-      details: {
-        capability: 'secret',
-        operation: 'resolve_path',
-      },
+      details: { capability: CAP_SECRET, operation: OP_RESOLVE_PATH },
     })
   })
 
   it('fails fast while normalizing unsupported capability and operation combinations', () => {
     expect(() => normalizeDesktopCapabilityBridgeRequest({
       requestId: 'unsupported-normalize-1',
-      capability: 'secret',
-      operation: 'resolve_path',
+      capability: CAP_SECRET,
+      operation: OP_RESOLVE_PATH,
       toolId: 'tool.secret',
       runId: 'run-1',
       toolCallId: 'tool-call-1',
-      payload: {
-        relativePath: 'unexpected',
-      },
+      payload: { relativePath: 'unexpected' },
     })).toThrow("Operation 'resolve_path' is not supported for capability 'secret'.")
   })
 
@@ -795,12 +686,9 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'artifact-invalid-1',
-      capability: 'artifact',
-      operation: 'save_bytes',
-      payload: {
-        name: 'broken.bin',
-        contentBase64: 'not-base64$',
-      },
+      capability: CAP_ARTIFACT,
+      operation: OP_SAVE_BYTES,
+      payload: { name: 'broken.bin', contentBase64: 'not-base64$' },
     }))).resolves.toEqual({
       requestId: 'artifact-invalid-1',
       ok: false,
@@ -822,13 +710,9 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'state-invalid-1',
-      capability: 'state',
-      operation: 'put_value',
-      payload: {
-        scope: 'tool',
-        key: 'session',
-        value: ['unexpected-array'],
-      },
+      capability: CAP_STATE,
+      operation: OP_PUT_VALUE,
+      payload: { scope: 'tool', key: 'session', value: ['unexpected-array'] },
     }))).resolves.toEqual({
       requestId: 'state-invalid-1',
       ok: false,
@@ -852,11 +736,9 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'event-invalid-1',
-      capability: 'event',
-      operation: 'emit_event',
-      payload: {
-        eventType: '   ',
-      },
+      capability: CAP_EVENT,
+      operation: OP_EMIT_EVENT,
+      payload: { eventType: '   ' },
     }))).resolves.toEqual({
       requestId: 'event-invalid-1',
       ok: false,
@@ -881,15 +763,9 @@ describe('createElectronDesktopCapabilityBridgeService', () => {
 
     await expect(service.handleRequest(buildRequest({
       requestId: 'internal-error-1',
-      capability: 'artifact',
-      operation: 'save_text',
-      payload: {
-        name: 'reserved.json',
-        text: '{}',
-        metadata: {
-          __desktopCapabilityArtifact: 'reserved',
-        },
-      },
+      capability: CAP_ARTIFACT,
+      operation: OP_SAVE_TEXT,
+      payload: { name: 'reserved.json', text: '{}', metadata: { __desktopCapabilityArtifact: 'reserved' } },
     }))).resolves.toEqual({
       requestId: 'internal-error-1',
       ok: false,

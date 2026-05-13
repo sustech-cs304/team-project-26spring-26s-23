@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 
+/* eslint-disable sonarjs/no-duplicate-string */
+
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -15,8 +17,10 @@ import type {
   LoadLastRootDirectoryResult,
 } from '../../../electron/file-manager/ipc'
 
-import { FilesWorkspace, syncWatchedDirectories } from './FilesWorkspace'
-import { ContextMenu, buildContextMenuItems } from './ContextMenu'
+import { FilesWorkspace } from './FilesWorkspace'
+import { syncWatchedDirectories } from './watcher-helpers'
+import { ContextMenu } from './ContextMenu'
+import { buildContextMenuItems } from './context-menu-items'
 import {
   setPostChangeHookListener,
 } from './file-workspace-events'
@@ -185,6 +189,7 @@ function findContextMenuItem(label: string): HTMLButtonElement {
   return item as HTMLButtonElement
 }
 
+// eslint-disable-next-line max-lines-per-function
 describe('FilesWorkspace', () => {
   let mockApi: FileManagerApi
 
@@ -278,6 +283,7 @@ describe('FilesWorkspace', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function
   describe('selecting root directory', () => {
     it('calls window.fileManager.selectRootDirectory and probeDirectory', async () => {
       const rootEntries = [
@@ -509,6 +515,7 @@ describe('FilesWorkspace', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function
   describe('watcher – directory watch lifecycle', () => {
     it('registers watcher on rootPath + expandedPaths change', async () => {
       const { container } = renderFilesWorkspace()
@@ -745,6 +752,7 @@ describe('FilesWorkspace', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function
   describe('tree expansion – click to expand/collapse (revised)', () => {
     async function setupRootWithFolder(): Promise<{ container: HTMLElement }> {
       const { container } = renderFilesWorkspace()
@@ -850,7 +858,7 @@ describe('FilesWorkspace', () => {
 
       const parentRow = findRowByName(container, 'parent')
       await act(async () => {
-        ;(parentRow.querySelector('.file-tree__expand:not(.file-tree__expand--spacer)') as HTMLButtonElement).click()
+        (parentRow.querySelector('.file-tree__expand:not(.file-tree__expand--spacer)') as HTMLButtonElement).click()
       })
       await act(async () => {
         await vi.waitFor(() => {
@@ -860,7 +868,7 @@ describe('FilesWorkspace', () => {
 
       const childRow = findRowByName(container, 'childdir')
       await act(async () => {
-        ;(childRow.querySelector('.file-tree__expand:not(.file-tree__expand--spacer)') as HTMLButtonElement).click()
+        (childRow.querySelector('.file-tree__expand:not(.file-tree__expand--spacer)') as HTMLButtonElement).click()
       })
       await act(async () => {
         await vi.waitFor(() => {
@@ -949,7 +957,7 @@ describe('FilesWorkspace', () => {
       expect(rows.length).toBe(3)
 
       await act(async () => {
-        ;(rows[0] as HTMLDivElement).click()
+        (rows[0] as HTMLDivElement).click()
       })
 
       expect(rows[0].classList.contains('file-tree__row--selected')).toBe(true)
@@ -1009,6 +1017,7 @@ describe('FilesWorkspace', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function
   describe('context menu (revised)', () => {
     it('shows folder context menu on right-click with expand/collapse, copy, cut, paste, new folder, rename, delete', async () => {
       const { container } = renderFilesWorkspace()
@@ -1227,7 +1236,7 @@ describe('FilesWorkspace', () => {
 
       // 先选中 file1.txt
       await act(async () => {
-        ;(rows[1] as HTMLDivElement).click()
+        (rows[1] as HTMLDivElement).click()
       })
       expect(rows[1].classList.contains('file-tree__row--selected')).toBe(true)
 
@@ -1273,6 +1282,7 @@ describe('FilesWorkspace', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function
   describe('paste and create-directory target resolution', () => {
     it('pastes from blank-area context menu into the root directory after clearing selection', async () => {
       const { container } = renderFilesWorkspace()
@@ -1385,7 +1395,7 @@ describe('FilesWorkspace', () => {
 
       const laterRow = findRowByName(container, 'later')
       await act(async () => {
-        ;(laterRow.querySelector('.file-tree__expand:not(.file-tree__expand--spacer)') as HTMLButtonElement).click()
+        (laterRow.querySelector('.file-tree__expand:not(.file-tree__expand--spacer)') as HTMLButtonElement).click()
       })
       await act(async () => {
         await vi.waitFor(() => {
@@ -1553,6 +1563,7 @@ describe('FilesWorkspace', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function
   describe('system actions – API calls via context menu', () => {
     it('calls openEntryWithSystem when clicking "通过系统方式打开" on a file', async () => {
       const { container } = renderFilesWorkspace()
@@ -1770,11 +1781,12 @@ describe('FilesWorkspace', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function
   describe('drag-and-drop move (revised)', () => {
     // jsdom 缺少 DragEvent，在此 polyfill
     beforeAll(() => {
       if (typeof DragEvent === 'undefined') {
-        ;(window as unknown as Record<string, unknown>).DragEvent = class DragEvent extends MouseEvent {
+        (window as unknown as Record<string, unknown>).DragEvent = class DragEvent extends MouseEvent {
           dataTransfer: DataTransfer | null = null
           constructor(type: string, eventInitDict?: DragEventInit) {
             super(type, eventInitDict)
@@ -2001,7 +2013,7 @@ describe('FilesWorkspace', () => {
       const fileRow = rows.find((r) => r.querySelector('.file-tree__name')?.textContent?.trim() === 'file1.txt')
       expect(fileRow).toBeTruthy()
       await act(async () => {
-        ;(fileRow as HTMLDivElement).click()
+        (fileRow as HTMLDivElement).click()
       })
     }
 
@@ -2126,6 +2138,7 @@ describe('FilesWorkspace', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function
   describe('keyboard navigation', () => {
     async function setupTreeWithMixedEntries(
       container: HTMLElement,
@@ -2693,6 +2706,7 @@ describe('FilesWorkspace', () => {
     })
   })
 
+  // eslint-disable-next-line max-lines-per-function
   describe('post-hook – user operations', () => {
     beforeEach(() => {
       setPostChangeHookListener(null)
@@ -2976,7 +2990,7 @@ describe('FilesWorkspace', () => {
 
       // Polyfill DragEvent if needed
       if (typeof DragEvent === 'undefined') {
-        ;(window as unknown as Record<string, unknown>).DragEvent = class DragEvent extends MouseEvent {
+        (window as unknown as Record<string, unknown>).DragEvent = class DragEvent extends MouseEvent {
           dataTransfer: DataTransfer | null = null
           constructor(type: string, eventInitDict?: DragEventInit) {
             super(type, eventInitDict)

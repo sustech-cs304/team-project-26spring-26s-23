@@ -62,6 +62,15 @@ import type {
 } from '../skill-registry/ipc'
 import type { ToolCatalogLoadRequest, ToolCatalogLoadResult } from '../tool-catalog/ipc'
 import type {
+  CleanupTemporaryAttachmentFilesRequest,
+  CleanupTemporaryAttachmentFilesResult,
+  ReadAttachmentPreviewRequest,
+  ReadAttachmentPreviewResult,
+  ReadClipboardAttachmentDataResult,
+  WriteAttachmentTempFileRequest,
+  WriteAttachmentTempFileResult,
+} from '../attachment-service/ipc'
+import type {
   CopyEntriesRequest,
   CopyTextToClipboardRequest,
   CreateDirectoryRequest,
@@ -138,6 +147,12 @@ export interface RendererIpcHandlers {
   loadToolCatalog: (request?: ToolCatalogLoadRequest) => Promise<ToolCatalogLoadResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
+  readClipboardAttachmentData: () => Promise<ReadClipboardAttachmentDataResult>
+  writeAttachmentTempFile: (request: WriteAttachmentTempFileRequest) => Promise<WriteAttachmentTempFileResult>
+  readAttachmentPreview: (request: ReadAttachmentPreviewRequest) => Promise<ReadAttachmentPreviewResult>
+  cleanupAttachmentTempFiles: (
+    request: CleanupTemporaryAttachmentFilesRequest,
+  ) => Promise<CleanupTemporaryAttachmentFilesResult>
   notifyDesktopNotification: (request: DesktopNotificationRequest) => Promise<void>
   loadDesktopWindowState: () => Promise<DesktopWindowState>
   minimizeDesktopWindow: () => Promise<void>

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, TypedDict, cast
 
+import httpx
 import pytest
 from pydantic_ai._run_context import RunContext
 from pydantic_ai.messages import (
@@ -36,12 +38,16 @@ from app.copilot_runtime.agent import (
 )
 from app.copilot_runtime.skill_snapshot_provider import create_skill_snapshot_provider
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
+from app.copilot_runtime.model_routes import (
+    ResolvedRuntimeModelRoute,
+    RuntimeModelRoute,
+    RuntimeModelRouteRef,
+)
 from app.copilot_runtime.tool_approval_coordinator import (
     RuntimeToolApprovalCoordinator,
     ToolApprovalNotFoundError,
 )
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
-from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.mcp_snapshot_provider import McpCapabilitySnapshot
 from app.copilot_runtime.mcp_tool_executor import build_mcp_executable_tools
 from app.copilot_runtime.mcp_snapshot_provider import McpSnapshotProvider
@@ -52,6 +58,7 @@ from app.copilot_runtime.tool_registry import (
     WEATHER_CURRENT_TOOL_ID,
     build_default_tool_registry,
 )
+from app.desktop_runtime.host_model_route_bridge import HostModelRouteBridgeClient
 from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
 from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
 
@@ -1818,6 +1825,270 @@ def test_executor_inherits_default_workspace_root_from_tool_registry(tmp_path: P
 
 
 
+def test_build_bound_tool_execution_context_preserves_model_route_capability_hints() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    resolved_model_route = ResolvedRuntimeModelRoute(
+        provider_profile_id="provider-1",
+        provider="openai",
+        provider_id="openai",
+        adapter_id="openai",
+        runtime_status="enabled",
+        catalog_revision="2026-04-06-provider-catalog-v1",
+        endpoint_family="openai",
+        endpoint_type="openai-compatible",
+        base_url="https://api.example.com/v1",
+        model_id="gpt-4.1",
+        auth_kind="api-key",
+        api_key="resolved-secret",
+        capability_hints={"vision": True, "tools": True},
+    )
+    deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=lambda _event: None,
+        tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+        resolved_model_route=resolved_model_route,
+        run_id="run-vision-context",
+    )
+
+    execution_context = executor._build_bound_tool_execution_context(
+        _build_tool_run_context(tool_call_id="tool.fs.read:call-1", deps=deps),
+        tool_id="tool.fs.read",
+        tool_call_id="tool.fs.read:call-1",
+        display_name="Read File",
+        enabled_tool_ids=("tool.fs.read",),
+    )
+
+    assert execution_context.metadata["resolvedModelRoute"] == {
+        "routeRef": {
+            "routeKind": "provider-model",
+            "profileId": "provider-1",
+            "modelId": "gpt-4.1",
+        },
+        "providerProfileId": "provider-1",
+        "provider": "openai",
+        "providerId": "openai",
+        "adapterId": "openai",
+        "runtimeStatus": "enabled",
+        "catalogRevision": "2026-04-06-provider-catalog-v1",
+        "endpointFamily": "openai",
+        "endpointType": "openai-compatible",
+        "baseUrl": "https://api.example.com/v1",
+        "modelId": "gpt-4.1",
+        "authKind": "api-key",
+        "capabilityHints": {"vision": True, "tools": True},
+    }
+
+
+
+def test_execute_bound_tool_read_image_requires_vision_context(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    (workspace_root / "pixel.png").write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jk2QAAAAASUVORK5CYII="
+        )
+    )
+    registry = build_default_tool_registry(workspace_root=workspace_root)
+    executor = PydanticAIAgentExecutor(
+        model="test-model",
+        tool_registry=registry,
+        workspace_root=workspace_root,
+        default_root=workspace_root,
+    )
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    deps_without_vision = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=emitted_tool_events.append,
+        tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+        run_id="run-read-no-vision",
+    )
+
+    no_vision_result = asyncio.run(
+        executor._execute_bound_tool(
+            _build_tool_run_context(
+                tool_call_id="tool.fs.read:call-1",
+                deps=deps_without_vision,
+            ),
+            tool_id="tool.fs.read",
+            arguments={"path": "pixel.png"},
+        )
+    )
+
+    resolved_model_route = ResolvedRuntimeModelRoute(
+        provider_profile_id="provider-1",
+        provider="openai",
+        provider_id="openai",
+        adapter_id="openai",
+        runtime_status="enabled",
+        catalog_revision="2026-04-06-provider-catalog-v1",
+        endpoint_family="openai",
+        endpoint_type="openai-compatible",
+        base_url="https://api.example.com/v1",
+        model_id="gpt-4.1",
+        auth_kind="api-key",
+        api_key="resolved-secret",
+        capability_hints={"vision": True},
+    )
+    deps_with_vision = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=emitted_tool_events.append,
+        tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+        resolved_model_route=resolved_model_route,
+        run_id="run-read-with-vision",
+    )
+
+    vision_result = asyncio.run(
+        executor._execute_bound_tool(
+            _build_tool_run_context(
+                tool_call_id="tool.fs.read:call-2",
+                deps=deps_with_vision,
+            ),
+            tool_id="tool.fs.read",
+            arguments={"path": "pixel.png"},
+        )
+    )
+
+    assert no_vision_result["status"] == "error"
+    assert no_vision_result["error"]["code"] == "execution_failed"
+    assert no_vision_result["output"]["error"]["code"] == "vision_required"
+    assert no_vision_result["output"]["error"]["details"]["visionEnabled"] is False
+    assert vision_result["status"] == "success"
+    assert vision_result["output"]["data"]["kind"] == "image"
+
+
+
+@pytest.mark.parametrize(
+    ("resolved_route_capability_hints", "expected_status", "expected_vision_enabled"),
+    [
+        (None, "error", False),
+        ({"vision": True, "tools": True}, "success", True),
+    ],
+)
+def test_execute_bound_tool_read_image_traces_vision_from_host_bridge_payload(
+    tmp_path: Path,
+    resolved_route_capability_hints: dict[str, bool] | None,
+    expected_status: str,
+    expected_vision_enabled: bool,
+) -> None:
+    provider_profile_id = "provider-openrouter"
+    provider_id = "openrouter"
+    model_id = "qwen-vl-max"
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    (workspace_root / "pixel.png").write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jk2QAAAAASUVORK5CYII="
+        )
+    )
+    registry = build_default_tool_registry(workspace_root=workspace_root)
+    executor = PydanticAIAgentExecutor(
+        model="test-model",
+        tool_registry=registry,
+        workspace_root=workspace_root,
+        default_root=workspace_root,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        resolved_route: dict[str, Any] = {
+            "routeRef": {
+                "routeKind": "provider-model",
+                "profileId": provider_profile_id,
+                "modelId": model_id,
+            },
+            "providerProfileId": provider_profile_id,
+            "provider": provider_id,
+            "providerId": provider_id,
+            "adapterId": provider_id,
+            "runtimeStatus": "enabled",
+            "catalogRevision": "2026-04-06-provider-catalog-v1",
+            "endpointFamily": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://api.example.com/v1",
+            "modelId": model_id,
+            "authKind": "api-key",
+        }
+        if resolved_route_capability_hints is not None:
+            resolved_route["capabilityHints"] = dict(resolved_route_capability_hints)
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "resolvedRoute": resolved_route,
+                "privateAuth": {
+                    "authKind": "api-key",
+                    "authPayload": {"apiKey": "resolved-secret"},
+                    "apiKey": "resolved-secret",
+                },
+            },
+            request=request,
+        )
+
+    resolved_model_route = asyncio.run(
+        HostModelRouteBridgeClient(
+            bridge_url="http://127.0.0.1:45678/host/private/provider-routes/resolve",
+            bridge_token="bridge-token-123",
+            transport=httpx.MockTransport(handler),
+        ).resolve(
+            RuntimeModelRoute(
+                provider_profile_id=provider_profile_id,
+                route_ref=RuntimeModelRouteRef(
+                    route_kind="provider-model",
+                    profile_id=provider_profile_id,
+                    model_id=model_id,
+                ),
+                catalog_revision="2026-04-06-provider-catalog-v1",
+            )
+        )
+    )
+
+    assert resolved_model_route.capability_hints == (
+        {} if resolved_route_capability_hints is None else resolved_route_capability_hints
+    )
+
+    deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=lambda _event: None,
+        tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+        resolved_model_route=resolved_model_route,
+        run_id="run-host-bridge-vision",
+    )
+    execution_context = executor._build_bound_tool_execution_context(
+        _build_tool_run_context(tool_call_id="tool.fs.read:call-bridge", deps=deps),
+        tool_id="tool.fs.read",
+        tool_call_id="tool.fs.read:call-bridge",
+        display_name="Read File",
+        enabled_tool_ids=("tool.fs.read",),
+    )
+    execution_route = execution_context.metadata["resolvedModelRoute"]
+
+    assert ("capabilityHints" in execution_route) is (
+        resolved_route_capability_hints is not None
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            _build_tool_run_context(
+                tool_call_id="tool.fs.read:call-bridge",
+                deps=deps,
+            ),
+            tool_id="tool.fs.read",
+            arguments={"path": "pixel.png"},
+        )
+    )
+
+    assert result["status"] == expected_status
+    if expected_status == "success":
+        assert execution_route["capabilityHints"] == resolved_route_capability_hints
+        assert result["output"]["data"]["kind"] == "image"
+    else:
+        assert execution_route.get("capabilityHints") is None
+        assert result["error"]["code"] == "execution_failed"
+        assert result["output"]["error"]["code"] == "vision_required"
+        assert result["output"]["error"]["details"]["visionEnabled"] is expected_vision_enabled
+
+
+
 def test_execute_bound_tool_persists_switched_default_root_within_same_run(tmp_path: Path) -> None:
     workspace_root = tmp_path / "workspace"
     switched_root = tmp_path / "switched-root"
@@ -2122,4 +2393,5 @@ def _build_resolved_route(*, model_id: str = "gpt-4.1") -> ResolvedRuntimeModelR
         base_url="https://example.com/v1",
         model_id=model_id,
         api_key="test-api-key",
+        capability_hints={"vision": True},
     )

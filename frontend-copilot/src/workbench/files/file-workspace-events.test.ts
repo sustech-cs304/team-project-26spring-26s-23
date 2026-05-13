@@ -1,5 +1,7 @@
 /** @vitest-environment node */
 
+/* eslint-disable sonarjs/no-duplicate-string */
+
 import { describe, expect, it } from 'vitest'
 import type { FileTreeEntry } from '../../../electron/file-manager/ipc'
 import {
@@ -234,6 +236,7 @@ describe('buildObservedChange', () => {
 
 // ── inferSemanticChanges ───────────────────────────────────────────────
 
+// eslint-disable-next-line max-lines-per-function
 describe('inferSemanticChanges', () => {
   it('returns created for single added', () => {
     const oc = makeObservedChange({

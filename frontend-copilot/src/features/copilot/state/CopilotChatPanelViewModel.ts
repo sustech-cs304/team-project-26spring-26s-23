@@ -31,24 +31,12 @@ export function resolveComposerDraftModelSelection(
   thinkingCapability: RuntimeThinkingCapability | null,
 ): CopilotChatComposerDraft {
   if (draft.selectedModelId.trim() === '') {
-    return draft.selectedModelRoute === null && draft.thinkingSelection === null
-      ? draft
-      : {
-          ...draft,
-          selectedModelRoute: null,
-          thinkingSelection: null,
-        }
+    return clearUnmatchedModelSelection(draft)
   }
 
   const matchedModel = getCopilotModelById(draft.selectedModelId, models)
   if (matchedModel === null) {
-    return draft.selectedModelRoute === null && draft.thinkingSelection === null
-      ? draft
-      : {
-          ...draft,
-          selectedModelRoute: null,
-          thinkingSelection: null,
-        }
+    return clearUnmatchedModelSelection(draft)
   }
 
   if (!matchedModel.available) {
@@ -68,20 +56,26 @@ export function resolveComposerDraftModelSelection(
     draft.selectedModelId === matchedModel.selectionValue
     && isSameModelRoute(draft.selectedModelRoute, matchedModel.route)
   ) {
-    if (thinkingCapability === null) {
-      return draft
-    }
-
-    return syncComposerDraftThinkingSelection(draft, {
-      modelRoute: matchedModel.route,
-      thinkingCapability,
-    })
+    return thinkingCapability === null
+      ? draft
+      : syncComposerDraftThinkingSelection(draft, {
+          modelRoute: matchedModel.route,
+          thinkingCapability,
+        })
   }
 
   return applyModelSelectionToComposerDraft(draft, {
     modelId: matchedModel.selectionValue,
     modelRoute: matchedModel.route,
   })
+}
+
+function clearUnmatchedModelSelection(
+  draft: CopilotChatComposerDraft,
+): CopilotChatComposerDraft {
+  return draft.selectedModelRoute === null && draft.thinkingSelection === null
+    ? draft
+    : { ...draft, selectedModelRoute: null, thinkingSelection: null }
 }
 
 export function resolveSelectedComposerModelRoute(

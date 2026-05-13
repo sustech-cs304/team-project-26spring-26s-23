@@ -59,7 +59,7 @@ async function getStateValue(
 ): Promise<Record<string, unknown>> {
   const { scope, key } = normalizeStateAddress(request)
   const document = await readStateDocument(options)
-  const bucket = getStateBucket(document, request.toolId, request.runId, scope, false)
+  const bucket = getStateBucket(document, { toolId: request.toolId, runId: request.runId, scope }, false)
   const value = bucket?.[key]
   const result = value === undefined
     ? {
@@ -94,7 +94,7 @@ async function putStateValue(
   const { scope, key } = normalizeStateAddress(request)
   const value = normalizeStateValue(request.payload.value)
   const document = await readStateDocument(options)
-  const bucket = getStateBucket(document, request.toolId, request.runId, scope, true)
+  const bucket = getStateBucket(document, { toolId: request.toolId, runId: request.runId, scope }, true)
 
   if (bucket === null) {
     throw new DesktopCapabilityBridgeError(
@@ -132,7 +132,7 @@ async function deleteStateValue(
 ): Promise<void> {
   const { scope, key } = normalizeStateAddress(request)
   const document = await readStateDocument(options)
-  const bucket = getStateBucket(document, request.toolId, request.runId, scope, false)
+  const bucket = getStateBucket(document, { toolId: request.toolId, runId: request.runId, scope }, false)
   const deleted = bucket !== null && key in bucket
 
   if (deleted) {
@@ -194,25 +194,46 @@ function normalizeStateValue(value: unknown): Record<string, unknown> {
   return cloneRecord(value as Record<string, unknown>)
 }
 
+interface StateBucketContext {
+  toolId: string
+  runId: string
+  scope: DesktopCapabilityStateScope
+}
+
 function getStateBucket(
+  document: PersistedStateDocument,
+  context: StateBucketContext,
+  createWhenMissing: boolean,
+): Record<string, Record<string, unknown>> | null {
+  if (context.scope === 'tool') {
+    return resolveToolBucket(document, context.toolId, createWhenMissing)
+  }
+
+  return resolveRunBucket(document, context.toolId, context.runId, createWhenMissing)
+}
+
+function resolveToolBucket(
+  document: PersistedStateDocument,
+  toolId: string,
+  createWhenMissing: boolean,
+): Record<string, Record<string, unknown>> | null {
+  const toolBucket = document.values.tool[toolId]
+  if (toolBucket !== undefined) {
+    return toolBucket
+  }
+  if (!createWhenMissing) {
+    return null
+  }
+  document.values.tool[toolId] = {}
+  return document.values.tool[toolId]!
+}
+
+function resolveRunBucket(
   document: PersistedStateDocument,
   toolId: string,
   runId: string,
-  scope: DesktopCapabilityStateScope,
   createWhenMissing: boolean,
 ): Record<string, Record<string, unknown>> | null {
-  if (scope === 'tool') {
-    const toolBucket = document.values.tool[toolId]
-    if (toolBucket !== undefined) {
-      return toolBucket
-    }
-    if (!createWhenMissing) {
-      return null
-    }
-    document.values.tool[toolId] = {}
-    return document.values.tool[toolId]!
-  }
-
   const toolRunBuckets = document.values.run[toolId]
   if (toolRunBuckets !== undefined && toolRunBuckets[runId] !== undefined) {
     return toolRunBuckets[runId]!

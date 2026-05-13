@@ -70,39 +70,7 @@ export function useSkillRegistry(client?: SkillRegistryClient): UseSkillRegistry
   const resolvedClient = useMemo(() => client ?? createWindowSkillRegistryClient(), [client])
   const [registryState, setRegistryState] = useState<SkillRegistryState>(INITIAL_STATE)
 
-  useEffect(() => {
-    let cancelled = false
-
-    setRegistryState((previous) => ({ ...previous, loadStatus: 'loading', loadError: null }))
-
-    void resolvedClient.loadRegistry({ includeDisabled: true }).then((result) => {
-      if (cancelled) {
-        return
-      }
-
-      setRegistryState((previous) => result.ok
-        ? {
-            ...previous,
-            loadStatus: 'ready',
-            loadError: null,
-            registryRevision: result.registryRevision,
-            snapshotRevision: result.snapshotRevision,
-            skills: result.skills.map(cloneSkillRecord),
-          }
-        : { ...previous, loadStatus: 'error', loadError: result.error })
-    })
-
-    const unsubscribe = resolvedClient.subscribe((event) => {
-      if (!cancelled) {
-        setRegistryState((previous) => applyRegistrySubscriptionEvent(previous, event))
-      }
-    })
-
-    return () => {
-      cancelled = true
-      unsubscribe()
-    }
-  }, [resolvedClient])
+  useSkillRegistryLoad(resolvedClient, setRegistryState)
 
   const setBusyOperation = useCallback((skillId: string, operation: SkillBusyOperation | null) => {
     setRegistryState((previous) => ({
@@ -136,7 +104,104 @@ export function useSkillRegistry(client?: SkillRegistryClient): UseSkillRegistry
     }))
   }, [])
 
-  const selectAndImportSkill = useCallback(async (): Promise<SkillImportFromPathResult> => {
+  const selectAndImportSkill = useSkillRegistryImport(
+    resolvedClient,
+    setRegistryState,
+    setGlobalOperation,
+  )
+
+  const {
+    toggleSkillEnabled,
+    deleteSkill,
+    refreshSkill,
+    refreshSkills,
+  } = useSkillRegistryOperations({
+    resolvedClient,
+    registryState,
+    setRegistryState,
+    setBusyOperation,
+    setOperationMessage,
+    setGlobalOperation,
+  })
+
+  const skills = useMemo(
+    () => buildSkillRegistrySkillViewModels(
+      registryState.skills,
+      registryState.operationMessages,
+      registryState.busyOperations,
+    ),
+    [registryState.busyOperations, registryState.operationMessages, registryState.skills],
+  )
+
+  return {
+    loadStatus: registryState.loadStatus,
+    registryRevision: registryState.registryRevision,
+    snapshotRevision: registryState.snapshotRevision,
+    rawSkills: registryState.skills,
+    skills,
+    statusMessage: resolveStatusMessage(registryState),
+    globalBusyOperation: registryState.globalBusyOperation,
+    globalMessage: registryState.globalMessage,
+    globalMessageTone: registryState.globalMessageTone,
+    importValidationErrors: registryState.importValidationErrors,
+    selectAndImportSkill,
+    toggleSkillEnabled,
+    deleteSkill,
+    refreshSkill,
+    refreshSkills,
+  }
+}
+
+function useSkillRegistryLoad(
+  resolvedClient: SkillRegistryClient,
+  setRegistryState: React.Dispatch<React.SetStateAction<SkillRegistryState>>,
+) {
+  useEffect(() => {
+    let cancelled = false
+
+    setRegistryState((previous) => ({ ...previous, loadStatus: 'loading', loadError: null }))
+
+    void resolvedClient.loadRegistry({ includeDisabled: true }).then((result) => {
+      if (cancelled) {
+        return
+      }
+
+      setRegistryState((previous) => result.ok
+        ? {
+            ...previous,
+            loadStatus: 'ready',
+            loadError: null,
+            registryRevision: result.registryRevision,
+            snapshotRevision: result.snapshotRevision,
+            skills: result.skills.map(cloneSkillRecord),
+          }
+        : { ...previous, loadStatus: 'error', loadError: result.error })
+    })
+
+    const unsubscribe = resolvedClient.subscribe((event) => {
+      if (!cancelled) {
+        setRegistryState((previous) => applyRegistrySubscriptionEvent(previous, event))
+      }
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [resolvedClient, setRegistryState])
+}
+
+function useSkillRegistryImport(
+  resolvedClient: SkillRegistryClient,
+  setRegistryState: React.Dispatch<React.SetStateAction<SkillRegistryState>>,
+  setGlobalOperation: (
+    operation: SkillBusyOperation | null,
+    message: string | null,
+    tone?: SkillRegistryState['globalMessageTone'],
+    validationErrors?: SkillValidationIssue[],
+  ) => void,
+) {
+  return useCallback(async (): Promise<SkillImportFromPathResult> => {
     setGlobalOperation('importing', null, 'info')
     try {
       const result = await resolvedClient.selectAndImportSkill()
@@ -172,7 +237,32 @@ export function useSkillRegistry(client?: SkillRegistryClient): UseSkillRegistry
         ? { ...previous, globalBusyOperation: null }
         : previous)
     }
-  }, [resolvedClient, setGlobalOperation])
+  }, [resolvedClient, setRegistryState, setGlobalOperation])
+}
+
+interface SkillRegistryOpInput {
+  resolvedClient: SkillRegistryClient
+  registryState: SkillRegistryState
+  setRegistryState: React.Dispatch<React.SetStateAction<SkillRegistryState>>
+  setBusyOperation: (skillId: string, operation: SkillBusyOperation | null) => void
+  setOperationMessage: (skillId: string, message: string | null) => void
+  setGlobalOperation: (
+    operation: SkillBusyOperation | null,
+    message: string | null,
+    tone?: SkillRegistryState['globalMessageTone'],
+    validationErrors?: SkillValidationIssue[],
+  ) => void
+}
+
+function useSkillRegistryOperations(input: SkillRegistryOpInput) {
+  const {
+    resolvedClient,
+    registryState,
+    setRegistryState,
+    setBusyOperation,
+    setOperationMessage,
+    setGlobalOperation,
+  } = input
 
   const toggleSkillEnabled = useCallback(async (skillId: string) => {
     const skill = registryState.skills.find((entry) => entry.skillId === skillId)
@@ -199,7 +289,7 @@ export function useSkillRegistry(client?: SkillRegistryClient): UseSkillRegistry
     } finally {
       setBusyOperation(skillId, null)
     }
-  }, [registryState.skills, resolvedClient, setBusyOperation, setOperationMessage])
+  }, [registryState.skills, resolvedClient, setBusyOperation, setOperationMessage, setRegistryState])
 
   const deleteSkill = useCallback(async (skillId: string) => {
     setBusyOperation(skillId, 'deleting')
@@ -220,7 +310,7 @@ export function useSkillRegistry(client?: SkillRegistryClient): UseSkillRegistry
     } finally {
       setBusyOperation(skillId, null)
     }
-  }, [resolvedClient, setBusyOperation, setOperationMessage])
+  }, [resolvedClient, setBusyOperation, setOperationMessage, setRegistryState])
 
   const refreshSkill = useCallback(async (skillId: string) => {
     setBusyOperation(skillId, 'refreshing')
@@ -240,7 +330,7 @@ export function useSkillRegistry(client?: SkillRegistryClient): UseSkillRegistry
     } finally {
       setBusyOperation(skillId, null)
     }
-  }, [resolvedClient, setBusyOperation, setOperationMessage])
+  }, [resolvedClient, setBusyOperation, setOperationMessage, setRegistryState])
 
   const refreshSkills = useCallback(async () => {
     setGlobalOperation('refreshing', null, 'info')
@@ -264,34 +354,9 @@ export function useSkillRegistry(client?: SkillRegistryClient): UseSkillRegistry
         ? { ...previous, globalBusyOperation: null }
         : previous)
     }
-  }, [resolvedClient, setGlobalOperation])
+  }, [resolvedClient, setGlobalOperation, setRegistryState])
 
-  const skills = useMemo(
-    () => buildSkillRegistrySkillViewModels(
-      registryState.skills,
-      registryState.operationMessages,
-      registryState.busyOperations,
-    ),
-    [registryState.busyOperations, registryState.operationMessages, registryState.skills],
-  )
-
-  return {
-    loadStatus: registryState.loadStatus,
-    registryRevision: registryState.registryRevision,
-    snapshotRevision: registryState.snapshotRevision,
-    rawSkills: registryState.skills,
-    skills,
-    statusMessage: resolveStatusMessage(registryState),
-    globalBusyOperation: registryState.globalBusyOperation,
-    globalMessage: registryState.globalMessage,
-    globalMessageTone: registryState.globalMessageTone,
-    importValidationErrors: registryState.importValidationErrors,
-    selectAndImportSkill,
-    toggleSkillEnabled,
-    deleteSkill,
-    refreshSkill,
-    refreshSkills,
-  }
+  return { toggleSkillEnabled, deleteSkill, refreshSkill, refreshSkills }
 }
 
 function resolveStatusMessage(registryState: SkillRegistryState): string | null {

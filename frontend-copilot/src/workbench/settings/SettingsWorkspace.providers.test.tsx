@@ -25,203 +25,211 @@ import {
 } from './test-support/provider-profiles/settings-workspace-provider-detail-scenarios'
 import { runProviderReorderScenario } from './test-support/provider-profiles/settings-workspace-provider-reorder-scenario'
 
+const MODEL_SERVICE_SECTION = 'model-service'
+
+/* eslint-disable max-lines-per-function */
 describe('SettingsWorkspace provider interactions', () => {
-  it('keeps focus in the model name field while editing the model dialog', async () => {
-    await runProviderModelEditorFocusScenario()
+  describe('scenario-driven tests', () => {
+    it('keeps focus in the model name field while editing the model dialog', async () => {
+      await runProviderModelEditorFocusScenario()
+    })
+
+    it('renders the active provider detail and supports duplicating a provider from the context menu', async () => {
+      await runDuplicateProviderScenario()
+    })
+
+    it('removes redundant provider guidance copy while keeping ollama controls editable', async () => {
+      await runOllamaGuidanceCleanupScenario()
+    })
+
+    it('hides retained provider extension notices from the detail form', async () => {
+      await runExtensionBannerHiddenScenario()
+    })
+
+    it('keeps legacy unsupported providers visible and shows compatibility warnings from the settings page', async () => {
+      await runLegacyProviderWarningScenario()
+    })
+
+    it('deletes the active provider and shows the empty state when no providers remain', async () => {
+      await runDeleteActiveProviderScenario()
+    })
+
+    it('reorders providers from drag interaction and persists the reordered list', async () => {
+      await runProviderReorderScenario()
+    })
   })
 
-  it('adds a provider from the empty state without injecting a default base URL and shows the empty preview state', async () => {
-    installSettingsWorkspaceBridge({
-      loadStateResult: {
-        ok: true,
-        source: 'stored',
-        state: createPersistedWorkspaceState({
-          providerProfiles: [],
-        }),
-      },
-      loadStatusesResult: {
-        ok: true,
-        states: {},
-      },
-    })
+  describe('direct provider tests', () => {
+    it('adds a provider from the empty state without injecting a default base URL and shows the empty preview state', async () => {
+      installSettingsWorkspaceBridge({
+        loadStateResult: {
+          ok: true,
+          source: 'stored',
+          state: createPersistedWorkspaceState({
+            providerProfiles: [],
+          }),
+        },
+        loadStatusesResult: {
+          ok: true,
+          states: {},
+        },
+      })
 
-    const rendered = renderSettingsWorkspace({
-      initialSection: 'model-service',
-    })
+      const rendered = renderSettingsWorkspace({
+        initialSection: MODEL_SERVICE_SECTION,
+      })
 
-    await flushAsyncEffects()
-    await flushAsyncEffects()
-    await flushAsyncEffects()
-
-    expect(rendered.container.textContent).toContain('可在左侧添加服务商信息')
-
-    const addProviderButton = rendered.container.querySelector('.settings-provider-add-row .secondary-button')
-    if (!(addProviderButton instanceof HTMLButtonElement)) {
-      throw new Error('Missing add provider button')
-    }
-
-    await clickElement(addProviderButton)
-
-    let addedProviderCard = rendered.container.querySelector('[data-testid="settings-provider-card-openai-1"]') as HTMLElement | null
-    for (let attempt = 0; attempt < 5 && addedProviderCard === null; attempt += 1) {
       await flushAsyncEffects()
-      await waitForNextFrame()
-      addedProviderCard = rendered.container.querySelector('[data-testid="settings-provider-card-openai-1"]') as HTMLElement | null
-    }
+      await flushAsyncEffects()
+      await flushAsyncEffects()
 
-    const baseUrlInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
-    expect(addedProviderCard?.textContent).toContain('OpenAI')
-    expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('OpenAI')
-    expect(baseUrlInput.value).toBe('')
-    expect(baseUrlInput.placeholder).toBe('https://api.openai.com/v1')
-    expect(rendered.container.textContent).toContain('链接预览：未填写服务地址')
-    expect(rendered.getByTestId('provider-base-url-feedback').textContent).toBe('未填写服务地址')
+      expect(rendered.container.textContent).toContain('可在左侧添加服务商信息')
 
-    rendered.unmount()
-  })
+      const addProviderButton = rendered.container.querySelector('.settings-provider-add-row .secondary-button')
+      if (!(addProviderButton instanceof HTMLButtonElement)) {
+        throw new Error('Missing add provider button')
+      }
 
-  it('renders the active provider detail and supports duplicating a provider from the context menu', async () => {
-    await runDuplicateProviderScenario()
-  })
+      await clickElement(addProviderButton)
 
-  it('removes redundant provider guidance copy while keeping ollama controls editable', async () => {
-    await runOllamaGuidanceCleanupScenario()
-  })
+      let addedProviderCard = rendered.container.querySelector('[data-testid="settings-provider-card-openai-1"]') as HTMLElement | null
+      for (let attempt = 0; attempt < 5 && addedProviderCard === null; attempt += 1) {
+        await flushAsyncEffects()
+        await waitForNextFrame()
+        addedProviderCard = rendered.container.querySelector('[data-testid="settings-provider-card-openai-1"]') as HTMLElement | null
+      }
 
-  it('hides retained provider extension notices from the detail form', async () => {
-    await runExtensionBannerHiddenScenario()
-  })
+      const baseUrlInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
+      expect(addedProviderCard?.textContent).toContain('OpenAI')
+      expect((rendered.getByTestId('provider-display-name-input') as HTMLInputElement).value).toBe('OpenAI')
+      expect(baseUrlInput.value).toBe('')
+      expect(baseUrlInput.placeholder).toBe('https://api.openai.com/v1')
+      expect(rendered.container.textContent).toContain('链接预览：未填写服务地址')
+      expect(rendered.getByTestId('provider-base-url-feedback').textContent).toBe('未填写服务地址')
 
-  it('keeps legacy unsupported providers visible and shows compatibility warnings from the settings page', async () => {
-    await runLegacyProviderWarningScenario()
-  })
-
-  it('deletes the active provider and shows the empty state when no providers remain', async () => {
-    await runDeleteActiveProviderScenario()
-  })
-
-  it('keeps the API 地址 field editable and renders openai-compatible request previews without hiding duplicated paths', async () => {
-    installSettingsWorkspaceBridge({
-      loadStateResult: {
-        ok: true,
-        source: 'stored',
-        state: createSingleProviderWorkspaceState(),
-      },
-      loadStatusesResult: createPersistedSecretStatesResult(),
+      rendered.unmount()
     })
 
-    const rendered = renderSettingsWorkspace({
-      initialSection: 'model-service',
+    it('keeps the API 地址 field editable and renders openai-compatible request previews without hiding duplicated paths', async () => {
+      installSettingsWorkspaceBridge({
+        loadStateResult: {
+          ok: true,
+          source: 'stored',
+          state: createSingleProviderWorkspaceState(),
+        },
+        loadStatusesResult: createPersistedSecretStatesResult(),
+      })
+
+      const rendered = renderSettingsWorkspace({
+        initialSection: MODEL_SERVICE_SECTION,
+      })
+
+      await flushAsyncEffects()
+
+      expect(rendered.container.textContent).not.toContain('默认模型 ID')
+      expect(rendered.container.querySelector('input[placeholder="例如 openai/gpt-4.1"]')).toBeNull()
+      expect(rendered.container.textContent).toContain('链接预览：https://persisted.example.com/v1/chat/completions')
+
+      const apiAddressInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
+      expect(apiAddressInput.placeholder).toBe('https://api.openai.com/v1')
+      await setFormControlValue(apiAddressInput, 'https://editable.example.com/v2/chat/completions')
+
+      expect(apiAddressInput.value).toBe('https://editable.example.com/v2/chat/completions')
+      expect(rendered.container.textContent).toContain('链接预览：https://editable.example.com/v2/chat/completions/chat/completions')
+      expect(apiAddressInput.closest('.form-field')?.className).toContain('form-field--full')
+
+      rendered.unmount()
     })
 
-    await flushAsyncEffects()
+    it('treats provider base url as required and skips auto-save when the field is blank', async () => {
+      vi.useFakeTimers()
 
-    expect(rendered.container.textContent).not.toContain('默认模型 ID')
-    expect(rendered.container.querySelector('input[placeholder="例如 openai/gpt-4.1"]')).toBeNull()
-    expect(rendered.container.textContent).toContain('链接预览：https://persisted.example.com/v1/chat/completions')
+      const { saveState } = installSettingsWorkspaceBridge({
+        loadStateResult: {
+          ok: true,
+          source: 'stored',
+          state: createSingleProviderWorkspaceState(),
+        },
+        loadStatusesResult: createPersistedSecretStatesResult(),
+      })
 
-    const apiAddressInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
-    expect(apiAddressInput.placeholder).toBe('https://api.openai.com/v1')
-    await setFormControlValue(apiAddressInput, 'https://editable.example.com/v2/chat/completions')
+      const rendered = renderSettingsWorkspace({
+        initialSection: MODEL_SERVICE_SECTION,
+      })
 
-    expect(apiAddressInput.value).toBe('https://editable.example.com/v2/chat/completions')
-    expect(rendered.container.textContent).toContain('链接预览：https://editable.example.com/v2/chat/completions/chat/completions')
-    expect(apiAddressInput.closest('.form-field')?.className).toContain('form-field--full')
+      await flushAsyncEffects()
 
-    rendered.unmount()
-  })
+      const apiAddressInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
+      await setFormControlValue(apiAddressInput, '')
 
-  it('treats provider base url as required and skips auto-save when the field is blank', async () => {
-    vi.useFakeTimers()
+      expect(apiAddressInput.value).toBe('')
+      expect(rendered.getByTestId('provider-base-url-feedback').textContent).toBe('未填写服务地址')
+      expect(rendered.container.textContent).toContain('链接预览：未填写服务地址')
 
-    const { saveState } = installSettingsWorkspaceBridge({
-      loadStateResult: {
-        ok: true,
-        source: 'stored',
-        state: createSingleProviderWorkspaceState(),
-      },
-      loadStatusesResult: createPersistedSecretStatesResult(),
+      await act(async () => {
+        vi.advanceTimersByTime(250)
+      })
+
+      expect(saveState).not.toHaveBeenCalled()
+
+      rendered.unmount()
     })
 
-    const rendered = renderSettingsWorkspace({
-      initialSection: 'model-service',
-    })
+    it('renders gemini-native request previews with the selected default model id', async () => {
+      const GEMINI_MODEL = 'gemini-3.1-pro-preview'
+      const geminiProvider = createProviderProfile({
+        id: 'provider-gemini',
+        profileId: 'provider-gemini',
+        providerId: 'gemini',
+        protocol: 'gemini',
+        name: 'Gemini Mirror',
+        displayName: 'Gemini Mirror',
+        endpoint: 'https://api.ikuncode.cc/v1beta',
+        baseUrl: 'https://api.ikuncode.cc/v1beta',
+        hasApiKey: false,
+        primaryModelId: GEMINI_MODEL,
+        fastModel: GEMINI_MODEL,
+        fallbackModel: GEMINI_MODEL,
+      })
 
-    await flushAsyncEffects()
-
-    const apiAddressInput = rendered.getByTestId('provider-base-url-input') as HTMLInputElement
-    await setFormControlValue(apiAddressInput, '')
-
-    expect(apiAddressInput.value).toBe('')
-    expect(rendered.getByTestId('provider-base-url-feedback').textContent).toBe('未填写服务地址')
-    expect(rendered.container.textContent).toContain('链接预览：未填写服务地址')
-
-    await act(async () => {
-      vi.advanceTimersByTime(250)
-    })
-
-    expect(saveState).not.toHaveBeenCalled()
-
-    rendered.unmount()
-  })
-
-  it('renders gemini-native request previews with the selected default model id', async () => {
-    const geminiProvider = createProviderProfile({
-      id: 'provider-gemini',
-      profileId: 'provider-gemini',
-      providerId: 'gemini',
-      protocol: 'gemini',
-      name: 'Gemini Mirror',
-      displayName: 'Gemini Mirror',
-      endpoint: 'https://api.ikuncode.cc/v1beta',
-      baseUrl: 'https://api.ikuncode.cc/v1beta',
-      hasApiKey: false,
-      primaryModelId: 'gemini-3.1-pro-preview',
-      fastModel: 'gemini-3.1-pro-preview',
-      fallbackModel: 'gemini-3.1-pro-preview',
-    })
-
-    installSettingsWorkspaceBridge({
-      loadStateResult: {
-        ok: true,
-        source: 'stored',
-        state: createPersistedWorkspaceState({
-          providerProfiles: [geminiProvider],
-          defaultModelRouting: {
-            primaryAssistantModel: 'gemini-3.1-pro-preview',
-            primaryAssistantModelRoute: {
-              routeKind: 'provider-model',
-              profileId: 'provider-gemini',
-              modelId: 'gemini-3.1-pro-preview',
+      installSettingsWorkspaceBridge({
+        loadStateResult: {
+          ok: true,
+          source: 'stored',
+          state: createPersistedWorkspaceState({
+            providerProfiles: [geminiProvider],
+            defaultModelRouting: {
+              primaryAssistantModel: GEMINI_MODEL,
+              primaryAssistantModelRoute: {
+                routeKind: 'provider-model',
+                profileId: 'provider-gemini',
+                modelId: GEMINI_MODEL,
+              },
+            },
+          }),
+        },
+        loadStatusesResult: {
+          ok: true,
+          states: {
+            'provider-gemini': {
+              hasApiKey: false,
+              apiKey: '',
             },
           },
-        }),
-      },
-      loadStatusesResult: {
-        ok: true,
-        states: {
-          'provider-gemini': {
-            hasApiKey: false,
-            apiKey: '',
-          },
         },
-      },
+      })
+
+      const rendered = renderSettingsWorkspace({
+        initialSection: MODEL_SERVICE_SECTION,
+      })
+
+      await flushAsyncEffects()
+
+      expect(rendered.container.textContent).toContain(
+        `链接预览：https://api.ikuncode.cc/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      )
+
+      rendered.unmount()
     })
-
-    const rendered = renderSettingsWorkspace({
-      initialSection: 'model-service',
-    })
-
-    await flushAsyncEffects()
-
-    expect(rendered.container.textContent).toContain(
-      '链接预览：https://api.ikuncode.cc/v1beta/models/gemini-3.1-pro-preview:generateContent',
-    )
-
-    rendered.unmount()
-  })
-
-  it('reorders providers from drag interaction and persists the reordered list', async () => {
-    await runProviderReorderScenario()
   })
 })

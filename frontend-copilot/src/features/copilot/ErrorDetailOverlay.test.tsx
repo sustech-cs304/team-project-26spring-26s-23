@@ -8,8 +8,12 @@ import { clickElement } from './copilot-chat-test-interactions'
 import { ErrorDetailOverlay } from './ErrorDetailOverlay'
 import { buildErrorDetailOverlayViewModel, createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
+
+
 function createViewModel(details: Record<string, unknown> = {
-  toolId: 'tool.remote-search',
+  toolId: LABEL_TOOL_REMOTE_SEARCH,
 }) {
   return buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
     source: 'streaming',
@@ -21,7 +25,7 @@ function createViewModel(details: Record<string, unknown> = {
     requestedMethod: 'run/stream',
     details,
     resolvedModelId: 'openai/gpt-4.1',
-    resolvedToolIds: ['tool.remote-search'],
+    resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
     requestOptions: {
       trace: true,
     },
@@ -32,6 +36,8 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+// 包含 8 个紧密相关的渲染/交互/剪贴板测试，拆分会导致语义分组不自然
+/* eslint-disable-next-line max-lines-per-function */
 describe('ErrorDetailOverlay', () => {
   it('renders grouped content and the restrained empty state contract', () => {
     const rendered = renderWithRoot(
@@ -103,7 +109,7 @@ describe('ErrorDetailOverlay', () => {
     const rendered = renderWithRoot(
       <ErrorDetailOverlay
         viewModel={createViewModel({
-          toolId: 'tool.remote-search',
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
           retryable: false,
           nested: {
             attempt: 1,
@@ -117,7 +123,7 @@ describe('ErrorDetailOverlay', () => {
     const rawDetailsJson = rendered.getByTestId('error-detail-overlay-raw-details-json')
     expect(rawDetailsJson.getAttribute('data-json-viewer')).toMatch(/react18-json-view|fallback/)
     expect(rawDetailsJson.textContent).toContain('toolId')
-    expect(rawDetailsJson.textContent).toContain('tool.remote-search')
+    expect(rawDetailsJson.textContent).toContain(LABEL_TOOL_REMOTE_SEARCH)
     expect(rendered.queryByTestId('error-detail-overlay-raw-details-text')).toBeNull()
     expect(rendered.getByTestId('error-detail-overlay-group-raw-details').textContent).toContain('Tool failed: boom')
 

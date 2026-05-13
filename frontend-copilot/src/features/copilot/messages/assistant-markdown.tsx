@@ -66,6 +66,7 @@ export function renderAssistantMarkdownMessageBody(content: string) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- used as react-markdown component via Components map
 function AssistantCodeBlock({ node, className, children, ...props }: AssistantCodeBlockProps) {
   markBlockCodeNodes(node)
   const codeClassName = readCodeClassNameFromPreNode(node)
@@ -161,6 +162,7 @@ function AssistantCodeBlock({ node, className, children, ...props }: AssistantCo
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- used as react-markdown component via Components map
 function AssistantCode({ node, className, children, ...props }: AssistantCodeProps) {
   const isBlockCode = isTrackedBlockCodeNode(node)
     || className?.includes('language-') === true
@@ -351,84 +353,69 @@ function resolveCodeLanguageId(className?: string): string {
   return className?.match(/(?:^|\s)language-([a-zA-Z0-9_+-]+)/)?.[1]?.toLowerCase() ?? ''
 }
 
+const CODE_LANGUAGE_LABEL_MAP: Record<string, string> = {
+  js: 'JavaScript',
+  javascript: 'JavaScript',
+  ts: 'TypeScript',
+  typescript: 'TypeScript',
+  tsx: 'TSX',
+  jsx: 'JSX',
+  py: 'Python',
+  python: 'Python',
+  sh: 'Bash',
+  bash: 'Bash',
+  shell: 'Bash',
+  json: 'JSON',
+  yaml: 'YAML',
+  yml: 'YAML',
+  md: 'Markdown',
+  markdown: 'Markdown',
+  typ: 'Typst',
+  typst: 'Typst',
+  text: 'Text',
+  plain: 'Text',
+  plaintext: 'Text',
+}
+
 function resolveCodeLanguageLabelFromId(languageId: string): string {
-  switch (languageId) {
-    case 'js':
-    case 'javascript':
-      return 'JavaScript'
-    case 'ts':
-    case 'typescript':
-      return 'TypeScript'
-    case 'tsx':
-      return 'TSX'
-    case 'jsx':
-      return 'JSX'
-    case 'py':
-    case 'python':
-      return 'Python'
-    case 'sh':
-    case 'bash':
-    case 'shell':
-      return 'Bash'
-    case 'json':
-      return 'JSON'
-    case 'yaml':
-    case 'yml':
-      return 'YAML'
-    case 'md':
-    case 'markdown':
-      return 'Markdown'
-    case 'typ':
-    case 'typst':
-      return 'Typst'
-    case 'text':
-    case 'plain':
-    case 'plaintext':
-      return 'Text'
-    default:
-      return languageId === '' ? 'Text' : `${languageId.slice(0, 1).toUpperCase()}${languageId.slice(1)}`
+  const mapped = CODE_LANGUAGE_LABEL_MAP[languageId]
+  if (mapped !== undefined) {
+    return mapped
   }
+  return languageId === '' ? 'Text' : `${languageId.slice(0, 1).toUpperCase()}${languageId.slice(1)}`
+}
+
+const CODE_LANGUAGE_EXTENSION_MAP: Record<string, string> = {
+  js: 'js',
+  javascript: 'js',
+  ts: 'ts',
+  typescript: 'ts',
+  tsx: 'tsx',
+  jsx: 'jsx',
+  py: 'py',
+  python: 'py',
+  sh: 'sh',
+  bash: 'sh',
+  shell: 'sh',
+  json: 'json',
+  yaml: 'yml',
+  yml: 'yml',
+  md: 'md',
+  markdown: 'md',
+  typ: 'typ',
+  typst: 'typ',
+  html: 'html',
+  css: 'css',
 }
 
 function resolveCodeLanguageFileExtension(languageId: string): string {
-  switch (languageId) {
-    case 'js':
-    case 'javascript':
-      return 'js'
-    case 'ts':
-    case 'typescript':
-      return 'ts'
-    case 'tsx':
-      return 'tsx'
-    case 'jsx':
-      return 'jsx'
-    case 'py':
-    case 'python':
-      return 'py'
-    case 'sh':
-    case 'bash':
-    case 'shell':
-      return 'sh'
-    case 'json':
-      return 'json'
-    case 'yaml':
-    case 'yml':
-      return 'yml'
-    case 'md':
-    case 'markdown':
-      return 'md'
-    case 'typ':
-    case 'typst':
-      return 'typ'
-    case 'html':
-      return 'html'
-    case 'css':
-      return 'css'
-    default:
-      return languageId === '' || languageId === 'text' || languageId === 'plain' || languageId === 'plaintext'
-        ? 'txt'
-        : languageId.replace(/[^a-z0-9_-]/g, '') || 'txt'
+  const mapped = CODE_LANGUAGE_EXTENSION_MAP[languageId]
+  if (mapped !== undefined) {
+    return mapped
   }
+  return languageId === '' || languageId === 'text' || languageId === 'plain' || languageId === 'plaintext'
+    ? 'txt'
+    : languageId.replace(/[^a-z0-9_-]/g, '') || 'txt'
 }
 
 function normalizeBlockCodeClassName(className?: string): string {

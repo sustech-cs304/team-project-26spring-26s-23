@@ -19,9 +19,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.integrations.sustech.blackboard.data.course_matcher import (
     resolve_course_id_by_course_name as data_resolve_course_id_by_course_name,
 )
+from app.integrations.sustech.blackboard.api.dto import CalendarEventDTO
 from app.integrations.sustech.blackboard.data.results import SyncStats
 from app.integrations.sustech.blackboard.data.sync_operations import (
     get_calendar_subscription as data_get_calendar_subscription,
+    list_all_calendar_events as data_list_all_calendar_events,
     list_calendar_events as data_list_calendar_events,
     sync_announcements as data_sync_announcements,
     sync_assignments as data_sync_assignments,
@@ -375,10 +377,19 @@ class DatabaseManager:
 
     def list_calendar_events(
         self, feed_url: str, *, include_deleted: bool = False
-    ) -> list[dict[str, Any]]:
+    ) -> list[CalendarEventDTO]:
         with self._session_scope() as session:
             return data_list_calendar_events(
                 session, feed_url, include_deleted=include_deleted
+            )
+
+    def list_all_calendar_events(
+        self, *, include_deleted: bool = False
+    ) -> list[CalendarEventDTO]:
+        """列出所有订阅的日历事件，供统一日立同步使用。"""
+        with self._session_scope() as session:
+            return data_list_all_calendar_events(
+                session, include_deleted=include_deleted
             )
 
     def get_table_counts(self) -> dict[str, dict[str, int]]:

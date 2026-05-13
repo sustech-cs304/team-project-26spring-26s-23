@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- 此文件导出 renderContentItem (非组件) 供 ErrorDetailOverlay.tsx 复用，其余为内部组件。 */
 import { useEffect, useState, type ComponentType } from 'react'
 
 import type {

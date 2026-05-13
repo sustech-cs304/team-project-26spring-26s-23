@@ -117,6 +117,19 @@ import {
   type ToolCatalogLoadResult,
 } from '../tool-catalog/ipc'
 import {
+  ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
+  ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+  ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+  ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+  type CleanupTemporaryAttachmentFilesRequest,
+  type CleanupTemporaryAttachmentFilesResult,
+  type ReadAttachmentPreviewRequest,
+  type ReadAttachmentPreviewResult,
+  type ReadClipboardAttachmentDataResult,
+  type WriteAttachmentTempFileRequest,
+  type WriteAttachmentTempFileResult,
+} from '../attachment-service/ipc'
+import {
   FILE_MANAGER_COPY_ENTRIES_CHANNEL,
   FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
   FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
@@ -195,6 +208,10 @@ const RENDERER_IPC_CHANNELS = [
   TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
+  ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+  ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+  ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+  ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
   BOOTSTRAP_WINDOW_READY_CHANNEL,
   DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
@@ -228,6 +245,18 @@ export function registerRendererIpcHandlers(
     ipcMain.removeHandler(channel)
   }
 
+  registerConfigAndSettingsHandlers(ipcMain, handlers)
+  registerManagedRuntimeHandlers(ipcMain, handlers)
+  registerMcpRegistryHandlers(ipcMain, handlers)
+  registerSkillRegistryHandlers(ipcMain, handlers)
+  registerCopilotHistoryHandlers(ipcMain, handlers)
+  registerToolAndRuntimeHandlers(ipcMain, handlers)
+  registerAttachmentManagerHandlers(ipcMain, handlers)
+  registerDesktopNotificationAndWindowHandlers(ipcMain, handlers)
+  registerFileManagerHandlers(ipcMain, handlers)
+}
+
+function registerConfigAndSettingsHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL, async (): Promise<ConfigCenterPublicSnapshotLoadResult> => {
     return await handlers.loadConfigCenterPublicSnapshot()
   })
@@ -300,7 +329,9 @@ export function registerRendererIpcHandlers(
       return await handlers.clearSettingsWorkspaceSustechCasSecret()
     },
   )
+}
 
+function registerManagedRuntimeHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(
     MANAGED_RUNTIME_LOAD_CHANNEL,
     async (): Promise<ManagedRuntimeLoadResponse> => {
@@ -314,7 +345,9 @@ export function registerRendererIpcHandlers(
       return await handlers.installOrRepairManagedRuntime(reason)
     },
   )
+}
 
+function registerMcpRegistryHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(
     MCP_REGISTRY_LOAD_CHANNEL,
     async (_event, request?: McpRegistryLoadRequest): Promise<McpRegistryLoadResult> => {
@@ -356,7 +389,9 @@ export function registerRendererIpcHandlers(
       return await handlers.refreshMcpCatalog(request)
     },
   )
+}
 
+function registerSkillRegistryHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(
     SKILL_REGISTRY_LOAD_CHANNEL,
     async (_event, request?: SkillRegistryLoadRequest): Promise<SkillRegistryLoadResult> => {
@@ -398,7 +433,9 @@ export function registerRendererIpcHandlers(
       return await handlers.refreshSkills(request)
     },
   )
+}
 
+function registerCopilotHistoryHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(COPILOT_HISTORY_LIST_THREADS_CHANNEL, async (): Promise<CopilotHistoryListThreadsResult> => {
     return await handlers.listCopilotHistoryThreads()
   })
@@ -465,7 +502,9 @@ export function registerRendererIpcHandlers(
       return await handlers.restoreCopilotHistoryDatabase(request)
     },
   )
+}
 
+function registerToolAndRuntimeHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(TOOL_CATALOG_LOAD_CHANNEL, async (_event, request?: ToolCatalogLoadRequest): Promise<ToolCatalogLoadResult> => {
     return await handlers.loadToolCatalog(request)
   })
@@ -477,7 +516,39 @@ export function registerRendererIpcHandlers(
   ipcMain.handle(COPILOT_RUNTIME_RETRY_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
     return await handlers.retryCopilotRuntime()
   })
+}
 
+function registerAttachmentManagerHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
+  ipcMain.handle(ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL, async (): Promise<ReadClipboardAttachmentDataResult> => {
+    return await handlers.readClipboardAttachmentData()
+  })
+
+  ipcMain.handle(
+    ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+    async (_event, request: WriteAttachmentTempFileRequest): Promise<WriteAttachmentTempFileResult> => {
+      return await handlers.writeAttachmentTempFile(request)
+    },
+  )
+
+  ipcMain.handle(
+    ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+    async (_event, request: ReadAttachmentPreviewRequest): Promise<ReadAttachmentPreviewResult> => {
+      return await handlers.readAttachmentPreview(request)
+    },
+  )
+
+  ipcMain.handle(
+    ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
+    async (
+      _event,
+      request: CleanupTemporaryAttachmentFilesRequest,
+    ): Promise<CleanupTemporaryAttachmentFilesResult> => {
+      return await handlers.cleanupAttachmentTempFiles(request)
+    },
+  )
+}
+
+function registerDesktopNotificationAndWindowHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(DESKTOP_NOTIFICATION_SHOW_CHANNEL, async (_event, request: DesktopNotificationRequest): Promise<void> => {
     await handlers.notifyDesktopNotification(request)
   })
@@ -501,7 +572,9 @@ export function registerRendererIpcHandlers(
   ipcMain.handle(DESKTOP_WINDOW_CLOSE_CHANNEL, async (): Promise<void> => {
     await handlers.closeDesktopWindow()
   })
+}
 
+function registerFileManagerHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, async (_event, request?: SelectRootDirectoryRequest): Promise<SelectDirectoryResult> => {
     return request === undefined
       ? await handlers.selectRootDirectory()

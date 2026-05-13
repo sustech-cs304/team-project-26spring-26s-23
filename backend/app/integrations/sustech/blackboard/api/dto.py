@@ -165,9 +165,10 @@ class CalendarEventDTO(BlackboardDTO):
     uid: str
     raw_uid: str | None
     title: str
-    start_at: datetime | None
+    start_at: datetime
     end_at: datetime | None
     all_day: bool = False
     description: str | None = None
     location: str | None = None
     course_id: str | None = None
+    done: bool = False

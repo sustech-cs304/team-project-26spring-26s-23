@@ -25,7 +25,7 @@ afterEach(async () => {
   }))
 })
 
-describe('skill snapshot contracts', () => {
+describe('skill snapshot contracts - capability snapshots', () => {
   it('creates a redacted enabled-skill capability snapshot without local managed paths', () => {
     const enabledSkill = createSkillRecordFixture()
     const disabledSkill = createSkillRecordFixture({
@@ -74,6 +74,9 @@ describe('skill snapshot contracts', () => {
     expect(isSkillCapabilitySnapshotRedacted(snapshot)).toBe(true)
   })
 
+})
+
+describe('skill snapshot contracts - persistence', () => {
   it('persists snapshots to both the snapshot file and existing capability bridge state document', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'candue-skill-snapshot-sink-'))
     activeTempRoots.push(tempRoot)
@@ -89,9 +92,7 @@ describe('skill snapshot contracts', () => {
     const bridgeStatePayload = JSON.parse(
       await readFile(path.join(runtimePaths.stateDir, 'capability-bridge-state.json'), 'utf8'),
     ) as {
-      values: {
-        tool: Record<string, Record<string, unknown>>
-      }
+      values: { tool: Record<string, Record<string, unknown>> }
     }
 
     expect(snapshotFilePayload).toEqual(snapshot)
@@ -109,11 +110,7 @@ describe('skill snapshot contracts', () => {
     await writeFile(stateFile, `${JSON.stringify({
       version: 1,
       values: {
-        tool: {
-          'tool.fs.read': {
-            cursor: { value: 1 },
-          },
-        },
+        tool: { 'tool.fs.read': { cursor: { value: 1 } } },
         run: {},
       },
     })}\n`, 'utf8')
@@ -121,13 +118,9 @@ describe('skill snapshot contracts', () => {
     await createSkillCapabilitySnapshotSink({ runtimePaths }).write(createSkillCapabilitySnapshotFixture())
 
     const bridgeStatePayload = JSON.parse(await readFile(stateFile, 'utf8')) as {
-      values: {
-        tool: Record<string, Record<string, unknown>>
-      }
+      values: { tool: Record<string, Record<string, unknown>> }
     }
-    expect(bridgeStatePayload.values.tool['tool.fs.read']).toEqual({
-      cursor: { value: 1 },
-    })
+    expect(bridgeStatePayload.values.tool['tool.fs.read']).toEqual({ cursor: { value: 1 } })
     expect(bridgeStatePayload.values.tool[SKILL_CAPABILITY_SNAPSHOT_BRIDGE_TOOL_ID]).toBeDefined()
   })
 

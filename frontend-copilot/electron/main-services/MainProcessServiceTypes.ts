@@ -1,4 +1,13 @@
 import type {
+  CleanupTemporaryAttachmentFilesRequest,
+  CleanupTemporaryAttachmentFilesResult,
+  ReadAttachmentPreviewRequest,
+  ReadAttachmentPreviewResult,
+  ReadClipboardAttachmentDataResult,
+  WriteAttachmentTempFileRequest,
+  WriteAttachmentTempFileResult,
+} from '../attachment-service/ipc'
+import type {
   DesktopCapabilityBridgeRequest,
   DesktopCapabilityBridgeResponse,
 } from '../capability-bridge/protocol'
@@ -184,6 +193,12 @@ export interface MainProcessServices {
   handleDesktopCapabilityBridgeRequest: (
     request: DesktopCapabilityBridgeRequest,
   ) => Promise<DesktopCapabilityBridgeResponse>
+  readClipboardAttachmentData: () => Promise<ReadClipboardAttachmentDataResult>
+  writeAttachmentTempFile: (request: WriteAttachmentTempFileRequest) => Promise<WriteAttachmentTempFileResult>
+  readAttachmentPreview: (request: ReadAttachmentPreviewRequest) => Promise<ReadAttachmentPreviewResult>
+  cleanupAttachmentTempFiles: (
+    request: CleanupTemporaryAttachmentFilesRequest,
+  ) => Promise<CleanupTemporaryAttachmentFilesResult>
   selectRootDirectory: (request?: SelectRootDirectoryRequest) => Promise<SelectDirectoryResult>
   listDirectory: (request: ListDirectoryRequest) => Promise<ListDirectoryResult>
   probeDirectory: (request: ProbeDirectoryRequest) => Promise<ProbeDirectoryResult>

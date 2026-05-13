@@ -40,17 +40,11 @@ export function resolveCopilotConfigState(input: {
   runtimeResult: CopilotRendererRuntimeLoadResult
 }): CopilotConfigState {
   if (!input.bootstrapFieldsResult.ok) {
-    return {
-      status: 'error',
-      error: input.bootstrapFieldsResult.error,
-    }
+    return { status: 'error', error: input.bootstrapFieldsResult.error }
   }
 
   if (!input.runtimeResult.ok) {
-    return {
-      status: 'error',
-      error: input.runtimeResult.error,
-    }
+    return { status: 'error', error: input.runtimeResult.error }
   }
 
   const bootstrapFields = normalizeCopilotBootstrapFields(input.bootstrapFieldsResult.fields)
@@ -80,109 +74,25 @@ export function resolveCopilotConfigState(input: {
     devOverrideAllowed,
     devOverrideConfigured,
   }
+  const isDevOverride = runtimeSelection.runtimeSource === 'dev-override'
 
   switch (runtime.status) {
-    case 'ready': {
-      const missingFields = getMissingReadyStateFields(baseState)
-
-      if (missingFields.length > 0) {
-        return {
-          ...baseState,
-          status: 'incomplete',
-          missingFields,
-        }
-      }
-
-      return {
-        ...baseState,
-        status: 'ready',
-        runtimeUrl: baseState.runtimeUrl!,
-      }
-    }
-
+    case 'ready':
+      return resolveReadyLikeState(baseState, 'ready')
     case 'starting':
-      return {
-        ...baseState,
-        status: 'starting',
-      }
-
-    case 'degraded': {
-      const missingFields = getMissingReadyStateFields(baseState)
-
-      if (missingFields.length > 0) {
-        return {
-          ...baseState,
-          status: 'incomplete',
-          missingFields,
-        }
-      }
-
-      return {
-        ...baseState,
-        status: 'degraded',
-        runtimeUrl: baseState.runtimeUrl!,
-      }
-    }
-
+      return { ...baseState, status: 'starting' }
+    case 'degraded':
+      return resolveReadyLikeState(baseState, 'degraded')
     case 'failed':
-      if (runtimeSelection.runtimeSource === 'dev-override') {
-        const missingFields = getMissingReadyStateFields(baseState)
-
-        if (missingFields.length > 0) {
-          return {
-            ...baseState,
-            status: 'incomplete',
-            missingFields,
-          }
-        }
-
-        return {
-          ...baseState,
-          status: 'ready',
-          runtimeUrl: baseState.runtimeUrl!,
-        }
+      if (isDevOverride) {
+        return resolveReadyLikeState(baseState, 'ready')
       }
-
-      return {
-        ...baseState,
-        status: 'failed',
+      return { ...baseState, status: 'failed' }
+    case 'stopped':
+      if (isDevOverride) {
+        return resolveReadyLikeState(baseState, 'ready')
       }
-
-    case 'stopped': {
-      if (runtimeSelection.runtimeSource === 'dev-override') {
-        const missingFields = getMissingReadyStateFields(baseState)
-
-        if (missingFields.length > 0) {
-          return {
-            ...baseState,
-            status: 'incomplete',
-            missingFields,
-          }
-        }
-
-        return {
-          ...baseState,
-          status: 'ready',
-          runtimeUrl: baseState.runtimeUrl!,
-        }
-      }
-
-      const missingFields = getMissingReadyStateFields(baseState)
-
-      if (missingFields.length === 1 && missingFields[0] === 'runtimeUrl') {
-        return {
-          ...baseState,
-          status: 'empty',
-          missingFields,
-        }
-      }
-
-      return {
-        ...baseState,
-        status: 'incomplete',
-        missingFields,
-      }
-    }
+      return resolveStoppedState(baseState)
   }
 }
 
@@ -309,6 +219,31 @@ function getMissingReadyStateFields(input: {
   }
 
   return missingFields
+}
+
+function resolveReadyLikeState(
+  baseState: Omit<CopilotConfigState, 'status'> & { runtimeUrl: string | null },
+  status: 'ready' | 'degraded',
+): CopilotConfigState {
+  const missingFields = getMissingReadyStateFields(baseState)
+
+  if (missingFields.length > 0) {
+    return { ...baseState, status: 'incomplete', missingFields } as CopilotConfigState
+  }
+
+  return { ...baseState, status, runtimeUrl: baseState.runtimeUrl! } as CopilotConfigState
+}
+
+function resolveStoppedState(
+  baseState: Omit<CopilotConfigState, 'status'> & { runtimeUrl: string | null },
+): CopilotConfigState {
+  const missingFields = getMissingReadyStateFields(baseState)
+
+  if (missingFields.length === 1 && missingFields[0] === 'runtimeUrl') {
+    return { ...baseState, status: 'empty', missingFields } as CopilotConfigState
+  }
+
+  return { ...baseState, status: 'incomplete', missingFields } as CopilotConfigState
 }
 
 function normalizeOptionalString(value: unknown): string | null {

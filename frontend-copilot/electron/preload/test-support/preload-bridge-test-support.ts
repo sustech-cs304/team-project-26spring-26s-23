@@ -5,6 +5,7 @@ import type { SettingsWorkspaceEditableState } from '../../settings-workspace/st
 
 const preloadMocks = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
+  getPathForFile: vi.fn(),
   invoke: vi.fn(),
   on: vi.fn(),
   off: vi.fn(),
@@ -19,6 +20,9 @@ vi.mock('electron', () => ({
     on: preloadMocks.on,
     off: preloadMocks.off,
   },
+  webUtils: {
+    getPathForFile: preloadMocks.getPathForFile,
+  },
 }))
 
 beforeEach(() => {
@@ -32,6 +36,7 @@ export async function loadPreloadModule(): Promise<void> {
 
 export function resetPreloadBridgeMocks(): void {
   preloadMocks.exposeInMainWorld.mockReset()
+  preloadMocks.getPathForFile.mockReset()
   preloadMocks.invoke.mockReset()
   preloadMocks.on.mockReset()
   preloadMocks.off.mockReset()
@@ -55,11 +60,15 @@ export function getInvokeMock() {
   return preloadMocks.invoke
 }
 
+export function getPathForFileMock() {
+  return preloadMocks.getPathForFile
+}
+
 export function getOffMock() {
   return preloadMocks.off
 }
 
-export function getRegisteredOnListener<TListener extends (...args: any[]) => unknown>(channel: string): TListener {
+export function getRegisteredOnListener<TListener extends (...args: unknown[]) => unknown>(channel: string): TListener {
   const onCall = preloadMocks.on.mock.calls.find(([candidateChannel]) => candidateChannel === channel)
 
   if (onCall === undefined || typeof onCall[1] !== 'function') {

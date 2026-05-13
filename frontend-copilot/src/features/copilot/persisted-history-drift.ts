@@ -57,7 +57,7 @@ function readHistoryInput(
 ): AssistantSessionHistoryState | null {
   if (isRecord(input) && 'history' in input) {
     const history = input.history
-    return isRecord(history) ? history as AssistantSessionHistoryState : null
+    return isRecord(history) ? history as unknown as AssistantSessionHistoryState : null
   }
 
   return isRecord(input) ? input as AssistantSessionHistoryState : null
@@ -159,6 +159,6 @@ function normalizePersistedHistoryDriftCode(value: unknown): PersistedHistoryDri
   return null
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

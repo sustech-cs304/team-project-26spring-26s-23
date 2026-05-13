@@ -21,6 +21,7 @@ from app.integrations.sustech.blackboard.data.models import (
     Resource,
     utc_now_naive,
 )
+from app.integrations.sustech.blackboard.api.dto import CalendarEventDTO
 
 from .results import SyncStats, empty_sync_stats
 from .sync_support import (
@@ -1240,12 +1241,27 @@ def sync_calendar_events(
     return stats
 
 
+def _calendar_event_row_to_dto(row: CalendarEvent) -> CalendarEventDTO:
+    return CalendarEventDTO(
+        uid=row.uid,
+        raw_uid=row.raw_uid,
+        title=row.title,
+        start_at=row.start_at,
+        end_at=row.end_at,
+        all_day=bool(row.all_day),
+        description=row.description,
+        location=row.location,
+        course_id=row.course_id,
+        done=bool(row.done),
+    )
+
+
 def list_calendar_events(
     session: Session,
     feed_url: str,
     *,
     include_deleted: bool = False,
-) -> list[dict[str, Any]]:
+) -> list[CalendarEventDTO]:
     normalized_feed_url = str(feed_url or "").strip()
     if not normalized_feed_url:
         return []
@@ -1257,20 +1273,17 @@ def list_calendar_events(
         query = query.filter(CalendarEvent.is_deleted.is_(False))
 
     rows = query.order_by(CalendarEvent.start_at.asc()).all()
-    return [
-        {
-            "uid": row.uid,
-            "raw_uid": row.raw_uid,
-            "title": row.title,
-            "description": row.description,
-            "location": row.location,
-            "course_id": row.course_id,
-            "start_at": row.start_at,
-            "end_at": row.end_at,
-            "all_day": row.all_day,
-            "done": row.done,
-            "is_deleted": row.is_deleted,
-            "last_synced_at": row.last_synced_at,
-        }
-        for row in rows
-    ]
+    return [_calendar_event_row_to_dto(row) for row in rows]
+
+
+def list_all_calendar_events(
+    session: Session,
+    *,
+    include_deleted: bool = False,
+) -> list[CalendarEventDTO]:
+    """列出所有订阅的日历事件（跨 feed_url），供统一日立同步使用。"""
+    query = session.query(CalendarEvent)
+    if not include_deleted:
+        query = query.filter(CalendarEvent.is_deleted.is_(False))
+    rows = query.order_by(CalendarEvent.start_at.asc()).all()
+    return [_calendar_event_row_to_dto(row) for row in rows]

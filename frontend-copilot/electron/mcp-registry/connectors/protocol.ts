@@ -172,11 +172,7 @@ export function unwrapJsonRpcResponse(response: JsonRpcResponsePayload, now: () 
       typeof response.error.message === 'string' && response.error.message.trim() !== ''
         ? response.error.message
         : 'The MCP server returned a JSON-RPC error response.',
-      true,
-      now,
-      {
-        remoteCode: response.error.code ?? null,
-      },
+      { retryable: true, now, details: { remoteCode: response.error.code ?? null } },
     ))
   }
 
@@ -193,19 +189,23 @@ export class McpConnectorError extends Error {
   }
 }
 
+export interface CreateMcpErrorSummaryOptions {
+  retryable: boolean
+  now: () => string
+  details?: Record<string, unknown> | null
+}
+
 export function createMcpErrorSummary(
   code: string,
   message: string,
-  retryable: boolean,
-  now: () => string,
-  details: Record<string, unknown> | null = null,
+  options: CreateMcpErrorSummaryOptions,
 ): McpErrorSummary {
   return {
     code,
     message,
-    retryable,
-    observedAt: now(),
-    details,
+    retryable: options.retryable,
+    observedAt: options.now(),
+    details: options.details ?? null,
   }
 }
 
@@ -219,73 +219,81 @@ export function normalizeConnectorError(error: unknown, now: () => string, fallb
   }
 
   if (error instanceof DOMException && error.name === 'AbortError') {
-    return createMcpErrorSummary('timeout', 'The MCP connection attempt timed out.', true, now)
+    return createMcpErrorSummary('timeout', 'The MCP connection attempt timed out.', { retryable: true, now })
   }
 
   if (error instanceof Error) {
-    return createMcpErrorSummary(fallbackCode, error.message, true, now)
+    return createMcpErrorSummary(fallbackCode, error.message, { retryable: true, now })
   }
 
-  return createMcpErrorSummary(fallbackCode, String(error), true, now)
+  return createMcpErrorSummary(fallbackCode, String(error), { retryable: true, now })
 }
 
 export function classifyHttpStatus(status: number, statusText: string, now: () => string): McpErrorSummary {
   const suffix = statusText.trim() === '' ? '' : `: ${statusText.trim()}`
   if (status === 401) {
-    return createMcpErrorSummary('http_unauthorized', `MCP HTTP/SSE endpoint rejected authentication with status 401${suffix}.`, false, now, { status })
+    return createMcpErrorSummary('http_unauthorized', `MCP HTTP/SSE endpoint rejected authentication with status 401${suffix}.`, { retryable: false, now, details: { status } })
   }
   if (status === 403) {
-    return createMcpErrorSummary('http_forbidden', `MCP HTTP/SSE endpoint denied access with status 403${suffix}.`, false, now, { status })
+    return createMcpErrorSummary('http_forbidden', `MCP HTTP/SSE endpoint denied access with status 403${suffix}.`, { retryable: false, now, details: { status } })
   }
   if (status === 404) {
-    return createMcpErrorSummary('http_not_found', `MCP HTTP/SSE endpoint was not found with status 404${suffix}.`, false, now, { status })
+    return createMcpErrorSummary('http_not_found', `MCP HTTP/SSE endpoint was not found with status 404${suffix}.`, { retryable: false, now, details: { status } })
   }
   if (status >= 500) {
-    return createMcpErrorSummary('http_server_error', `MCP HTTP/SSE endpoint failed with status ${status}${suffix}.`, true, now, { status })
+    return createMcpErrorSummary('http_server_error', `MCP HTTP/SSE endpoint failed with status ${status}${suffix}.`, { retryable: true, now, details: { status } })
   }
 
-  return createMcpErrorSummary('http_status_error', `MCP HTTP/SSE endpoint failed with status ${status}${suffix}.`, status === 408 || status === 429, now, { status })
+  return createMcpErrorSummary('http_status_error', `MCP HTTP/SSE endpoint failed with status ${status}${suffix}.`, { retryable: status === 408 || status === 429, now, details: { status } })
+}
+
+export interface CreateConnectorSuccessOptions {
+  now: () => string
+  transportState: McpTransportStateSummary
+  warnings?: string[]
+  lastPhase?: McpConnectionPhase | null
+  lastHandshakeAt?: string | null
+  lastCatalogSyncAt?: string | null
+  reconnectAttempt?: number
 }
 
 export function createConnectorSuccess(
   server: McpServerRecord,
   tools: readonly McpRemoteToolSummary[],
-  now: () => string,
-  transportState: McpTransportStateSummary,
-  overrides: Partial<McpServerStateSummary> & {
-    warnings?: string[]
-  } = {},
+  options: CreateConnectorSuccessOptions,
 ): McpConnectorOperationSuccess {
   const clonedTools = cloneRemoteTools(tools)
   return {
     ok: true,
     tools: clonedTools,
-    warnings: overrides.warnings ?? [],
-    state: createConnectorState(server, 'connected', clonedTools.length, now, {
-      transportState,
+    warnings: options.warnings ?? [],
+    state: createConnectorState(server, 'connected', clonedTools.length, {
+      transportState: options.transportState,
       lastError: null,
-      lastPhase: overrides.lastPhase ?? null,
-      lastHandshakeAt: overrides.lastHandshakeAt ?? now(),
-      lastCatalogSyncAt: overrides.lastCatalogSyncAt ?? now(),
-      reconnectAttempt: overrides.reconnectAttempt ?? 0,
+      lastPhase: options.lastPhase ?? null,
+      lastHandshakeAt: options.lastHandshakeAt ?? options.now(),
+      lastCatalogSyncAt: options.lastCatalogSyncAt ?? options.now(),
+      reconnectAttempt: options.reconnectAttempt ?? 0,
     }),
   }
+}
+
+export interface CreateConnectorFailureOptions {
+  now: () => string
+  transportState: McpTransportStateSummary
+  previousTools?: readonly McpRemoteToolSummary[]
+  reconnectAttempt?: number
+  connectionState?: McpConnectionState
+  lastPhase?: McpConnectionPhase | null
+  lastHandshakeAt?: string | null
+  lastCatalogSyncAt?: string | null
+  warnings?: string[]
 }
 
 export function createConnectorFailure(
   server: McpServerRecord,
   error: McpErrorSummary,
-  now: () => string,
-  transportState: McpTransportStateSummary,
-  options: {
-    previousTools?: readonly McpRemoteToolSummary[]
-    reconnectAttempt?: number
-    connectionState?: McpConnectionState
-    lastPhase?: McpConnectionPhase | null
-    lastHandshakeAt?: string | null
-    lastCatalogSyncAt?: string | null
-    warnings?: string[]
-  } = {},
+  options: CreateConnectorFailureOptions,
 ): McpConnectorOperationFailure {
   const previousTools = cloneRemoteTools(options.previousTools ?? [])
   const connectionState = options.connectionState
@@ -296,8 +304,8 @@ export function createConnectorFailure(
     tools: previousTools,
     warnings: options.warnings ?? [],
     error: cloneErrorSummary(error),
-    state: createConnectorState(server, connectionState, previousTools.length, now, {
-      transportState,
+    state: createConnectorState(server, connectionState, previousTools.length, {
+      transportState: options.transportState,
       lastError: error,
       reconnectAttempt: options.reconnectAttempt ?? 0,
       lastPhase: options.lastPhase ?? null,
@@ -307,19 +315,20 @@ export function createConnectorFailure(
   }
 }
 
+export interface CreateConnectorStateOptions {
+  transportState?: McpTransportStateSummary | null
+  lastError?: McpErrorSummary | null
+  reconnectAttempt?: number
+  lastPhase?: McpConnectionPhase | null
+  lastHandshakeAt?: string | null
+  lastCatalogSyncAt?: string | null
+}
+
 export function createConnectorState(
   server: McpServerRecord,
   connectionState: McpConnectionState,
   toolCount: number,
-  _now: () => string,
-  options: {
-    transportState?: McpTransportStateSummary | null
-    lastError?: McpErrorSummary | null
-    reconnectAttempt?: number
-    lastPhase?: McpConnectionPhase | null
-    lastHandshakeAt?: string | null
-    lastCatalogSyncAt?: string | null
-  } = {},
+  options: CreateConnectorStateOptions = {},
 ): McpServerStateSummary {
   const resolvedConnectionState = server.enabled ? connectionState : 'disabled'
   return {
@@ -367,8 +376,7 @@ export function normalizeToolsListResult(result: unknown): McpRemoteToolSummary[
     throw new McpConnectorError(createMcpErrorSummary(
       'protocol_parse_failed',
       'The MCP server returned an invalid tools/list result.',
-      false,
-      () => new Date().toISOString(),
+      { retryable: false, now: () => new Date().toISOString() },
     ))
   }
 
@@ -393,8 +401,7 @@ export function normalizeToolsCallResult(input: {
       error: createMcpErrorSummary(
         'protocol_parse_failed',
         'The MCP server returned an invalid tools/call result.',
-        false,
-        now,
+        { retryable: false, now },
       ),
     }
   }
@@ -412,12 +419,7 @@ export function normalizeToolsCallResult(input: {
       error: createMcpErrorSummary(
         'mcp_remote_error',
         extractToolCallErrorMessage(content),
-        false,
-        now,
-        {
-          isError: true,
-          structuredContent: structuredContent ?? null,
-        },
+        { retryable: false, now, details: { isError: true, structuredContent: structuredContent ?? null } },
       ),
     }
   }
@@ -477,7 +479,7 @@ export function withTimeout<T>(
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new McpConnectorError(createMcpErrorSummary('timeout', message, true, now)))
+      reject(new McpConnectorError(createMcpErrorSummary('timeout', message, { retryable: true, now })))
     }, timeoutMs)
 
     work.then(
@@ -498,8 +500,7 @@ function normalizeToolEntry(entry: unknown, index: number): McpRemoteToolSummary
     throw new McpConnectorError(createMcpErrorSummary(
       'protocol_parse_failed',
       `The MCP server returned an invalid tool entry at index ${index}.`,
-      false,
-      () => new Date().toISOString(),
+      { retryable: false, now: () => new Date().toISOString() },
     ))
   }
 
@@ -524,9 +525,7 @@ function ensureUniqueToolNames(tools: readonly McpRemoteToolSummary[]): McpRemot
       throw new McpConnectorError(createMcpErrorSummary(
         'protocol_parse_failed',
         `The MCP server returned duplicate tool metadata for '${tool.name}'.`,
-        false,
-        () => new Date().toISOString(),
-        { remoteToolName: tool.name },
+        { retryable: false, now: () => new Date().toISOString(), details: { remoteToolName: tool.name } },
       ))
     }
 
@@ -538,19 +537,19 @@ function ensureUniqueToolNames(tools: readonly McpRemoteToolSummary[]): McpRemot
 
 function classifyNodeError(error: NodeJS.ErrnoException, now: () => string, fallbackCode: string): McpErrorSummary {
   if (error.code === 'ENOENT') {
-    return createMcpErrorSummary('command_not_found', 'MCP stdio command or working directory was not found.', false, now, { nodeCode: error.code })
+    return createMcpErrorSummary('command_not_found', 'MCP stdio command or working directory was not found.', { retryable: false, now, details: { nodeCode: error.code } })
   }
   if (error.code === 'EACCES' || error.code === 'EPERM') {
-    return createMcpErrorSummary('permission_denied', 'MCP stdio command could not be started because permission was denied.', false, now, { nodeCode: error.code })
+    return createMcpErrorSummary('permission_denied', 'MCP stdio command could not be started because permission was denied.', { retryable: false, now, details: { nodeCode: error.code } })
   }
   if (error.code === 'ETIMEDOUT') {
-    return createMcpErrorSummary('timeout', 'The MCP connection attempt timed out.', true, now, { nodeCode: error.code })
+    return createMcpErrorSummary('timeout', 'The MCP connection attempt timed out.', { retryable: true, now, details: { nodeCode: error.code } })
   }
   if (error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET' || error.code === 'ENOTFOUND' || error.code === 'EPIPE') {
-    return createMcpErrorSummary('network_unavailable', 'The MCP endpoint is temporarily unavailable.', true, now, { nodeCode: error.code })
+    return createMcpErrorSummary('network_unavailable', 'The MCP endpoint is temporarily unavailable.', { retryable: true, now, details: { nodeCode: error.code } })
   }
 
-  return createMcpErrorSummary(fallbackCode, error.message, true, now, { nodeCode: error.code ?? null })
+  return createMcpErrorSummary(fallbackCode, error.message, { retryable: true, now, details: { nodeCode: error.code ?? null } })
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
@@ -569,9 +568,7 @@ function createJsonRpcLineParseError(line: string): McpConnectorError {
   return new McpConnectorError(createMcpErrorSummary(
     'protocol_parse_failed',
     'The MCP stdio server returned unrecognized stdout output.',
-    false,
-    () => new Date().toISOString(),
-    { stdoutLine: excerpt },
+    { retryable: false, now: () => new Date().toISOString(), details: { stdoutLine: excerpt } },
   ))
 }
 

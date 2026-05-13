@@ -22,783 +22,813 @@ import {
   renderWithRoot,
 } from './CopilotChatPanel.test-support'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const DESC_CN_004 = '工具执行失败，请重试。'
+const LABEL_ERROR_DETAIL_OVERLAY = 'error-detail-overlay'
+const LABEL_HISTORY_SHELL = 'history-shell'
+const LABEL_OPENAI_GPT = 'openai/gpt-4.1'
+const LABEL_PROVIDER_OPENAI = 'provider-openai'
+const LABEL_TOOL_FAILED_BOOM = 'Tool failed: boom'
+const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
+const SELECTOR_CHAT_HISTORY_LOADING = 'chat-history-loading-skeleton'
+const SELECTOR_CHAT_MESSAGE_SCROLL = 'chat-message-scroll-region'
+
+
 afterEach(() => {
   vi.useRealTimers()
 })
 
+// 顶层集成测试 describe，包含 5+ 子 describe，覆盖 diagnostic 面板全场景，无法安全拆分
+/* eslint-disable-next-line max-lines-per-function */
 describe('CopilotPanelShell diagnostic visibility', () => {
-  it('renders a concise persisted history retry prompt and triggers retry', async () => {
-    const onRetrySessionHistory = vi.fn()
-    const rendered = renderWithRoot(
-      <CopilotPanelShell
-        state={createReadyState()}
-        retrying={false}
-        onRetry={vi.fn()}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            capabilitiesVersion: 'history-shell',
-          },
-        })}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        sessionHistory={createPersistedSessionHistoryState({
-          detailStatus: 'error',
-          detailError: 'detail unavailable',
-        })}
-        onRetrySessionHistory={onRetrySessionHistory}
-        sendError={null}
-        modelGroups={[]}
-        thinkingCapability={null}
-        composerDraft={createEmptyComposerDraft()}
-        onComposerDraftChange={vi.fn()}
-        onSend={vi.fn()}
-        onCancelCurrentRun={vi.fn()}
-        sendStatus="idle"
-        canCancelSend={false}
-        sendDisabledReason={null}
-        composerLockedReason={null}
-        historyDrift={null}
-        historyRebindAcknowledged={false}
-        onAcknowledgeHistoryRebind={vi.fn()}
-        conversation={[]}
-        assistantPlaceholder={{
-          shouldRender: false,
-          dismissReason: 'inactive',
-        }}
-        composerInputRef={createRef<HTMLTextAreaElement>()}
-        composerHeight={160}
-        onComposerResizeStart={vi.fn()}
-      />,
-    )
-
-    expect(rendered.getByTestId('chat-history-retry-button').textContent).toContain('历史消息加载失败，点击重试')
-    expect(rendered.queryByTestId('chat-message-scroll-region')).toBeNull()
-
-    await clickElement(rendered.getByTestId('chat-history-retry-button'))
-
-    expect(onRetrySessionHistory).toHaveBeenCalledOnce()
-
-    rendered.unmount()
-  })
-
-  it('renders a lightweight persisted history skeleton while loading detail', () => {
-    const html = renderToStaticMarkup(
-      <CopilotPanelShell
-        state={createReadyState()}
-        retrying={false}
-        onRetry={vi.fn()}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            capabilitiesVersion: 'history-shell',
-          },
-        })}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        sessionHistory={createPersistedSessionHistoryState({
-          detailStatus: 'loading',
-        })}
-        sendError={null}
-        modelGroups={[]}
-        thinkingCapability={null}
-        composerDraft={createEmptyComposerDraft()}
-        onComposerDraftChange={vi.fn()}
-        onSend={vi.fn()}
-        onCancelCurrentRun={vi.fn()}
-        sendStatus="idle"
-        canCancelSend={false}
-        sendDisabledReason={null}
-        composerLockedReason={null}
-        historyDrift={null}
-        historyRebindAcknowledged={false}
-        onAcknowledgeHistoryRebind={vi.fn()}
-        conversation={[]}
-        assistantPlaceholder={{
-          shouldRender: false,
-          dismissReason: 'inactive',
-        }}
-        composerInputRef={createRef<HTMLTextAreaElement>()}
-        composerHeight={160}
-        onComposerResizeStart={vi.fn()}
-      />,
-    )
-
-    expect(html).toContain('data-testid="chat-history-loading-skeleton"')
-    expect(html).not.toContain('data-testid="chat-message-scroll-region"')
-    expect(html).not.toContain('data-testid="chat-history-retry-button"')
-  })
-
-  it('keeps previous content visible, locks the composer, and switches directly to the new thread when loading finishes within 300ms', async () => {
-    vi.useFakeTimers()
-    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
-      sessionId: 'thread-1',
-      detailStatus: 'ready',
-      hasLoadedDetail: true,
-      conversation: createHistoryLoadingGateConversation('旧话题回答'),
-      composerDraft: createHistoryLoadingGateComposerDraft('旧话题草稿'),
-      modelGroups: createHistoryLoadingGateModelGroups(),
-    }))
-
-    rendered.rerender(buildHistoryLoadingGateShell({
-      sessionId: 'thread-2',
-      detailStatus: 'loading',
-      conversation: createHistoryLoadingGateConversation('新话题回答'),
-      composerDraft: createHistoryLoadingGateComposerDraft('新话题草稿'),
-      modelGroups: createHistoryLoadingGateModelGroups(),
-    }))
-
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('旧话题回答')
-    expect(rendered.container.textContent).not.toContain('新话题回答')
-
-    const retainedInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    const retainedSendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
-    const retainedModelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
-    expect(retainedInput.value).toBe('旧话题草稿')
-    expect(retainedInput.disabled).toBe(true)
-    expect(retainedSendButton.disabled).toBe(true)
-    expect(retainedSendButton.title).toBe('正在切换话题，请稍候。')
-    expect(retainedModelTrigger.disabled).toBe(true)
-
-    await act(async () => {
-      vi.advanceTimersByTime(299)
-    })
-
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('旧话题回答')
-
-    rendered.rerender(buildHistoryLoadingGateShell({
-      sessionId: 'thread-2',
-      detailStatus: 'ready',
-      hasLoadedDetail: true,
-      conversation: createHistoryLoadingGateConversation('新话题回答'),
-      composerDraft: createHistoryLoadingGateComposerDraft('新话题草稿'),
-      modelGroups: createHistoryLoadingGateModelGroups(),
-    }))
-
-    await act(async () => {
-      vi.advanceTimersByTime(1)
-    })
-
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('新话题回答')
-    expect(rendered.container.textContent).not.toContain('旧话题回答')
-
-    const readyInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
-    const readySendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
-    const readyModelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
-    expect(readyInput.value).toBe('新话题草稿')
-    expect(readyInput.disabled).toBe(false)
-    expect(readySendButton.disabled).toBe(false)
-    expect(readyModelTrigger.disabled).toBe(false)
-    rendered.unmount()
-  })
-
-  it('switches from retained previous content to the skeleton after 300ms when the next persisted thread is still loading', async () => {
-    vi.useFakeTimers()
-    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
-      sessionId: 'thread-1',
-      detailStatus: 'ready',
-      hasLoadedDetail: true,
-      conversation: createHistoryLoadingGateConversation('旧话题回答'),
-      composerDraft: createHistoryLoadingGateComposerDraft('旧话题草稿'),
-      modelGroups: createHistoryLoadingGateModelGroups(),
-    }))
-
-    rendered.rerender(buildHistoryLoadingGateShell({
-      sessionId: 'thread-2',
-      detailStatus: 'loading',
-      conversation: createHistoryLoadingGateConversation('新话题回答'),
-      composerDraft: createHistoryLoadingGateComposerDraft('新话题草稿'),
-      modelGroups: createHistoryLoadingGateModelGroups(),
-    }))
-
-    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).toBeNull()
-    expect(queryActiveByTestId(rendered.container, 'chat-message-scroll-region')?.textContent).toContain('旧话题回答')
-
-    await act(async () => {
-      vi.advanceTimersByTime(299)
-    })
-
-    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).toBeNull()
-    expect(queryActiveByTestId(rendered.container, 'chat-message-scroll-region')?.textContent).toContain('旧话题回答')
-
-    await act(async () => {
-      vi.advanceTimersByTime(1)
-    })
-
-    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).not.toBeNull()
-    expect(queryActiveByTestId(rendered.container, 'chat-message-scroll-region')).toBeNull()
-    expect(readActiveTextContent(rendered.container)).not.toContain('旧话题回答')
-    rendered.unmount()
-  })
-
-  it('keeps the skeleton visible for at least 500ms once it appears', async () => {
-    vi.useFakeTimers()
-    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
-      sessionId: 'thread-1',
-      detailStatus: 'ready',
-      hasLoadedDetail: true,
-    }))
-
-    rendered.rerender(buildHistoryLoadingGateShell({
-      sessionId: 'thread-2',
-      detailStatus: 'loading',
-    }))
-
-    await act(async () => {
-      vi.advanceTimersByTime(300)
-    })
-
-    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).not.toBeNull()
-
-    rendered.rerender(buildHistoryLoadingGateShell({
-      sessionId: 'thread-2',
-      detailStatus: 'ready',
-      hasLoadedDetail: true,
-    }))
-
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
-
-    await act(async () => {
-      vi.advanceTimersByTime(499)
-    })
-
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
-
-    await act(async () => {
-      vi.advanceTimersByTime(1)
-    })
-
-    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).toBeNull()
-    rendered.unmount()
-  })
-
-  it('resets the loading gate when the user switches again before the previous minimum display ends', async () => {
-    vi.useFakeTimers()
-    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
-      sessionId: 'thread-1',
-      detailStatus: 'ready',
-      hasLoadedDetail: true,
-    }))
-
-    rendered.rerender(buildHistoryLoadingGateShell({
-      sessionId: 'thread-2',
-      detailStatus: 'loading',
-    }))
-
-    await act(async () => {
-      vi.advanceTimersByTime(300)
-    })
-
-    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).not.toBeNull()
-
-    rendered.rerender(buildHistoryLoadingGateShell({
-      sessionId: 'thread-3',
-      detailStatus: 'loading',
-    }))
-
-    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).toBeNull()
-
-    await act(async () => {
-      vi.advanceTimersByTime(299)
-    })
-
-    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).toBeNull()
-
-    await act(async () => {
-      vi.advanceTimersByTime(1)
-    })
-
-    expect(queryActiveByTestId(rendered.container, 'chat-history-loading-skeleton')).not.toBeNull()
-    rendered.unmount()
-  })
-
-  it('keeps startup restore on the existing immediate skeleton path and does not gate new blank sessions', async () => {
-    vi.useFakeTimers()
-    const startupRendered = renderWithRoot(buildHistoryLoadingGateShell({
-      sessionId: 'thread-startup',
-      detailStatus: 'loading',
-    }))
-
-    expect(startupRendered.queryByTestId('chat-history-loading-skeleton')).not.toBeNull()
-
-    startupRendered.unmount()
-
-    const liveRendered = renderWithRoot(buildHistoryLoadingGateShell({
-      sessionId: 'thread-live',
-      detailStatus: 'loading',
-      isPersistedThread: false,
-    }))
-
-    expect(liveRendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
-    expect(liveRendered.queryByTestId('chat-message-scroll-region')).not.toBeNull()
-
-    await act(async () => {
-      vi.advanceTimersByTime(800)
-    })
-
-    expect(liveRendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
-    expect(liveRendered.queryByTestId('chat-message-scroll-region')).not.toBeNull()
-    liveRendered.unmount()
-  })
-
-  it('suppresses the persisted history skeleton when renderLoadingSkeleton is false', () => {
-    const html = renderToStaticMarkup(
-      <CopilotPanelShell
-        state={createReadyState()}
-        retrying={false}
-        onRetry={vi.fn()}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            capabilitiesVersion: 'history-shell',
-          },
-        })}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        sessionHistory={createPersistedSessionHistoryState({
-          detailStatus: 'loading',
-        })}
-        renderLoadingSkeleton={false}
-        sendError={null}
-        modelGroups={[]}
-        thinkingCapability={null}
-        composerDraft={createEmptyComposerDraft()}
-        onComposerDraftChange={vi.fn()}
-        onSend={vi.fn()}
-        onCancelCurrentRun={vi.fn()}
-        sendStatus="idle"
-        canCancelSend={false}
-        sendDisabledReason={null}
-        composerLockedReason={null}
-        historyDrift={null}
-        historyRebindAcknowledged={false}
-        onAcknowledgeHistoryRebind={vi.fn()}
-        conversation={[]}
-        assistantPlaceholder={{
-          shouldRender: false,
-          dismissReason: 'inactive',
-        }}
-        composerInputRef={createRef<HTMLTextAreaElement>()}
-        composerHeight={160}
-        onComposerResizeStart={vi.fn()}
-      />,
-    )
-
-    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
-  })
-
-  it('transitions from hidden loading to ready without a skeleton exit stage when renderLoadingSkeleton is false', async () => {
-    vi.useFakeTimers()
-    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
-      sessionId: 'thread-hidden',
-      detailStatus: 'loading',
-      renderLoadingSkeleton: false,
-    }))
-
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
-
-    rendered.rerender(buildHistoryLoadingGateShell({
-      sessionId: 'thread-hidden',
-      detailStatus: 'ready',
-      hasLoadedDetail: true,
-      conversation: createHistoryLoadingGateConversation('新话题回答'),
-      renderLoadingSkeleton: false,
-    }))
-
-    await act(async () => {
-      vi.advanceTimersByTime(160)
-    })
-
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('新话题回答')
-
-    rendered.unmount()
-  })
-
-  it('does not stage a hidden loading-to-ready cross-fade before a restored thread is revealed', async () => {
-    vi.useFakeTimers()
-    const rendered = renderWithRoot(buildHistoryLoadingGateShell({
-      sessionId: 'thread-hidden-stage',
-      detailStatus: 'loading',
-      renderLoadingSkeleton: false,
-    }))
-
-    rendered.rerender(buildHistoryLoadingGateShell({
-      sessionId: 'thread-hidden-stage',
-      detailStatus: 'ready',
-      hasLoadedDetail: true,
-      conversation: createHistoryLoadingGateConversation('新话题回答'),
-      renderLoadingSkeleton: false,
-    }))
-
-    await act(async () => {})
-
-    expect(rendered.container.querySelector('.cross-fade__stage--entering')).toBeNull()
-    expect(rendered.getByTestId('chat-message-scroll-region').textContent).toContain('新话题回答')
-
-    rendered.unmount()
-  })
-
-  it('prefers transient conversation content over persisted loading gating', () => {
-    const html = renderToStaticMarkup(
-      <CopilotPanelShell
-        state={createReadyState()}
-        retrying={false}
-        onRetry={vi.fn()}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            capabilitiesVersion: 'history-shell',
-          },
-        })}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        sessionHistory={createPersistedSessionHistoryState({
-          detailStatus: 'loading',
-        })}
-        sendError={null}
-        modelGroups={[]}
-        thinkingCapability={null}
-        composerDraft={createEmptyComposerDraft()}
-        onComposerDraftChange={vi.fn()}
-        onSend={vi.fn()}
-        onCancelCurrentRun={vi.fn()}
-        sendStatus="sending"
-        canCancelSend={false}
-        sendDisabledReason={null}
-        composerLockedReason={null}
-        historyDrift={null}
-        historyRebindAcknowledged={false}
-        onAcknowledgeHistoryRebind={vi.fn()}
-        hasTransientConversation
-        conversation={[
-          {
-            id: 'user:transient-1',
-            kind: 'user',
-            title: '',
-            content: '即时消息',
-            status: 'completed',
-          },
-        ]}
-        assistantPlaceholder={{
-          shouldRender: true,
-          dismissReason: null,
-        }}
-        composerInputRef={createRef<HTMLTextAreaElement>()}
-        composerHeight={160}
-        onComposerResizeStart={vi.fn()}
-      />,
-    )
-
-    expect(html).toContain('data-testid="chat-message-scroll-region"')
-    expect(html).toContain('即时消息')
-    expect(html).not.toContain('data-testid="chat-history-loading-skeleton"')
-  })
-
-  it('keeps an active restored session visible even when selectedAgent is temporarily null', () => {
-    const html = renderToStaticMarkup(
-      <CopilotPanelShell
-        state={createReadyState()}
-        retrying={false}
-        onRetry={vi.fn()}
-        selectedAgent={null}
-        sessionShell={createSessionShell({
-          capabilities: {
-            capabilitiesVersion: 'history-shell',
-          },
-        })}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        sessionHistory={createPersistedSessionHistoryState({
-          detailStatus: 'ready',
-          timelineItems: [
-            {
-              kind: 'assistant_message',
-              runId: 'run-1',
-              sequenceStart: 1,
-              text: '启动恢复历史',
+  describe('persisted history retry and loading', () => {
+    it('renders a concise persisted history retry prompt and triggers retry', async () => {
+      const onRetrySessionHistory = vi.fn()
+      const rendered = renderWithRoot(
+        <CopilotPanelShell
+          state={createReadyState()}
+          retrying={false}
+          onRetry={vi.fn()}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={createSessionShell({
+            capabilities: {
+              capabilitiesVersion: LABEL_HISTORY_SHELL,
             },
-          ],
-        })}
-        sendError={null}
-        modelGroups={[]}
-        thinkingCapability={null}
-        composerDraft={createEmptyComposerDraft()}
-        onComposerDraftChange={vi.fn()}
-        onSend={vi.fn()}
-        onCancelCurrentRun={vi.fn()}
-        sendStatus="idle"
-        canCancelSend={false}
-        sendDisabledReason={null}
-        composerLockedReason={null}
-        historyDrift={null}
-        historyRebindAcknowledged={false}
-        onAcknowledgeHistoryRebind={vi.fn()}
-        conversation={[
-          {
-            id: 'history:user:run-1',
-            kind: 'user',
-            title: '',
-            content: '启动恢复历史',
-            status: 'completed',
-          },
-        ]}
-        assistantPlaceholder={{
-          shouldRender: false,
-          dismissReason: 'inactive',
-        }}
-        composerInputRef={createRef<HTMLTextAreaElement>()}
-        composerHeight={160}
-        onComposerResizeStart={vi.fn()}
-      />,
-    )
+          })}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={createPersistedSessionHistoryState({
+            detailStatus: 'error',
+            detailError: 'detail unavailable',
+          })}
+          onRetrySessionHistory={onRetrySessionHistory}
+          sendError={null}
+          modelGroups={[]}
+          thinkingCapability={null}
+          composerDraft={createEmptyComposerDraft()}
+          onComposerDraftChange={vi.fn()}
+          onSend={vi.fn()}
+          onCancelCurrentRun={vi.fn()}
+          sendStatus="idle"
+          canCancelSend={false}
+          sendDisabledReason={null}
+          composerLockedReason={null}
+          historyDrift={null}
+          historyRebindAcknowledged={false}
+          onAcknowledgeHistoryRebind={vi.fn()}
+          conversation={[]}
+          assistantPlaceholder={{
+            shouldRender: false,
+            dismissReason: 'inactive',
+          }}
+          composerInputRef={createRef<HTMLTextAreaElement>()}
+          composerHeight={160}
+          onComposerResizeStart={vi.fn()}
+        />,
+      )
 
-    expect(html).toContain('data-testid="chat-message-scroll-region"')
-    expect(html).toContain('启动恢复历史')
-    expect(html).not.toContain('暂无可用助手')
-  })
+      expect(rendered.getByTestId('chat-history-retry-button').textContent).toContain('历史消息加载失败，点击重试')
+      expect(rendered.queryByTestId(SELECTOR_CHAT_MESSAGE_SCROLL)).toBeNull()
 
-  it('shows a concise restore diagnostic when history recovery fails before any session is available', () => {
-    const html = renderToStaticMarkup(
-      <CopilotPanelShell
-        state={createReadyState()}
-        retrying={false}
-        onRetry={vi.fn()}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={null}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        historyRestoreError="history list unavailable"
-        sendError={null}
-        modelGroups={[]}
-        thinkingCapability={null}
-        composerDraft={createEmptyComposerDraft()}
-        onComposerDraftChange={vi.fn()}
-        onSend={vi.fn()}
-        onCancelCurrentRun={vi.fn()}
-        sendStatus="idle"
-        canCancelSend={false}
-        sendDisabledReason={null}
-        composerLockedReason={null}
-        historyDrift={null}
-        historyRebindAcknowledged={false}
-        onAcknowledgeHistoryRebind={vi.fn()}
-        conversation={[]}
-        assistantPlaceholder={{
-          shouldRender: false,
-          dismissReason: 'inactive',
-        }}
-        composerInputRef={createRef<HTMLTextAreaElement>()}
-        composerHeight={160}
-        onComposerResizeStart={vi.fn()}
-      />,
-    )
+      await clickElement(rendered.getByTestId('chat-history-retry-button'))
 
-    expect(html).toContain('data-testid="chat-history-restore-error"')
-    expect(html).toContain('历史话题恢复失败，稍后自动重试。')
-  })
+      expect(onRetrySessionHistory).toHaveBeenCalledOnce()
 
-  it('hides runtime diagnostic cards when debug mode is disabled while keeping other content visible', () => {
-    const html = renderShell(false)
+      rendered.unmount()
+    })
 
-    expect(html).toContain('已生成的回答')
-    expect(html).toContain('发送失败')
-    expect(html).toContain('工具执行失败，请重试。')
-    expect(html).not.toContain('运行诊断')
-    expect(html).not.toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
-  })
-
-  it('shows runtime diagnostic cards when debug mode is enabled', () => {
-    const html = renderShell(true)
-
-    expect(html).toContain('已生成的回答')
-    expect(html).not.toContain('运行诊断')
-    expect(html).not.toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
-    expect(html).toContain('发送失败')
-  })
-
-  it('opens the shared error detail overlay from failed cards', async () => {
-    const rendered = renderInteractiveShell(false)
-
-    expect(rendered.container.textContent).not.toContain('Tool failed: boom')
-
-    await clickElement(rendered.getByTestId('chat-message-error-detail-button-2'))
-
-    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('工具执行失败，请重试。')
-    expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('Tool failed: boom')
-    expect(rendered.getByTestId('error-detail-overlay-group-summary').textContent).toContain('摘要')
-
-    await clickElement(rendered.getByTestId('error-detail-overlay-close'))
-
-    expect(rendered.queryByTestId('error-detail-overlay')).toBeNull()
-
-    rendered.unmount()
-  })
-
-  it('opens MCP technical details from the failed tool card entry point', async () => {
-    const rendered = renderInteractiveShell(false)
-
-    await clickElement(rendered.getByTestId('chat-message-tool-error-detail-button-1'))
-
-    const overlay = rendered.getByTestId('error-detail-overlay')
-    expect(overlay.textContent).toContain('工具名称')
-    expect(overlay.textContent).toContain('search-campus')
-    expect(overlay.textContent).toContain('toolId')
-    expect(overlay.textContent).toContain('serverId')
-    expect(overlay.textContent).toContain('mcp-stdio-stub')
-    expect(overlay.textContent).toContain('调用阶段')
-    expect(overlay.textContent).toContain('tools/call')
-    expect(overlay.textContent).toContain('诊断摘要')
-    expect(overlay.textContent).toContain('stderr 摘要')
-    expect(overlay.textContent).toContain('快照版本')
-
-    rendered.unmount()
-  })
-  it('shows replay failure feedback for the selected run and keeps retry available', async () => {
-    const onRetrySessionHistory = vi.fn()
-    const rendered = renderWithRoot(
-      <CopilotPanelShell
-        state={createReadyState()}
-        retrying={false}
-        onRetry={vi.fn()}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            capabilitiesVersion: 'history-shell',
-          },
-        })}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        sessionHistory={createPersistedSessionHistoryState({
-          hasLoadedDetail: true,
-          detailStatus: 'ready',
-          timelineItems: [
-            {
-              kind: 'assistant_message',
-              runId: 'run-1',
-              sequenceStart: 1,
-              text: '时间线兜底内容',
+    it('renders a lightweight persisted history skeleton while loading detail', () => {
+      const html = renderToStaticMarkup(
+        <CopilotPanelShell
+          state={createReadyState()}
+          retrying={false}
+          onRetry={vi.fn()}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={createSessionShell({
+            capabilities: {
+              capabilitiesVersion: LABEL_HISTORY_SHELL,
             },
-          ],
-          selectedRunId: 'run-1',
-          replayStatus: 'error',
-          replayError: 'replay unavailable',
-        })}
-        onRetrySessionHistory={onRetrySessionHistory}
-        sendError={null}
-        modelGroups={[]}
-        thinkingCapability={null}
-        composerDraft={createEmptyComposerDraft()}
-        onComposerDraftChange={vi.fn()}
-        onSend={vi.fn()}
-        onCancelCurrentRun={vi.fn()}
-        sendStatus="idle"
-        canCancelSend={false}
-        sendDisabledReason={null}
-        composerLockedReason={null}
-        persistedSelectedRunConversationSource="timeline"
-        historyDrift={null}
-        historyRebindAcknowledged={false}
-        onAcknowledgeHistoryRebind={vi.fn()}
-        conversation={[
-          {
-            id: 'assistant:history-fallback',
-            kind: 'assistant',
-            title: '历史回答',
-            content: '时间线兜底内容',
-            status: 'completed',
-            runId: 'run-1',
-            sequence: 1,
-            resolvedModelId: null,
-            resolvedModelRoute: null,
-            resolvedToolIds: [],
-            requestOptions: {},
-          },
-        ]}
-        assistantPlaceholder={{
-          shouldRender: false,
-          dismissReason: 'inactive',
-        }}
-        composerInputRef={createRef<HTMLTextAreaElement>()}
-        composerHeight={160}
-        onComposerResizeStart={vi.fn()}
-      />,
-    )
+          })}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={createPersistedSessionHistoryState({
+            detailStatus: 'loading',
+          })}
+          sendError={null}
+          modelGroups={[]}
+          thinkingCapability={null}
+          composerDraft={createEmptyComposerDraft()}
+          onComposerDraftChange={vi.fn()}
+          onSend={vi.fn()}
+          onCancelCurrentRun={vi.fn()}
+          sendStatus="idle"
+          canCancelSend={false}
+          sendDisabledReason={null}
+          composerLockedReason={null}
+          historyDrift={null}
+          historyRebindAcknowledged={false}
+          onAcknowledgeHistoryRebind={vi.fn()}
+          conversation={[]}
+          assistantPlaceholder={{
+            shouldRender: false,
+            dismissReason: 'inactive',
+          }}
+          composerInputRef={createRef<HTMLTextAreaElement>()}
+          composerHeight={160}
+          onComposerResizeStart={vi.fn()}
+        />,
+      )
 
-    expect(rendered.getByTestId('chat-history-replay-error').textContent).toContain('当前运行回放失败，当前展示的是时间线快照。')
-
-    await clickElement(rendered.getByTestId('chat-history-replay-retry-button'))
-
-    expect(onRetrySessionHistory).toHaveBeenCalledOnce()
-
-    rendered.unmount()
+      expect(html).toContain(`data-testid="${SELECTOR_CHAT_HISTORY_LOADING}"`)
+      expect(html).not.toContain(`data-testid="${SELECTOR_CHAT_MESSAGE_SCROLL}"`)
+      expect(html).not.toContain('data-testid="chat-history-retry-button"')
+    })
   })
 
-  it('shows capability hydration failure for restored threads and exposes retry', async () => {
-    const onRetrySessionHistory = vi.fn()
-    const rendered = renderWithRoot(
-      <CopilotPanelShell
-        state={createReadyState()}
-        retrying={false}
-        onRetry={vi.fn()}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell({
-          capabilities: {
-            capabilitiesVersion: 'history-shell',
-          },
-        })}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        sessionHistory={createPersistedSessionHistoryState({
-          hasLoadedDetail: true,
-          detailStatus: 'ready',
-          capabilitiesStatus: 'error',
-          capabilitiesError: 'capabilities unavailable',
-        })}
-        onRetrySessionHistory={onRetrySessionHistory}
-        sendError={null}
-        modelGroups={[]}
-        thinkingCapability={null}
-        composerDraft={createEmptyComposerDraft()}
-        onComposerDraftChange={vi.fn()}
-        onSend={vi.fn()}
-        onCancelCurrentRun={vi.fn()}
-        sendStatus="idle"
-        canCancelSend={false}
-        sendDisabledReason="历史线程能力恢复失败，请重试后再发送。"
-        composerLockedReason={null}
-        historyDrift={null}
-        historyRebindAcknowledged={false}
-        onAcknowledgeHistoryRebind={vi.fn()}
-        conversation={[]}
-        assistantPlaceholder={{
-          shouldRender: false,
-          dismissReason: 'inactive',
-        }}
-        composerInputRef={createRef<HTMLTextAreaElement>()}
-        composerHeight={160}
-        onComposerResizeStart={vi.fn()}
-      />,
-    )
+  // 包含 3 个紧密相关的 history loading gate 测试，需共享 fake timers 和复杂 shell 构建
+  /* eslint-disable-next-line max-lines-per-function */
+  describe('history loading gate', () => {
+    it('keeps previous content visible, locks the composer, and switches directly to the new thread when loading finishes within 300ms', async () => {
+      vi.useFakeTimers()
+      const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+        sessionId: 'thread-1',
+        detailStatus: 'ready',
+        hasLoadedDetail: true,
+        conversation: createHistoryLoadingGateConversation('旧话题回答'),
+        composerDraft: createHistoryLoadingGateComposerDraft('旧话题草稿'),
+        modelGroups: createHistoryLoadingGateModelGroups(),
+      }))
 
-    expect(rendered.getByTestId('chat-history-capabilities-error').textContent).toContain('历史线程能力恢复失败，请重试后再继续发送。')
+      rendered.rerender(buildHistoryLoadingGateShell({
+        sessionId: 'thread-2',
+        detailStatus: 'loading',
+        conversation: createHistoryLoadingGateConversation('新话题回答'),
+        composerDraft: createHistoryLoadingGateComposerDraft('新话题草稿'),
+        modelGroups: createHistoryLoadingGateModelGroups(),
+      }))
 
-    await clickElement(rendered.getByTestId('chat-history-capabilities-retry-button'))
+      expect(rendered.queryByTestId(SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('旧话题回答')
+      expect(rendered.container.textContent).not.toContain('新话题回答')
 
-    expect(onRetrySessionHistory).toHaveBeenCalledOnce()
+      const retainedInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const retainedSendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+      const retainedModelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+      expect(retainedInput.value).toBe('旧话题草稿')
+      expect(retainedInput.disabled).toBe(true)
+      expect(retainedSendButton.disabled).toBe(true)
+      expect(retainedSendButton.title).toBe('正在切换话题，请稍候。')
+      expect(retainedModelTrigger.disabled).toBe(true)
 
-    rendered.unmount()
+      await act(async () => {
+        vi.advanceTimersByTime(299)
+      })
+
+      expect(rendered.queryByTestId(SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('旧话题回答')
+
+      rendered.rerender(buildHistoryLoadingGateShell({
+        sessionId: 'thread-2',
+        detailStatus: 'ready',
+        hasLoadedDetail: true,
+        conversation: createHistoryLoadingGateConversation('新话题回答'),
+        composerDraft: createHistoryLoadingGateComposerDraft('新话题草稿'),
+        modelGroups: createHistoryLoadingGateModelGroups(),
+      }))
+
+      await act(async () => {
+        vi.advanceTimersByTime(1)
+      })
+
+      expect(rendered.queryByTestId(SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('新话题回答')
+      expect(rendered.container.textContent).not.toContain('旧话题回答')
+
+      const readyInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+      const readySendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+      const readyModelTrigger = rendered.getByTestId('chat-model-picker-trigger') as HTMLButtonElement
+      expect(readyInput.value).toBe('新话题草稿')
+      expect(readyInput.disabled).toBe(false)
+      expect(readySendButton.disabled).toBe(false)
+      expect(readyModelTrigger.disabled).toBe(false)
+      rendered.unmount()
+    })
+
+    it('switches from retained previous content to the skeleton after 300ms when the next persisted thread is still loading', async () => {
+      vi.useFakeTimers()
+      const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+        sessionId: 'thread-1',
+        detailStatus: 'ready',
+        hasLoadedDetail: true,
+        conversation: createHistoryLoadingGateConversation('旧话题回答'),
+        composerDraft: createHistoryLoadingGateComposerDraft('旧话题草稿'),
+        modelGroups: createHistoryLoadingGateModelGroups(),
+      }))
+
+      rendered.rerender(buildHistoryLoadingGateShell({
+        sessionId: 'thread-2',
+        detailStatus: 'loading',
+        conversation: createHistoryLoadingGateConversation('新话题回答'),
+        composerDraft: createHistoryLoadingGateComposerDraft('新话题草稿'),
+        modelGroups: createHistoryLoadingGateModelGroups(),
+      }))
+
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_MESSAGE_SCROLL)?.textContent).toContain('旧话题回答')
+
+      await act(async () => {
+        vi.advanceTimersByTime(299)
+      })
+
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_MESSAGE_SCROLL)?.textContent).toContain('旧话题回答')
+
+      await act(async () => {
+        vi.advanceTimersByTime(1)
+      })
+
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_HISTORY_LOADING)).not.toBeNull()
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_MESSAGE_SCROLL)).toBeNull()
+      expect(readActiveTextContent(rendered.container)).not.toContain('旧话题回答')
+      rendered.unmount()
+    })
+
+    it('keeps the skeleton visible for at least 500ms once it appears', async () => {
+      vi.useFakeTimers()
+      const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+        sessionId: 'thread-1',
+        detailStatus: 'ready',
+        hasLoadedDetail: true,
+      }))
+
+      rendered.rerender(buildHistoryLoadingGateShell({
+        sessionId: 'thread-2',
+        detailStatus: 'loading',
+      }))
+
+      await act(async () => {
+        vi.advanceTimersByTime(300)
+      })
+
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_HISTORY_LOADING)).not.toBeNull()
+
+      rendered.rerender(buildHistoryLoadingGateShell({
+        sessionId: 'thread-2',
+        detailStatus: 'ready',
+        hasLoadedDetail: true,
+      }))
+
+      expect(rendered.queryByTestId(SELECTOR_CHAT_HISTORY_LOADING)).not.toBeNull()
+
+      await act(async () => {
+        vi.advanceTimersByTime(499)
+      })
+
+      expect(rendered.queryByTestId(SELECTOR_CHAT_HISTORY_LOADING)).not.toBeNull()
+
+      await act(async () => {
+        vi.advanceTimersByTime(1)
+      })
+
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+      rendered.unmount()
+    })
+
+    it('resets the loading gate when the user switches again before the previous minimum display ends', async () => {
+      vi.useFakeTimers()
+      const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+        sessionId: 'thread-1',
+        detailStatus: 'ready',
+        hasLoadedDetail: true,
+      }))
+
+      rendered.rerender(buildHistoryLoadingGateShell({
+        sessionId: 'thread-2',
+        detailStatus: 'loading',
+      }))
+
+      await act(async () => {
+        vi.advanceTimersByTime(300)
+      })
+
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_HISTORY_LOADING)).not.toBeNull()
+
+      rendered.rerender(buildHistoryLoadingGateShell({
+        sessionId: 'thread-3',
+        detailStatus: 'loading',
+      }))
+
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+
+      await act(async () => {
+        vi.advanceTimersByTime(299)
+      })
+
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+
+      await act(async () => {
+        vi.advanceTimersByTime(1)
+      })
+
+      expect(queryActiveByTestId(rendered.container, SELECTOR_CHAT_HISTORY_LOADING)).not.toBeNull()
+      rendered.unmount()
+    })
+
+    it('keeps startup restore on the existing immediate skeleton path and does not gate new blank sessions', async () => {
+      vi.useFakeTimers()
+      const startupRendered = renderWithRoot(buildHistoryLoadingGateShell({
+        sessionId: 'thread-startup',
+        detailStatus: 'loading',
+      }))
+
+      expect(startupRendered.queryByTestId(SELECTOR_CHAT_HISTORY_LOADING)).not.toBeNull()
+
+      startupRendered.unmount()
+
+      const liveRendered = renderWithRoot(buildHistoryLoadingGateShell({
+        sessionId: 'thread-live',
+        detailStatus: 'loading',
+        isPersistedThread: false,
+      }))
+
+      expect(liveRendered.queryByTestId(SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+      expect(liveRendered.queryByTestId(SELECTOR_CHAT_MESSAGE_SCROLL)).not.toBeNull()
+
+      await act(async () => {
+        vi.advanceTimersByTime(800)
+      })
+
+      expect(liveRendered.queryByTestId(SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+      expect(liveRendered.queryByTestId(SELECTOR_CHAT_MESSAGE_SCROLL)).not.toBeNull()
+      liveRendered.unmount()
+    })
+  })
+
+  describe('skeleton suppression', () => {
+    it('suppresses the persisted history skeleton when renderLoadingSkeleton is false', () => {
+      const html = renderToStaticMarkup(
+        <CopilotPanelShell
+          state={createReadyState()}
+          retrying={false}
+          onRetry={vi.fn()}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={createSessionShell({
+            capabilities: {
+              capabilitiesVersion: LABEL_HISTORY_SHELL,
+            },
+          })}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={createPersistedSessionHistoryState({
+            detailStatus: 'loading',
+          })}
+          renderLoadingSkeleton={false}
+          sendError={null}
+          modelGroups={[]}
+          thinkingCapability={null}
+          composerDraft={createEmptyComposerDraft()}
+          onComposerDraftChange={vi.fn()}
+          onSend={vi.fn()}
+          onCancelCurrentRun={vi.fn()}
+          sendStatus="idle"
+          canCancelSend={false}
+          sendDisabledReason={null}
+          composerLockedReason={null}
+          historyDrift={null}
+          historyRebindAcknowledged={false}
+          onAcknowledgeHistoryRebind={vi.fn()}
+          conversation={[]}
+          assistantPlaceholder={{
+            shouldRender: false,
+            dismissReason: 'inactive',
+          }}
+          composerInputRef={createRef<HTMLTextAreaElement>()}
+          composerHeight={160}
+          onComposerResizeStart={vi.fn()}
+        />,
+      )
+
+      expect(html).not.toContain(`data-testid="${SELECTOR_CHAT_HISTORY_LOADING}"`)
+    })
+
+    it('transitions from hidden loading to ready without a skeleton exit stage when renderLoadingSkeleton is false', async () => {
+      vi.useFakeTimers()
+      const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+        sessionId: 'thread-hidden',
+        detailStatus: 'loading',
+        renderLoadingSkeleton: false,
+      }))
+
+      expect(rendered.queryByTestId(SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+
+      rendered.rerender(buildHistoryLoadingGateShell({
+        sessionId: 'thread-hidden',
+        detailStatus: 'ready',
+        hasLoadedDetail: true,
+        conversation: createHistoryLoadingGateConversation('新话题回答'),
+        renderLoadingSkeleton: false,
+      }))
+
+      await act(async () => {
+        vi.advanceTimersByTime(160)
+      })
+
+      expect(rendered.queryByTestId(SELECTOR_CHAT_HISTORY_LOADING)).toBeNull()
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('新话题回答')
+
+      rendered.unmount()
+    })
+
+    it('does not stage a hidden loading-to-ready cross-fade before a restored thread is revealed', async () => {
+      vi.useFakeTimers()
+      const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+        sessionId: 'thread-hidden-stage',
+        detailStatus: 'loading',
+        renderLoadingSkeleton: false,
+      }))
+
+      rendered.rerender(buildHistoryLoadingGateShell({
+        sessionId: 'thread-hidden-stage',
+        detailStatus: 'ready',
+        hasLoadedDetail: true,
+        conversation: createHistoryLoadingGateConversation('新话题回答'),
+        renderLoadingSkeleton: false,
+      }))
+
+      await act(async () => {})
+
+      expect(rendered.container.querySelector('.cross-fade__stage--entering')).toBeNull()
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('新话题回答')
+
+      rendered.unmount()
+    })
+  })
+
+  // 包含 4 个 transient/edge case 测试，覆盖交互式 shell 与 sse 流
+  /* eslint-disable-next-line max-lines-per-function */
+  describe('transient and edge cases', () => {
+    it('prefers transient conversation content over persisted loading gating', () => {
+      const html = renderToStaticMarkup(
+        <CopilotPanelShell
+          state={createReadyState()}
+          retrying={false}
+          onRetry={vi.fn()}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={createSessionShell({
+            capabilities: {
+              capabilitiesVersion: LABEL_HISTORY_SHELL,
+            },
+          })}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={createPersistedSessionHistoryState({
+            detailStatus: 'loading',
+          })}
+          sendError={null}
+          modelGroups={[]}
+          thinkingCapability={null}
+          composerDraft={createEmptyComposerDraft()}
+          onComposerDraftChange={vi.fn()}
+          onSend={vi.fn()}
+          onCancelCurrentRun={vi.fn()}
+          sendStatus="sending"
+          canCancelSend={false}
+          sendDisabledReason={null}
+          composerLockedReason={null}
+          historyDrift={null}
+          historyRebindAcknowledged={false}
+          onAcknowledgeHistoryRebind={vi.fn()}
+          hasTransientConversation
+          conversation={[
+            {
+              id: 'user:transient-1',
+              kind: 'user',
+              title: '',
+              content: '即时消息',
+              status: 'completed',
+            },
+          ]}
+          assistantPlaceholder={{
+            shouldRender: true,
+            dismissReason: null,
+          }}
+          composerInputRef={createRef<HTMLTextAreaElement>()}
+          composerHeight={160}
+          onComposerResizeStart={vi.fn()}
+        />,
+      )
+
+      expect(html).toContain(`data-testid="${SELECTOR_CHAT_MESSAGE_SCROLL}"`)
+      expect(html).toContain('即时消息')
+      expect(html).not.toContain(`data-testid="${SELECTOR_CHAT_HISTORY_LOADING}"`)
+    })
+
+    it('keeps an active restored session visible even when selectedAgent is temporarily null', () => {
+      const html = renderToStaticMarkup(
+        <CopilotPanelShell
+          state={createReadyState()}
+          retrying={false}
+          onRetry={vi.fn()}
+          selectedAgent={null}
+          sessionShell={createSessionShell({
+            capabilities: {
+              capabilitiesVersion: LABEL_HISTORY_SHELL,
+            },
+          })}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={createPersistedSessionHistoryState({
+            detailStatus: 'ready',
+            timelineItems: [
+              {
+                kind: 'assistant_message',
+                runId: 'run-1',
+                sequenceStart: 1,
+                text: '启动恢复历史',
+              },
+            ],
+          })}
+          sendError={null}
+          modelGroups={[]}
+          thinkingCapability={null}
+          composerDraft={createEmptyComposerDraft()}
+          onComposerDraftChange={vi.fn()}
+          onSend={vi.fn()}
+          onCancelCurrentRun={vi.fn()}
+          sendStatus="idle"
+          canCancelSend={false}
+          sendDisabledReason={null}
+          composerLockedReason={null}
+          historyDrift={null}
+          historyRebindAcknowledged={false}
+          onAcknowledgeHistoryRebind={vi.fn()}
+          conversation={[
+            {
+              id: 'history:user:run-1',
+              kind: 'user',
+              title: '',
+              content: '启动恢复历史',
+              status: 'completed',
+            },
+          ]}
+          assistantPlaceholder={{
+            shouldRender: false,
+            dismissReason: 'inactive',
+          }}
+          composerInputRef={createRef<HTMLTextAreaElement>()}
+          composerHeight={160}
+          onComposerResizeStart={vi.fn()}
+        />,
+      )
+
+      expect(html).toContain(`data-testid="${SELECTOR_CHAT_MESSAGE_SCROLL}"`)
+      expect(html).toContain('启动恢复历史')
+      expect(html).not.toContain('暂无可用助手')
+    })
+
+    it('shows a concise restore diagnostic when history recovery fails before any session is available', () => {
+      const html = renderToStaticMarkup(
+        <CopilotPanelShell
+          state={createReadyState()}
+          retrying={false}
+          onRetry={vi.fn()}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={null}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          historyRestoreError="history list unavailable"
+          sendError={null}
+          modelGroups={[]}
+          thinkingCapability={null}
+          composerDraft={createEmptyComposerDraft()}
+          onComposerDraftChange={vi.fn()}
+          onSend={vi.fn()}
+          onCancelCurrentRun={vi.fn()}
+          sendStatus="idle"
+          canCancelSend={false}
+          sendDisabledReason={null}
+          composerLockedReason={null}
+          historyDrift={null}
+          historyRebindAcknowledged={false}
+          onAcknowledgeHistoryRebind={vi.fn()}
+          conversation={[]}
+          assistantPlaceholder={{
+            shouldRender: false,
+            dismissReason: 'inactive',
+          }}
+          composerInputRef={createRef<HTMLTextAreaElement>()}
+          composerHeight={160}
+          onComposerResizeStart={vi.fn()}
+        />,
+      )
+
+      expect(html).toContain('data-testid="chat-history-restore-error"')
+      expect(html).toContain('历史话题恢复失败，稍后自动重试。')
+    })
+  })
+
+  describe('debug mode and error overlay', () => {
+    it('hides runtime diagnostic cards when debug mode is disabled while keeping other content visible', () => {
+      const html = renderShell(false)
+
+      expect(html).toContain('已生成的回答')
+      expect(html).toContain('发送失败')
+      expect(html).toContain(DESC_CN_004)
+      expect(html).not.toContain('运行诊断')
+      expect(html).not.toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
+    })
+
+    it('shows runtime diagnostic cards when debug mode is enabled', () => {
+      const html = renderShell(true)
+
+      expect(html).toContain('已生成的回答')
+      expect(html).not.toContain('运行诊断')
+      expect(html).not.toContain('诊断：tool_execution / tool_execution_failed / Tool failed: boom')
+      expect(html).toContain('发送失败')
+    })
+
+    it('opens the shared error detail overlay from failed cards', async () => {
+      const rendered = renderInteractiveShell(false)
+
+      expect(rendered.container.textContent).not.toContain(LABEL_TOOL_FAILED_BOOM)
+
+      await clickElement(rendered.getByTestId('chat-message-error-detail-button-2'))
+
+      expect(rendered.getByTestId(LABEL_ERROR_DETAIL_OVERLAY).textContent).toContain(DESC_CN_004)
+      expect(rendered.getByTestId(LABEL_ERROR_DETAIL_OVERLAY).textContent).toContain(LABEL_TOOL_FAILED_BOOM)
+      expect(rendered.getByTestId('error-detail-overlay-group-summary').textContent).toContain('摘要')
+
+      await clickElement(rendered.getByTestId('error-detail-overlay-close'))
+
+      expect(rendered.queryByTestId(LABEL_ERROR_DETAIL_OVERLAY)).toBeNull()
+
+      rendered.unmount()
+    })
+
+    it('opens MCP technical details from the failed tool card entry point', async () => {
+      const rendered = renderInteractiveShell(false)
+
+      await clickElement(rendered.getByTestId('chat-message-tool-error-detail-button-1'))
+
+      const overlay = rendered.getByTestId(LABEL_ERROR_DETAIL_OVERLAY)
+      expect(overlay.textContent).toContain('工具名称')
+      expect(overlay.textContent).toContain('search-campus')
+      expect(overlay.textContent).toContain('toolId')
+      expect(overlay.textContent).toContain('serverId')
+      expect(overlay.textContent).toContain('mcp-stdio-stub')
+      expect(overlay.textContent).toContain('调用阶段')
+      expect(overlay.textContent).toContain('tools/call')
+      expect(overlay.textContent).toContain('诊断摘要')
+      expect(overlay.textContent).toContain('stderr 摘要')
+      expect(overlay.textContent).toContain('快照版本')
+
+      rendered.unmount()
+    })
+    it('shows replay failure feedback for the selected run and keeps retry available', async () => {
+      const onRetrySessionHistory = vi.fn()
+      const rendered = renderWithRoot(
+        <CopilotPanelShell
+          state={createReadyState()}
+          retrying={false}
+          onRetry={vi.fn()}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={createSessionShell({
+            capabilities: {
+              capabilitiesVersion: LABEL_HISTORY_SHELL,
+            },
+          })}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={createPersistedSessionHistoryState({
+            hasLoadedDetail: true,
+            detailStatus: 'ready',
+            timelineItems: [
+              {
+                kind: 'assistant_message',
+                runId: 'run-1',
+                sequenceStart: 1,
+                text: '时间线兜底内容',
+              },
+            ],
+            selectedRunId: 'run-1',
+            replayStatus: 'error',
+            replayError: 'replay unavailable',
+          })}
+          onRetrySessionHistory={onRetrySessionHistory}
+          sendError={null}
+          modelGroups={[]}
+          thinkingCapability={null}
+          composerDraft={createEmptyComposerDraft()}
+          onComposerDraftChange={vi.fn()}
+          onSend={vi.fn()}
+          onCancelCurrentRun={vi.fn()}
+          sendStatus="idle"
+          canCancelSend={false}
+          sendDisabledReason={null}
+          composerLockedReason={null}
+          persistedSelectedRunConversationSource="timeline"
+          historyDrift={null}
+          historyRebindAcknowledged={false}
+          onAcknowledgeHistoryRebind={vi.fn()}
+          conversation={[
+            {
+              id: 'assistant:history-fallback',
+              kind: 'assistant',
+              title: '历史回答',
+              content: '时间线兜底内容',
+              status: 'completed',
+              runId: 'run-1',
+              sequence: 1,
+              resolvedModelId: null,
+              resolvedModelRoute: null,
+              resolvedToolIds: [],
+              requestOptions: {},
+            },
+          ]}
+          assistantPlaceholder={{
+            shouldRender: false,
+            dismissReason: 'inactive',
+          }}
+          composerInputRef={createRef<HTMLTextAreaElement>()}
+          composerHeight={160}
+          onComposerResizeStart={vi.fn()}
+        />,
+      )
+
+      expect(rendered.getByTestId('chat-history-replay-error').textContent).toContain('当前运行回放失败，当前展示的是时间线快照。')
+
+      await clickElement(rendered.getByTestId('chat-history-replay-retry-button'))
+
+      expect(onRetrySessionHistory).toHaveBeenCalledOnce()
+
+      rendered.unmount()
+    })
+  })
+
+  describe('capability hydration', () => {
+    it('shows capability hydration failure for restored threads and exposes retry', async () => {
+      const onRetrySessionHistory = vi.fn()
+      const rendered = renderWithRoot(
+        <CopilotPanelShell
+          state={createReadyState()}
+          retrying={false}
+          onRetry={vi.fn()}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={createSessionShell({
+            capabilities: {
+              capabilitiesVersion: LABEL_HISTORY_SHELL,
+            },
+          })}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={createPersistedSessionHistoryState({
+            hasLoadedDetail: true,
+            detailStatus: 'ready',
+            capabilitiesStatus: 'error',
+            capabilitiesError: 'capabilities unavailable',
+          })}
+          onRetrySessionHistory={onRetrySessionHistory}
+          sendError={null}
+          modelGroups={[]}
+          thinkingCapability={null}
+          composerDraft={createEmptyComposerDraft()}
+          onComposerDraftChange={vi.fn()}
+          onSend={vi.fn()}
+          onCancelCurrentRun={vi.fn()}
+          sendStatus="idle"
+          canCancelSend={false}
+          sendDisabledReason="历史线程能力恢复失败，请重试后再发送。"
+          composerLockedReason={null}
+          historyDrift={null}
+          historyRebindAcknowledged={false}
+          onAcknowledgeHistoryRebind={vi.fn()}
+          conversation={[]}
+          assistantPlaceholder={{
+            shouldRender: false,
+            dismissReason: 'inactive',
+          }}
+          composerInputRef={createRef<HTMLTextAreaElement>()}
+          composerHeight={160}
+          onComposerResizeStart={vi.fn()}
+        />,
+      )
+
+      expect(rendered.getByTestId('chat-history-capabilities-error').textContent).toContain('历史线程能力恢复失败，请重试后再继续发送。')
+
+      await clickElement(rendered.getByTestId('chat-history-capabilities-retry-button'))
+
+      expect(onRetrySessionHistory).toHaveBeenCalledOnce()
+
+      rendered.unmount()
+    })
   })
 })
 
@@ -834,14 +864,14 @@ function renderShell(debugModeEnabled: boolean): string {
       runId: 'run-1',
       sequence: 2,
       title: '运行诊断',
-      content: 'Tool failed: boom',
+      content: LABEL_TOOL_FAILED_BOOM,
       status: 'completed',
       diagnostic: {
         code: 'tool_execution_failed',
-        message: 'Tool failed: boom',
+        message: LABEL_TOOL_FAILED_BOOM,
         stage: 'tool_execution',
         details: {
-          toolId: 'tool.remote-search',
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
         },
       },
     },
@@ -851,15 +881,15 @@ function renderShell(debugModeEnabled: boolean): string {
       runId: 'run-1',
       sequence: 3,
       title: '发送失败',
-      content: '工具执行失败，请重试。',
+      content: DESC_CN_004,
       status: 'failed',
       terminalPhase: 'failed',
       cancelReason: null,
       failure: {
         code: 'tool_execution_failed',
-        message: 'Tool failed: boom',
+        message: LABEL_TOOL_FAILED_BOOM,
         details: {
-          toolId: 'tool.remote-search',
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
         },
       },
       resolvedModelId: null,
@@ -869,13 +899,13 @@ function renderShell(debugModeEnabled: boolean): string {
       errorDetail: createCopilotErrorDetailSource({
         source: 'streaming',
         title: '发送失败',
-        summaryMessage: '工具执行失败，请重试。',
-        rawMessage: 'Tool failed: boom',
+        summaryMessage: DESC_CN_004,
+        rawMessage: LABEL_TOOL_FAILED_BOOM,
         code: 'tool_execution_failed',
         stage: 'streaming',
         requestedMethod: 'run/stream',
         details: {
-          toolId: 'tool.remote-search',
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
         },
       }),
     },
@@ -923,6 +953,8 @@ function renderShell(debugModeEnabled: boolean): string {
   )
 }
 
+// 测试 helper 函数，构建完整 CopilotPanelShell 用于交互式渲染验证
+/* eslint-disable-next-line max-lines-per-function */
 function renderInteractiveShell(debugModeEnabled: boolean) {
   const conversation: CopilotMessageListItem[] = [
     {
@@ -955,8 +987,8 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
       errorDetail: createCopilotErrorDetailSource({
         source: 'streaming',
         title: '工具调用失败',
-        summaryMessage: '工具执行失败，请重试。',
-        rawMessage: 'Tool failed: boom',
+        summaryMessage: DESC_CN_004,
+        rawMessage: LABEL_TOOL_FAILED_BOOM,
         code: 'tool_execution_failed',
         stage: 'streaming',
         requestedMethod: 'run/stream',
@@ -979,15 +1011,15 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
       runId: 'run-1',
       sequence: 3,
       title: '发送失败',
-      content: '工具执行失败，请重试。',
+      content: DESC_CN_004,
       status: 'failed',
       terminalPhase: 'failed',
       cancelReason: null,
       failure: {
         code: 'tool_execution_failed',
-        message: 'Tool failed: boom',
+        message: LABEL_TOOL_FAILED_BOOM,
         details: {
-          toolId: 'tool.remote-search',
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
         },
       },
       resolvedModelId: null,
@@ -997,13 +1029,13 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
       errorDetail: createCopilotErrorDetailSource({
         source: 'streaming',
         title: '发送失败',
-        summaryMessage: '工具执行失败，请重试。',
-        rawMessage: 'Tool failed: boom',
+        summaryMessage: DESC_CN_004,
+        rawMessage: LABEL_TOOL_FAILED_BOOM,
         code: 'tool_execution_failed',
         stage: 'streaming',
         requestedMethod: 'run/stream',
         details: {
-          toolId: 'tool.remote-search',
+          toolId: LABEL_TOOL_REMOTE_SEARCH,
         },
       }),
     },
@@ -1077,7 +1109,7 @@ function buildHistoryLoadingGateShell(input: {
         ...(isPersistedThread
           ? {
               capabilities: {
-                capabilitiesVersion: 'history-shell',
+                capabilitiesVersion: LABEL_HISTORY_SHELL,
               },
             }
           : {}),
@@ -1126,8 +1158,8 @@ function createHistoryLoadingGateComposerDraft(messageText = ''): CopilotChatCom
     selectedModelRoute: {
       routeRef: {
         routeKind: 'provider-model',
-        profileId: 'provider-openai',
-        modelId: 'openai/gpt-4.1',
+        profileId: LABEL_PROVIDER_OPENAI,
+        modelId: LABEL_OPENAI_GPT,
       },
     },
   }
@@ -1151,12 +1183,12 @@ function createHistoryLoadingGateConversation(content: string): CopilotMessageLi
 
 function createHistoryLoadingGateModelGroups(): CopilotModelGroup[] {
   return [{
-    key: 'provider-openai',
+    key: LABEL_PROVIDER_OPENAI,
     title: 'OpenAI',
     models: [{
       id: 'provider-openai:openai/gpt-4.1',
       selectionValue: 'provider-openai:openai/gpt-4.1',
-      modelId: 'openai/gpt-4.1',
+      modelId: LABEL_OPENAI_GPT,
       name: 'GPT-4.1',
       provider: 'OpenAI',
       group: 'OpenAI',
@@ -1167,14 +1199,14 @@ function createHistoryLoadingGateModelGroups(): CopilotModelGroup[] {
       },
       routeRef: {
         routeKind: 'provider-model',
-        profileId: 'provider-openai',
-        modelId: 'openai/gpt-4.1',
+        profileId: LABEL_PROVIDER_OPENAI,
+        modelId: LABEL_OPENAI_GPT,
       },
       route: {
         routeRef: {
           routeKind: 'provider-model',
-          profileId: 'provider-openai',
-          modelId: 'openai/gpt-4.1',
+          profileId: LABEL_PROVIDER_OPENAI,
+          modelId: LABEL_OPENAI_GPT,
         },
       },
       available: true,
