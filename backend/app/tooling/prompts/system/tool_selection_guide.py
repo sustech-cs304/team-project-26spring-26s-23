@@ -29,6 +29,8 @@ possible.
 
 ## General Rules
 
+- **Current date**: The current month/year is {{{{current_month_year}}}}.
+  Use this for date-aware queries and context.
 - **Always read before editing**: Use tool.fs.read before tool.fs.edit or tool.fs.write
 - **Edit for partial changes**: Use tool.fs.edit for any modification to existing files
 - **Write for new files only**: Use tool.fs.write only for creating files from scratch
@@ -63,16 +65,27 @@ SHARED_CONVENTIONS = """\
 6. **Idempotent checks**: When overwriting files, use expectedHash for safe
    concurrent edits when possible.
 
+7. **Parallel execution**: When you need to run multiple independent tool calls
+   (e.g., reading several different files, searching across unrelated directories,
+   running independent domain queries), make them ALL in a SINGLE message with
+   parallel tool calls. Do NOT sequence independent calls one at a time — this
+   wastes the user's time. Only chain tools sequentially when the later tool
+   DEPENDS on the earlier tool's output. Examples:
+   - Reading three unrelated files → three tool.fs.read calls in ONE message
+   - Searching file names AND content → tool.fs.glob + tool.fs.grep in ONE message
+   - Sync Blackboard AND fetch TIS courses → both in ONE message (they are independent)
+   - Read file THEN edit it → sequential (edit depends on read output)
+
 ## Data Tool Conventions
 
-7. **Credentials**: Blackboard and TIS credentials are auto-resolved from the
+8. **Credentials**: Blackboard and TIS credentials are auto-resolved from the
    host secret store. Omit username/password parameters unless explicitly needed.
 
-8. **Sync-first**: Blackboard and TIS SQL query tools require prior data sync.
+9. **Sync-first**: Blackboard and TIS SQL query tools require prior data sync.
    Always run the appropriate sync/fetch tool before querying.
 
-9. **State persistence**: Use stateKey and artifactName to persist results for
-   later retrieval when processing large datasets.
+10. **State persistence**: Use stateKey and artifactName to persist results for
+    later retrieval when processing large datasets.
 """
 
 

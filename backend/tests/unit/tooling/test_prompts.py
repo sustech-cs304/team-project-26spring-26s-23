@@ -282,3 +282,78 @@ class TestDefaultValues:
     def test_grep_prompt_mentions_default_max_results(self) -> None:
         rendered = FILE_TOOL_GREP_PROMPT.render()
         assert str(DEFAULT_MAX_GREP_RESULTS) in rendered
+
+
+# ============================================================================
+# Shared conventions and parallel execution
+# ============================================================================
+
+
+class TestSharedConventions:
+    def test_includes_read_before_modify(self) -> None:
+        assert "Read before modify" in SHARED_CONVENTIONS
+        assert "tool.fs.read" in SHARED_CONVENTIONS
+
+    def test_includes_emoji_policy(self) -> None:
+        assert "Only use emojis" in SHARED_CONVENTIONS
+
+    def test_includes_documentation_policy(self) -> None:
+        assert "NEVER create README" in SHARED_CONVENTIONS
+
+    def test_includes_shell_avoidance(self) -> None:
+        assert "Shell command avoidance" in SHARED_CONVENTIONS
+        assert "cat, grep, sed, awk" in SHARED_CONVENTIONS
+
+    def test_includes_parallel_execution_rule(self) -> None:
+        assert "Parallel execution" in SHARED_CONVENTIONS
+        assert "parallel tool calls" in SHARED_CONVENTIONS
+        assert "independent" in SHARED_CONVENTIONS.lower()
+
+    def test_parallel_execution_has_concrete_examples(self) -> None:
+        assert "three tool.fs.read calls in ONE message" in SHARED_CONVENTIONS
+        assert "tool.fs.glob + tool.fs.grep in ONE message" in SHARED_CONVENTIONS
+
+    def test_parallel_execution_explains_dependency_rule(self) -> None:
+        assert "DEPENDS on the earlier" in SHARED_CONVENTIONS
+
+    def test_includes_credentials_auto_resolve(self) -> None:
+        assert "Credentials" in SHARED_CONVENTIONS
+        assert "auto-resolved" in SHARED_CONVENTIONS
+
+    def test_includes_sync_first_rule(self) -> None:
+        assert "Sync-first" in SHARED_CONVENTIONS
+        assert "prior data sync" in SHARED_CONVENTIONS
+
+    def test_includes_state_persistence(self) -> None:
+        assert "State persistence" in SHARED_CONVENTIONS
+        assert "stateKey" in SHARED_CONVENTIONS
+
+
+# ============================================================================
+# Context injection integration
+# ============================================================================
+
+
+class TestContextInjectionIntegration:
+    """Verify PromptContext.inject() works end-to-end with the guides."""
+
+    def test_context_injects_current_month_year(self) -> None:
+        context = PromptContext(current_month_year="2026年05月")
+        injected = context.inject(TOOL_SELECTION_GUIDE)
+        assert "2026年05月" in injected
+
+    def test_context_does_not_break_guides(self) -> None:
+        context = PromptContext(
+            workspace_root="/test/root",
+            current_month_year="2026年05月",
+        )
+        injected = context.inject(TOOL_SELECTION_GUIDE)
+        assert "Tool Selection Guide" in injected
+        assert "File Operation Tool Selection" in injected
+        assert "Blackboard Data Tools" in injected
+
+    def test_context_injects_into_shared_conventions(self) -> None:
+        context = PromptContext(workspace_root="/my/project")
+        injected = context.inject(SHARED_CONVENTIONS)
+        assert "Shared File Operation Conventions" in injected
+        assert "Parallel execution" in injected

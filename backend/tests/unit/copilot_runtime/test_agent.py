@@ -136,12 +136,72 @@ def test_default_agent_system_prompt_prefers_structured_forms_and_blocks_uploads
 
     prompt = executor._compose_system_prompt(None)
 
-    assert prompt == DEFAULT_AGENT_SYSTEM_PROMPT
+    assert DEFAULT_AGENT_SYSTEM_PROMPT in prompt
     assert "prefer the request_user_form tool" in prompt
     assert "including for a single well-defined field" in prompt
     assert "wait for the user's next message to continue" in prompt
     assert "Do not use forms to request file uploads" in prompt
     assert "secrets, passwords, or tokens" in prompt
+
+
+def test_system_prompt_includes_tool_selection_guides() -> None:
+    executor = PydanticAIAgentExecutor()
+
+    prompt = executor._compose_system_prompt(None)
+
+    assert "Tool Selection Guide" in prompt
+    assert "File Operation Tool Selection" in prompt
+    assert "Blackboard Data Tools" in prompt
+    assert "TIS" in prompt
+    assert "General Rules" in prompt
+
+
+def test_system_prompt_includes_shared_conventions() -> None:
+    executor = PydanticAIAgentExecutor()
+
+    prompt = executor._compose_system_prompt(None)
+
+    assert "Read before modify" in prompt
+    assert "Shell command avoidance" in prompt
+    assert "Parallel execution" in prompt
+    assert "Sync-first" in prompt
+    assert "Credentials" in prompt
+
+
+def test_system_prompt_includes_parallel_execution_guidance() -> None:
+    executor = PydanticAIAgentExecutor()
+
+    prompt = executor._compose_system_prompt(None)
+
+    assert "parallel tool calls" in prompt.lower()
+    assert "independent" in prompt.lower()
+    assert "three tool.fs.read calls in ONE message" in prompt
+    assert "tool.fs.glob + tool.fs.grep in ONE message" in prompt
+
+
+def test_system_prompt_injects_current_month_year() -> None:
+    executor = PydanticAIAgentExecutor()
+
+    prompt = executor._compose_system_prompt(None)
+
+    assert "年" in prompt
+    assert "月" in prompt
+
+
+def test_system_prompt_with_skill_appends_after_guides() -> None:
+    executor = PydanticAIAgentExecutor()
+    skill_prompt = "## Available Skills\n- test-skill: does things"
+
+    prompt = executor._compose_system_prompt(skill_prompt)
+
+    assert "Tool Selection Guide" in prompt
+    assert "Shared File Operation Conventions" in prompt
+    assert "Available Skills" in prompt
+    assert "test-skill" in prompt
+    # Guides must come before skill prompt
+    tool_guide_pos = prompt.index("Tool Selection Guide")
+    skill_pos = prompt.index("Available Skills")
+    assert tool_guide_pos < skill_pos
 
 
 
@@ -1758,6 +1818,78 @@ def test_build_contract_agent_tools_limits_registered_tools_to_enabled_set() -> 
 
     assert filtered_tool_names == ("tool_fs_glob",)
 
+
+def test_contract_agent_tool_descriptions_use_structured_prompts_not_short_constants() -> None:
+    """Regression: _build_contract_agent_tools MUST use ToolPrompt.render()
+    (get_tool_description) so that detailed usage_guide, parameter_guide, and
+    constraints reach the LLM, not just the 70-character registry constants."""
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+
+    built = executor._build_contract_agent_tools(
+        enabled_tools=("tool.fs.read", "tool.fs.edit", "tool.fs.glob", "tool.fs.grep",
+                       "tool.fs.notebook_edit", "tool.fs.switch_root")
+    )
+    tools_by_name = {tool.name: tool for tool in built}
+
+    # Every file tool MUST carry a structured prompt longer than a one-liner
+    for tool_name, tool_id, min_sections in [
+        ("tool_fs_read", "tool.fs.read", ("Usage", "Parameters", "Constraints")),
+        ("tool_fs_edit", "tool.fs.edit", ("Usage", "Parameters", "Constraints")),
+        ("tool_fs_glob", "tool.fs.glob", ("Usage", "Parameters", "Constraints")),
+        ("tool_fs_grep", "tool.fs.grep", ("Usage", "Parameters", "Constraints")),
+        ("tool_fs_notebook_edit", "tool.fs.notebook_edit", ("Usage", "Parameters", "Constraints")),
+        ("tool_fs_switch_root", "tool.fs.switch_root", ("Usage", "Parameters", "Constraints")),
+    ]:
+        desc = tools_by_name[tool_name].description or ""
+        assert len(desc) > 300, (
+            f"{tool_id} description too short ({len(desc)} chars) — "
+            f"structured prompt not flowing"
+        )
+        for section in min_sections:
+            assert section in desc, (
+                f"{tool_id} missing section {section!r}"
+            )
+
+
+def test_contract_agent_tool_falls_back_to_descriptor_for_unprompted_tools() -> None:
+    """Tools without a prompt registry entry still get their descriptor.description."""
+    executor = PydanticAIAgentExecutor(model="test-model")
+    # weather tool, request-user-form, skill-activate, skill-read-resource
+    # are NOT in the prompt registry — they must fallback gracefully.
+    built = executor._build_contract_agent_tools(
+        enabled_tools=(
+            "tool.request-user-form",
+            "tool.skill-activate",
+            "tool.skill-read-resource",
+        )
+    )
+    tools_by_name = {tool.name: tool for tool in built}
+    for tool_name, expected_min_len in [
+        ("request_user_form", 100),
+        ("skill_activate", 50),
+        ("skill_read_resource", 50),
+    ]:
+        desc = tools_by_name[tool_name].description or ""
+        assert len(desc) >= expected_min_len, (
+            f"{tool_name} description too short: {len(desc)}"
+        )
+
+
+def test_contract_agent_tool_descriptions_vary_across_tools() -> None:
+    """Sanity check: every tool gets its OWN structured prompt, not a shared copy."""
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    built = executor._build_contract_agent_tools(
+        enabled_tools=("tool.fs.read", "tool.fs.edit", "tool.fs.glob", "tool.fs.grep")
+    )
+    descriptions = {tool.name: tool.description for tool in built if tool.description}
+    # Each tool should have distinct content
+    unique_prefixes = {desc[:80] for desc in descriptions.values()}
+    assert len(unique_prefixes) == len(descriptions), (
+        f"Expected {len(descriptions)} distinct descriptions, "
+        f"got {len(unique_prefixes)} unique prefixes"
+    )
 
 
 def test_execute_bound_tool_file_tool_no_longer_requires_model_route_summary() -> None:
