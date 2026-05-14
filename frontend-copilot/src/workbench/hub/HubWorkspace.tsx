@@ -74,23 +74,6 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
 
   return (
     <section className="workspace-stage hub-workspace" aria-label={`${content.title}工作区`}>
-      <aside className="workspace-panel hub-panel" aria-label={`${content.title}侧栏`}>
-        <header className="panel-head">
-          <p className="panel-head__eyebrow">{content.eyebrow}</p>
-          <h1 className="panel-head__title">{content.panelTitle}</h1>
-        </header>
-
-        <ul className="hub-list">
-          {content.entries.map((entry) => (
-            <li key={entry.id}>
-              <article className="hub-list__item">
-                <h2 className="hub-list__title">{entry.title}</h2>
-              </article>
-            </li>
-          ))}
-        </ul>
-      </aside>
-
       <main className="workspace-main" aria-label={`${content.title}主内容区`}>
         <header className="workspace-main__header">
           <div>

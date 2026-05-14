@@ -177,9 +177,12 @@
   grid-template-columns: 280px 332px minmax(0, 1fr);
 }
 
-.settings-workspace,
-.hub-workspace {
+.settings-workspace {
   grid-template-columns: 300px minmax(0, 1fr);
+}
+
+.hub-workspace {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .workspace-panel {
