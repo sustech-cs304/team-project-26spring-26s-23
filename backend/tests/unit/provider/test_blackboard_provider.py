@@ -25,7 +25,7 @@ from app.integrations.sustech.blackboard.provider.results import (
     CalendarICSSyncResult,
     CourseCatalogSearchResult,
 )
-from app.integrations.sustech.blackboard.provider.tools import agent_tools
+from tests.unit.provider import _legacy_wrappers as agent_tools
 from app.integrations.sustech.blackboard.shared import BlackboardLogEvent
 from app.integrations.sustech.blackboard.provider.use_cases import calendar_ics as calendar_ics_use_case
 from app.integrations.sustech.blackboard.provider.use_cases import course_catalog as course_catalog_use_case

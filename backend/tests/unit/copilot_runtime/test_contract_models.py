@@ -25,7 +25,7 @@ def test_runtime_simple_request_models_accept_protocol_aliases() -> None:
             "toolPermissionPolicy": {
                 "schemaVersion": 1,
                 "defaultMode": "ask",
-                "toolModes": {"tool.file-convert": "allow"},
+                "toolModes": {"tool.fs.read": "allow"},
             },
         }
     )
@@ -44,7 +44,7 @@ def test_runtime_simple_request_models_accept_protocol_aliases() -> None:
     assert capabilities.tool_permission_policy.to_dict() == {
         "schemaVersion": 1,
         "defaultMode": "ask",
-        "toolModes": {"tool.file-convert": "allow"},
+        "toolModes": {"tool.fs.read": "allow"},
         "toolTimeoutSeconds": {},
         "toolTimeoutActions": {},
     }
