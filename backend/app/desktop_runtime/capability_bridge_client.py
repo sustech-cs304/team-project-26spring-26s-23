@@ -22,7 +22,12 @@ from app.desktop_runtime.capability_bridge_protocol import (
     validate_desktop_capability_bridge_result,
 )
 from app.tooling import ToolInvocationContext
-from app.tooling.host_capabilities import HostCapabilityOperationError
+from app.tooling.host_capabilities import (
+    HostArtifact,
+    HostBrowserPage,
+    HostBrowserScreenshot,
+    HostCapabilityOperationError,
+)
 
 _HOST_CAPABILITY_BRIDGE_AUTH_HEADER_NAME = "X-Host-Capability-Bridge-Token"
 HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME = _HOST_CAPABILITY_BRIDGE_AUTH_HEADER_NAME
@@ -360,6 +365,69 @@ class DesktopCapabilityBridgeClient:
             timeout=max(self._timeout, _MCP_TOOL_CALL_TIMEOUT),
         )
         return dict(result)
+
+    async def open_browser_page(
+        self,
+        *,
+        context: ToolInvocationContext,
+        url: str,
+        show_window: bool = False,
+    ) -> HostBrowserPage:
+        payload: dict[str, Any] = {"url": url}
+        if show_window:
+            payload["showWindow"] = show_window
+        result = await self._call_async(
+            capability="browser",
+            operation="open",
+            context=context,
+            payload=payload,
+        )
+        return HostBrowserPage(
+            tab_id=str(result["tabId"]),
+            current_url=str(result["currentUrl"]),
+            title=_normalize_optional_text(result.get("title")),
+            window_visible=(
+                result.get("windowVisible")
+                if isinstance(result.get("windowVisible"), bool)
+                else None
+            ),
+        )
+
+    async def capture_browser_screenshot(
+        self,
+        *,
+        context: ToolInvocationContext,
+        name: str | None = None,
+    ) -> HostBrowserScreenshot:
+        payload: dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        result = await self._call_async(
+            capability="browser",
+            operation="screenshot",
+            context=context,
+            payload=payload,
+        )
+        page = HostBrowserPage(
+            tab_id=str(result["tabId"]),
+            current_url=str(result["currentUrl"]),
+            title=_normalize_optional_text(result.get("title")),
+            window_visible=(
+                result.get("windowVisible")
+                if isinstance(result.get("windowVisible"), bool)
+                else None
+            ),
+        )
+        artifact = HostArtifact(
+            artifact_id=str(result["artifactId"]),
+            uri=_normalize_optional_text(result.get("uri")),
+            name=_normalize_optional_text(result.get("name")),
+            content_type=_normalize_optional_text(result.get("contentType")),
+            metadata=_normalize_mapping(
+                result.get("metadata") if isinstance(result.get("metadata"), Mapping) else None
+            ),
+        )
+        return HostBrowserScreenshot(page=page, artifact=artifact)
 
     async def _call_async(
         self,

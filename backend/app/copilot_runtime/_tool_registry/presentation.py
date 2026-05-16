@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 from .constants import (
+    BROWSER_OPEN_TOOL_DESCRIPTION,
+    BROWSER_OPEN_TOOL_DISPLAY_NAME,
+    BROWSER_OPEN_TOOL_ID,
+    BROWSER_OPEN_TOOL_PROMPT,
+    BROWSER_SCREENSHOT_TOOL_DESCRIPTION,
+    BROWSER_SCREENSHOT_TOOL_DISPLAY_NAME,
+    BROWSER_SCREENSHOT_TOOL_ID,
+    BROWSER_SCREENSHOT_TOOL_PROMPT,
     FILE_CONVERT_TOOL_DESCRIPTION,
     FILE_CONVERT_TOOL_DISPLAY_NAME,
     FILE_CONVERT_TOOL_ID,
@@ -56,6 +64,13 @@ BLACKBOARD_TOOL_GROUP = ToolPresentationGroup(
     order=10,
     source_kind="sustech-blackboard",
 )
+BROWSER_TOOL_GROUP = ToolPresentationGroup(
+    group_id="browser",
+    label_zh="浏览器工具",
+    label_en="Browser Tools",
+    order=15,
+    source_kind="desktop-browser",
+)
 TIS_TOOL_GROUP = ToolPresentationGroup(
     group_id="tis",
     label_zh="TIS 工具",
@@ -82,6 +97,8 @@ TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_TOOL_SWITCH_ROOT_ID: BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: BUILTIN_TOOL_GROUP,
     REQUEST_USER_FORM_TOOL_ID: BUILTIN_TOOL_GROUP,
+    BROWSER_OPEN_TOOL_ID: BROWSER_TOOL_GROUP,
+    BROWSER_SCREENSHOT_TOOL_ID: BROWSER_TOOL_GROUP,
     SKILL_ACTIVATE_TOOL_ID: SKILL_TOOL_GROUP,
     SKILL_READ_RESOURCE_TOOL_ID: SKILL_TOOL_GROUP,
     "blackboard.sql.query": BLACKBOARD_TOOL_GROUP,
@@ -155,6 +172,18 @@ TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
         "description_zh": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
         "description_en": REQUEST_USER_FORM_TOOL_DESCRIPTION,
+    },
+    BROWSER_OPEN_TOOL_ID: {
+        "display_name_zh": "浏览器打开",
+        "display_name_en": BROWSER_OPEN_TOOL_DISPLAY_NAME,
+        "description_zh": "在桌面运行时的浏览器窗口中打开一个 URL。",
+        "description_en": BROWSER_OPEN_TOOL_DESCRIPTION,
+    },
+    BROWSER_SCREENSHOT_TOOL_ID: {
+        "display_name_zh": "浏览器截图",
+        "display_name_en": BROWSER_SCREENSHOT_TOOL_DISPLAY_NAME,
+        "description_zh": "从桌面运行时浏览器窗口捕获截图。",
+        "description_en": BROWSER_SCREENSHOT_TOOL_DESCRIPTION,
     },
     SKILL_ACTIVATE_TOOL_ID: {
         "display_name_zh": "Skill 激活",

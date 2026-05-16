@@ -10,6 +10,7 @@ import { createDesktopCapabilityStateService } from './DesktopCapabilityStateSer
 import { createDesktopCapabilityEventService } from './DesktopCapabilityEventService'
 import { createDesktopCapabilityMcpService } from './DesktopCapabilityMcpService'
 import type { ElectronMcpRegistryService } from '../../mcp-registry/main-process'
+import { createDesktopCapabilityBrowserService } from './DesktopCapabilityBrowserService'
 
 export interface DesktopCapabilityDispatcher {
   handle(request: DesktopCapabilityBridgeRequest): Promise<Record<string, unknown>>
@@ -30,6 +31,7 @@ export function createDesktopCapabilityDispatcher(
   const stateService = createDesktopCapabilityStateService(options)
   const eventService = createDesktopCapabilityEventService(options)
   const mcpService = createDesktopCapabilityMcpService(options)
+  const browserService = createDesktopCapabilityBrowserService(options)
 
   return {
     async handle(request) {
@@ -48,6 +50,8 @@ export function createDesktopCapabilityDispatcher(
           return await eventService.handle(request)
         case 'mcp':
           return await mcpService.handle(request)
+        case 'browser':
+          return await browserService.handle(request)
         default:
           throw new DesktopCapabilityBridgeError(
             'unsupported_capability',

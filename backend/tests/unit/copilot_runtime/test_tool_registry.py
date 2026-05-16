@@ -4,7 +4,7 @@ import asyncio
 import random
 from collections.abc import Awaitable
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, cast
 
 import pytest
 
@@ -54,10 +54,15 @@ from app.tooling.file_tools import (
 )
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
+from app.tooling.browser_tools import get_browser_tool_contracts
 
 CONTRACT_TOOL_IDS = tuple(
     contract.metadata.tool_id
-    for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
+    for contract in (
+        *get_blackboard_tool_contracts(),
+        *get_tis_tool_contracts(),
+        *get_browser_tool_contracts(),
+    )
 )
 
 _T = TypeVar("_T")

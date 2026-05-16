@@ -167,7 +167,7 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
     reports = assess_default_contract_mcp_readiness()
 
     assert MCP_SUPPORTED_INPUT_SCHEMA_FORMATS == ("json-schema",)
-    assert len(reports) == 9
+    assert len(reports) == 11
     by_tool_id = {report.tool_id: report for report in reports}
     assert set(by_tool_id) == {
         "blackboard.course_catalog.search",
@@ -175,6 +175,8 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
         "blackboard.snapshot.sync",
         "blackboard.course_resources.sync",
         "blackboard.sql.query",
+        "browser.open",
+        "browser.screenshot",
         "tis.personal_grades.fetch",
         "tis.credit_gpa.fetch",
         "tis.selected_courses.fetch",

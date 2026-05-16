@@ -6,6 +6,10 @@ export interface DesktopCapabilityBridgeLogOptions {
   relayToRenderer?: boolean
 }
 
+export interface DesktopCapabilityBrowserWindowOptions {
+  showWindow?: boolean
+}
+
 export interface CreateDesktopCapabilityBridgeServiceOptions {
   prepareRuntimePaths: () => Promise<HostedRuntimePaths>
   appendLog?: (
@@ -14,4 +18,8 @@ export interface CreateDesktopCapabilityBridgeServiceOptions {
     context: Record<string, unknown> | null,
     options?: DesktopCapabilityBridgeLogOptions,
   ) => void | Promise<void>
+  getMainWindow?: () => Electron.BrowserWindow | null
+  createBrowserWindow?: (
+    options?: DesktopCapabilityBrowserWindowOptions,
+  ) => Electron.BrowserWindow
 }

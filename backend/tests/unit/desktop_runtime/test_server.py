@@ -52,6 +52,7 @@ from app.desktop_runtime.security import apply_cors_headers
 from app.desktop_runtime.server import BACKEND_DIR, create_app
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
+from app.tooling.browser_tools import get_browser_tool_contracts
 from app.tooling.file_tools.runtime_bindings import (
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
@@ -269,7 +270,11 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(
     assert toolset_summary["default"] is True
     expected_contract_tool_ids = [
         contract.metadata.tool_id
-        for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
+        for contract in (
+            *get_blackboard_tool_contracts(),
+            *get_tis_tool_contracts(),
+            *get_browser_tool_contracts(),
+        )
     ]
     expected_builtin_tool_ids = [
         "tool.fs.read",

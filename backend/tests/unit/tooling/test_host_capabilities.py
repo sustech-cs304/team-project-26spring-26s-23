@@ -3,13 +3,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from app.tooling.contract import HostCapabilityRequirement
 from app.tooling.host_capabilities import (
     HostArtifact,
+    HostBrowserPage,
+    HostBrowserScreenshot,
     HostEvent,
     MissingHostCapabilityError,
     ToolHostCapabilities,
@@ -88,6 +90,16 @@ class StubSecretProvider:
         return bool(name)
 
 
+class StubBrowserController:
+    async def open_page(self, *, url: str, show_window: bool = False) -> Any:
+        _ = (url, show_window)
+        return object()
+
+    async def capture_screenshot(self, *, name: str | None = None) -> Any:
+        _ = name
+        return object()
+
+
 class StubEventSink:
     def __init__(self) -> None:
         self.events: list[HostEvent] = []
@@ -113,6 +125,22 @@ def test_host_capability_models_serialize_to_stable_shape() -> None:
         occurred_at=occurred_at,
         data={"progress": 50},
     )
+    browser_page = HostBrowserPage(
+        tab_id="browser-tab-1",
+        current_url="https://example.com/",
+        title="Example Domain",
+        window_visible=False,
+    )
+    browser_screenshot = HostBrowserScreenshot(
+        page=browser_page,
+        artifact=HostArtifact(
+            artifact_id="artifact-browser-screenshot",
+            uri="artifact://desktop/browser-screenshot.png",
+            name="browser-screenshot.png",
+            content_type="image/png",
+            metadata={"source": "browser.screenshot"},
+        ),
+    )
 
     assert artifact.to_dict() == {
         "artifactId": "artifact-1",
@@ -128,6 +156,17 @@ def test_host_capability_models_serialize_to_stable_shape() -> None:
         "occurredAt": occurred_at.isoformat(),
         "data": {"progress": 50},
     }
+    assert browser_screenshot.to_dict() == {
+        "tabId": "browser-tab-1",
+        "currentUrl": "https://example.com/",
+        "title": "Example Domain",
+        "windowVisible": False,
+        "artifactId": "artifact-browser-screenshot",
+        "uri": "artifact://desktop/browser-screenshot.png",
+        "name": "browser-screenshot.png",
+        "contentType": "image/png",
+        "metadata": {"source": "browser.screenshot"},
+    }
 
     with pytest.raises(ValueError, match="timezone-aware"):
         HostEvent(event_type="tool.progress", occurred_at=datetime(2026, 4, 13, 12, 0))
@@ -142,6 +181,7 @@ def test_tool_host_capabilities_reports_available_handles_and_satisfies_requirem
         state_store=StubStateStore(),
         secret_provider=StubSecretProvider(),
         event_sink=StubEventSink(),
+        browser_controller=StubBrowserController(),
     )
 
     assert capabilities.available_capability_names() == (
@@ -151,6 +191,7 @@ def test_tool_host_capabilities_reports_available_handles_and_satisfies_requirem
         "state_store",
         "secret_provider",
         "event_sink",
+        "browser_controller",
     )
     assert capabilities.require_capability("workspace_resolver") is capabilities.workspace_resolver
     assert capabilities.require_capability("database_resolver") is capabilities.database_resolver

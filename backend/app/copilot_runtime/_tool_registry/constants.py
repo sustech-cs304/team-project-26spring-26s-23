@@ -54,6 +54,20 @@ REQUEST_USER_FORM_TOOL_PROMPT = (
     "Do not request file uploads, secrets, passwords, or tokens, and do not expose protocol details such as form ids, field counts, JSON, or field type internals to the user."
 )
 
+BROWSER_OPEN_TOOL_ID = "browser.open"
+BROWSER_OPEN_TOOL_DISPLAY_NAME = "Browser Open"
+BROWSER_OPEN_TOOL_DESCRIPTION = "Open a URL in the desktop runtime browser window."
+BROWSER_OPEN_TOOL_PROMPT = (
+    "Use this tool to open a URL in the desktop runtime browser window and inspect the resulting page."
+)
+
+BROWSER_SCREENSHOT_TOOL_ID = "browser.screenshot"
+BROWSER_SCREENSHOT_TOOL_DISPLAY_NAME = "Browser Screenshot"
+BROWSER_SCREENSHOT_TOOL_DESCRIPTION = "Capture a screenshot from the desktop runtime browser window."
+BROWSER_SCREENSHOT_TOOL_PROMPT = (
+    "Use this tool to capture the current browser page as an artifact when visual inspection is needed."
+)
+
 SKILL_ACTIVATE_TOOL_ID = "tool.skill-activate"
 SKILL_ACTIVATE_TOOL_DISPLAY_NAME = "Skill Activate"
 SKILL_ACTIVATE_TOOL_DESCRIPTION = (
@@ -158,6 +172,16 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
             "prompt": "当下一步依赖用户补充结构化信息，且表单比自然语言追问更清晰时，主动使用此工具。单字段表单也可以；多个相关字段更应合并为一个表单。表单提交后会作为用户下一条消息继续对话。标题和描述应面向用户并解释为何需要这些信息；字段标签使用自然语言，placeholder 给出具体示例，只把真正阻塞继续执行的字段标为必填；固定列表选项使用 select，checkbox 只用于单个布尔确认且不得携带 options，开放说明用 text 或 textarea。不要请求文件上传，也不要请求 secret、password、token 等敏感凭据；不要向用户暴露 form id、字段数量、JSON 或协议细节。",
         },
+        BROWSER_OPEN_TOOL_ID: {
+            "displayName": "浏览器打开",
+            "description": "在桌面运行时的浏览器窗口中打开一个 URL。",
+            "prompt": "使用此工具在桌面运行时的浏览器窗口中打开指定 URL，并检查页面结果。",
+        },
+        BROWSER_SCREENSHOT_TOOL_ID: {
+            "displayName": "浏览器截图",
+            "description": "从桌面运行时浏览器窗口捕获截图。",
+            "prompt": "当需要视觉检查时，使用此工具捕获当前浏览器页面为工件。",
+        },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": "Skill 激活",
             "description": "读取已启用 Skill 的 SKILL.md 入口说明和资源摘要。",
@@ -219,6 +243,16 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
             "description": REQUEST_USER_FORM_TOOL_DESCRIPTION,
             "prompt": REQUEST_USER_FORM_TOOL_PROMPT,
+        },
+        BROWSER_OPEN_TOOL_ID: {
+            "displayName": BROWSER_OPEN_TOOL_DISPLAY_NAME,
+            "description": BROWSER_OPEN_TOOL_DESCRIPTION,
+            "prompt": BROWSER_OPEN_TOOL_PROMPT,
+        },
+        BROWSER_SCREENSHOT_TOOL_ID: {
+            "displayName": BROWSER_SCREENSHOT_TOOL_DISPLAY_NAME,
+            "description": BROWSER_SCREENSHOT_TOOL_DESCRIPTION,
+            "prompt": BROWSER_SCREENSHOT_TOOL_PROMPT,
         },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": SKILL_ACTIVATE_TOOL_DISPLAY_NAME,
