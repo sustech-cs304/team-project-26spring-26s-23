@@ -24,13 +24,6 @@ DEFAULT_TOOL_KIND = "builtin"
 DEFAULT_TOOL_AVAILABILITY = "available"
 DEFAULT_TOOL_CATALOG_LANGUAGE = "zh-CN"
 
-FILE_CONVERT_TOOL_ID = "tool.file-convert"
-FILE_CONVERT_TOOL_DISPLAY_NAME = "File Convert"
-FILE_CONVERT_TOOL_DESCRIPTION = "Convert DOCX, PDF, and PPTX files into text."
-FILE_CONVERT_TOOL_PROMPT = (
-    "Use this tool to convert DOCX, PDF, or PPTX files into plain text before analysis."
-)
-
 WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
 WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
 WEATHER_CURRENT_TOOL_DESCRIPTION = (
@@ -122,11 +115,6 @@ FILE_TOOL_SWITCH_ROOT_PROMPT = "Use this tool to validate a directory as the nex
 
 BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
     "zh-CN": {
-        FILE_CONVERT_TOOL_ID: {
-            "displayName": "文件转换",
-            "description": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
-            "prompt": "在分析前使用此工具将 DOCX、PDF 或 PPTX 文件转换为纯文本。",
-        },
         FILE_TOOL_READ_ID: {
             "displayName": "文件读取",
             "description": "按行分页读取工作区内 UTF-8 文本文件。",
@@ -194,11 +182,6 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
         },
     },
     "en-US": {
-        FILE_CONVERT_TOOL_ID: {
-            "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
-            "description": FILE_CONVERT_TOOL_DESCRIPTION,
-            "prompt": FILE_CONVERT_TOOL_PROMPT,
-        },
         FILE_TOOL_READ_ID: {
             "displayName": FILE_TOOL_READ_DISPLAY_NAME,
             "description": FILE_TOOL_READ_DESCRIPTION,

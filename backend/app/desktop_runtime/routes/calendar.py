@@ -15,6 +15,14 @@ from app.event_manager.data.dto import UnifiedCalendarEvent
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
+
+def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
+    config = getattr(request.app.state, "runtime_config", None)
+    if not isinstance(config, DesktopRuntimeConfig):
+        raise RuntimeError("Desktop runtime config is not available on app.state.runtime_config")
+    return config
+
+
 def build_calendar_router() -> APIRouter:
     router = APIRouter(prefix="/calendar", tags=["calendar"])
 
@@ -71,10 +79,3 @@ def build_calendar_router() -> APIRouter:
         }
 
     return router
-
-
-def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
-    config = getattr(request.app.state, "runtime_config", None)
-    if not isinstance(config, DesktopRuntimeConfig):
-        raise RuntimeError("Desktop runtime config is not available on app.state.runtime_config")
-    return config

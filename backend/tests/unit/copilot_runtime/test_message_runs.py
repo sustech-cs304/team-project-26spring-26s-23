@@ -780,7 +780,7 @@ def test_stream_events_filters_denied_tools_from_enabled_tools() -> None:
 
     request = _build_request(
         thread_id="thread-1",
-        enabled_tools=("tool.file-convert",),
+        enabled_tools=("tool.fs.read",),
         tool_permission_policy=RuntimeToolPermissionPolicy(
             schemaVersion=1,
             defaultMode="allow",
@@ -790,7 +790,7 @@ def test_stream_events_filters_denied_tools_from_enabled_tools() -> None:
     events = asyncio.run(_collect_events(orchestrator, request))
 
     assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
-    assert executor.calls[0]["enabled_tools"] == ["tool.file-convert"]
+    assert executor.calls[0]["enabled_tools"] == ["tool.fs.read"]
     assert not any(WEATHER_CURRENT_TOOL_ID in call["enabled_tools"] for call in executor.calls)
 
 

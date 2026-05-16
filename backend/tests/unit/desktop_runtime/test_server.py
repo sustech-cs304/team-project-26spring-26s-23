@@ -31,7 +31,6 @@ from app.copilot_runtime.provider_adapter_registry import (
 )
 from app.copilot_runtime.session_store import InMemorySessionStore
 from app.copilot_runtime.tool_registry import (
-    FILE_CONVERT_TOOL_ID,
     REQUEST_USER_FORM_TOOL_ID,
     SKILL_ACTIVATE_TOOL_ID,
     SKILL_READ_RESOURCE_TOOL_ID,
@@ -257,7 +256,7 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(
     assert agent_summary["default"] is True
     assert agent_summary["status"] == "active"
     assert agent_summary["toolsetName"] == "default"
-    assert agent_summary["recommendedTools"] == [FILE_CONVERT_TOOL_ID]
+    assert agent_summary["recommendedTools"] == ['tool.fs.read']
     assert agent_summary["iconKey"] is None
     assert agent_summary["hasExecutorFactory"] is True
 
@@ -284,7 +283,6 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(
         "tool.fs.grep",
         "tool.fs.notebook_edit",
         "tool.fs.switch_root",
-        FILE_CONVERT_TOOL_ID,
         "tool.weather-current",
         REQUEST_USER_FORM_TOOL_ID,
         SKILL_ACTIVATE_TOOL_ID,
@@ -408,7 +406,7 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert capabilities_payload["boundAgent"]["agentId"] == "default"
     capability_tool_ids = [tool["toolId"] for tool in capabilities_payload["tools"]]
     assert capability_tool_ids[0] == "tool.fs.read"
-    assert FILE_CONVERT_TOOL_ID in capability_tool_ids
+    assert 'tool.fs.read' in capability_tool_ids
     assert run_stream_response.headers["content-type"].startswith("text/event-stream")
     assert (
         preflight_response.headers["access-control-allow-origin"]

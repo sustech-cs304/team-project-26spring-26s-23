@@ -1,7 +1,9 @@
-"""Legacy compatibility wrappers for older Blackboard provider-side tool imports.
+"""Thin wrapper helpers moved from agent_tools.py for test backward compatibility.
 
-Canonical runtime/tooling surface lives in `app.integrations.sustech.blackboard.facade` via
-`get_blackboard_tool_contracts()`. Keep this module thin and compatibility-only.
+These were extracted from ``app.integrations.sustech.blackboard.provider.tools.agent_tools``
+and exist solely for test fixture support.  Production code MUST use the canonical facade:
+
+    from app.integrations.sustech.blackboard.facade import get_blackboard_tool_contracts
 """
 
 from __future__ import annotations
@@ -146,13 +148,3 @@ def sync_blackboard_course_resources(
         "logs": _jsonable(report.logs),
         "log_summary": _jsonable(report.log_summary),
     }
-
-
-# Legacy compatibility exports only; canonical runtime/tooling surface lives in
-# app.integrations.sustech.blackboard.facade via get_blackboard_tool_contracts().
-__all__ = [
-    "search_course_catalog",
-    "refresh_calendar_ics",
-    "sync_blackboard_course_resources",
-    "sync_blackboard_snapshot",
-]
