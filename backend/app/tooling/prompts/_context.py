@@ -7,7 +7,7 @@ config, current month/year) into otherwise static tool prompts.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +33,7 @@ class PromptContext:
     # Template variable injection
     # ------------------------------------------------------------------
 
-    _TEMPLATE_VARIABLES: tuple[str, ...] = (
+    _TEMPLATE_VARIABLES: ClassVar[tuple[str, ...]] = (
         "workspace_root",
         "max_read_lines",
         "max_glob_results",

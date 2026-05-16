@@ -8,9 +8,6 @@ from app.tooling.prompts import (
     PromptContext,
     ToolPrompt,
     clear_registry,
-    get_all_tool_descriptions,
-    get_all_tool_prompts,
-    get_tool_description,
     get_tool_prompt,
     get_tool_prompts_as_dicts,
     register_tool_prompt,
@@ -20,21 +17,17 @@ from app.tooling.prompts._base import (
     DEFAULT_MAX_GREP_RESULTS,
     DEFAULT_MAX_READ_LINES,
 )
-from app.tooling.prompts._context import PromptContext
 from app.tooling.prompts.file_tools import (
     FILE_TOOL_EDIT_PROMPT,
     FILE_TOOL_GLOB_PROMPT,
     FILE_TOOL_GREP_PROMPT,
-    FILE_TOOL_NOTEBOOK_EDIT_PROMPT,
     FILE_TOOL_PREFERENCE_GUIDE,
     FILE_TOOL_PROMPTS,
     FILE_TOOL_READ_PROMPT,
-    FILE_TOOL_SWITCH_ROOT_PROMPT,
     FILE_TOOL_WRITE_PROMPT,
 )
 from app.tooling.prompts.domain.blackboard import (
     BLACKBOARD_PROMPTS,
-    BLACKBOARD_SNAPSHOT_SYNC_PROMPT,
     BLACKBOARD_SQL_QUERY_PROMPT,
     BLACKBOARD_TOOL_PREFERENCE_GUIDE,
 )

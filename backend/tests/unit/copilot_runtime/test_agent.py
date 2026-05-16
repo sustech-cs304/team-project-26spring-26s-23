@@ -1823,6 +1823,10 @@ def test_contract_agent_tool_descriptions_use_structured_prompts_not_short_const
     """Regression: _build_contract_agent_tools MUST use ToolPrompt.render()
     (get_tool_description) so that detailed usage_guide, parameter_guide, and
     constraints reach the LLM, not just the 70-character registry constants."""
+    # Re-bootstrap in case earlier tests (TestPromptRegistry) cleared the
+    # global prompt registry — otherwise get_tool_description returns None.
+    from app.tooling.prompts import _bootstrap
+    _bootstrap()
     registry = build_default_tool_registry()
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
 
