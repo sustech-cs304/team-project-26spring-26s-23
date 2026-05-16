@@ -9,15 +9,26 @@ from fastapi import APIRouter, Request
 
 from app.event_manager.data.dto import UnifiedCalendarEvent
 
+from ..config import DesktopRuntimeConfig
+from ..security import require_local_token
+
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
+    return request.app.state.runtime_config  # type: ignore[return-value]
+
 
 def build_calendar_router() -> APIRouter:
     router = APIRouter(prefix="/calendar", tags=["calendar"])
 
     @router.get("/events")
     def list_calendar_events(request: Request) -> dict[str, list[dict[str, Any]]]:
+        runtime_config = _get_runtime_config(request)
+        require_local_token(request, runtime_config)
+
         # TODO: Replace with real database queries once the persistence layer is ready.
         # This is mock data for the frontend to start developing the UI.
         now = _utc_now()
