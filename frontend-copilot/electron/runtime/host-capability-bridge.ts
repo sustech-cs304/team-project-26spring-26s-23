@@ -41,6 +41,7 @@ export interface CreateHostCapabilityBridgeOptions {
   host?: string
   token?: string
   port?: number
+  getMainWindow?: () => Electron.BrowserWindow | null
 }
 
 export function createHostCapabilityBridgeToken(): string {
@@ -57,6 +58,7 @@ export async function createHostCapabilityBridge(
     await handleHostCapabilityBridgeRequest(request, response, {
       token,
       handleRequest: options.handleRequest,
+      getMainWindow: options.getMainWindow,
     })
   })
 
@@ -88,6 +90,7 @@ async function handleHostCapabilityBridgeRequest(
   options: {
     token: string
     handleRequest: CreateHostCapabilityBridgeOptions['handleRequest']
+    getMainWindow?: CreateHostCapabilityBridgeOptions['getMainWindow']
   },
 ): Promise<void> {
   if (request.method !== 'POST' || request.url !== HOST_CAPABILITY_BRIDGE_PATH) {

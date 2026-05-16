@@ -7,6 +7,8 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from app.desktop_runtime.config import DesktopRuntimeConfig
+from app.desktop_runtime.security import require_local_token
 from app.event_manager.data.dto import UnifiedCalendarEvent
 
 from ..config import DesktopRuntimeConfig
@@ -32,7 +34,7 @@ def build_calendar_router() -> APIRouter:
         # TODO: Replace with real database queries once the persistence layer is ready.
         # This is mock data for the frontend to start developing the UI.
         now = _utc_now()
-        
+
         mock_events = [
             UnifiedCalendarEvent(
                 id=1,
@@ -77,3 +79,10 @@ def build_calendar_router() -> APIRouter:
         }
 
     return router
+
+
+def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
+    config = getattr(request.app.state, "runtime_config", None)
+    if not isinstance(config, DesktopRuntimeConfig):
+        raise RuntimeError("Desktop runtime config is not available on app.state.runtime_config")
+    return config

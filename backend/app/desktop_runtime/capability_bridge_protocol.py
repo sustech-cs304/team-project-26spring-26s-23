@@ -44,6 +44,7 @@ from ._capability_bridge.validators import (
     _normalize_error_code,
     _normalize_operation_key,
     _normalize_operation_name,
+    _normalize_optional_boolean_field_value,
     _normalize_optional_mapping_field_value,
     _normalize_optional_text,
     _normalize_optional_text_field_value,
@@ -903,6 +904,254 @@ class _EmptyResult(_BridgeResultModel):
     _bridge_allowed_fields: ClassVar[set[str] | None] = set()
 
 
+class _BrowserPagePayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"url", "showWindow"}
+
+    url: str = Field(min_length=1)
+    show_window: bool | None = Field(
+        default=None,
+        validation_alias="showWindow",
+        serialization_alias="showWindow",
+    )
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _validate_url(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="url",
+            field_context="payload",
+        )
+
+    @field_validator("show_window", mode="before")
+    @classmethod
+    def _validate_show_window(cls, value: Any) -> bool | None:
+        if value is None:
+            return None
+        return _require_boolean_field_value(
+            value,
+            field_name="showWindow",
+            field_context="payload",
+        )
+
+
+class _BrowserScreenshotPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"name"}
+
+    name: str | None = Field(default=None, min_length=1)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _validate_name(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="name",
+            field_context="payload",
+        )
+
+
+class _BrowserPageResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "tabId",
+        "currentUrl",
+        "title",
+        "windowVisible",
+    }
+
+    tab_id: str = Field(validation_alias="tabId", serialization_alias="tabId", min_length=1)
+    current_url: str = Field(validation_alias="currentUrl", serialization_alias="currentUrl")
+    title: str | None = Field(default=None, min_length=1)
+    window_visible: bool | None = Field(
+        default=None,
+        validation_alias="windowVisible",
+        serialization_alias="windowVisible",
+    )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="result",
+        )
+
+    @field_validator("current_url", mode="before")
+    @classmethod
+    def _validate_current_url(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="currentUrl",
+            field_context="result",
+        )
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _validate_title(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="title",
+            field_context="result",
+        )
+
+    @field_validator("window_visible", mode="before")
+    @classmethod
+    def _validate_window_visible(cls, value: Any) -> bool | None:
+        if value is None:
+            return None
+        return _require_boolean_field_value(
+            value,
+            field_name="windowVisible",
+            field_context="result",
+        )
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "tabId": self.tab_id,
+            "currentUrl": self.current_url,
+        }
+        if self.title is not None:
+            payload["title"] = self.title
+        if self.window_visible is not None:
+            payload["windowVisible"] = self.window_visible
+        return payload
+
+
+class _BrowserScreenshotResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "tabId",
+        "currentUrl",
+        "title",
+        "windowVisible",
+        "artifactId",
+        "uri",
+        "name",
+        "contentType",
+        "metadata",
+    }
+
+    tab_id: str = Field(validation_alias="tabId", serialization_alias="tabId", min_length=1)
+    current_url: str = Field(validation_alias="currentUrl", serialization_alias="currentUrl")
+    title: str | None = Field(default=None, min_length=1)
+    window_visible: bool | None = Field(
+        default=None,
+        validation_alias="windowVisible",
+        serialization_alias="windowVisible",
+    )
+    artifact_id: str = Field(validation_alias="artifactId", serialization_alias="artifactId", min_length=1)
+    uri: str | None = Field(default=None, min_length=1)
+    name: str | None = Field(default=None, min_length=1)
+    content_type: str | None = Field(
+        default=None,
+        validation_alias="contentType",
+        serialization_alias="contentType",
+        min_length=1,
+    )
+    metadata: dict[str, Any]
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="result",
+        )
+
+    @field_validator("current_url", mode="before")
+    @classmethod
+    def _validate_current_url(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="currentUrl",
+            field_context="result",
+        )
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _validate_title(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="title",
+            field_context="result",
+        )
+
+    @field_validator("window_visible", mode="before")
+    @classmethod
+    def _validate_window_visible(cls, value: Any) -> bool | None:
+        if value is None:
+            return None
+        return _require_boolean_field_value(
+            value,
+            field_name="windowVisible",
+            field_context="result",
+        )
+
+    @field_validator("artifact_id", mode="before")
+    @classmethod
+    def _validate_artifact_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="artifactId",
+            field_context="result",
+        )
+
+    @field_validator("uri", mode="before")
+    @classmethod
+    def _validate_uri(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="uri",
+            field_context="result",
+        )
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _validate_name(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="name",
+            field_context="result",
+        )
+
+    @field_validator("content_type", mode="before")
+    @classmethod
+    def _validate_content_type(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="contentType",
+            field_context="result",
+        )
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _validate_metadata(cls, value: Any) -> dict[str, Any]:
+        return _require_mapping_field_value(
+            value,
+            field_name="metadata",
+            field_context="result",
+        )
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "tabId": self.tab_id,
+            "currentUrl": self.current_url,
+            "artifactId": self.artifact_id,
+            "metadata": _normalize_mapping(self.metadata),
+        }
+        if self.title is not None:
+            payload["title"] = self.title
+        if self.window_visible is not None:
+            payload["windowVisible"] = self.window_visible
+        if self.uri is not None:
+            payload["uri"] = self.uri
+        if self.name is not None:
+            payload["name"] = self.name
+        if self.content_type is not None:
+            payload["contentType"] = self.content_type
+        return payload
+
+
 class DesktopCapabilityBridgeError(_DesktopCapabilityBridgeModel):
     """Stable error model returned by desktop capability bridge failures."""
 
@@ -1260,6 +1509,8 @@ _PAYLOAD_MODELS: dict[
     ("state", "delete_value"): _StateAddressPayload,
     ("event", "emit_event"): _EmitEventPayload,
     ("mcp", "call_tool"): _McpToolCallPayload,
+    ("browser", "open"): _BrowserPagePayload,
+    ("browser", "screenshot"): _BrowserScreenshotPayload,
 }
 
 _RESULT_MODELS: dict[
@@ -1279,6 +1530,8 @@ _RESULT_MODELS: dict[
     ("state", "delete_value"): _EmptyResult,
     ("event", "emit_event"): _EmptyResult,
     ("mcp", "call_tool"): _McpToolCallResult,
+    ("browser", "open"): _BrowserPageResult,
+    ("browser", "screenshot"): _BrowserScreenshotResult,
 }
 
 

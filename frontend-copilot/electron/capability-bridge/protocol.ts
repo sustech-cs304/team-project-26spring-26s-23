@@ -1,4 +1,4 @@
-export const DESKTOP_CAPABILITY_NAMES = ['secret', 'workspace', 'database', 'artifact', 'state', 'event', 'mcp'] as const
+export const DESKTOP_CAPABILITY_NAMES = ['secret', 'workspace', 'database', 'artifact', 'state', 'event', 'mcp', 'browser'] as const
 export type DesktopCapabilityName = (typeof DESKTOP_CAPABILITY_NAMES)[number]
 
 export const DESKTOP_CAPABILITY_OPERATIONS = [
@@ -14,6 +14,8 @@ export const DESKTOP_CAPABILITY_OPERATIONS = [
   'delete_value',
   'emit_event',
   'call_tool',
+  'open',
+  'screenshot',
 ] as const
 export type DesktopCapabilityOperation = (typeof DESKTOP_CAPABILITY_OPERATIONS)[number]
 
@@ -45,6 +47,7 @@ export const DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: Record<
   state: ['get_value', 'put_value', 'delete_value'],
   event: ['emit_event'],
   mcp: ['call_tool'],
+  browser: ['open', 'screenshot'],
 }
 
 export interface DesktopCapabilityBridgeRequest {
@@ -184,7 +187,36 @@ function normalizeDesktopCapabilityOperationPayload(
       return normalizeEmitEventPayload(payload)
     case 'call_tool':
       return normalizeCallToolPayload(payload)
+    case 'open': {
+      assertNoUnexpectedKeys(payload, ['url', 'showWindow', 'newTab', 'selector', 'format'], 'browser payload')
+      const normalized: Record<string, unknown> = {
+        url: requireNonEmptyString(payload.url, 'url'),
+      }
+      if (payload.showWindow !== undefined) {
+        normalized.showWindow = requireBoolean(payload.showWindow, 'showWindow')
+      }
+      if (payload.newTab !== undefined) {
+        normalized.newTab = requireBoolean(payload.newTab, 'newTab')
+      }
+      if (payload.selector !== undefined) {
+        normalized.selector = requireNonEmptyString(payload.selector, 'selector')
+      }
+      if (payload.format !== undefined) {
+        normalized.format = requireNonEmptyString(payload.format, 'format')
+      }
+      return normalized
+    }
+    case 'screenshot': {
+      assertNoUnexpectedKeys(payload, ['name'], 'browser payload')
+      const normalized: Record<string, unknown> = {}
+      if (payload.name !== undefined) {
+        normalized.name = requireNonEmptyString(payload.name, 'name')
+      }
+      return normalized
+    }
   }
+
+  throw new Error(`Operation '${operation}' is not supported for capability '${capability}'.`)
 }
 
 function normalizeSecretPayload(payload: Record<string, unknown>): Record<string, unknown> {
@@ -322,6 +354,14 @@ function requireNonEmptyString(value: unknown, label: string): string {
 function requireNonNegativeInteger(value: unknown, label: string): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative integer.`)
+  }
+
+  return value
+}
+
+function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(`${label} must be a boolean.`)
   }
 
   return value

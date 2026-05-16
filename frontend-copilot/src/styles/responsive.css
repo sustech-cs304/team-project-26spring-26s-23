@@ -10,8 +10,7 @@
 
 @media (max-width: 1200px) {
   .conversation-workspace,
-  .settings-workspace,
-  .hub-workspace {
+  .settings-workspace {
     grid-template-columns: 292px minmax(0, 1fr);
   }
 
