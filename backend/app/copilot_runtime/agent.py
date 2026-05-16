@@ -839,7 +839,7 @@ class PydanticAIAgentExecutor:
 
     def _compose_system_prompt(self, skill_system_prompt: str | None) -> str:
         context = PromptContext(
-            current_month_year=datetime.now().strftime("%Y年%m月"),
+            current_month_year=datetime.now(UTC).strftime("%Y年%m月"),
         )
         parts = [
             DEFAULT_AGENT_SYSTEM_PROMPT,

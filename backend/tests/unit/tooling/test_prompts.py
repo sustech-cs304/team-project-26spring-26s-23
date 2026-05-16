@@ -7,6 +7,7 @@ import pytest
 from app.tooling.prompts import (
     PromptContext,
     ToolPrompt,
+    _registry as _prompt_registry,
     clear_registry,
     get_tool_prompt,
     get_tool_prompts_as_dicts,
@@ -40,6 +41,23 @@ from app.tooling.prompts.system.tool_selection_guide import (
     SHARED_CONVENTIONS,
     TOOL_SELECTION_GUIDE,
 )
+
+
+# ---------------------------------------------------------------------------
+# Registry isolation fixture — prevents cross-test pollution
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolate_prompt_registry() -> None:
+    """Snapshot and restore the global prompt _registry around every test."""
+    try:
+        saved = dict(_prompt_registry)
+    except Exception:
+        saved = {}
+    yield
+    _prompt_registry.clear()
+    _prompt_registry.update(saved)
 
 
 # ============================================================================
