@@ -168,6 +168,7 @@ _BROWSER_PAGE_SCHEMA: dict[str, Any] = {
         "currentUrl": {"type": "string"},
         "title": {"type": "string", "minLength": 1},
         "windowVisible": {"type": "boolean"},
+        "content": {"type": "string", "minLength": 0},
     },
 }
 

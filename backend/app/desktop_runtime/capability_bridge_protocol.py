@@ -963,11 +963,14 @@ class _BrowserPagePayload(_BridgePayloadModel):
     @field_validator("format", mode="before")
     @classmethod
     def _validate_format(cls, value: Any) -> str | None:
-        return _normalize_optional_text_field_value(
+        normalized = _normalize_optional_text_field_value(
             value,
             field_name="format",
             field_context="payload",
         )
+        if normalized is not None and normalized not in {"text", "html", "markdown"}:
+            raise ValueError("format must be one of: text, html, markdown")
+        return normalized
 
     def to_bridge_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {"url": self.url}
@@ -1130,6 +1133,7 @@ class _BrowserPageResult(_BridgeResultModel):
         "currentUrl",
         "title",
         "windowVisible",
+        "content",
     }
 
     tab_id: str = Field(validation_alias="tabId", serialization_alias="tabId", min_length=1)
@@ -1140,6 +1144,7 @@ class _BrowserPageResult(_BridgeResultModel):
         validation_alias="windowVisible",
         serialization_alias="windowVisible",
     )
+    content: str | None = Field(default=None, min_length=0)
 
     @field_validator("tab_id", mode="before")
     @classmethod
@@ -1336,10 +1341,17 @@ class _BrowserListTabsResult(_BridgeResultModel):
     def _validate_tabs(cls, value: Any) -> list[dict[str, Any]]:
         if not isinstance(value, list):
             raise ValueError("tabs must be a list")
-        return [
-            item if isinstance(item, dict) else {}
-            for item in value
-        ]
+        validated: list[dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                validated.append({})
+                continue
+            if not isinstance(item.get("tabId"), str) or item["tabId"].strip() == "":
+                raise ValueError("each tab must have a non-empty tabId")
+            if not isinstance(item.get("currentUrl"), str):
+                raise ValueError("each tab must have a currentUrl string")
+            validated.append(item)
+        return validated
 
     def to_bridge_result(self) -> dict[str, Any]:
         return {"tabs": self.tabs}

@@ -92,8 +92,8 @@ class StubSecretProvider:
 
 
 class StubBrowserController:
-    async def open_page(self, *, url: str, show_window: bool = False, new_tab: bool = False) -> Any:
-        _ = (url, show_window, new_tab)
+    async def open_page(self, *, url: str, show_window: bool = False, new_tab: bool = False, selector: str | None = None, format: str | None = None) -> Any:
+        _ = (url, show_window, new_tab, selector, format)
         return object()
 
     async def capture_screenshot(self, *, name: str | None = None) -> Any:

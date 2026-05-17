@@ -62,7 +62,7 @@ class _RecordingBridgeClient:
         self.state_writes: list[tuple[str, str, dict[str, Any]]] = []
         self.state_deletes: list[tuple[str, str]] = []
         self.events: list[dict[str, Any]] = []
-        self.browser_open_requests: list[tuple[str, str, bool, bool]] = []
+        self.browser_open_requests: list[tuple[str, str, bool, bool, str | None, str | None]] = []
         self.browser_screenshot_requests: list[tuple[str, str, str | None]] = []
 
     async def get_secret(
@@ -241,8 +241,10 @@ class _RecordingBridgeClient:
         url: str,
         show_window: bool = False,
         new_tab: bool = False,
+        selector: str | None = None,
+        format: str | None = None,
     ) -> HostBrowserPage:
-        self.browser_open_requests.append((context.invocation_id, url, show_window, new_tab))
+        self.browser_open_requests.append((context.invocation_id, url, show_window, new_tab, selector, format))
         return HostBrowserPage(
             tab_id="main-window",
             current_url=url,

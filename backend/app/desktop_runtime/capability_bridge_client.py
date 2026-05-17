@@ -374,12 +374,18 @@ class DesktopCapabilityBridgeClient:
         url: str,
         show_window: bool = False,
         new_tab: bool = False,
+        selector: str | None = None,
+        format: str | None = None,
     ) -> HostBrowserPage:
         payload: dict[str, Any] = {"url": url}
         if show_window:
             payload["showWindow"] = show_window
         if new_tab:
             payload["newTab"] = new_tab
+        if selector is not None:
+            payload["selector"] = selector
+        if format is not None:
+            payload["format"] = format
         result = await self._call_async(
             capability="browser",
             operation="open",

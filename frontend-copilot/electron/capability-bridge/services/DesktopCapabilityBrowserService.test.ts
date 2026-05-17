@@ -64,7 +64,7 @@ vi.mock('electron', () => {
   }
   MockBrowserWindow.prototype.once = vi.fn()
 
-  return { BrowserWindow: MockBrowserWindow as any }
+  return { BrowserWindow: MockBrowserWindow as unknown as typeof import('electron').BrowserWindow }
 })
 
 function createStubOptions(): CreateDesktopCapabilityBridgeServiceOptions {
@@ -142,6 +142,18 @@ describe('DesktopCapabilityBrowserService', () => {
 
       expect(result.tabId).toMatch(/^browser-tab-/)
       expect(typeof result.content).toBe('string')
+    })
+
+    it('passes selector and format through to content extraction', async () => {
+      const result = await service.handle(createRequest('open', {
+        url: 'https://example.com',
+        selector: '.main',
+        format: 'html',
+      }))
+
+      expect(result.tabId).toMatch(/^browser-tab-/)
+      expect(typeof result.content).toBe('string')
+      expect(result.content).toBeTruthy()
     })
 
     it('rejects empty url', async () => {
@@ -225,6 +237,35 @@ describe('DesktopCapabilityBrowserService', () => {
     it('throws error for non-existent tab', async () => {
       await expect(
         service.handle(createRequest('close_tab', { tabId: 'nonexistent' }))
+      ).rejects.toThrow()
+    })
+
+    it('removes tab from registry after close', async () => {
+      const tab = await service.handle(createRequest('open', { url: 'https://example.com', newTab: true }))
+      await service.handle(createRequest('close_tab', { tabId: tab.tabId }))
+
+      const tabsAfter = await service.handle(createRequest('list_tabs', {}))
+      const tabIds = (tabsAfter.tabs as Record<string, unknown>[]).map((t: Record<string, unknown>) => t.tabId)
+      expect(tabIds).not.toContain(tab.tabId)
+    })
+
+    it('falls back to another available tab when closing the active tab', async () => {
+      const tab1 = await service.handle(createRequest('open', { url: 'https://example.com', newTab: true }))
+      const tab2 = await service.handle(createRequest('open', { url: 'https://other.com', newTab: true }))
+
+      await service.handle(createRequest('close_tab', { tabId: tab1.tabId }))
+
+      const result = await service.handle(createRequest('screenshot', { name: 'after-close' }))
+      expect(result.tabId).toBe(tab2.tabId)
+      expect(result.tabId).not.toBe(tab1.tabId)
+    })
+
+    it('clears activeTabId when closing the only tab', async () => {
+      await service.handle(createRequest('open', { url: 'https://example.com' }))
+      await service.handle(createRequest('close_tab', {}))
+
+      await expect(
+        service.handle(createRequest('screenshot', {}))
       ).rejects.toThrow()
     })
   })

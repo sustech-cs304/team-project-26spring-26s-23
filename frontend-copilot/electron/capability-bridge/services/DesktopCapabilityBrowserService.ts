@@ -285,6 +285,15 @@ function findActiveBrowserTab(registry: BrowserTabRegistry): BrowserTabRecord | 
   return null
 }
 
+function findAnyAvailableTabId(registry: BrowserTabRegistry): string | null {
+  for (const [tabId, targetWindow] of registry.tabs.entries()) {
+    if (isUsableBrowserWindow(targetWindow)) {
+      return tabId
+    }
+  }
+  return null
+}
+
 function isUsableBrowserWindow(targetWindow: BrowserWindow | undefined): targetWindow is BrowserWindow {
   if (targetWindow === undefined || targetWindow.isDestroyed()) {
     return false
@@ -640,6 +649,11 @@ async function closeBrowserTab(
   const summary = describeBrowserWindow(tabId, targetWindow)
   targetWindow.close()
 
+  registry.tabs.delete(tabId)
+  if (registry.activeTabId === tabId) {
+    registry.activeTabId = findAnyAvailableTabId(registry)
+  }
+
   await options.appendLog?.('info', '[capability-bridge] Browser tab closed.', {
     capability: request.capability,
     operation: request.operation,
@@ -731,21 +745,37 @@ async function executeBrowserScript(
 }
 
 function serializeJavaScriptResult(value: unknown): unknown {
+  return _safeSerialize(value, new WeakSet(), 0)
+}
+
+const MAX_SERIALIZE_DEPTH = 10
+
+function _safeSerialize(value: unknown, visited: WeakSet<object>, depth: number): unknown {
   if (value === null || value === undefined) return null
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
-  if (Array.isArray(value)) return value.map(serializeJavaScriptResult)
-  if (typeof value === 'object') {
-    const record: Record<string, unknown> = {}
-    for (const key of Object.keys(value as Record<string, unknown>)) {
+  if (typeof value !== 'object') return String(value)
+  if (depth >= MAX_SERIALIZE_DEPTH) return '[max depth]'
+  if (visited.has(value as object)) return '[circular]'
+  visited.add(value as object)
+
+  if (Array.isArray(value)) {
+    return value.map((item) => _safeSerialize(item, visited, depth + 1))
+  }
+
+  const record: Record<string, unknown> = {}
+  try {
+    const keys = Object.keys(value as Record<string, unknown>)
+    for (const key of keys) {
       try {
-        record[key] = serializeJavaScriptResult((value as Record<string, unknown>)[key])
+        record[key] = _safeSerialize((value as Record<string, unknown>)[key], visited, depth + 1)
       } catch {
         record[key] = '[unserializable]'
       }
     }
-    return record
+  } catch {
+    return '[unserializable]'
   }
-  return String(value)
+  return record
 }
 
 async function resetBrowser(
@@ -831,7 +861,7 @@ const BROWSER_SNAPSHOT_SCRIPT = `
     return (el.textContent || '').trim().slice(0, 200);
   }
 
-  const selector = ${JSON.stringify(null)};
+  const selector = __SELECTOR__;
   const root = selector ? document.querySelector(selector) : document.body;
   if (!root) return { ok: false, error: 'Root element not found for selector: ' + selector };
 
@@ -878,12 +908,12 @@ const BROWSER_SNAPSHOT_SCRIPT = `
   const interactiveEls = Array.from(refMap.keys()).filter(function(el) {
     try { return el.matches(INTERACTIVE_SELECTOR); } catch(e) { return false; }
   });
-  return {
-    ok: true,
-    snapshot: lines.join('\\n'),
-    elementCount: refCounter,
-    interactiveCount: interactiveEls.length,
-  };
+    return {
+      ok: true,
+      snapshot: lines.join('\\n'),
+      elementCount: lines.length,
+      interactiveCount: interactiveEls.length,
+    };
 })()
 `
 
@@ -905,7 +935,7 @@ async function captureBrowserSnapshot(
   }
 
   const script = BROWSER_SNAPSHOT_SCRIPT.replace(
-    '${JSON.stringify(null)}',
+    '__SELECTOR__',
     JSON.stringify(selector),
   )
 
@@ -925,9 +955,11 @@ async function captureBrowserSnapshot(
 
   const record = normalizeResultRecord(rawResult)
   if (record.ok !== true) {
-    const message = typeof record.message === 'string' && record.message.trim() !== ''
-      ? record.message
-      : 'Failed to capture browser snapshot.'
+    const message = typeof record.error === 'string' && record.error.trim() !== ''
+      ? record.error
+      : typeof record.message === 'string' && record.message.trim() !== ''
+        ? record.message
+        : 'Failed to capture browser snapshot.'
     throw new DesktopCapabilityBridgeError('invalid_request', message, {
       details: { selector, tabId: tab.tabId },
     })
