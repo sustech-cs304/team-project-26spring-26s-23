@@ -58,22 +58,31 @@ vi.mock('electron', () => {
   MockBrowserWindow.prototype.getTitle = function () {
     return 'Example Domain'
   }
-  MockBrowserWindow.prototype.loadURL = function (url: string) {
-    return (this as Record<string, unknown>).webContents.loadURL(url)
+  MockBrowserWindow.prototype.loadURL = function (this: Record<string, unknown>, _url: string) {
+    const wc = this.webContents as Record<string, unknown>
+    return (wc.loadURL as (url: string) => Promise<void>)(_url)
   }
   MockBrowserWindow.prototype.once = vi.fn()
 
-  return { BrowserWindow: MockBrowserWindow as unknown as typeof BrowserWindow }
+  return { BrowserWindow: MockBrowserWindow as any }
 })
 
 function createStubOptions(): CreateDesktopCapabilityBridgeServiceOptions {
   return {
     prepareRuntimePaths: vi.fn(async () => ({
+      userDataDir: '/tmp/candue-test',
       runtimeRootDir: '/tmp/candue-test',
+      configDir: '/tmp/candue-test/config',
+      logsDir: '/tmp/candue-test/logs',
       databaseDir: '/tmp/candue-test/database',
       stateDir: '/tmp/candue-test/state',
-      logDir: '/tmp/candue-test/logs',
-      configDir: '/tmp/candue-test/config',
+      copilotSettingsFile: '/tmp/candue-test/config/copilot-settings.json',
+      legacyCopilotSettingsFile: '/tmp/candue-test/config/legacy.json',
+      hostLogFile: '/tmp/candue-test/logs/host.log',
+      backendStdoutLogFile: '/tmp/candue-test/logs/backend-stdout.log',
+      backendStderrLogFile: '/tmp/candue-test/logs/backend-stderr.log',
+      runtimeSnapshotFile: '/tmp/candue-test/state/runtime-snapshot.json',
+      lastFailureFile: '/tmp/candue-test/state/last-failure.json',
     })),
     appendLog: vi.fn(),
   }
@@ -226,7 +235,7 @@ describe('DesktopCapabilityBrowserService', () => {
   describe('switch_tab', () => {
     it('switches to a specific tab', async () => {
       const tab1 = await service.handle(createRequest('open', { url: 'https://example.com', newTab: true }))
-      const _tab2 = await service.handle(createRequest('open', { url: 'https://other.com', newTab: true }))
+      await service.handle(createRequest('open', { url: 'https://other.com', newTab: true }))
 
       const result = await service.handle(createRequest('switch_tab', { tabId: tab1.tabId }))
 

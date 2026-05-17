@@ -33,6 +33,7 @@ _HOST_CAPABILITY_BRIDGE_AUTH_HEADER_NAME = "X-Host-Capability-Bridge-Token"
 HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME = _HOST_CAPABILITY_BRIDGE_AUTH_HEADER_NAME
 _DEFAULT_TIMEOUT = 5.0
 _MCP_TOOL_CALL_TIMEOUT = 20.0
+_BROWSER_OPERATION_TIMEOUT = 60.0
 
 
 def _normalize_optional_text(value: Any) -> str | None:
@@ -372,15 +373,19 @@ class DesktopCapabilityBridgeClient:
         context: ToolInvocationContext,
         url: str,
         show_window: bool = False,
+        new_tab: bool = False,
     ) -> HostBrowserPage:
         payload: dict[str, Any] = {"url": url}
         if show_window:
             payload["showWindow"] = show_window
+        if new_tab:
+            payload["newTab"] = new_tab
         result = await self._call_async(
             capability="browser",
             operation="open",
             context=context,
             payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
         )
         return HostBrowserPage(
             tab_id=str(result["tabId"]),
@@ -407,6 +412,7 @@ class DesktopCapabilityBridgeClient:
             operation="screenshot",
             context=context,
             payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
         )
         page = HostBrowserPage(
             tab_id=str(result["tabId"]),
@@ -439,6 +445,7 @@ class DesktopCapabilityBridgeClient:
             operation="list_tabs",
             context=context,
             payload={},
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
         )
         tabs_raw = result.get("tabs")
         if isinstance(tabs_raw, list):
@@ -472,6 +479,7 @@ class DesktopCapabilityBridgeClient:
             operation="close_tab",
             context=context,
             payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
         )
         return HostBrowserPage(
             tab_id=str(result["tabId"]),
@@ -495,6 +503,7 @@ class DesktopCapabilityBridgeClient:
             operation="switch_tab",
             context=context,
             payload={"tabId": tab_id},
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
         )
         return HostBrowserPage(
             tab_id=str(result["tabId"]),
@@ -522,6 +531,7 @@ class DesktopCapabilityBridgeClient:
             operation="execute",
             context=context,
             payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
         )
         return dict(result)
 
@@ -535,6 +545,7 @@ class DesktopCapabilityBridgeClient:
             operation="reset",
             context=context,
             payload={},
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
         )
         return dict(result)
 
@@ -555,6 +566,7 @@ class DesktopCapabilityBridgeClient:
             operation="snapshot",
             context=context,
             payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
         )
         return dict(result)
 

@@ -25,7 +25,7 @@ from app.tooling.browser_tools import (
 
 class _StubBrowserController:
     def __init__(self) -> None:
-        self.open_calls: list[tuple[str, bool]] = []
+        self.open_calls: list[tuple[str, bool, bool]] = []
         self.screenshot_calls: list[str | None] = []
         self.list_tabs_calls: list[tuple[()]] = []
         self.close_tab_calls: list[str | None] = []
@@ -34,8 +34,8 @@ class _StubBrowserController:
         self.reset_calls: list[tuple[()]] = []
         self.snapshot_calls: list[tuple[str | None, str | None]] = []
 
-    async def open_page(self, *, url: str, show_window: bool = False) -> HostBrowserPage:
-        self.open_calls.append((url, show_window))
+    async def open_page(self, *, url: str, show_window: bool = False, new_tab: bool = False) -> HostBrowserPage:
+        self.open_calls.append((url, show_window, new_tab))
         return HostBrowserPage(
             tab_id="tab-1",
             current_url=url,
@@ -185,7 +185,7 @@ def test_browser_open_tool_defaults() -> None:
         "title": "Example Domain",
         "windowVisible": False,
     }
-    assert controller.open_calls == [("https://example.com", False)]
+    assert controller.open_calls == [("https://example.com", False, False)]
 
 
 def test_browser_open_tool_with_show_window() -> None:
@@ -203,7 +203,24 @@ def test_browser_open_tool_with_show_window() -> None:
 
     assert result.status == "success"
     assert result.output["windowVisible"] is True
-    assert controller.open_calls == [("https://example.com", True)]
+    assert controller.open_calls == [("https://example.com", True, False)]
+
+
+def test_browser_open_tool_with_new_tab() -> None:
+    controller = _StubBrowserController()
+    host = ToolHostCapabilities(browser_controller=controller)
+    context = _make_context("browser.open")
+
+    result = _run(
+        BrowserOpenTool().invoke(
+            arguments={"url": "https://example.com", "newTab": True},
+            context=context,
+            host=host,
+        )
+    )
+
+    assert result.status == "success"
+    assert controller.open_calls == [("https://example.com", False, True)]
 
 
 def test_browser_open_tool_rejects_empty_url() -> None:

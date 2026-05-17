@@ -904,7 +904,7 @@ class _EmptyResult(_BridgeResultModel):
 
 
 class _BrowserPagePayload(_BridgePayloadModel):
-    _bridge_allowed_fields: ClassVar[set[str] | None] = {"url", "showWindow"}
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"url", "showWindow", "newTab", "selector", "format"}
 
     url: str = Field(min_length=1)
     show_window: bool | None = Field(
@@ -912,6 +912,13 @@ class _BrowserPagePayload(_BridgePayloadModel):
         validation_alias="showWindow",
         serialization_alias="showWindow",
     )
+    new_tab: bool | None = Field(
+        default=None,
+        validation_alias="newTab",
+        serialization_alias="newTab",
+    )
+    selector: str | None = Field(default=None, min_length=1)
+    format: str | None = Field(default=None, min_length=1)
 
     @field_validator("url", mode="before")
     @classmethod
@@ -932,6 +939,47 @@ class _BrowserPagePayload(_BridgePayloadModel):
             field_name="showWindow",
             field_context="payload",
         )
+
+    @field_validator("new_tab", mode="before")
+    @classmethod
+    def _validate_new_tab(cls, value: Any) -> bool | None:
+        if value is None:
+            return None
+        return _require_boolean_field_value(
+            value,
+            field_name="newTab",
+            field_context="payload",
+        )
+
+    @field_validator("selector", mode="before")
+    @classmethod
+    def _validate_selector(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="selector",
+            field_context="payload",
+        )
+
+    @field_validator("format", mode="before")
+    @classmethod
+    def _validate_format(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="format",
+            field_context="payload",
+        )
+
+    def to_bridge_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"url": self.url}
+        if self.show_window is not None:
+            payload["showWindow"] = self.show_window
+        if self.new_tab is not None:
+            payload["newTab"] = self.new_tab
+        if self.selector is not None:
+            payload["selector"] = self.selector
+        if self.format is not None:
+            payload["format"] = self.format
+        return payload
 
 
 class _BrowserScreenshotPayload(_BridgePayloadModel):

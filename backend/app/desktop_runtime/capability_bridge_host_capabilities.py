@@ -223,12 +223,13 @@ class _BridgeBackedBrowserController(BrowserController):
         self._bridge_client = bridge_client
         self._invocation_context = invocation_context
 
-    async def open_page(self, *, url: str, show_window: bool = False) -> HostBrowserPage:
+    async def open_page(self, *, url: str, show_window: bool = False, new_tab: bool = False) -> HostBrowserPage:
         bridge_client = cast(Any, self._bridge_client)
         return await bridge_client.open_browser_page(
             context=self._invocation_context,
             url=url,
             show_window=show_window,
+            new_tab=new_tab,
         )
 
     async def capture_screenshot(

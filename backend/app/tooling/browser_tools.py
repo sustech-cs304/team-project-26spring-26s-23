@@ -254,7 +254,12 @@ class BrowserOpenTool(ToolContract):
                 field_name="showWindow",
                 default=False,
             )
-            page = await controller.open_page(url=url, show_window=show_window)
+            new_tab = _read_bool_argument(
+                arguments,
+                field_name="newTab",
+                default=False,
+            )
+            page = await controller.open_page(url=url, show_window=show_window, new_tab=new_tab)
         except ValueError as exc:
             return _invalid_input_result(tool_id=self.metadata.tool_id, message=str(exc))
         except MissingHostCapabilityError as exc:

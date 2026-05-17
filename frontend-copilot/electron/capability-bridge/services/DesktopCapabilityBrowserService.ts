@@ -90,7 +90,7 @@ async function openBrowserPage(
   try {
     await tab.targetWindow.loadURL(payload.url)
   } catch (error) {
-    throw new DesktopCapabilityBridgeError('temporarily_unavailable', 'Failed to open the requested URL.', {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to open the requested URL: ${error instanceof Error ? error.message : String(error)}`, {
       retryable: true,
       details: {
         url: payload.url,
@@ -147,7 +147,7 @@ async function captureBrowserScreenshot(
     const image = await tab.targetWindow.webContents.capturePage()
     pngBuffer = image.toPNG()
   } catch (error) {
-    throw new DesktopCapabilityBridgeError('temporarily_unavailable', 'Failed to capture a browser screenshot.', {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to capture a browser screenshot: ${error instanceof Error ? error.message : String(error)}`, {
       retryable: true,
       details: {
         tabId: tab.tabId,
@@ -371,7 +371,7 @@ async function extractPageContent(
       true,
     )
   } catch (error) {
-    throw new DesktopCapabilityBridgeError('temporarily_unavailable', 'Failed to extract browser page content.', {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to extract browser page content: ${error instanceof Error ? error.message : String(error)}`, {
       retryable: true,
       details: {
         selector: input.selector,
@@ -705,7 +705,7 @@ async function executeBrowserScript(
   try {
     rawResult = await tab.targetWindow.webContents.executeJavaScript(script, true)
   } catch (error) {
-    throw new DesktopCapabilityBridgeError('temporarily_unavailable', 'Failed to execute script in browser.', {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to execute script in browser: ${error instanceof Error ? error.message : String(error)}`, {
       retryable: true,
       details: {
         tabId: tab.tabId,
@@ -913,7 +913,7 @@ async function captureBrowserSnapshot(
   try {
     rawResult = await tab.targetWindow.webContents.executeJavaScript(script, true)
   } catch (error) {
-    throw new DesktopCapabilityBridgeError('temporarily_unavailable', 'Failed to capture browser snapshot.', {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to capture browser snapshot: ${error instanceof Error ? error.message : String(error)}`, {
       retryable: true,
       details: {
         tabId: tab.tabId,

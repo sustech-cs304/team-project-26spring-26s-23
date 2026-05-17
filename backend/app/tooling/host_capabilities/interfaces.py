@@ -232,6 +232,7 @@ class BrowserController(Protocol):
         *,
         url: str,
         show_window: bool = False,
+        new_tab: bool = False,
     ) -> HostBrowserPage:
         raise NotImplementedError
 
