@@ -438,8 +438,8 @@ def test_bridge_error_model_and_response_invariants() -> None:
     )
     failure_response = DesktopCapabilityBridgeResponse.failure(
         request_id="request-2",
-        error=timeout_error,
-    )
+            error=timeout_error,
+        )
 
     assert timeout_error.to_dict() == {
         "code": "timeout",
@@ -483,3 +483,33 @@ def test_bridge_error_model_and_response_invariants() -> None:
             result={},
             error=timeout_error,
         )
+
+
+def test_browser_page_result_serializes_content_when_present() -> None:
+    result = validate_desktop_capability_bridge_result(
+        capability="browser",
+        operation="open",
+        result={
+            "tabId": "tab-1",
+            "currentUrl": "https://example.com",
+            "title": "Example",
+            "content": "Extracted text content",
+        },
+    )
+    assert result["tabId"] == "tab-1"
+    assert result["currentUrl"] == "https://example.com"
+    assert result["content"] == "Extracted text content"
+
+
+def test_browser_page_result_omits_content_when_absent() -> None:
+    result = validate_desktop_capability_bridge_result(
+        capability="browser",
+        operation="open",
+        result={
+            "tabId": "tab-1",
+            "currentUrl": "https://example.com",
+        },
+    )
+    assert "content" not in result
+    assert result["tabId"] == "tab-1"
+    assert result["currentUrl"] == "https://example.com"

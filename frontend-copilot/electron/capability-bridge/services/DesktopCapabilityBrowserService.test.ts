@@ -100,6 +100,55 @@ function createRequest(operation: string, payload: Record<string, unknown> = {})
   }
 }
 
+function createBlockingBrowserWindow(): Record<string, unknown> {
+  const wc = {
+    getURL: vi.fn(() => 'https://example.com'),
+    getTitle: vi.fn(() => 'Example Domain'),
+    isDestroyed: vi.fn(() => false),
+    executeJavaScript: vi.fn(async (_script: string) => 'executed-result' as unknown),
+    capturePage: vi.fn(async () => ({ toPNG: vi.fn(() => Buffer.from('fake')) })),
+    loadURL: vi.fn(async (_url: string) => undefined as void),
+  }
+  const win: Record<string, unknown> = {
+    webContents: wc,
+    _isDestroyed: false,
+    _isVisible: false,
+    _blockClose: true,
+  }
+  win.isDestroyed = function () { return win._isDestroyed as boolean }
+  win.isVisible = function () { return win._isVisible as boolean }
+  win.show = function () { win._isVisible = true }
+  win.hide = function () { win._isVisible = false }
+  win.close = function () { if (!win._blockClose) { win._isDestroyed = true } }
+  win.getTitle = function () { return 'Example Domain' }
+  win.loadURL = function (_url: string) { return (wc.loadURL as (url: string) => Promise<void>)(_url) }
+  win.once = vi.fn()
+  return win
+}
+
+function createServiceWithBlockingClose(): ReturnType<typeof createDesktopCapabilityBrowserService> {
+  const options = {
+    prepareRuntimePaths: vi.fn(async () => ({
+      userDataDir: '/tmp/candue-test',
+      runtimeRootDir: '/tmp/candue-test',
+      configDir: '/tmp/candue-test/config',
+      logsDir: '/tmp/candue-test/logs',
+      databaseDir: '/tmp/candue-test/database',
+      stateDir: '/tmp/candue-test/state',
+      copilotSettingsFile: '/tmp/candue-test/config/copilot-settings.json',
+      legacyCopilotSettingsFile: '/tmp/candue-test/config/legacy.json',
+      hostLogFile: '/tmp/candue-test/logs/host.log',
+      backendStdoutLogFile: '/tmp/candue-test/logs/backend-stdout.log',
+      backendStderrLogFile: '/tmp/candue-test/logs/backend-stderr.log',
+      runtimeSnapshotFile: '/tmp/candue-test/state/runtime-snapshot.json',
+      lastFailureFile: '/tmp/candue-test/state/last-failure.json',
+    })),
+    appendLog: vi.fn(),
+    createBrowserWindow: () => createBlockingBrowserWindow() as unknown as Electron.BrowserWindow,
+  }
+  return createDesktopCapabilityBrowserService(options as CreateDesktopCapabilityBridgeServiceOptions)
+}
+
 describe('DesktopCapabilityBrowserService', () => {
   let service: ReturnType<typeof createDesktopCapabilityBrowserService>
 
@@ -141,6 +190,7 @@ describe('DesktopCapabilityBrowserService', () => {
       }))
 
       expect(result.tabId).toMatch(/^browser-tab-/)
+      expect(result.currentUrl).toBe('https://example.com')
       expect(typeof result.content).toBe('string')
     })
 
@@ -152,6 +202,7 @@ describe('DesktopCapabilityBrowserService', () => {
       }))
 
       expect(result.tabId).toMatch(/^browser-tab-/)
+      expect(result.currentUrl).toBe('https://example.com')
       expect(typeof result.content).toBe('string')
       expect(result.content).toBeTruthy()
     })
@@ -271,6 +322,24 @@ describe('DesktopCapabilityBrowserService', () => {
   })
 
   // -----------------------------------------------------------------------
+  // browser.close_tab - robustness
+  // -----------------------------------------------------------------------
+  describe('close_tab robustness', () => {
+    it('throws conflict when the page blocks close (beforeunload)', async () => {
+      const blockedService = createServiceWithBlockingClose()
+      const tab = await blockedService.handle(createRequest('open', { url: 'https://example.com' }))
+
+      await expect(
+        blockedService.handle(createRequest('close_tab', { tabId: tab.tabId }))
+      ).rejects.toThrow()
+
+      const tabsAfter = await blockedService.handle(createRequest('list_tabs', {}))
+      const tabIds = (tabsAfter.tabs as Record<string, unknown>[]).map((t: Record<string, unknown>) => t.tabId)
+      expect(tabIds).toContain(tab.tabId)
+    })
+  })
+
+  // -----------------------------------------------------------------------
   // browser.switch_tab
   // -----------------------------------------------------------------------
   describe('switch_tab', () => {
@@ -372,6 +441,23 @@ describe('DesktopCapabilityBrowserService', () => {
     it('returns zero when no tabs are open', async () => {
       const result = await service.handle(createRequest('reset', {}))
       expect(result.closedCount).toBe(0)
+    })
+  })
+
+  describe('reset robustness', () => {
+    it('retains blocked tabs in registry after reset', async () => {
+      const blockedService = createServiceWithBlockingClose()
+      await blockedService.handle(createRequest('open', { url: 'https://example.com', newTab: true }))
+      await blockedService.handle(createRequest('open', { url: 'https://other.com', newTab: true }))
+
+      const tabsBefore = await blockedService.handle(createRequest('list_tabs', {}))
+      expect((tabsBefore.tabs as unknown[]).length).toBe(2)
+
+      const result = await blockedService.handle(createRequest('reset', {}))
+      expect(result.closedCount).toBe(0)
+
+      const tabsAfter = await blockedService.handle(createRequest('list_tabs', {}))
+      expect((tabsAfter.tabs as unknown[]).length).toBe(2)
     })
   })
 

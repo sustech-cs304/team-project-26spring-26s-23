@@ -1193,6 +1193,8 @@ class _BrowserPageResult(_BridgeResultModel):
             payload["title"] = self.title
         if self.window_visible is not None:
             payload["windowVisible"] = self.window_visible
+        if self.content is not None:
+            payload["content"] = self.content
         return payload
 
 

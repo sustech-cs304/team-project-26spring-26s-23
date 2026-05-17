@@ -244,6 +244,26 @@ def test_browser_open_tool_with_selector_and_format() -> None:
     assert controller.open_calls == [("https://example.com", False, False, ".main-content", "text")]
 
 
+def test_browser_open_tool_rejects_invalid_format() -> None:
+    controller = _StubBrowserController()
+    host = ToolHostCapabilities(browser_controller=controller)
+    context = _make_context("browser.open")
+
+    result = _run(
+        BrowserOpenTool().invoke(
+            arguments={
+                "url": "https://example.com",
+                "format": "pdf",
+            },
+            context=context,
+            host=host,
+        )
+    )
+
+    assert result.status == "error"
+    assert result.error.code == "invalid_input"
+
+
 def test_browser_open_tool_rejects_empty_url() -> None:
     controller = _StubBrowserController()
     host = ToolHostCapabilities(browser_controller=controller)

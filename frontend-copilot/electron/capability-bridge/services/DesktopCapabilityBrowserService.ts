@@ -107,7 +107,7 @@ async function openBrowserPage(
   const result = payload.format === null
     ? summary
     : {
-        tabId: tab.tabId,
+        ...summary,
         content: await extractPageContent(tab.targetWindow, {
           selector: payload.selector,
           format: payload.format,
@@ -649,9 +649,15 @@ async function closeBrowserTab(
   const summary = describeBrowserWindow(tabId, targetWindow)
   targetWindow.close()
 
-  registry.tabs.delete(tabId)
-  if (registry.activeTabId === tabId) {
-    registry.activeTabId = findAnyAvailableTabId(registry)
+  if (targetWindow.isDestroyed()) {
+    registry.tabs.delete(tabId)
+    if (registry.activeTabId === tabId) {
+      registry.activeTabId = findAnyAvailableTabId(registry)
+    }
+  } else {
+    throw new DesktopCapabilityBridgeError('conflict', 'Browser tab close was prevented by the page.', {
+      details: { tabId },
+    })
   }
 
   await options.appendLog?.('info', '[capability-bridge] Browser tab closed.', {
@@ -791,15 +797,19 @@ async function resetBrowser(
   options: CreateDesktopCapabilityBridgeServiceOptions,
   request: DesktopCapabilityBridgeRequest,
 ): Promise<Record<string, unknown>> {
+  const tabIds = Array.from(registry.tabs.keys())
   let closedCount = 0
-  for (const [, targetWindow] of registry.tabs.entries()) {
-    if (!targetWindow.isDestroyed()) {
+  for (const tabId of tabIds) {
+    const targetWindow = registry.tabs.get(tabId)
+    if (targetWindow && !targetWindow.isDestroyed()) {
       targetWindow.close()
-      closedCount++
+      if (targetWindow.isDestroyed()) {
+        registry.tabs.delete(tabId)
+        closedCount++
+      }
     }
   }
-  registry.tabs.clear()
-  registry.activeTabId = null
+  registry.activeTabId = registry.tabs.size > 0 ? findAnyAvailableTabId(registry) : null
 
   await options.appendLog?.('info', '[capability-bridge] Browser reset.', {
     capability: request.capability,

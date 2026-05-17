@@ -261,6 +261,8 @@ class BrowserOpenTool(ToolContract):
             )
             selector = _read_optional_text_argument(arguments, field_name="selector")
             format_ = _read_optional_text_argument(arguments, field_name="format")
+            if format_ is not None and format_ not in ("text", "html", "markdown"):
+                raise ValueError("format must be one of: text, html, markdown")
             page = await controller.open_page(
                 url=url, show_window=show_window, new_tab=new_tab,
                 selector=selector, format=format_,
