@@ -44,7 +44,6 @@ from ._capability_bridge.validators import (
     _normalize_error_code,
     _normalize_operation_key,
     _normalize_operation_name,
-    _normalize_optional_boolean_field_value,
     _normalize_optional_mapping_field_value,
     _normalize_optional_text,
     _normalize_optional_text_field_value,
@@ -950,6 +949,133 @@ class _BrowserScreenshotPayload(_BridgePayloadModel):
         )
 
 
+class _BrowserListTabsPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = set()
+
+
+class _BrowserCloseTabPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"tabId"}
+
+    tab_id: str | None = Field(
+        default=None,
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="payload",
+        )
+
+    def to_bridge_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if self.tab_id is not None:
+            payload["tabId"] = self.tab_id
+        return payload
+
+
+class _BrowserSwitchTabPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"tabId"}
+
+    tab_id: str = Field(
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="payload",
+        )
+
+
+class _BrowserExecutePayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"script", "tabId"}
+
+    script: str = Field(min_length=1)
+    tab_id: str | None = Field(
+        default=None,
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+
+    @field_validator("script", mode="before")
+    @classmethod
+    def _validate_script(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="script",
+            field_context="payload",
+        )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="payload",
+        )
+
+    def to_bridge_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"script": self.script}
+        if self.tab_id is not None:
+            payload["tabId"] = self.tab_id
+        return payload
+
+
+class _BrowserResetPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = set()
+
+
+class _BrowserSnapshotPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"selector", "tabId"}
+
+    selector: str | None = Field(default=None, min_length=1)
+    tab_id: str | None = Field(
+        default=None,
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+
+    @field_validator("selector", mode="before")
+    @classmethod
+    def _validate_selector(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="selector",
+            field_context="payload",
+        )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="payload",
+        )
+
+    def to_bridge_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if self.selector is not None:
+            payload["selector"] = self.selector
+        if self.tab_id is not None:
+            payload["tabId"] = self.tab_id
+        return payload
+
+
 class _BrowserPageResult(_BridgeResultModel):
     _bridge_allowed_fields: ClassVar[set[str] | None] = {
         "tabId",
@@ -1150,6 +1276,140 @@ class _BrowserScreenshotResult(_BridgeResultModel):
         if self.content_type is not None:
             payload["contentType"] = self.content_type
         return payload
+
+
+class _BrowserListTabsResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"tabs"}
+
+    tabs: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("tabs", mode="before")
+    @classmethod
+    def _validate_tabs(cls, value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            raise ValueError("tabs must be a list")
+        return [
+            item if isinstance(item, dict) else {}
+            for item in value
+        ]
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        return {"tabs": self.tabs}
+
+
+class _BrowserExecuteResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"result", "tabId"}
+
+    result: Any = None
+    tab_id: str | None = Field(
+        default=None,
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="result",
+        )
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"result": self.result}
+        if self.tab_id is not None:
+            payload["tabId"] = self.tab_id
+        return payload
+
+
+class _BrowserResetResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"closedCount"}
+
+    closed_count: int = Field(
+        default=0,
+        validation_alias="closedCount",
+        serialization_alias="closedCount",
+        ge=0,
+    )
+
+    @field_validator("closed_count", mode="before")
+    @classmethod
+    def _validate_closed_count(cls, value: Any) -> int:
+        if isinstance(value, int):
+            return max(0, value)
+        raise ValueError("closedCount must be an integer")
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        return {"closedCount": self.closed_count}
+
+
+class _BrowserSnapshotResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "snapshot",
+        "tabId",
+        "elementCount",
+        "interactiveCount",
+    }
+
+    snapshot: str = Field(default="", min_length=0)
+    tab_id: str = Field(
+        default="",
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+    element_count: int = Field(
+        default=0,
+        validation_alias="elementCount",
+        serialization_alias="elementCount",
+        ge=0,
+    )
+    interactive_count: int = Field(
+        default=0,
+        validation_alias="interactiveCount",
+        serialization_alias="interactiveCount",
+        ge=0,
+    )
+
+    @field_validator("snapshot", mode="before")
+    @classmethod
+    def _validate_snapshot(cls, value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        return str(value) if value is not None else ""
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="result",
+        )
+
+    @field_validator("element_count", mode="before")
+    @classmethod
+    def _validate_element_count(cls, value: Any) -> int:
+        if isinstance(value, (int, float)):
+            return max(0, int(value))
+        raise ValueError("elementCount must be an integer")
+
+    @field_validator("interactive_count", mode="before")
+    @classmethod
+    def _validate_interactive_count(cls, value: Any) -> int:
+        if isinstance(value, (int, float)):
+            return max(0, int(value))
+        raise ValueError("interactiveCount must be an integer")
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        return {
+            "snapshot": self.snapshot,
+            "tabId": self.tab_id,
+            "elementCount": self.element_count,
+            "interactiveCount": self.interactive_count,
+        }
 
 
 class DesktopCapabilityBridgeError(_DesktopCapabilityBridgeModel):
@@ -1511,6 +1771,12 @@ _PAYLOAD_MODELS: dict[
     ("mcp", "call_tool"): _McpToolCallPayload,
     ("browser", "open"): _BrowserPagePayload,
     ("browser", "screenshot"): _BrowserScreenshotPayload,
+    ("browser", "list_tabs"): _BrowserListTabsPayload,
+    ("browser", "close_tab"): _BrowserCloseTabPayload,
+    ("browser", "switch_tab"): _BrowserSwitchTabPayload,
+    ("browser", "execute"): _BrowserExecutePayload,
+    ("browser", "reset"): _BrowserResetPayload,
+    ("browser", "snapshot"): _BrowserSnapshotPayload,
 }
 
 _RESULT_MODELS: dict[
@@ -1532,6 +1798,12 @@ _RESULT_MODELS: dict[
     ("mcp", "call_tool"): _McpToolCallResult,
     ("browser", "open"): _BrowserPageResult,
     ("browser", "screenshot"): _BrowserScreenshotResult,
+    ("browser", "list_tabs"): _BrowserListTabsResult,
+    ("browser", "close_tab"): _BrowserPageResult,
+    ("browser", "switch_tab"): _BrowserPageResult,
+    ("browser", "execute"): _BrowserExecuteResult,
+    ("browser", "reset"): _BrowserResetResult,
+    ("browser", "snapshot"): _BrowserSnapshotResult,
 }
 
 

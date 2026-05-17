@@ -429,6 +429,135 @@ class DesktopCapabilityBridgeClient:
         )
         return HostBrowserScreenshot(page=page, artifact=artifact)
 
+    async def list_browser_tabs(
+        self,
+        *,
+        context: ToolInvocationContext,
+    ) -> list[HostBrowserPage]:
+        result = await self._call_async(
+            capability="browser",
+            operation="list_tabs",
+            context=context,
+            payload={},
+        )
+        tabs_raw = result.get("tabs")
+        if isinstance(tabs_raw, list):
+            return [
+                HostBrowserPage(
+                    tab_id=str(item["tabId"]),
+                    current_url=str(item["currentUrl"]),
+                    title=_normalize_optional_text(item.get("title")),
+                    window_visible=(
+                        item.get("windowVisible")
+                        if isinstance(item.get("windowVisible"), bool)
+                        else None
+                    ),
+                )
+                for item in tabs_raw
+                if isinstance(item, Mapping)
+            ]
+        return []
+
+    async def close_browser_tab(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str | None = None,
+    ) -> HostBrowserPage:
+        payload: dict[str, Any] = {}
+        if tab_id is not None:
+            payload["tabId"] = tab_id
+        result = await self._call_async(
+            capability="browser",
+            operation="close_tab",
+            context=context,
+            payload=payload,
+        )
+        return HostBrowserPage(
+            tab_id=str(result["tabId"]),
+            current_url=str(result["currentUrl"]),
+            title=_normalize_optional_text(result.get("title")),
+            window_visible=(
+                result.get("windowVisible")
+                if isinstance(result.get("windowVisible"), bool)
+                else None
+            ),
+        )
+
+    async def switch_browser_tab(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str,
+    ) -> HostBrowserPage:
+        result = await self._call_async(
+            capability="browser",
+            operation="switch_tab",
+            context=context,
+            payload={"tabId": tab_id},
+        )
+        return HostBrowserPage(
+            tab_id=str(result["tabId"]),
+            current_url=str(result["currentUrl"]),
+            title=_normalize_optional_text(result.get("title")),
+            window_visible=(
+                result.get("windowVisible")
+                if isinstance(result.get("windowVisible"), bool)
+                else None
+            ),
+        )
+
+    async def execute_browser_script(
+        self,
+        *,
+        context: ToolInvocationContext,
+        script: str,
+        tab_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"script": script}
+        if tab_id is not None:
+            payload["tabId"] = tab_id
+        result = await self._call_async(
+            capability="browser",
+            operation="execute",
+            context=context,
+            payload=payload,
+        )
+        return dict(result)
+
+    async def reset_browser(
+        self,
+        *,
+        context: ToolInvocationContext,
+    ) -> dict[str, Any]:
+        result = await self._call_async(
+            capability="browser",
+            operation="reset",
+            context=context,
+            payload={},
+        )
+        return dict(result)
+
+    async def capture_browser_snapshot(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if tab_id is not None:
+            payload["tabId"] = tab_id
+        if selector is not None:
+            payload["selector"] = selector
+        result = await self._call_async(
+            capability="browser",
+            operation="snapshot",
+            context=context,
+            payload=payload,
+        )
+        return dict(result)
+
     async def _call_async(
         self,
         *,

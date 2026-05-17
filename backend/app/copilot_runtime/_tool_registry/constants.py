@@ -61,6 +61,50 @@ BROWSER_SCREENSHOT_TOOL_PROMPT = (
     "Use this tool to capture the current browser page as an artifact when visual inspection is needed."
 )
 
+BROWSER_LIST_TABS_TOOL_ID = "browser.list_tabs"
+BROWSER_LIST_TABS_TOOL_DISPLAY_NAME = "Browser List Tabs"
+BROWSER_LIST_TABS_TOOL_DESCRIPTION = "List all open browser tabs with their IDs, URLs, and titles."
+BROWSER_LIST_TABS_TOOL_PROMPT = (
+    "Use this tool to list all open browser tabs and inspect their state before switching or closing."
+)
+
+BROWSER_CLOSE_TAB_TOOL_ID = "browser.close_tab"
+BROWSER_CLOSE_TAB_TOOL_DISPLAY_NAME = "Browser Close Tab"
+BROWSER_CLOSE_TAB_TOOL_DESCRIPTION = "Close a browser tab by its ID. If no tabId is provided, closes the active tab."
+BROWSER_CLOSE_TAB_TOOL_PROMPT = (
+    "Use this tool to close a specific browser tab when it is no longer needed."
+)
+
+BROWSER_SWITCH_TAB_TOOL_ID = "browser.switch_tab"
+BROWSER_SWITCH_TAB_TOOL_DISPLAY_NAME = "Browser Switch Tab"
+BROWSER_SWITCH_TAB_TOOL_DESCRIPTION = "Switch to a specific browser tab by its ID, making it the active tab."
+BROWSER_SWITCH_TAB_TOOL_PROMPT = (
+    "Use this tool to switch the active browser tab before capturing a screenshot or inspecting its content."
+)
+
+BROWSER_EXECUTE_TOOL_ID = "browser.execute"
+BROWSER_EXECUTE_TOOL_DISPLAY_NAME = "Browser Execute"
+BROWSER_EXECUTE_TOOL_DESCRIPTION = "Execute JavaScript in the current browser page. Use for clicking elements, filling forms, extracting data, or performing DOM interactions."
+BROWSER_EXECUTE_TOOL_PROMPT = (
+    "Use this tool to execute JavaScript in the current browser page for interactions like clicking, filling forms, or extracting structured data. "
+    "Prefer using browser.snapshot first to understand the page structure and find interactive element references."
+)
+
+BROWSER_RESET_TOOL_ID = "browser.reset"
+BROWSER_RESET_TOOL_DISPLAY_NAME = "Browser Reset"
+BROWSER_RESET_TOOL_DESCRIPTION = "Close all open browser windows and clear the browser state."
+BROWSER_RESET_TOOL_PROMPT = (
+    "Use this tool to clean up all open browser tabs and reset the browser state after completing a web interaction session."
+)
+
+BROWSER_SNAPSHOT_TOOL_ID = "browser.snapshot"
+BROWSER_SNAPSHOT_TOOL_DISPLAY_NAME = "Browser Snapshot"
+BROWSER_SNAPSHOT_TOOL_DESCRIPTION = "Capture an accessibility snapshot of the current browser page. Returns a compact text representation with interactive elements annotated by reference IDs (e.g. [ref=@1])."
+BROWSER_SNAPSHOT_TOOL_PROMPT = (
+    "Use this tool to get a compact accessibility snapshot of the current browser page before interacting with it. "
+    "Interactive elements are annotated with ref IDs (e.g. [ref=@1, @2]) that can be targeted via browser.execute."
+)
+
 SKILL_ACTIVATE_TOOL_ID = "tool.skill-activate"
 SKILL_ACTIVATE_TOOL_DISPLAY_NAME = "Skill Activate"
 SKILL_ACTIVATE_TOOL_DESCRIPTION = (
@@ -170,6 +214,36 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "从桌面运行时浏览器窗口捕获截图。",
             "prompt": "当需要视觉检查时，使用此工具捕获当前浏览器页面为工件。",
         },
+        BROWSER_LIST_TABS_TOOL_ID: {
+            "displayName": "列出浏览器标签页",
+            "description": "列出所有打开的浏览器标签页及其 ID、URL 和标题。",
+            "prompt": "使用此工具列出所有打开的浏览器标签页，以便在切换或关闭前检查当前状态。",
+        },
+        BROWSER_CLOSE_TAB_TOOL_ID: {
+            "displayName": "关闭浏览器标签页",
+            "description": "按标签页 ID 关闭指定浏览器标签页；不指定 ID 时关闭当前活动标签页。",
+            "prompt": "使用此工具关闭不再需要的浏览器标签页。",
+        },
+        BROWSER_SWITCH_TAB_TOOL_ID: {
+            "displayName": "切换浏览器标签页",
+            "description": "切换到指定 ID 的浏览器标签页，使其成为活动标签页。",
+            "prompt": "使用此工具切换活动浏览器标签页，再截图或检查其内容。",
+        },
+        BROWSER_EXECUTE_TOOL_ID: {
+            "displayName": "执行浏览器脚本",
+            "description": "在当前浏览器页面中执行 JavaScript，可用于点击、填表、提取数据或 DOM 交互。",
+            "prompt": "使用此工具在当前浏览器页面中执行 JavaScript 交互。建议先用 browser.snapshot 了解页面结构和交互元素引用。",
+        },
+        BROWSER_RESET_TOOL_ID: {
+            "displayName": "重置浏览器",
+            "description": "关闭所有打开的浏览器窗口并清除浏览器状态。",
+            "prompt": "使用此工具在完成网页交互会话后清理所有浏览器标签页及状态。",
+        },
+        BROWSER_SNAPSHOT_TOOL_ID: {
+            "displayName": "浏览器页面快照",
+            "description": "获取当前浏览器页面的可访问性快照，返回紧凑文本表示，交互元素带有编号引用标记（如 [ref=@1]）。",
+            "prompt": "使用此工具在与页面交互前获取紧凑的页面可访问性快照。交互元素以 ref 编号标记（如 [ref=@1, @2]），可用于 browser.execute 精确操控。",
+        },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": "Skill 激活",
             "description": "读取已启用 Skill 的 SKILL.md 入口说明和资源摘要。",
@@ -236,6 +310,36 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": BROWSER_SCREENSHOT_TOOL_DISPLAY_NAME,
             "description": BROWSER_SCREENSHOT_TOOL_DESCRIPTION,
             "prompt": BROWSER_SCREENSHOT_TOOL_PROMPT,
+        },
+        BROWSER_LIST_TABS_TOOL_ID: {
+            "displayName": BROWSER_LIST_TABS_TOOL_DISPLAY_NAME,
+            "description": BROWSER_LIST_TABS_TOOL_DESCRIPTION,
+            "prompt": BROWSER_LIST_TABS_TOOL_PROMPT,
+        },
+        BROWSER_CLOSE_TAB_TOOL_ID: {
+            "displayName": BROWSER_CLOSE_TAB_TOOL_DISPLAY_NAME,
+            "description": BROWSER_CLOSE_TAB_TOOL_DESCRIPTION,
+            "prompt": BROWSER_CLOSE_TAB_TOOL_PROMPT,
+        },
+        BROWSER_SWITCH_TAB_TOOL_ID: {
+            "displayName": BROWSER_SWITCH_TAB_TOOL_DISPLAY_NAME,
+            "description": BROWSER_SWITCH_TAB_TOOL_DESCRIPTION,
+            "prompt": BROWSER_SWITCH_TAB_TOOL_PROMPT,
+        },
+        BROWSER_EXECUTE_TOOL_ID: {
+            "displayName": BROWSER_EXECUTE_TOOL_DISPLAY_NAME,
+            "description": BROWSER_EXECUTE_TOOL_DESCRIPTION,
+            "prompt": BROWSER_EXECUTE_TOOL_PROMPT,
+        },
+        BROWSER_RESET_TOOL_ID: {
+            "displayName": BROWSER_RESET_TOOL_DISPLAY_NAME,
+            "description": BROWSER_RESET_TOOL_DESCRIPTION,
+            "prompt": BROWSER_RESET_TOOL_PROMPT,
+        },
+        BROWSER_SNAPSHOT_TOOL_ID: {
+            "displayName": BROWSER_SNAPSHOT_TOOL_DISPLAY_NAME,
+            "description": BROWSER_SNAPSHOT_TOOL_DESCRIPTION,
+            "prompt": BROWSER_SNAPSHOT_TOOL_PROMPT,
         },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": SKILL_ACTIVATE_TOOL_DISPLAY_NAME,

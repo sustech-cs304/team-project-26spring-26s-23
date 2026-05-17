@@ -242,6 +242,34 @@ class BrowserController(Protocol):
     ) -> HostBrowserScreenshot:
         raise NotImplementedError
 
+    async def list_tabs(self) -> list[HostBrowserPage]:
+        raise NotImplementedError
+
+    async def close_tab(self, *, tab_id: str | None = None) -> HostBrowserPage:
+        raise NotImplementedError
+
+    async def switch_tab(self, *, tab_id: str) -> HostBrowserPage:
+        raise NotImplementedError
+
+    async def execute_script(
+        self,
+        *,
+        script: str,
+        tab_id: str | None = None,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def reset(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def capture_snapshot(
+        self,
+        *,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
 
 @dataclass(frozen=True, slots=True)
 class ToolHostCapabilities:

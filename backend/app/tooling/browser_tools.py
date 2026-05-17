@@ -20,7 +20,6 @@ from .contract import (
 from .host_capabilities import (
     BrowserController,
     HostArtifact,
-    HostBrowserPage,
     HostCapabilityOperationError,
     MissingHostCapabilityError,
     ToolHostCapabilities,
@@ -34,6 +33,9 @@ _BROWSER_OPEN_INPUT_SCHEMA = ToolSchema(
         "properties": {
             "url": {"type": "string", "minLength": 1},
             "showWindow": {"type": "boolean"},
+            "newTab": {"type": "boolean"},
+            "selector": {"type": "string", "minLength": 1},
+            "format": {"enum": ["text", "html", "markdown"]},
         },
     }
 )
@@ -75,6 +77,150 @@ _BROWSER_SCREENSHOT_METADATA = ToolMetadata(
         ),
     ),
     tags=("browser", "screenshot", "artifact"),
+)
+
+_BROWSER_LIST_TABS_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {},
+    }
+)
+
+_BROWSER_LIST_TABS_METADATA = ToolMetadata(
+    tool_id="browser.list_tabs",
+    display_name="Browser List Tabs",
+    description="List all open browser tabs with their IDs, URLs, and titles.",
+    input_schema=_BROWSER_LIST_TABS_INPUT_SCHEMA,
+    capability_requirements=(
+        HostCapabilityRequirement(
+            capability="browser_controller",
+            purpose="List open browser tabs.",
+        ),
+    ),
+    tags=("browser", "tab_management"),
+)
+
+_BROWSER_CLOSE_TAB_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "tabId": {"type": "string", "minLength": 1},
+        },
+    }
+)
+
+_BROWSER_CLOSE_TAB_METADATA = ToolMetadata(
+    tool_id="browser.close_tab",
+    display_name="Browser Close Tab",
+    description="Close a browser tab by its ID. If no tabId is provided, closes the active tab.",
+    input_schema=_BROWSER_CLOSE_TAB_INPUT_SCHEMA,
+    capability_requirements=(
+        HostCapabilityRequirement(
+            capability="browser_controller",
+            purpose="Close browser tabs.",
+        ),
+    ),
+    tags=("browser", "tab_management"),
+)
+
+_BROWSER_SWITCH_TAB_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tabId"],
+        "properties": {
+            "tabId": {"type": "string", "minLength": 1},
+        },
+    }
+)
+
+_BROWSER_SWITCH_TAB_METADATA = ToolMetadata(
+    tool_id="browser.switch_tab",
+    display_name="Browser Switch Tab",
+    description="Switch to a specific browser tab by its ID, making it the active tab.",
+    input_schema=_BROWSER_SWITCH_TAB_INPUT_SCHEMA,
+    capability_requirements=(
+        HostCapabilityRequirement(
+            capability="browser_controller",
+            purpose="Switch active browser tab.",
+        ),
+    ),
+    tags=("browser", "tab_management"),
+)
+
+_BROWSER_EXECUTE_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["script"],
+        "properties": {
+            "script": {"type": "string", "minLength": 1},
+            "tabId": {"type": "string", "minLength": 1},
+        },
+    }
+)
+
+_BROWSER_EXECUTE_METADATA = ToolMetadata(
+    tool_id="browser.execute",
+    display_name="Browser Execute",
+    description="Execute arbitrary JavaScript in the current browser page. The result is serialized and returned. Use for clicking elements, filling forms, extracting data, or performing DOM interactions.",
+    input_schema=_BROWSER_EXECUTE_INPUT_SCHEMA,
+    capability_requirements=(
+        HostCapabilityRequirement(
+            capability="browser_controller",
+            purpose="Execute JavaScript in browser pages.",
+        ),
+    ),
+    tags=("browser", "scripting"),
+)
+
+_BROWSER_RESET_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {},
+    }
+)
+
+_BROWSER_RESET_METADATA = ToolMetadata(
+    tool_id="browser.reset",
+    display_name="Browser Reset",
+    description="Close all open browser windows and clear the browser state.",
+    input_schema=_BROWSER_RESET_INPUT_SCHEMA,
+    capability_requirements=(
+        HostCapabilityRequirement(
+            capability="browser_controller",
+            purpose="Reset browser state.",
+        ),
+    ),
+    tags=("browser", "cleanup"),
+)
+
+_BROWSER_SNAPSHOT_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "selector": {"type": "string", "minLength": 1},
+            "tabId": {"type": "string", "minLength": 1},
+        },
+    }
+)
+
+_BROWSER_SNAPSHOT_METADATA = ToolMetadata(
+    tool_id="browser.snapshot",
+    display_name="Browser Snapshot",
+    description="Capture an accessibility snapshot of the current browser page. Returns a compact text representation with interactive elements annotated by reference IDs (e.g. [ref=@1]). Use this to understand page structure before interacting with elements via browser.execute.",
+    input_schema=_BROWSER_SNAPSHOT_INPUT_SCHEMA,
+    capability_requirements=(
+        HostCapabilityRequirement(
+            capability="browser_controller",
+            purpose="Capture page accessibility snapshots.",
+        ),
+    ),
+    tags=("browser", "snapshot", "accessibility"),
 )
 
 _HOST_ERROR_CODE_MAP: dict[str, str] = {
@@ -169,9 +315,230 @@ class BrowserScreenshotTool(ToolContract):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class BrowserListTabsTool(ToolContract):
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _BROWSER_LIST_TABS_METADATA
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ToolResultEnvelope:
+        try:
+            controller = _require_browser_controller(host)
+            tabs = await controller.list_tabs()
+        except MissingHostCapabilityError as exc:
+            return _missing_host_capability_result(
+                tool_id=self.metadata.tool_id,
+                capability=exc.capability,
+            )
+        except HostCapabilityOperationError as exc:
+            return _host_operation_error_result(
+                tool_id=self.metadata.tool_id,
+                error=exc,
+            )
+
+        return ToolResultEnvelope.success(
+            output={
+                "tabs": [tab.to_dict() for tab in tabs],
+                "count": len(tabs),
+            },
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BrowserCloseTabTool(ToolContract):
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _BROWSER_CLOSE_TAB_METADATA
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ToolResultEnvelope:
+        try:
+            controller = _require_browser_controller(host)
+            tab_id = _read_optional_text_argument(arguments, field_name="tabId")
+            page = await controller.close_tab(tab_id=tab_id)
+        except ValueError as exc:
+            return _invalid_input_result(tool_id=self.metadata.tool_id, message=str(exc))
+        except MissingHostCapabilityError as exc:
+            return _missing_host_capability_result(
+                tool_id=self.metadata.tool_id,
+                capability=exc.capability,
+            )
+        except HostCapabilityOperationError as exc:
+            return _host_operation_error_result(
+                tool_id=self.metadata.tool_id,
+                error=exc,
+            )
+
+        return ToolResultEnvelope.success(
+            output=page.to_dict(),
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BrowserSwitchTabTool(ToolContract):
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _BROWSER_SWITCH_TAB_METADATA
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ToolResultEnvelope:
+        try:
+            controller = _require_browser_controller(host)
+            tab_id = _require_non_empty_text_argument(arguments, field_name="tabId")
+            page = await controller.switch_tab(tab_id=tab_id)
+        except ValueError as exc:
+            return _invalid_input_result(tool_id=self.metadata.tool_id, message=str(exc))
+        except MissingHostCapabilityError as exc:
+            return _missing_host_capability_result(
+                tool_id=self.metadata.tool_id,
+                capability=exc.capability,
+            )
+        except HostCapabilityOperationError as exc:
+            return _host_operation_error_result(
+                tool_id=self.metadata.tool_id,
+                error=exc,
+            )
+
+        return ToolResultEnvelope.success(
+            output=page.to_dict(),
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BrowserExecuteTool(ToolContract):
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _BROWSER_EXECUTE_METADATA
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ToolResultEnvelope:
+        try:
+            controller = _require_browser_controller(host)
+            script = _require_non_empty_text_argument(arguments, field_name="script")
+            tab_id = _read_optional_text_argument(arguments, field_name="tabId")
+            result = await controller.execute_script(script=script, tab_id=tab_id)
+        except ValueError as exc:
+            return _invalid_input_result(tool_id=self.metadata.tool_id, message=str(exc))
+        except MissingHostCapabilityError as exc:
+            return _missing_host_capability_result(
+                tool_id=self.metadata.tool_id,
+                capability=exc.capability,
+            )
+        except HostCapabilityOperationError as exc:
+            return _host_operation_error_result(
+                tool_id=self.metadata.tool_id,
+                error=exc,
+            )
+
+        return ToolResultEnvelope.success(
+            output=result,
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BrowserResetTool(ToolContract):
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _BROWSER_RESET_METADATA
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ToolResultEnvelope:
+        try:
+            controller = _require_browser_controller(host)
+            result = await controller.reset()
+        except MissingHostCapabilityError as exc:
+            return _missing_host_capability_result(
+                tool_id=self.metadata.tool_id,
+                capability=exc.capability,
+            )
+        except HostCapabilityOperationError as exc:
+            return _host_operation_error_result(
+                tool_id=self.metadata.tool_id,
+                error=exc,
+            )
+
+        return ToolResultEnvelope.success(
+            output=result,
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BrowserSnapshotTool(ToolContract):
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _BROWSER_SNAPSHOT_METADATA
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ToolResultEnvelope:
+        try:
+            controller = _require_browser_controller(host)
+            tab_id = _read_optional_text_argument(arguments, field_name="tabId")
+            selector = _read_optional_text_argument(arguments, field_name="selector")
+            result = await controller.capture_snapshot(tab_id=tab_id, selector=selector)
+        except ValueError as exc:
+            return _invalid_input_result(tool_id=self.metadata.tool_id, message=str(exc))
+        except MissingHostCapabilityError as exc:
+            return _missing_host_capability_result(
+                tool_id=self.metadata.tool_id,
+                capability=exc.capability,
+            )
+        except HostCapabilityOperationError as exc:
+            return _host_operation_error_result(
+                tool_id=self.metadata.tool_id,
+                error=exc,
+            )
+
+        return ToolResultEnvelope.success(
+            output=result,
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
 BROWSER_TOOL_CONTRACTS: tuple[ToolContract, ...] = (
     BrowserOpenTool(),
     BrowserScreenshotTool(),
+    BrowserListTabsTool(),
+    BrowserCloseTabTool(),
+    BrowserSwitchTabTool(),
+    BrowserExecuteTool(),
+    BrowserResetTool(),
+    BrowserSnapshotTool(),
 )
 
 
@@ -279,7 +646,13 @@ def _host_operation_error_result(
 
 __all__ = [
     "BROWSER_TOOL_CONTRACTS",
+    "BrowserCloseTabTool",
+    "BrowserExecuteTool",
+    "BrowserListTabsTool",
     "BrowserOpenTool",
+    "BrowserResetTool",
     "BrowserScreenshotTool",
+    "BrowserSnapshotTool",
+    "BrowserSwitchTabTool",
     "get_browser_tool_contracts",
 ]

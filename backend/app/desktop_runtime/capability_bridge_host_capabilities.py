@@ -242,6 +242,58 @@ class _BridgeBackedBrowserController(BrowserController):
             name=name,
         )
 
+    async def list_tabs(self) -> list[HostBrowserPage]:
+        bridge_client = cast(Any, self._bridge_client)
+        return await bridge_client.list_browser_tabs(
+            context=self._invocation_context,
+        )
+
+    async def close_tab(self, *, tab_id: str | None = None) -> HostBrowserPage:
+        bridge_client = cast(Any, self._bridge_client)
+        return await bridge_client.close_browser_tab(
+            context=self._invocation_context,
+            tab_id=tab_id,
+        )
+
+    async def switch_tab(self, *, tab_id: str) -> HostBrowserPage:
+        bridge_client = cast(Any, self._bridge_client)
+        return await bridge_client.switch_browser_tab(
+            context=self._invocation_context,
+            tab_id=tab_id,
+        )
+
+    async def execute_script(
+        self,
+        *,
+        script: str,
+        tab_id: str | None = None,
+    ) -> dict[str, Any]:
+        bridge_client = cast(Any, self._bridge_client)
+        return await bridge_client.execute_browser_script(
+            context=self._invocation_context,
+            script=script,
+            tab_id=tab_id,
+        )
+
+    async def reset(self) -> dict[str, Any]:
+        bridge_client = cast(Any, self._bridge_client)
+        return await bridge_client.reset_browser(
+            context=self._invocation_context,
+        )
+
+    async def capture_snapshot(
+        self,
+        *,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> dict[str, Any]:
+        bridge_client = cast(Any, self._bridge_client)
+        return await bridge_client.capture_browser_snapshot(
+            context=self._invocation_context,
+            tab_id=tab_id,
+            selector=selector,
+        )
+
 
 def build_desktop_bridge_host_capabilities_factory(
     *,

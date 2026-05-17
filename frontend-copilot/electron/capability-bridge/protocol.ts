@@ -16,6 +16,12 @@ export const DESKTOP_CAPABILITY_OPERATIONS = [
   'call_tool',
   'open',
   'screenshot',
+  'list_tabs',
+  'close_tab',
+  'switch_tab',
+  'execute',
+  'reset',
+  'snapshot',
 ] as const
 export type DesktopCapabilityOperation = (typeof DESKTOP_CAPABILITY_OPERATIONS)[number]
 
@@ -47,7 +53,7 @@ export const DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: Record<
   state: ['get_value', 'put_value', 'delete_value'],
   event: ['emit_event'],
   mcp: ['call_tool'],
-  browser: ['open', 'screenshot'],
+  browser: ['open', 'screenshot', 'list_tabs', 'close_tab', 'switch_tab', 'execute', 'reset', 'snapshot'],
 }
 
 export interface DesktopCapabilityBridgeRequest {
@@ -211,6 +217,49 @@ function normalizeDesktopCapabilityOperationPayload(
       const normalized: Record<string, unknown> = {}
       if (payload.name !== undefined) {
         normalized.name = requireNonEmptyString(payload.name, 'name')
+      }
+      return normalized
+    }
+    case 'list_tabs': {
+      assertNoUnexpectedKeys(payload, [], 'browser payload')
+      return {}
+    }
+    case 'close_tab': {
+      assertNoUnexpectedKeys(payload, ['tabId'], 'browser payload')
+      const normalized: Record<string, unknown> = {}
+      if (payload.tabId !== undefined) {
+        normalized.tabId = requireNonEmptyString(payload.tabId, 'tabId')
+      }
+      return normalized
+    }
+    case 'switch_tab': {
+      assertNoUnexpectedKeys(payload, ['tabId'], 'browser payload')
+      return {
+        tabId: requireNonEmptyString(payload.tabId, 'tabId'),
+      }
+    }
+    case 'execute': {
+      assertNoUnexpectedKeys(payload, ['script', 'tabId'], 'browser payload')
+      const normalized: Record<string, unknown> = {
+        script: requireNonEmptyString(payload.script, 'script'),
+      }
+      if (payload.tabId !== undefined) {
+        normalized.tabId = requireNonEmptyString(payload.tabId, 'tabId')
+      }
+      return normalized
+    }
+    case 'reset': {
+      assertNoUnexpectedKeys(payload, [], 'browser payload')
+      return {}
+    }
+    case 'snapshot': {
+      assertNoUnexpectedKeys(payload, ['selector', 'tabId'], 'browser payload')
+      const normalized: Record<string, unknown> = {}
+      if (payload.selector !== undefined) {
+        normalized.selector = requireNonEmptyString(payload.selector, 'selector')
+      }
+      if (payload.tabId !== undefined) {
+        normalized.tabId = requireNonEmptyString(payload.tabId, 'tabId')
       }
       return normalized
     }

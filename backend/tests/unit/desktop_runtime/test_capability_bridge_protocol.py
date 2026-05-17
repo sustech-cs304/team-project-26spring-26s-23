@@ -41,7 +41,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "state": ("get_value", "put_value", "delete_value"),
         "event": ("emit_event",),
         "mcp": ("call_tool",),
-        "browser": ("open", "screenshot"),
+        "browser": ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "reset", "snapshot"),
     }
     assert get_desktop_capability_operations("secret") == ("get_secret", "has_secret")
     assert get_desktop_capability_operations("workspace") == (
@@ -61,7 +61,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
     )
     assert get_desktop_capability_operations("event") == ("emit_event",)
     assert get_desktop_capability_operations("mcp") == ("call_tool",)
-    assert get_desktop_capability_operations("browser") == ("open", "screenshot")
+    assert get_desktop_capability_operations("browser") == ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "reset", "snapshot")
     assert {
         operation
         for operations in DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY.values()

@@ -246,6 +246,91 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                 },
                 request=request,
             )
+        if (capability, operation) == ("browser", "list_tabs"):
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {
+                        "tabs": [
+                            {"tabId": "tab-1", "currentUrl": "https://example.com", "title": "Example", "windowVisible": True},
+                            {"tabId": "tab-2", "currentUrl": "https://other.com", "title": "Other", "windowVisible": False},
+                        ],
+                    },
+                },
+                request=request,
+            )
+        if (capability, operation) == ("browser", "close_tab"):
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {
+                        "tabId": payload["payload"].get("tabId", "tab-1"),
+                        "currentUrl": "https://example.com",
+                        "title": "Example Domain",
+                        "windowVisible": False,
+                    },
+                },
+                request=request,
+            )
+        if (capability, operation) == ("browser", "switch_tab"):
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {
+                        "tabId": payload["payload"]["tabId"],
+                        "currentUrl": "https://example.com",
+                        "title": "Example Domain",
+                        "windowVisible": True,
+                    },
+                },
+                request=request,
+            )
+        if (capability, operation) == ("browser", "execute"):
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {
+                        "result": "executed: " + payload["payload"]["script"],
+                        "tabId": payload["payload"].get("tabId", "tab-1"),
+                    },
+                },
+                request=request,
+            )
+        if (capability, operation) == ("browser", "reset"):
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {
+                        "closedCount": 2,
+                    },
+                },
+                request=request,
+            )
+        if (capability, operation) == ("browser", "snapshot"):
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {
+                        "snapshot": "- [heading] Page\n- [link] Click me [ref=@1]",
+                        "tabId": payload["payload"].get("tabId", "tab-1"),
+                        "elementCount": 5,
+                        "interactiveCount": 2,
+                    },
+                },
+                request=request,
+            )
 
         raise AssertionError(f"Unhandled bridge request {(capability, operation)!r}")
 
@@ -336,6 +421,24 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     browser_screenshot = asyncio.run(
         client.capture_browser_screenshot(context=context, name="browser-capture")
     )
+    browser_tabs = asyncio.run(
+        client.list_browser_tabs(context=context)
+    )
+    closed_tab = asyncio.run(
+        client.close_browser_tab(context=context, tab_id="tab-2")
+    )
+    switched_tab = asyncio.run(
+        client.switch_browser_tab(context=context, tab_id="tab-3")
+    )
+    execute_result = asyncio.run(
+        client.execute_browser_script(context=context, script="document.title")
+    )
+    reset_result = asyncio.run(
+        client.reset_browser(context=context)
+    )
+    snapshot_result = asyncio.run(
+        client.capture_browser_snapshot(context=context, tab_id="tab-1", selector=".main")
+    )
     asyncio.run(client.aclose())
 
     assert secret_value == "resolved-secret"
@@ -380,6 +483,17 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
             metadata={"source": "browser.screenshot"},
         ),
     )
+    assert len(browser_tabs) == 2
+    assert browser_tabs[0].tab_id == "tab-1"
+    assert browser_tabs[1].tab_id == "tab-2"
+    assert str(closed_tab.tab_id) == "tab-2"
+    assert closed_tab.window_visible is False
+    assert switched_tab.tab_id == "tab-3"
+    assert execute_result == {"result": "executed: document.title", "tabId": "tab-1"}
+    assert reset_result == {"closedCount": 2}
+    assert "Click me" in str(snapshot_result.get("snapshot", ""))
+    assert snapshot_result.get("elementCount") == 5
+    assert snapshot_result.get("interactiveCount") == 2
 
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_payloads] == [
@@ -398,24 +512,42 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         ("mcp", "call_tool"),
         ("browser", "open"),
         ("browser", "screenshot"),
+        ("browser", "list_tabs"),
+        ("browser", "close_tab"),
+        ("browser", "switch_tab"),
+        ("browser", "execute"),
+        ("browser", "reset"),
+        ("browser", "snapshot"),
     ]
     assert all(
         item["toolId"] == context.tool_id
         for item in captured_payloads
         if item["operation"] != "call_tool"
     )
-    assert captured_payloads[-3]["toolId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    assert captured_payloads[-9]["toolId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d"
+    assert captured_payloads[-8]["toolId"] == context.tool_id
+    assert captured_payloads[-8]["payload"] == {"url": "https://example.com/", "showWindow": True}
+    assert captured_payloads[-7]["toolId"] == context.tool_id
+    assert captured_payloads[-7]["payload"] == {"name": "browser-capture"}
+    assert captured_payloads[-6]["toolId"] == context.tool_id
+    assert captured_payloads[-6]["payload"] == {}
+    assert captured_payloads[-5]["toolId"] == context.tool_id
+    assert captured_payloads[-5]["payload"] == {"tabId": "tab-2"}
+    assert captured_payloads[-4]["toolId"] == context.tool_id
+    assert captured_payloads[-4]["payload"] == {"tabId": "tab-3"}
+    assert captured_payloads[-3]["toolId"] == context.tool_id
+    assert captured_payloads[-3]["payload"] == {"script": "document.title"}
     assert captured_payloads[-2]["toolId"] == context.tool_id
-    assert captured_payloads[-2]["payload"] == {"url": "https://example.com/", "showWindow": True}
+    assert captured_payloads[-2]["payload"] == {}
     assert captured_payloads[-1]["toolId"] == context.tool_id
-    assert captured_payloads[-1]["payload"] == {"name": "browser-capture"}
+    assert captured_payloads[-1]["payload"] == {"tabId": "tab-1", "selector": ".main"}
     assert all(item["runId"] == context.run_id for item in captured_payloads)
     assert all(
         item["toolCallId"] == context.invocation_id
         for item in captured_payloads
         if item["operation"] != "call_tool"
     )
-    assert captured_payloads[-3]["toolCallId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d:call-1"
+    assert captured_payloads[-9]["toolCallId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d:call-1"
     save_bytes_payload = captured_payloads[6]["payload"]
     assert isinstance(save_bytes_payload, dict)
     assert (
@@ -424,7 +556,7 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     )
 
 
-    mcp_payload = captured_payloads[-3]["payload"]
+    mcp_payload = captured_payloads[-9]["payload"]
     assert mcp_payload == {
         "serverId": "mcp-stdio-stub",
         "remoteToolName": "search-campus",
