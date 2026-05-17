@@ -25,6 +25,7 @@ const CAP_ARTIFACT = 'artifact' as const
 const CAP_STATE = 'state' as const
 const CAP_EVENT = 'event' as const
 const CAP_MCP = 'mcp' as const
+const CAP_BROWSER = 'browser' as const
 const OP_GET_SECRET = 'get_secret' as const
 const OP_HAS_SECRET = 'has_secret' as const
 const OP_ENSURE_DIR = 'ensure_directory' as const
@@ -36,6 +37,9 @@ const OP_GET_VALUE = 'get_value' as const
 const OP_PUT_VALUE = 'put_value' as const
 const OP_EMIT_EVENT = 'emit_event' as const
 const OP_CALL_TOOL = 'call_tool' as const
+const OP_OPEN = 'open' as const
+const OP_SCREENSHOT = 'screenshot' as const
+const OP_SNAPSHOT = 'snapshot' as const
 
 const activeTempRoots: string[] = []
 
@@ -180,6 +184,129 @@ describe('createElectronDesktopCapabilityBridgeService - routing', () => {
       ok: true,
       result: { present: false },
     })
+  })
+
+  it('routes browser requests correctly', async () => {
+    const fixture = await createPreparedPaths('desktop-capability-bridge-routing')
+    activeTempRoots.push(fixture.tempRoot)
+
+    const appendLog = vi.fn()
+    let browserWindowVisible = false
+    const executeJavaScript = vi.fn(async () => ({
+      ok: true,
+      content: 'Text:\nExample Domain\n\nInteractive elements:\n[1] link "More information"',
+    }))
+    const capturePage = vi.fn(async () => ({
+      toPNG: () => Buffer.from('browser-image', 'utf8'),
+    }))
+    const browserWindow = {
+      isDestroyed: () => false,
+      isVisible: () => browserWindowVisible,
+      show: vi.fn(() => {
+        browserWindowVisible = true
+      }),
+      hide: vi.fn(() => {
+        browserWindowVisible = false
+      }),
+      once: vi.fn(),
+      getTitle: () => 'CanDue Browser',
+      loadURL: vi.fn(async () => undefined),
+      webContents: {
+        isDestroyed: () => false,
+        getURL: () => 'https://example.com/',
+        getTitle: () => 'Example Domain',
+        capturePage,
+        executeJavaScript,
+      },
+    } as unknown as Electron.BrowserWindow
+    const createBrowserWindow = vi.fn(() => browserWindow)
+    const service = createElectronDesktopCapabilityBridgeService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      appendLog,
+      getSettingsWorkspaceService: () => createSettingsWorkspaceServiceStub(),
+      createBrowserWindow,
+    })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'browser-open-1',
+      capability: CAP_BROWSER,
+      operation: OP_OPEN,
+      payload: { url: 'https://example.com/', showWindow: true, newTab: true },
+    }))).resolves.toEqual({
+      requestId: 'browser-open-1',
+      ok: true,
+      result: {
+        tabId: 'browser-tab-1',
+        currentUrl: 'https://example.com/',
+        title: 'Example Domain',
+        windowVisible: true,
+      },
+    })
+
+    await expect(service.handleRequest(buildRequest({
+      requestId: 'browser-snapshot-1',
+      capability: CAP_BROWSER,
+      operation: OP_SNAPSHOT,
+      payload: { tabId: 'browser-tab-1', selector: 'main article' },
+    }))).resolves.toEqual({
+      requestId: 'browser-snapshot-1',
+      ok: true,
+      result: {
+        tabId: 'browser-tab-1',
+        currentUrl: 'https://example.com/',
+        title: 'Example Domain',
+        windowVisible: true,
+        content: 'Text:\nExample Domain\n\nInteractive elements:\n[1] link "More information"',
+      },
+    })
+
+    const screenshotResponse = await service.handleRequest(buildRequest({
+      requestId: 'browser-screenshot-1',
+      capability: CAP_BROWSER,
+      operation: OP_SCREENSHOT,
+      payload: { name: 'page.png' },
+    }))
+    expect(screenshotResponse).toMatchObject({
+      requestId: 'browser-screenshot-1',
+      ok: true,
+      result: {
+        tabId: 'browser-tab-1',
+        currentUrl: 'https://example.com/',
+        title: 'Example Domain',
+        windowVisible: true,
+        artifactId: expect.stringMatching(/^artifact-/),
+        uri: expect.stringMatching(/^artifact:\/\/desktop\/artifact-/),
+        name: 'page.png',
+        contentType: 'image/png',
+        metadata: {
+          sourceOperation: 'browser.screenshot',
+          browser: {
+            tabId: 'browser-tab-1',
+            currentUrl: 'https://example.com/',
+            title: 'Example Domain',
+          },
+          __desktopCapabilityArtifact: {
+            storageKind: 'electron-desktop-capability-bridge',
+            byteLength: 13,
+            sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+            storedAt: expect.any(String),
+          },
+        },
+      },
+    })
+
+    expect(createBrowserWindow).toHaveBeenCalledWith({ showWindow: true })
+    expect(browserWindow.loadURL).toHaveBeenCalledWith('https://example.com/')
+    expect(executeJavaScript).toHaveBeenCalledTimes(1)
+    expect(capturePage).toHaveBeenCalledTimes(1)
+    expect(appendLog).toHaveBeenCalledWith('info', '[capability-bridge] Browser snapshot captured.', expect.objectContaining({
+      capability: CAP_BROWSER,
+      operation: OP_SNAPSHOT,
+      requestedTabId: 'browser-tab-1',
+      tabId: 'browser-tab-1',
+      selector: 'main article',
+      contentLength: 71,
+    }), { relayToRenderer: false })
   })
 
   it('routes workspace and database requests and persists data', async () => {

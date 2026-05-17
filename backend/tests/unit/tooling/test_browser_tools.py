@@ -6,12 +6,14 @@ from app.tooling import (
     HostArtifact,
     HostBrowserPage,
     HostBrowserScreenshot,
+    HostBrowserSnapshot,
     ToolHostCapabilities,
     ToolInvocationContext,
 )
 from app.tooling.browser_tools import (
     BrowserOpenTool,
     BrowserScreenshotTool,
+    BrowserSnapshotTool,
     get_browser_tool_contracts,
 )
 
@@ -20,6 +22,7 @@ class _StubBrowserController:
     def __init__(self) -> None:
         self.open_calls: list[tuple[str, bool]] = []
         self.screenshot_calls: list[str | None] = []
+        self.snapshot_calls: list[tuple[str | None, str | None]] = []
 
     async def open_page(self, *, url: str, show_window: bool = False) -> HostBrowserPage:
         self.open_calls.append((url, show_window))
@@ -51,20 +54,46 @@ class _StubBrowserController:
         )
         return HostBrowserScreenshot(page=page, artifact=artifact)
 
+    async def capture_snapshot(
+        self,
+        *,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> HostBrowserSnapshot:
+        self.snapshot_calls.append((tab_id, selector))
+        page = HostBrowserPage(
+            tab_id=tab_id or "main-window",
+            current_url="https://example.com",
+            title="Example Domain",
+            window_visible=True,
+        )
+        return HostBrowserSnapshot(
+            page=page,
+            content=(
+                "Text:\n"
+                "Example Domain\n\n"
+                "Interactive elements:\n"
+                "[1] link \"More information\" (href=https://www.iana.org/domains/example)"
+            ),
+        )
+
 
 def _run(awaitable):
     return asyncio.run(awaitable)
 
 
-def test_browser_tool_contracts_expose_open_and_screenshot() -> None:
+def test_browser_tool_contracts_expose_open_screenshot_and_snapshot() -> None:
     contracts = get_browser_tool_contracts()
 
     assert tuple(contract.metadata.tool_id for contract in contracts) == (
         "browser.open",
         "browser.screenshot",
+        "browser.snapshot",
     )
-    assert contracts[0].metadata.capability_requirements[0].capability == "browser_controller"
-    assert contracts[1].metadata.capability_requirements[0].capability == "browser_controller"
+    assert all(
+        contract.metadata.capability_requirements[0].capability == "browser_controller"
+        for contract in contracts
+    )
 
 
 def test_browser_open_tool_invokes_host_browser_controller() -> None:
@@ -127,3 +156,38 @@ def test_browser_screenshot_tool_returns_artifact_reference() -> None:
     }
     assert [artifact.artifact_id for artifact in result.artifacts] == ["artifact-browser-screenshot"]
     assert controller.screenshot_calls == ["browser-capture"]
+
+
+
+def test_browser_snapshot_tool_returns_page_snapshot() -> None:
+    controller = _StubBrowserController()
+    host = ToolHostCapabilities(browser_controller=controller)
+    context = ToolInvocationContext(
+        invocation_id="browser.snapshot:call-1",
+        tool_id="browser.snapshot",
+        run_id="run-1",
+        actor="agent",
+    )
+
+    result = _run(
+        BrowserSnapshotTool().invoke(
+            arguments={"tabId": "browser-tab-2", "selector": "main article"},
+            context=context,
+            host=host,
+        )
+    )
+
+    assert result.status == "success"
+    assert result.output == {
+        "tabId": "browser-tab-2",
+        "currentUrl": "https://example.com",
+        "title": "Example Domain",
+        "windowVisible": True,
+        "content": (
+            "Text:\n"
+            "Example Domain\n\n"
+            "Interactive elements:\n"
+            "[1] link \"More information\" (href=https://www.iana.org/domains/example)"
+        ),
+    }
+    assert controller.snapshot_calls == [("browser-tab-2", "main article")]

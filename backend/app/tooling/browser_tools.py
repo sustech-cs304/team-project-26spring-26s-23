@@ -48,6 +48,17 @@ _BROWSER_SCREENSHOT_INPUT_SCHEMA = ToolSchema(
     }
 )
 
+_BROWSER_SNAPSHOT_INPUT_SCHEMA = ToolSchema(
+    schema={
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "tabId": {"type": "string", "minLength": 1},
+            "selector": {"type": "string", "minLength": 1},
+        },
+    }
+)
+
 _BROWSER_OPEN_METADATA = ToolMetadata(
     tool_id="browser.open",
     display_name="Browser Open",
@@ -75,6 +86,20 @@ _BROWSER_SCREENSHOT_METADATA = ToolMetadata(
         ),
     ),
     tags=("browser", "screenshot", "artifact"),
+)
+
+_BROWSER_SNAPSHOT_METADATA = ToolMetadata(
+    tool_id="browser.snapshot",
+    display_name="Browser Snapshot",
+    description="Capture an AI-friendly text snapshot of the current desktop runtime browser page.",
+    input_schema=_BROWSER_SNAPSHOT_INPUT_SCHEMA,
+    capability_requirements=(
+        HostCapabilityRequirement(
+            capability="browser_controller",
+            purpose="Capture compact page snapshots from the host browser window.",
+        ),
+    ),
+    tags=("browser", "snapshot", "text"),
 )
 
 _HOST_ERROR_CODE_MAP: dict[str, str] = {
@@ -169,9 +194,48 @@ class BrowserScreenshotTool(ToolContract):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class BrowserSnapshotTool(ToolContract):
+    @property
+    def metadata(self) -> ToolMetadata:
+        return _BROWSER_SNAPSHOT_METADATA
+
+    async def invoke(
+        self,
+        *,
+        arguments: Mapping[str, Any] | None,
+        context: ToolInvocationContext,
+        host: ToolHostCapabilities,
+    ) -> ToolResultEnvelope:
+        _ = context
+        try:
+            controller = _require_browser_controller(host)
+            tab_id = _read_optional_text_argument(arguments, field_name="tabId")
+            selector = _read_optional_text_argument(arguments, field_name="selector")
+            snapshot = await controller.capture_snapshot(tab_id=tab_id, selector=selector)
+        except ValueError as exc:
+            return _invalid_input_result(tool_id=self.metadata.tool_id, message=str(exc))
+        except MissingHostCapabilityError as exc:
+            return _missing_host_capability_result(
+                tool_id=self.metadata.tool_id,
+                capability=exc.capability,
+            )
+        except HostCapabilityOperationError as exc:
+            return _host_operation_error_result(
+                tool_id=self.metadata.tool_id,
+                error=exc,
+            )
+
+        return ToolResultEnvelope.success(
+            output=snapshot.to_dict(),
+            metadata={"toolId": self.metadata.tool_id},
+        )
+
+
 BROWSER_TOOL_CONTRACTS: tuple[ToolContract, ...] = (
     BrowserOpenTool(),
     BrowserScreenshotTool(),
+    BrowserSnapshotTool(),
 )
 
 
@@ -281,5 +345,6 @@ __all__ = [
     "BROWSER_TOOL_CONTRACTS",
     "BrowserOpenTool",
     "BrowserScreenshotTool",
+    "BrowserSnapshotTool",
     "get_browser_tool_contracts",
 ]

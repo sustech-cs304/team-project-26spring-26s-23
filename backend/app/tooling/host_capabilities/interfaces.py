@@ -224,6 +224,25 @@ class HostBrowserScreenshot:
         return payload
 
 
+@dataclass(frozen=True, slots=True)
+class HostBrowserSnapshot:
+    """Browser snapshot result returned by the host bridge."""
+
+    page: HostBrowserPage
+    content: str
+
+    def __post_init__(self) -> None:
+        normalized_content = self.content.strip()
+        if normalized_content == "":
+            raise ValueError("content must be a non-empty string.")
+        object.__setattr__(self, "content", normalized_content)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = self.page.to_dict()
+        payload["content"] = self.content
+        return payload
+
+
 class BrowserController(Protocol):
     """Control a host browser surface owned by the desktop runtime."""
 
@@ -240,6 +259,14 @@ class BrowserController(Protocol):
         *,
         name: str | None = None,
     ) -> HostBrowserScreenshot:
+        raise NotImplementedError
+
+    async def capture_snapshot(
+        self,
+        *,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> HostBrowserSnapshot:
         raise NotImplementedError
 
 

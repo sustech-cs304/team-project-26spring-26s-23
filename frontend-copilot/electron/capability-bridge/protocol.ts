@@ -16,6 +16,7 @@ export const DESKTOP_CAPABILITY_OPERATIONS = [
   'call_tool',
   'open',
   'screenshot',
+  'snapshot',
 ] as const
 export type DesktopCapabilityOperation = (typeof DESKTOP_CAPABILITY_OPERATIONS)[number]
 
@@ -47,7 +48,7 @@ export const DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: Record<
   state: ['get_value', 'put_value', 'delete_value'],
   event: ['emit_event'],
   mcp: ['call_tool'],
-  browser: ['open', 'screenshot'],
+  browser: ['open', 'screenshot', 'snapshot'],
 }
 
 export interface DesktopCapabilityBridgeRequest {
@@ -211,6 +212,17 @@ function normalizeDesktopCapabilityOperationPayload(
       const normalized: Record<string, unknown> = {}
       if (payload.name !== undefined) {
         normalized.name = requireNonEmptyString(payload.name, 'name')
+      }
+      return normalized
+    }
+    case 'snapshot': {
+      assertNoUnexpectedKeys(payload, ['tabId', 'selector'], 'browser payload')
+      const normalized: Record<string, unknown> = {}
+      if (payload.tabId !== undefined) {
+        normalized.tabId = requireNonEmptyString(payload.tabId, 'tabId')
+      }
+      if (payload.selector !== undefined) {
+        normalized.selector = requireNonEmptyString(payload.selector, 'selector')
       }
       return normalized
     }

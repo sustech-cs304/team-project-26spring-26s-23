@@ -40,6 +40,7 @@ DesktopCapabilityOperation = Literal[
     "call_tool",
     "open",
     "screenshot",
+    "snapshot",
 ]
 
 DesktopCapabilityStateScope = Literal["tool", "run"]
@@ -92,6 +93,7 @@ DESKTOP_CAPABILITY_OPERATIONS: tuple[DesktopCapabilityOperation, ...] = (
     "call_tool",
     "open",
     "screenshot",
+    "snapshot",
 )
 
 DESKTOP_CAPABILITY_STATE_SCOPES: tuple[DesktopCapabilityStateScope, ...] = (
@@ -110,7 +112,7 @@ DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: dict[
     "state": ("get_value", "put_value", "delete_value"),
     "event": ("emit_event",),
     "mcp": ("call_tool",),
-    "browser": ("open", "screenshot"),
+    "browser": ("open", "screenshot", "snapshot"),
 }
 
 DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES: tuple[DesktopCapabilityBridgeErrorCode, ...] = (
@@ -173,6 +175,19 @@ _BROWSER_SCREENSHOT_SCHEMA: dict[str, Any] = {
         "name": {"type": "string", "minLength": 1},
         "contentType": {"type": "string", "minLength": 1},
         "metadata": {"type": "object"},
+    },
+}
+
+_BROWSER_SNAPSHOT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["tabId", "currentUrl", "content"],
+    "properties": {
+        "tabId": {"type": "string", "minLength": 1},
+        "currentUrl": {"type": "string"},
+        "title": {"type": "string", "minLength": 1},
+        "windowVisible": {"type": "boolean"},
+        "content": {"type": "string", "minLength": 1},
     },
 }
 
@@ -372,6 +387,14 @@ DESKTOP_CAPABILITY_BRIDGE_REQUEST_PAYLOAD_SCHEMAS: dict[
             "name": {"type": "string", "minLength": 1},
         },
     },
+    ("browser", "snapshot"): {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "tabId": {"type": "string", "minLength": 1},
+            "selector": {"type": "string", "minLength": 1},
+        },
+    },
 }
 
 DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS: dict[
@@ -484,6 +507,7 @@ DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS: dict[
     },
     ("browser", "open"): deepcopy(_BROWSER_PAGE_SCHEMA),
     ("browser", "screenshot"): deepcopy(_BROWSER_SCREENSHOT_SCHEMA),
+    ("browser", "snapshot"): deepcopy(_BROWSER_SNAPSHOT_SCHEMA),
 }
 
 

@@ -28,6 +28,11 @@ interface BrowserOpenRequestPayload {
   format: BrowserPageContentFormat | null
 }
 
+interface BrowserSnapshotRequestPayload {
+  tabId: string | null
+  selector: string | null
+}
+
 export interface DesktopCapabilityBrowserService {
   handle(request: DesktopCapabilityBridgeRequest): Promise<Record<string, unknown>>
 }
@@ -49,6 +54,8 @@ export function createDesktopCapabilityBrowserService(
           return await openBrowserPage(registry, options, request)
         case 'screenshot':
           return await captureBrowserScreenshot(registry, artifactService, options, request)
+        case 'snapshot':
+          return await captureBrowserSnapshot(registry, options, request)
         default:
           throw new DesktopCapabilityBridgeError(
             'unsupported_operation',
@@ -186,6 +193,40 @@ async function captureBrowserScreenshot(
   }
 }
 
+async function captureBrowserSnapshot(
+  registry: BrowserTabRegistry,
+  options: CreateDesktopCapabilityBridgeServiceOptions,
+  request: DesktopCapabilityBridgeRequest,
+): Promise<Record<string, unknown>> {
+  const payload = normalizeSnapshotRequestPayload(request.payload)
+  const tab = requireBrowserTab(registry, payload.tabId)
+  const summary = describeBrowserWindow(tab.tabId, tab.targetWindow)
+  const content = await extractPageSnapshot(tab.targetWindow, {
+    selector: payload.selector,
+  })
+
+  await options.appendLog?.('info', '[capability-bridge] Browser snapshot captured.', {
+    capability: request.capability,
+    operation: request.operation,
+    toolId: request.toolId,
+    runId: request.runId,
+    toolCallId: request.toolCallId,
+    requestedTabId: payload.tabId,
+    tabId: tab.tabId,
+    currentUrl: summary.currentUrl,
+    title: summary.title,
+    selector: payload.selector,
+    contentLength: content.length,
+  }, {
+    relayToRenderer: false,
+  })
+
+  return {
+    ...summary,
+    content,
+  }
+}
+
 function createBrowserTab(
   registry: BrowserTabRegistry,
   options: CreateDesktopCapabilityBridgeServiceOptions,
@@ -244,6 +285,23 @@ function requireActiveBrowserTab(registry: BrowserTabRegistry): BrowserTabRecord
   return tab
 }
 
+function requireBrowserTab(registry: BrowserTabRegistry, tabId: string | null): BrowserTabRecord {
+  if (tabId === null) {
+    return requireActiveBrowserTab(registry)
+  }
+
+  const tab = findBrowserTabById(registry, tabId)
+  if (tab === null) {
+    throw new DesktopCapabilityBridgeError('not_found', `Browser tab '${tabId}' is not available.`, {
+      details: {
+        tabId,
+      },
+    })
+  }
+
+  return tab
+}
+
 function findActiveBrowserTab(registry: BrowserTabRegistry): BrowserTabRecord | null {
   const activeTabId = registry.activeTabId
   if (activeTabId !== null) {
@@ -271,6 +329,22 @@ function findActiveBrowserTab(registry: BrowserTabRegistry): BrowserTabRecord | 
   }
 
   return null
+}
+
+function findBrowserTabById(registry: BrowserTabRegistry, tabId: string): BrowserTabRecord | null {
+  const targetWindow = registry.tabs.get(tabId)
+  if (!isUsableBrowserWindow(targetWindow)) {
+    registry.tabs.delete(tabId)
+    if (registry.activeTabId === tabId) {
+      registry.activeTabId = null
+    }
+    return null
+  }
+
+  return {
+    tabId,
+    targetWindow,
+  }
 }
 
 function isUsableBrowserWindow(targetWindow: BrowserWindow | undefined): targetWindow is BrowserWindow {
@@ -400,6 +474,174 @@ async function extractPageContent(
   return record.content
 }
 
+async function extractPageSnapshot(
+  targetWindow: BrowserWindow,
+  input: {
+    selector: string | null
+  },
+): Promise<string> {
+  let result: unknown
+  try {
+    result = await targetWindow.webContents.executeJavaScript(
+      `(() => {
+        const selector = ${JSON.stringify(input.selector)}
+        const selectedNode = selector ? document.querySelector(selector) : null
+        if (selector && selectedNode === null) {
+          return {
+            ok: false,
+            errorCode: 'not_found',
+            message: 'No page element matched selector ' + selector + '.',
+          }
+        }
+
+        const root = selectedNode ?? document.body ?? document.documentElement
+        const normalizeText = (value) => value.replace(/\s+/g, ' ').trim()
+        const visibleText = (element) => normalizeText(element instanceof HTMLElement
+          ? (element.innerText || element.textContent || '')
+          : (element.textContent || ''))
+        const isVisible = (element) => {
+          if (!(element instanceof Element)) {
+            return false
+          }
+          const style = window.getComputedStyle(element)
+          if (style.display === 'none' || style.visibility === 'hidden') {
+            return false
+          }
+          const rect = element.getBoundingClientRect()
+          return rect.width > 0 || rect.height > 0 || visibleText(element) !== ''
+        }
+        const inferKind = (element) => {
+          const tagName = element.tagName.toLowerCase()
+          if (tagName === 'a') return 'link'
+          if (tagName === 'button') return 'button'
+          if (tagName === 'select') return 'select'
+          if (tagName === 'textarea') return 'text area'
+          if (tagName === 'summary') return 'summary'
+          if (tagName === 'input') {
+            const type = normalizeText(element.getAttribute('type') || 'text').toLowerCase()
+            return type === 'text' ? 'text input' : type + ' input'
+          }
+          const role = normalizeText(element.getAttribute('role') || '').toLowerCase()
+          return role || 'interactive element'
+        }
+        const readLabel = (element) => {
+          const candidates = [
+            element.getAttribute('aria-label'),
+            element.getAttribute('title'),
+            element.getAttribute('placeholder'),
+            element.getAttribute('name'),
+            element.getAttribute('alt'),
+            'value' in element ? element.value : null,
+            visibleText(element),
+          ]
+          for (const candidate of candidates) {
+            const normalized = typeof candidate === 'string' ? normalizeText(candidate) : ''
+            if (normalized !== '') {
+              return normalized
+            }
+          }
+          return ''
+        }
+        const isInteractive = (element) => {
+          if (!(element instanceof Element) || !isVisible(element)) {
+            return false
+          }
+          const tagName = element.tagName.toLowerCase()
+          if (tagName === 'a' || tagName === 'button' || tagName === 'select' || tagName === 'textarea' || tagName === 'summary') {
+            return true
+          }
+          if (tagName === 'input') {
+            return normalizeText(element.getAttribute('type') || '').toLowerCase() !== 'hidden'
+          }
+          const role = normalizeText(element.getAttribute('role') || '').toLowerCase()
+          if (['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'option', 'menuitem', 'textbox', 'combobox'].includes(role)) {
+            return true
+          }
+          return element.hasAttribute('contenteditable') || (element.hasAttribute('tabindex') && element.getAttribute('tabindex') !== '-1')
+        }
+
+        const rootElements = root instanceof Element ? [root, ...Array.from(root.querySelectorAll('*'))] : []
+        const interactiveDescriptions = []
+        for (const element of rootElements) {
+          if (!isInteractive(element)) {
+            continue
+          }
+          const kind = inferKind(element)
+          const label = readLabel(element)
+          const details = []
+          const href = normalizeText(element.getAttribute('href') || '')
+          if (href !== '') {
+            details.push('href=' + href)
+          }
+          if ('checked' in element && element.checked === true) {
+            details.push('checked')
+          }
+          if ('disabled' in element && element.disabled === true) {
+            details.push('disabled')
+          }
+          const description = label === '' ? kind : kind + ' "' + label + '"'
+          interactiveDescriptions.push(details.length === 0 ? description : description + ' (' + details.join(', ') + ')')
+        }
+
+        const textContent = visibleText(root)
+        const sections = []
+        if (textContent !== '') {
+          sections.push('Text:\n' + textContent)
+        }
+        if (interactiveDescriptions.length > 0) {
+          sections.push('Interactive elements:\n' + interactiveDescriptions.map((description, index) => '[' + String(index + 1) + '] ' + description).join('\n'))
+        }
+        const content = sections.join('\n\n').trim()
+        if (content === '') {
+          return {
+            ok: false,
+            errorCode: 'not_found',
+            message: 'No readable page content was available.',
+          }
+        }
+
+        return {
+          ok: true,
+          content,
+        }
+      })()`,
+      true,
+    )
+  } catch (error) {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', 'Failed to extract browser page snapshot.', {
+      retryable: true,
+      details: {
+        selector: input.selector,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    })
+  }
+
+  const record = normalizeResultRecord(result)
+  if (record.ok !== true) {
+    const message = typeof record.message === 'string' && record.message.trim() !== ''
+      ? record.message
+      : 'Failed to extract browser page snapshot.'
+    const errorCode = record.errorCode === 'not_found' ? 'not_found' : 'invalid_request'
+    throw new DesktopCapabilityBridgeError(errorCode, message, {
+      details: {
+        selector: input.selector,
+      },
+    })
+  }
+
+  if (typeof record.content !== 'string' || record.content.trim() === '') {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', 'Browser page snapshot extraction returned an invalid result.', {
+      retryable: true,
+      details: {
+        selector: input.selector,
+      },
+    })
+  }
+
+  return record.content.trim()
+}
+
 function convertHtmlToMarkdown(value: string): string {
   const html = value.trim()
   if (html === '') {
@@ -517,6 +759,13 @@ function normalizeOpenRequestPayload(payload: Record<string, unknown>): BrowserO
     newTab: payload.newTab === true,
     selector: normalizeOptionalString(payload.selector),
     format: normalizedFormat,
+  }
+}
+
+function normalizeSnapshotRequestPayload(payload: Record<string, unknown>): BrowserSnapshotRequestPayload {
+  return {
+    tabId: normalizeOptionalString(payload.tabId),
+    selector: normalizeOptionalString(payload.selector),
   }
 }
 

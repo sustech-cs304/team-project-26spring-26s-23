@@ -68,6 +68,13 @@ BROWSER_SCREENSHOT_TOOL_PROMPT = (
     "Use this tool to capture the current browser page as an artifact when visual inspection is needed."
 )
 
+BROWSER_SNAPSHOT_TOOL_ID = "browser.snapshot"
+BROWSER_SNAPSHOT_TOOL_DISPLAY_NAME = "Browser Snapshot"
+BROWSER_SNAPSHOT_TOOL_DESCRIPTION = "Capture an AI-friendly text snapshot from the desktop runtime browser window."
+BROWSER_SNAPSHOT_TOOL_PROMPT = (
+    "Use this tool to capture a compact text snapshot of the current browser page, including numbered references for interactive elements when page understanding is needed."
+)
+
 SKILL_ACTIVATE_TOOL_ID = "tool.skill-activate"
 SKILL_ACTIVATE_TOOL_DISPLAY_NAME = "Skill Activate"
 SKILL_ACTIVATE_TOOL_DESCRIPTION = (
@@ -182,6 +189,11 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "从桌面运行时浏览器窗口捕获截图。",
             "prompt": "当需要视觉检查时，使用此工具捕获当前浏览器页面为工件。",
         },
+        BROWSER_SNAPSHOT_TOOL_ID: {
+            "displayName": "浏览器快照",
+            "description": "从桌面运行时浏览器窗口捕获适合 AI 阅读的文本快照。",
+            "prompt": "当需要理解当前页面结构与可交互元素时，使用此工具获取紧凑文本快照，并带编号引用。",
+        },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": "Skill 激活",
             "description": "读取已启用 Skill 的 SKILL.md 入口说明和资源摘要。",
@@ -253,6 +265,11 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": BROWSER_SCREENSHOT_TOOL_DISPLAY_NAME,
             "description": BROWSER_SCREENSHOT_TOOL_DESCRIPTION,
             "prompt": BROWSER_SCREENSHOT_TOOL_PROMPT,
+        },
+        BROWSER_SNAPSHOT_TOOL_ID: {
+            "displayName": BROWSER_SNAPSHOT_TOOL_DISPLAY_NAME,
+            "description": BROWSER_SNAPSHOT_TOOL_DESCRIPTION,
+            "prompt": BROWSER_SNAPSHOT_TOOL_PROMPT,
         },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": SKILL_ACTIVATE_TOOL_DISPLAY_NAME,

@@ -4,6 +4,7 @@ from .browser_tools import (
     BROWSER_TOOL_CONTRACTS,
     BrowserOpenTool,
     BrowserScreenshotTool,
+    BrowserSnapshotTool,
     get_browser_tool_contracts,
 )
 from .contract import (
@@ -31,6 +32,7 @@ from .host_capabilities import (
     HostArtifact,
     HostBrowserPage,
     HostBrowserScreenshot,
+    HostBrowserSnapshot,
     HostCapabilityOperationError,
     HostEvent,
     MissingHostCapabilityError,
@@ -57,6 +59,7 @@ __all__ = [
     "BrowserController",
     "BrowserOpenTool",
     "BrowserScreenshotTool",
+    "BrowserSnapshotTool",
     "DEFAULT_MCP_DIRECT_HOST_CAPABILITIES",
     "DatabaseResolver",
     "EventSink",
@@ -64,6 +67,7 @@ __all__ = [
     "HostArtifact",
     "HostBrowserPage",
     "HostBrowserScreenshot",
+    "HostBrowserSnapshot",
     "HostCapabilityName",
     "HostCapabilityOperationError",
     "HostCapabilityRequirement",

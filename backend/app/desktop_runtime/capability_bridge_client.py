@@ -26,6 +26,7 @@ from app.tooling.host_capabilities import (
     HostArtifact,
     HostBrowserPage,
     HostBrowserScreenshot,
+    HostBrowserSnapshot,
     HostCapabilityOperationError,
 )
 
@@ -429,6 +430,39 @@ class DesktopCapabilityBridgeClient:
         )
         return HostBrowserScreenshot(page=page, artifact=artifact)
 
+    async def capture_browser_snapshot(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> HostBrowserSnapshot:
+        payload: dict[str, Any] = {}
+        if tab_id is not None:
+            payload["tabId"] = tab_id
+        if selector is not None:
+            payload["selector"] = selector
+        result = await self._call_async(
+            capability="browser",
+            operation="snapshot",
+            context=context,
+            payload=payload,
+        )
+        page = HostBrowserPage(
+            tab_id=str(result["tabId"]),
+            current_url=str(result["currentUrl"]),
+            title=_normalize_optional_text(result.get("title")),
+            window_visible=(
+                result.get("windowVisible")
+                if isinstance(result.get("windowVisible"), bool)
+                else None
+            ),
+        )
+        return HostBrowserSnapshot(
+            page=page,
+            content=str(result["content"]),
+        )
+
     async def _call_async(
         self,
         *,
@@ -533,14 +567,16 @@ class DesktopCapabilityBridgeClient:
         context: ToolInvocationContext,
         payload: Mapping[str, Any],
     ) -> DesktopCapabilityBridgeRequest:
-        return DesktopCapabilityBridgeRequest(
-            request_id=f"{context.tool_id}:{operation}:{uuid4().hex}",
-            capability=capability,
-            operation=operation,
-            tool_id=context.tool_id,
-            run_id=context.run_id or f"{context.tool_id}:direct-run",
-            tool_call_id=context.invocation_id,
-            payload=dict(payload),
+        return DesktopCapabilityBridgeRequest.model_validate(
+            {
+                "request_id": f"{context.tool_id}:{operation}:{uuid4().hex}",
+                "capability": capability,
+                "operation": operation,
+                "tool_id": context.tool_id,
+                "run_id": context.run_id or f"{context.tool_id}:direct-run",
+                "tool_call_id": context.invocation_id,
+                "payload": dict(payload),
+            }
         )
 
     def _require_bridge_url(

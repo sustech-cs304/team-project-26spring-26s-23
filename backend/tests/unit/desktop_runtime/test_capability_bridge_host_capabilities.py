@@ -25,6 +25,7 @@ from app.tooling import (
     HostArtifact,
     HostBrowserPage,
     HostBrowserScreenshot,
+    HostBrowserSnapshot,
     HostEvent,
     ToolInvocationContext,
 )
@@ -64,6 +65,7 @@ class _RecordingBridgeClient:
         self.events: list[dict[str, Any]] = []
         self.browser_open_requests: list[tuple[str, str, bool]] = []
         self.browser_screenshot_requests: list[tuple[str, str, str | None]] = []
+        self.browser_snapshot_requests: list[tuple[str, str | None, str | None]] = []
 
     async def get_secret(
         self,
@@ -271,6 +273,29 @@ class _RecordingBridgeClient:
         )
         return HostBrowserScreenshot(page=page, artifact=artifact)
 
+    async def capture_browser_snapshot(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> HostBrowserSnapshot:
+        self.browser_snapshot_requests.append((context.invocation_id, tab_id, selector))
+        return HostBrowserSnapshot(
+            page=HostBrowserPage(
+                tab_id=tab_id or "main-window",
+                current_url="https://example.com/",
+                title="Example Domain",
+                window_visible=True,
+            ),
+            content=(
+                "Text:\n"
+                "Example Domain\n\n"
+                "Interactive elements:\n"
+                "[1] link \"More information\""
+            ),
+        )
+
     async def aclose(self) -> None:
         return None
 
@@ -392,6 +417,13 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
         )
     )
 
+    browser_snapshot = _run_awaitable(
+        cast(Any, host.browser_controller).capture_snapshot(
+            tab_id="browser-tab-2",
+            selector="main article",
+        )
+    )
+
     assert secret_value == "bridge-secret"
     assert has_secret is True
     assert workspace_path.as_posix() == "workspace-root/backend/data/calendar.db"
@@ -401,12 +433,33 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
     assert described_artifact.metadata["described"] is True
     assert tool_state == {"ok": True}
     assert run_state == {"done": False}
+    assert browser_snapshot == HostBrowserSnapshot(
+        page=HostBrowserPage(
+            tab_id="browser-tab-2",
+            current_url="https://example.com/",
+            title="Example Domain",
+            window_visible=True,
+        ),
+        content=(
+            "Text:\n"
+            "Example Domain\n\n"
+            "Interactive elements:\n"
+            "[1] link \"More information\""
+        ),
+    )
     assert bridge_client.secret_requests == [
         (
             invocation_context.invocation_id,
             invocation_context.tool_id,
             invocation_context.run_id,
             "cas.password",
+        )
+    ]
+    assert bridge_client.browser_snapshot_requests == [
+        (
+            invocation_context.invocation_id,
+            "browser-tab-2",
+            "main article",
         )
     ]
     assert bridge_client.secret_presence_requests == [

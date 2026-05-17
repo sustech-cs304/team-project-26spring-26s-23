@@ -16,6 +16,7 @@ from app.tooling.host_capabilities import (
     HostArtifact,
     HostBrowserPage,
     HostBrowserScreenshot,
+    HostBrowserSnapshot,
     HostEvent,
     SecretProvider,
     StateStore,
@@ -240,6 +241,19 @@ class _BridgeBackedBrowserController(BrowserController):
         return await bridge_client.capture_browser_screenshot(
             context=self._invocation_context,
             name=name,
+        )
+
+    async def capture_snapshot(
+        self,
+        *,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> HostBrowserSnapshot:
+        bridge_client = cast(Any, self._bridge_client)
+        return await bridge_client.capture_browser_snapshot(
+            context=self._invocation_context,
+            tab_id=tab_id,
+            selector=selector,
         )
 
 

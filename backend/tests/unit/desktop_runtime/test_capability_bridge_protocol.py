@@ -41,7 +41,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "state": ("get_value", "put_value", "delete_value"),
         "event": ("emit_event",),
         "mcp": ("call_tool",),
-        "browser": ("open", "screenshot"),
+        "browser": ("open", "screenshot", "snapshot"),
     }
     assert get_desktop_capability_operations("secret") == ("get_secret", "has_secret")
     assert get_desktop_capability_operations("workspace") == (
@@ -61,7 +61,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
     )
     assert get_desktop_capability_operations("event") == ("emit_event",)
     assert get_desktop_capability_operations("mcp") == ("call_tool",)
-    assert get_desktop_capability_operations("browser") == ("open", "screenshot")
+    assert get_desktop_capability_operations("browser") == ("open", "screenshot", "snapshot")
     assert {
         operation
         for operations in DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY.values()
@@ -375,6 +375,34 @@ def test_payload_and_result_validation_enforce_operation_routing_and_invariants(
         "name": "browser-screenshot.png",
         "contentType": "image/png",
         "metadata": {"source": "browser.screenshot"},
+    }
+    assert validate_desktop_capability_bridge_payload(
+        capability="browser",
+        operation="snapshot",
+        payload={
+            "tabId": " browser-tab-2 ",
+            "selector": " main article ",
+        },
+    ) == {
+        "tabId": "browser-tab-2",
+        "selector": "main article",
+    }
+    assert validate_desktop_capability_bridge_result(
+        capability="browser",
+        operation="snapshot",
+        result={
+            "tabId": "browser-tab-2",
+            "currentUrl": "https://example.com/",
+            "title": "Example Domain",
+            "windowVisible": True,
+            "content": "Text:\nExample Domain\n\nInteractive elements:\n[1] link \"More information\"",
+        },
+    ) == {
+        "tabId": "browser-tab-2",
+        "currentUrl": "https://example.com/",
+        "title": "Example Domain",
+        "windowVisible": True,
+        "content": "Text:\nExample Domain\n\nInteractive elements:\n[1] link \"More information\"",
     }
 
 

@@ -12,6 +12,7 @@ from app.tooling.host_capabilities import (
     HostArtifact,
     HostBrowserPage,
     HostBrowserScreenshot,
+    HostBrowserSnapshot,
     HostEvent,
     MissingHostCapabilityError,
     ToolHostCapabilities,
@@ -99,6 +100,15 @@ class StubBrowserController:
         _ = name
         return object()
 
+    async def capture_snapshot(
+        self,
+        *,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> Any:
+        _ = (tab_id, selector)
+        return object()
+
 
 class StubEventSink:
     def __init__(self) -> None:
@@ -141,6 +151,15 @@ def test_host_capability_models_serialize_to_stable_shape() -> None:
             metadata={"source": "browser.screenshot"},
         ),
     )
+    browser_snapshot = HostBrowserSnapshot(
+        page=browser_page,
+        content=(
+            "Text:\n"
+            "Example Domain\n\n"
+            "Interactive elements:\n"
+            "[1] link \"More information\""
+        ),
+    )
 
     assert artifact.to_dict() == {
         "artifactId": "artifact-1",
@@ -166,6 +185,18 @@ def test_host_capability_models_serialize_to_stable_shape() -> None:
         "name": "browser-screenshot.png",
         "contentType": "image/png",
         "metadata": {"source": "browser.screenshot"},
+    }
+    assert browser_snapshot.to_dict() == {
+        "tabId": "browser-tab-1",
+        "currentUrl": "https://example.com/",
+        "title": "Example Domain",
+        "windowVisible": False,
+        "content": (
+            "Text:\n"
+            "Example Domain\n\n"
+            "Interactive elements:\n"
+            "[1] link \"More information\""
+        ),
     }
 
     with pytest.raises(ValueError, match="timezone-aware"):

@@ -950,6 +950,36 @@ class _BrowserScreenshotPayload(_BridgePayloadModel):
         )
 
 
+class _BrowserSnapshotPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"tabId", "selector"}
+
+    tab_id: str | None = Field(
+        default=None,
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+    selector: str | None = Field(default=None, min_length=1)
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="payload",
+        )
+
+    @field_validator("selector", mode="before")
+    @classmethod
+    def _validate_selector(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="selector",
+            field_context="payload",
+        )
+
+
 class _BrowserPageResult(_BridgeResultModel):
     _bridge_allowed_fields: ClassVar[set[str] | None] = {
         "tabId",
@@ -1149,6 +1179,85 @@ class _BrowserScreenshotResult(_BridgeResultModel):
             payload["name"] = self.name
         if self.content_type is not None:
             payload["contentType"] = self.content_type
+        return payload
+
+
+class _BrowserSnapshotResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "tabId",
+        "currentUrl",
+        "title",
+        "windowVisible",
+        "content",
+    }
+
+    tab_id: str = Field(validation_alias="tabId", serialization_alias="tabId", min_length=1)
+    current_url: str = Field(validation_alias="currentUrl", serialization_alias="currentUrl")
+    title: str | None = Field(default=None, min_length=1)
+    window_visible: bool | None = Field(
+        default=None,
+        validation_alias="windowVisible",
+        serialization_alias="windowVisible",
+    )
+    content: str = Field(min_length=1)
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="result",
+        )
+
+    @field_validator("current_url", mode="before")
+    @classmethod
+    def _validate_current_url(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="currentUrl",
+            field_context="result",
+        )
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _validate_title(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="title",
+            field_context="result",
+        )
+
+    @field_validator("window_visible", mode="before")
+    @classmethod
+    def _validate_window_visible(cls, value: Any) -> bool | None:
+        if value is None:
+            return None
+        return _require_boolean_field_value(
+            value,
+            field_name="windowVisible",
+            field_context="result",
+        )
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _validate_content(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="content",
+            field_context="result",
+        )
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "tabId": self.tab_id,
+            "currentUrl": self.current_url,
+            "content": self.content,
+        }
+        if self.title is not None:
+            payload["title"] = self.title
+        if self.window_visible is not None:
+            payload["windowVisible"] = self.window_visible
         return payload
 
 
@@ -1511,6 +1620,7 @@ _PAYLOAD_MODELS: dict[
     ("mcp", "call_tool"): _McpToolCallPayload,
     ("browser", "open"): _BrowserPagePayload,
     ("browser", "screenshot"): _BrowserScreenshotPayload,
+    ("browser", "snapshot"): _BrowserSnapshotPayload,
 }
 
 _RESULT_MODELS: dict[
@@ -1532,6 +1642,7 @@ _RESULT_MODELS: dict[
     ("mcp", "call_tool"): _McpToolCallResult,
     ("browser", "open"): _BrowserPageResult,
     ("browser", "screenshot"): _BrowserScreenshotResult,
+    ("browser", "snapshot"): _BrowserSnapshotResult,
 }
 
 
