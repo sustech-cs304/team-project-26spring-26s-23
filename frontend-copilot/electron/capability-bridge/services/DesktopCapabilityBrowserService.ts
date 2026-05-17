@@ -704,7 +704,15 @@ async function executeBrowserScript(
   request: DesktopCapabilityBridgeRequest,
 ): Promise<Record<string, unknown>> {
   const script = requireNonEmptyString(request.payload.script, 'script is required.')
-  const tabId = normalizeOptionalString(request.payload.tabId) ?? registry.activeTabId
+  const providedTabId = normalizeOptionalString(request.payload.tabId)
+  const tabId = providedTabId ?? registry.activeTabId
+
+  if (providedTabId !== null && !registry.tabs.has(providedTabId)) {
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${providedTabId}' not found.`, {
+      details: { tabId: providedTabId },
+    })
+  }
+
   const tab = tabId !== null && registry.tabs.has(tabId)
     ? { tabId, targetWindow: registry.tabs.get(tabId)! }
     : requireActiveBrowserTab(registry)
@@ -923,7 +931,15 @@ async function captureBrowserSnapshot(
   request: DesktopCapabilityBridgeRequest,
 ): Promise<Record<string, unknown>> {
   const selector = normalizeOptionalString(request.payload.selector)
-  const tabId = normalizeOptionalString(request.payload.tabId) ?? registry.activeTabId
+  const providedTabId = normalizeOptionalString(request.payload.tabId)
+  const tabId = providedTabId ?? registry.activeTabId
+
+  if (providedTabId !== null && !registry.tabs.has(providedTabId)) {
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${providedTabId}' not found.`, {
+      details: { tabId: providedTabId },
+    })
+  }
+
   const tab = tabId !== null && registry.tabs.has(tabId)
     ? { tabId, targetWindow: registry.tabs.get(tabId)! }
     : requireActiveBrowserTab(registry)

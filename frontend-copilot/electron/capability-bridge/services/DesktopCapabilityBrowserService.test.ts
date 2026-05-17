@@ -341,6 +341,14 @@ describe('DesktopCapabilityBrowserService', () => {
         service.handle(createRequest('execute', { script: 'document.title' }))
       ).rejects.toThrow()
     })
+
+    it('throws error for invalid explicit tabId even when active tab exists', async () => {
+      await service.handle(createRequest('open', { url: 'https://example.com' }))
+
+      await expect(
+        service.handle(createRequest('execute', { script: 'document.title', tabId: 'nonexistent' }))
+      ).rejects.toThrow()
+    })
   })
 
   // -----------------------------------------------------------------------
@@ -394,6 +402,14 @@ describe('DesktopCapabilityBrowserService', () => {
     it('throws error when no tab is open', async () => {
       await expect(
         service.handle(createRequest('snapshot', {}))
+      ).rejects.toThrow()
+    })
+
+    it('throws error for invalid explicit tabId even when active tab exists', async () => {
+      await service.handle(createRequest('open', { url: 'https://example.com' }))
+
+      await expect(
+        service.handle(createRequest('snapshot', { tabId: 'nonexistent' }))
       ).rejects.toThrow()
     })
   })
