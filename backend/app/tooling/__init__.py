@@ -2,8 +2,14 @@
 
 from .browser_tools import (
     BROWSER_TOOL_CONTRACTS,
+    BrowserCloseTabTool,
+    BrowserExecuteTool,
+    BrowserListTabsTool,
     BrowserOpenTool,
+    BrowserResetTool,
     BrowserScreenshotTool,
+    BrowserSnapshotTool,
+    BrowserSwitchTabTool,
     get_browser_tool_contracts,
 )
 from .contract import (
@@ -54,9 +60,15 @@ from .mcp_adapter import (
 __all__ = [
     "ArtifactStore",
     "BROWSER_TOOL_CONTRACTS",
+    "BrowserCloseTabTool",
     "BrowserController",
+    "BrowserExecuteTool",
+    "BrowserListTabsTool",
     "BrowserOpenTool",
+    "BrowserResetTool",
     "BrowserScreenshotTool",
+    "BrowserSnapshotTool",
+    "BrowserSwitchTabTool",
     "DEFAULT_MCP_DIRECT_HOST_CAPABILITIES",
     "DatabaseResolver",
     "EventSink",

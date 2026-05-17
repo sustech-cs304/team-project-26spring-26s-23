@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
@@ -91,13 +92,35 @@ class StubSecretProvider:
 
 
 class StubBrowserController:
-    async def open_page(self, *, url: str, show_window: bool = False) -> Any:
-        _ = (url, show_window)
+    async def open_page(self, *, url: str, show_window: bool = False, new_tab: bool = False, selector: str | None = None, format: str | None = None) -> Any:
+        _ = (url, show_window, new_tab, selector, format)
         return object()
 
     async def capture_screenshot(self, *, name: str | None = None) -> Any:
         _ = name
         return object()
+
+    async def list_tabs(self) -> list[Any]:
+        return [object()]
+
+    async def close_tab(self, *, tab_id: str | None = None) -> Any:
+        _ = tab_id
+        return object()
+
+    async def switch_tab(self, *, tab_id: str) -> Any:
+        _ = tab_id
+        return object()
+
+    async def execute_script(self, *, script: str, tab_id: str | None = None) -> dict[str, Any]:
+        _ = (script, tab_id)
+        return {"result": "ok"}
+
+    async def reset(self) -> dict[str, Any]:
+        return {"closedCount": 0}
+
+    async def capture_snapshot(self, *, tab_id: str | None = None, selector: str | None = None) -> dict[str, Any]:
+        _ = (tab_id, selector)
+        return {"snapshot": "", "tabId": "tab-1", "elementCount": 0, "interactiveCount": 0}
 
 
 class StubEventSink:
@@ -222,3 +245,46 @@ def test_tool_host_capabilities_raise_for_missing_required_binding() -> None:
 
     with pytest.raises(ValueError, match="Unknown host capability"):
         capabilities.require_capability("unknown_capability")
+
+
+def test_browser_controller_protocol_methods() -> None:
+    """Verify all BrowserController protocol methods are callable through ToolHostCapabilities."""
+    controller = StubBrowserController()
+    capabilities = ToolHostCapabilities(browser_controller=controller)
+
+    browser = capabilities.require_capability("browser_controller")
+
+    loop = asyncio.new_event_loop()
+    try:
+        assert loop.run_until_complete(
+            browser.open_page(url="https://example.com", show_window=True)
+        ) is not None
+
+        assert loop.run_until_complete(
+            browser.capture_screenshot(name="test.png")
+        ) is not None
+
+        tabs = loop.run_until_complete(browser.list_tabs())
+        assert len(tabs) == 1
+
+        closed = loop.run_until_complete(browser.close_tab(tab_id="tab-1"))
+        assert closed is not None
+
+        switched = loop.run_until_complete(browser.switch_tab(tab_id="tab-2"))
+        assert switched is not None
+
+        exec_result = loop.run_until_complete(
+            browser.execute_script(script="document.title", tab_id="tab-1")
+        )
+        assert exec_result["result"] == "ok"
+
+        reset_result = loop.run_until_complete(browser.reset())
+        assert reset_result["closedCount"] == 0
+
+        snap_result = loop.run_until_complete(
+            browser.capture_snapshot(tab_id="tab-1", selector=".main")
+        )
+        assert snap_result["tabId"] == "tab-1"
+        assert snap_result["elementCount"] == 0
+    finally:
+        loop.close()

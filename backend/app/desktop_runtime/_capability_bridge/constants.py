@@ -40,6 +40,12 @@ DesktopCapabilityOperation = Literal[
     "call_tool",
     "open",
     "screenshot",
+    "list_tabs",
+    "close_tab",
+    "switch_tab",
+    "execute",
+    "reset",
+    "snapshot",
 ]
 
 DesktopCapabilityStateScope = Literal["tool", "run"]
@@ -92,6 +98,12 @@ DESKTOP_CAPABILITY_OPERATIONS: tuple[DesktopCapabilityOperation, ...] = (
     "call_tool",
     "open",
     "screenshot",
+    "list_tabs",
+    "close_tab",
+    "switch_tab",
+    "execute",
+    "reset",
+    "snapshot",
 )
 
 DESKTOP_CAPABILITY_STATE_SCOPES: tuple[DesktopCapabilityStateScope, ...] = (
@@ -110,7 +122,7 @@ DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: dict[
     "state": ("get_value", "put_value", "delete_value"),
     "event": ("emit_event",),
     "mcp": ("call_tool",),
-    "browser": ("open", "screenshot"),
+    "browser": ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "reset", "snapshot"),
 }
 
 DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES: tuple[DesktopCapabilityBridgeErrorCode, ...] = (
@@ -156,6 +168,7 @@ _BROWSER_PAGE_SCHEMA: dict[str, Any] = {
         "currentUrl": {"type": "string"},
         "title": {"type": "string", "minLength": 1},
         "windowVisible": {"type": "boolean"},
+        "content": {"type": "string", "minLength": 0},
     },
 }
 
@@ -363,6 +376,9 @@ DESKTOP_CAPABILITY_BRIDGE_REQUEST_PAYLOAD_SCHEMAS: dict[
         "properties": {
             "url": {"type": "string", "minLength": 1},
             "showWindow": {"type": "boolean"},
+            "newTab": {"type": "boolean"},
+            "selector": {"type": "string", "minLength": 1},
+            "format": {"enum": ["text", "html", "markdown"]},
         },
     },
     ("browser", "screenshot"): {
@@ -370,6 +386,48 @@ DESKTOP_CAPABILITY_BRIDGE_REQUEST_PAYLOAD_SCHEMAS: dict[
         "additionalProperties": False,
         "properties": {
             "name": {"type": "string", "minLength": 1},
+        },
+    },
+    ("browser", "list_tabs"): {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {},
+    },
+    ("browser", "close_tab"): {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "tabId": {"type": "string", "minLength": 1},
+        },
+    },
+    ("browser", "switch_tab"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tabId"],
+        "properties": {
+            "tabId": {"type": "string", "minLength": 1},
+        },
+    },
+    ("browser", "execute"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["script"],
+        "properties": {
+            "script": {"type": "string", "minLength": 1},
+            "tabId": {"type": "string", "minLength": 1},
+        },
+    },
+    ("browser", "reset"): {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {},
+    },
+    ("browser", "snapshot"): {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "selector": {"type": "string", "minLength": 1},
+            "tabId": {"type": "string", "minLength": 1},
         },
     },
 }
@@ -484,6 +542,47 @@ DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS: dict[
     },
     ("browser", "open"): deepcopy(_BROWSER_PAGE_SCHEMA),
     ("browser", "screenshot"): deepcopy(_BROWSER_SCREENSHOT_SCHEMA),
+    ("browser", "list_tabs"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tabs"],
+        "properties": {
+            "tabs": {
+                "type": "array",
+                "items": deepcopy(_BROWSER_PAGE_SCHEMA),
+            },
+        },
+    },
+    ("browser", "close_tab"): deepcopy(_BROWSER_PAGE_SCHEMA),
+    ("browser", "switch_tab"): deepcopy(_BROWSER_PAGE_SCHEMA),
+    ("browser", "execute"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["result"],
+        "properties": {
+            "result": {},
+            "tabId": {"type": "string", "minLength": 1},
+        },
+    },
+    ("browser", "reset"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["closedCount"],
+        "properties": {
+            "closedCount": {"type": "integer", "minimum": 0},
+        },
+    },
+    ("browser", "snapshot"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["snapshot", "tabId", "elementCount", "interactiveCount"],
+        "properties": {
+            "snapshot": {"type": "string"},
+            "tabId": {"type": "string", "minLength": 1},
+            "elementCount": {"type": "integer", "minimum": 0},
+            "interactiveCount": {"type": "integer", "minimum": 0},
+        },
+    },
 }
 
 

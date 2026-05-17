@@ -232,6 +232,9 @@ class BrowserController(Protocol):
         *,
         url: str,
         show_window: bool = False,
+        new_tab: bool = False,
+        selector: str | None = None,
+        format: str | None = None,
     ) -> HostBrowserPage:
         raise NotImplementedError
 
@@ -240,6 +243,34 @@ class BrowserController(Protocol):
         *,
         name: str | None = None,
     ) -> HostBrowserScreenshot:
+        raise NotImplementedError
+
+    async def list_tabs(self) -> list[HostBrowserPage]:
+        raise NotImplementedError
+
+    async def close_tab(self, *, tab_id: str | None = None) -> HostBrowserPage:
+        raise NotImplementedError
+
+    async def switch_tab(self, *, tab_id: str) -> HostBrowserPage:
+        raise NotImplementedError
+
+    async def execute_script(
+        self,
+        *,
+        script: str,
+        tab_id: str | None = None,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def reset(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def capture_snapshot(
+        self,
+        *,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> dict[str, Any]:
         raise NotImplementedError
 
 

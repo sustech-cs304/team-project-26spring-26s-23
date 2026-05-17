@@ -49,6 +49,18 @@ export function createDesktopCapabilityBrowserService(
           return await openBrowserPage(registry, options, request)
         case 'screenshot':
           return await captureBrowserScreenshot(registry, artifactService, options, request)
+        case 'list_tabs':
+          return await listBrowserTabs(registry, options, request)
+        case 'close_tab':
+          return await closeBrowserTab(registry, options, request)
+        case 'switch_tab':
+          return await switchBrowserTab(registry, options, request)
+        case 'execute':
+          return await executeBrowserScript(registry, options, request)
+        case 'reset':
+          return await resetBrowser(registry, options, request)
+        case 'snapshot':
+          return await captureBrowserSnapshot(registry, options, request)
         default:
           throw new DesktopCapabilityBridgeError(
             'unsupported_operation',
@@ -78,7 +90,7 @@ async function openBrowserPage(
   try {
     await tab.targetWindow.loadURL(payload.url)
   } catch (error) {
-    throw new DesktopCapabilityBridgeError('temporarily_unavailable', 'Failed to open the requested URL.', {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to open the requested URL: ${error instanceof Error ? error.message : String(error)}`, {
       retryable: true,
       details: {
         url: payload.url,
@@ -95,7 +107,7 @@ async function openBrowserPage(
   const result = payload.format === null
     ? summary
     : {
-        tabId: tab.tabId,
+        ...summary,
         content: await extractPageContent(tab.targetWindow, {
           selector: payload.selector,
           format: payload.format,
@@ -135,7 +147,7 @@ async function captureBrowserScreenshot(
     const image = await tab.targetWindow.webContents.capturePage()
     pngBuffer = image.toPNG()
   } catch (error) {
-    throw new DesktopCapabilityBridgeError('temporarily_unavailable', 'Failed to capture a browser screenshot.', {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to capture a browser screenshot: ${error instanceof Error ? error.message : String(error)}`, {
       retryable: true,
       details: {
         tabId: tab.tabId,
@@ -273,6 +285,15 @@ function findActiveBrowserTab(registry: BrowserTabRegistry): BrowserTabRecord | 
   return null
 }
 
+function findAnyAvailableTabId(registry: BrowserTabRegistry): string | null {
+  for (const [tabId, targetWindow] of registry.tabs.entries()) {
+    if (isUsableBrowserWindow(targetWindow)) {
+      return tabId
+    }
+  }
+  return null
+}
+
 function isUsableBrowserWindow(targetWindow: BrowserWindow | undefined): targetWindow is BrowserWindow {
   if (targetWindow === undefined || targetWindow.isDestroyed()) {
     return false
@@ -359,7 +380,7 @@ async function extractPageContent(
       true,
     )
   } catch (error) {
-    throw new DesktopCapabilityBridgeError('temporarily_unavailable', 'Failed to extract browser page content.', {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to extract browser page content: ${error instanceof Error ? error.message : String(error)}`, {
       retryable: true,
       details: {
         selector: input.selector,
@@ -575,4 +596,417 @@ function normalizeOptionalString(value: unknown): string | null {
 
   const normalized = value.trim()
   return normalized === '' ? null : normalized
+}
+
+async function listBrowserTabs(
+  registry: BrowserTabRegistry,
+  options: CreateDesktopCapabilityBridgeServiceOptions,
+  request: DesktopCapabilityBridgeRequest,
+): Promise<Record<string, unknown>> {
+  const tabList: Record<string, unknown>[] = []
+  for (const [tabId, targetWindow] of registry.tabs.entries()) {
+    if (isUsableBrowserWindow(targetWindow)) {
+      tabList.push(describeBrowserWindow(tabId, targetWindow))
+    }
+  }
+
+  await options.appendLog?.('info', '[capability-bridge] Browser tabs listed.', {
+    capability: request.capability,
+    operation: request.operation,
+    toolId: request.toolId,
+    runId: request.runId,
+    toolCallId: request.toolCallId,
+    tabCount: tabList.length,
+    activeTabId: registry.activeTabId,
+  }, { relayToRenderer: false })
+
+  return { tabs: tabList }
+}
+
+async function closeBrowserTab(
+  registry: BrowserTabRegistry,
+  options: CreateDesktopCapabilityBridgeServiceOptions,
+  request: DesktopCapabilityBridgeRequest,
+): Promise<Record<string, unknown>> {
+  const tabId = normalizeOptionalString(request.payload.tabId) ?? registry.activeTabId
+  if (tabId === null || !registry.tabs.has(tabId)) {
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${tabId ?? 'undefined'}' not found.`, {
+      details: { tabId },
+    })
+  }
+
+  const targetWindow = registry.tabs.get(tabId)!
+  if (!isUsableBrowserWindow(targetWindow)) {
+    registry.tabs.delete(tabId)
+    if (registry.activeTabId === tabId) {
+      registry.activeTabId = null
+    }
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${tabId}' has been destroyed.`, {
+      details: { tabId },
+    })
+  }
+
+  const summary = describeBrowserWindow(tabId, targetWindow)
+  targetWindow.close()
+
+  if (targetWindow.isDestroyed()) {
+    registry.tabs.delete(tabId)
+    if (registry.activeTabId === tabId) {
+      registry.activeTabId = findAnyAvailableTabId(registry)
+    }
+  } else {
+    throw new DesktopCapabilityBridgeError('conflict', 'Browser tab close was prevented by the page.', {
+      details: { tabId },
+    })
+  }
+
+  await options.appendLog?.('info', '[capability-bridge] Browser tab closed.', {
+    capability: request.capability,
+    operation: request.operation,
+    toolId: request.toolId,
+    runId: request.runId,
+    toolCallId: request.toolCallId,
+    tabId,
+    currentUrl: summary.currentUrl,
+    title: summary.title,
+  }, { relayToRenderer: false })
+
+  return summary
+}
+
+async function switchBrowserTab(
+  registry: BrowserTabRegistry,
+  options: CreateDesktopCapabilityBridgeServiceOptions,
+  request: DesktopCapabilityBridgeRequest,
+): Promise<Record<string, unknown>> {
+  const tabId = requireNonEmptyString(request.payload.tabId, 'tabId must be a non-empty string.')
+  const targetWindow = registry.tabs.get(tabId)
+  if (!targetWindow || !isUsableBrowserWindow(targetWindow)) {
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${tabId}' not found or has been destroyed.`, {
+      details: { tabId },
+    })
+  }
+
+  registry.activeTabId = tabId
+  const summary = describeBrowserWindow(tabId, targetWindow)
+
+  await options.appendLog?.('info', '[capability-bridge] Browser tab switched.', {
+    capability: request.capability,
+    operation: request.operation,
+    toolId: request.toolId,
+    runId: request.runId,
+    toolCallId: request.toolCallId,
+    tabId,
+    currentUrl: summary.currentUrl,
+    title: summary.title,
+  }, { relayToRenderer: false })
+
+  return summary
+}
+
+async function executeBrowserScript(
+  registry: BrowserTabRegistry,
+  options: CreateDesktopCapabilityBridgeServiceOptions,
+  request: DesktopCapabilityBridgeRequest,
+): Promise<Record<string, unknown>> {
+  const script = requireNonEmptyString(request.payload.script, 'script is required.')
+  const providedTabId = normalizeOptionalString(request.payload.tabId)
+  const tabId = providedTabId ?? registry.activeTabId
+
+  if (providedTabId !== null && !registry.tabs.has(providedTabId)) {
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${providedTabId}' not found.`, {
+      details: { tabId: providedTabId },
+    })
+  }
+
+  const tab = tabId !== null && registry.tabs.has(tabId)
+    ? { tabId, targetWindow: registry.tabs.get(tabId)! }
+    : requireActiveBrowserTab(registry)
+
+  if (!isUsableBrowserWindow(tab.targetWindow)) {
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${tab.tabId}' has been destroyed.`, {
+      details: { tabId: tab.tabId },
+    })
+  }
+
+  let rawResult: unknown
+  try {
+    rawResult = await tab.targetWindow.webContents.executeJavaScript(script, true)
+  } catch (error) {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to execute script in browser: ${error instanceof Error ? error.message : String(error)}`, {
+      retryable: true,
+      details: {
+        tabId: tab.tabId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    })
+  }
+
+  const result = serializeJavaScriptResult(rawResult)
+
+  await options.appendLog?.('info', '[capability-bridge] Browser script executed.', {
+    capability: request.capability,
+    operation: request.operation,
+    toolId: request.toolId,
+    runId: request.runId,
+    toolCallId: request.toolCallId,
+    tabId: tab.tabId,
+    scriptLength: script.length,
+    resultType: typeof rawResult,
+  }, { relayToRenderer: false })
+
+  return { result, tabId: tab.tabId }
+}
+
+function serializeJavaScriptResult(value: unknown): unknown {
+  return _safeSerialize(value, new WeakSet(), 0)
+}
+
+const MAX_SERIALIZE_DEPTH = 10
+
+function _safeSerialize(value: unknown, visited: WeakSet<object>, depth: number): unknown {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
+  if (typeof value !== 'object') return String(value)
+  if (depth >= MAX_SERIALIZE_DEPTH) return '[max depth]'
+  if (visited.has(value as object)) return '[circular]'
+  visited.add(value as object)
+
+  if (Array.isArray(value)) {
+    return value.map((item) => _safeSerialize(item, visited, depth + 1))
+  }
+
+  const record: Record<string, unknown> = {}
+  try {
+    const keys = Object.keys(value as Record<string, unknown>)
+    for (const key of keys) {
+      try {
+        record[key] = _safeSerialize((value as Record<string, unknown>)[key], visited, depth + 1)
+      } catch {
+        record[key] = '[unserializable]'
+      }
+    }
+  } catch {
+    return '[unserializable]'
+  }
+  return record
+}
+
+async function resetBrowser(
+  registry: BrowserTabRegistry,
+  options: CreateDesktopCapabilityBridgeServiceOptions,
+  request: DesktopCapabilityBridgeRequest,
+): Promise<Record<string, unknown>> {
+  const tabIds = Array.from(registry.tabs.keys())
+  let closedCount = 0
+  for (const tabId of tabIds) {
+    const targetWindow = registry.tabs.get(tabId)
+    if (targetWindow && !targetWindow.isDestroyed()) {
+      targetWindow.close()
+      if (targetWindow.isDestroyed()) {
+        registry.tabs.delete(tabId)
+        closedCount++
+      }
+    }
+  }
+  registry.activeTabId = registry.tabs.size > 0 ? findAnyAvailableTabId(registry) : null
+
+  await options.appendLog?.('info', '[capability-bridge] Browser reset.', {
+    capability: request.capability,
+    operation: request.operation,
+    toolId: request.toolId,
+    runId: request.runId,
+    toolCallId: request.toolCallId,
+    closedCount,
+  }, { relayToRenderer: false })
+
+  return { closedCount }
+}
+
+const BROWSER_SNAPSHOT_SCRIPT = `
+(() => {
+  const INTERACTIVE_SELECTOR = 'a,button,input,select,textarea,[onclick],[role="button"],[role="link"],[role="textbox"],[role="combobox"],[role="checkbox"],[role="radio"],[tabindex]:not([tabindex="-1"]),[contenteditable="true"],[contenteditable=""],details,summary';
+  const SKIP_TAGS = new Set(['SCRIPT','STYLE','NOSCRIPT','SVG','META','LINK','HEAD','TITLE','TEMPLATE']);
+  let refCounter = 0;
+  const refMap = new Map();
+  const lines = [];
+
+  function getRef(el) {
+    if (!refMap.has(el)) {
+      refCounter++;
+      refMap.set(el, '@' + refCounter);
+    }
+    return refMap.get(el);
+  }
+
+  function getRole(el) {
+    const tag = el.tagName.toLowerCase();
+    const type = el.getAttribute('type');
+    const explicitRole = el.getAttribute('role');
+    if (explicitRole) return explicitRole;
+    if (tag === 'a') return 'link';
+    if (tag === 'button') return 'button';
+    if (tag === 'input') {
+      if (type === 'submit' || type === 'reset') return 'button';
+      if (type === 'checkbox') return 'checkbox';
+      if (type === 'radio') return 'radio';
+      return 'textbox';
+    }
+    if (tag === 'select') return 'combobox';
+    if (tag === 'textarea') return 'textbox';
+    if (/^h[1-6]$/.test(tag)) return 'heading';
+    if (tag === 'img') return 'img';
+    if (tag === 'details') return 'group';
+    return null;
+  }
+
+  function getDisplayText(el) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'input' && (el.type === 'submit' || el.type === 'button' || el.type === 'reset')) {
+      return el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '';
+    }
+    if (tag === 'input') {
+      return el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || '';
+    }
+    if (tag === 'img') {
+      return el.getAttribute('alt') || '';
+    }
+    const ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel) return ariaLabel;
+    if (el.childNodes.length === 1 && el.childNodes[0].nodeType === Node.TEXT_NODE) {
+      return (el.childNodes[0].textContent || '').trim().slice(0, 200);
+    }
+    return (el.textContent || '').trim().slice(0, 200);
+  }
+
+  const selector = __SELECTOR__;
+  const root = selector ? document.querySelector(selector) : document.body;
+  if (!root) return { ok: false, error: 'Root element not found for selector: ' + selector };
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  const elements = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    elements.push(node);
+    if (elements.length > 5000) break;
+  }
+
+  for (const el of elements) {
+    const tag = el.tagName.toLowerCase();
+    if (SKIP_TAGS.has(el.tagName)) continue;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+
+    const role = getRole(el);
+    const text = getDisplayText(el);
+    const isInteractive = el.matches(INTERACTIVE_SELECTOR);
+    const isBlock = style.display !== 'inline';
+
+    let line = (isBlock ? '' : '  ') + '-';
+    if (role) line += ' [' + role + ']';
+    if (el.id) line += ' #' + el.id;
+    if (text) line += ' "' + text + '"';
+    if (isInteractive) line += ' [ref=' + getRef(el) + ']';
+    if (tag === 'a' && el.href) line += ' -> ' + el.href;
+    if (tag === 'input') {
+      if (el.name) line += ' name=' + el.name;
+      if (el.value && el.type !== 'password') line += ' value=' + el.value.slice(0, 50);
+      if (el.placeholder) line += ' placeholder=' + el.placeholder.slice(0, 50);
+    }
+    if (tag === 'select') {
+      const selected = el.options[el.selectedIndex];
+      if (selected) line += ' selected=' + (selected.text || '').slice(0, 50);
+    }
+
+    if (line !== ' -' && line !== '  -') {
+      lines.push(line);
+    }
+  }
+
+  const interactiveEls = Array.from(refMap.keys()).filter(function(el) {
+    try { return el.matches(INTERACTIVE_SELECTOR); } catch(e) { return false; }
+  });
+    return {
+      ok: true,
+      snapshot: lines.join('\\n'),
+      elementCount: lines.length,
+      interactiveCount: interactiveEls.length,
+    };
+})()
+`
+
+async function captureBrowserSnapshot(
+  registry: BrowserTabRegistry,
+  options: CreateDesktopCapabilityBridgeServiceOptions,
+  request: DesktopCapabilityBridgeRequest,
+): Promise<Record<string, unknown>> {
+  const selector = normalizeOptionalString(request.payload.selector)
+  const providedTabId = normalizeOptionalString(request.payload.tabId)
+  const tabId = providedTabId ?? registry.activeTabId
+
+  if (providedTabId !== null && !registry.tabs.has(providedTabId)) {
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${providedTabId}' not found.`, {
+      details: { tabId: providedTabId },
+    })
+  }
+
+  const tab = tabId !== null && registry.tabs.has(tabId)
+    ? { tabId, targetWindow: registry.tabs.get(tabId)! }
+    : requireActiveBrowserTab(registry)
+
+  if (!isUsableBrowserWindow(tab.targetWindow)) {
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${tab.tabId}' has been destroyed.`, {
+      details: { tabId: tab.tabId },
+    })
+  }
+
+  const script = BROWSER_SNAPSHOT_SCRIPT.replace(
+    '__SELECTOR__',
+    JSON.stringify(selector),
+  )
+
+  let rawResult: unknown
+  try {
+    rawResult = await tab.targetWindow.webContents.executeJavaScript(script, true)
+  } catch (error) {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to capture browser snapshot: ${error instanceof Error ? error.message : String(error)}`, {
+      retryable: true,
+      details: {
+        tabId: tab.tabId,
+        selector,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    })
+  }
+
+  const record = normalizeResultRecord(rawResult)
+  if (record.ok !== true) {
+    const message = typeof record.error === 'string' && record.error.trim() !== ''
+      ? record.error
+      : typeof record.message === 'string' && record.message.trim() !== ''
+        ? record.message
+        : 'Failed to capture browser snapshot.'
+    throw new DesktopCapabilityBridgeError('invalid_request', message, {
+      details: { selector, tabId: tab.tabId },
+    })
+  }
+
+  await options.appendLog?.('info', '[capability-bridge] Browser snapshot captured.', {
+    capability: request.capability,
+    operation: request.operation,
+    toolId: request.toolId,
+    runId: request.runId,
+    toolCallId: request.toolCallId,
+    tabId: tab.tabId,
+    selector,
+    elementCount: record.elementCount,
+    interactiveCount: record.interactiveCount,
+  }, { relayToRenderer: false })
+
+  return {
+    snapshot: String(record.snapshot ?? ''),
+    tabId: tab.tabId,
+    elementCount: typeof record.elementCount === 'number' ? record.elementCount : 0,
+    interactiveCount: typeof record.interactiveCount === 'number' ? record.interactiveCount : 0,
+  }
 }
