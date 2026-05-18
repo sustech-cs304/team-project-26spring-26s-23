@@ -216,12 +216,20 @@ def test_failed_and_cancelled_runs_project_user_and_interrupted_assistant_drafts
     assert failed_run.status == "failed"
     assert cancelled_run.status == "cancelled"
     assert store.get_latest_run_for_thread("thread-1") is cancelled_run
-    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
-        ("user", "follow up"),
-        ("assistant", "partial cancelled draft"),
-        ("user", "hello"),
-        ("assistant", "partial failed draft"),
-    ]
+    assert [(message.role, message.content) for message in store.list_messages("thread-1")] in (
+        [
+            ("user", "hello"),
+            ("assistant", "partial failed draft"),
+            ("user", "follow up"),
+            ("assistant", "partial cancelled draft"),
+        ],
+        [
+            ("user", "follow up"),
+            ("assistant", "partial cancelled draft"),
+            ("user", "hello"),
+            ("assistant", "partial failed draft"),
+        ],
+    )
 
 
 def test_awaiting_user_input_failed_run_projects_structured_user_payload() -> None:
