@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import cast
 
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart
 
+from .contracts import RuntimeMessagePayload
 from .session_store import RuntimeTextMessage
 
 
@@ -104,6 +106,21 @@ def to_model_message(message: RuntimeTextMessage) -> ModelMessage:
     )
 
 
+def build_runtime_user_prompt(message: RuntimeMessagePayload) -> str:
+    content = message.content.strip()
+    structured_payload = message.structuredPayload
+    if not structured_payload:
+        return content
+
+    serialized_payload = json.dumps(
+        structured_payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return f"{content}\n\n[structured_payload]\n{serialized_payload}"
+
+
 __all__ = [
     "AgentNotFoundError",
     "InvalidSessionHistoryError",
@@ -112,6 +129,7 @@ __all__ = [
     "ThreadNotFoundError",
     "ToolNotFoundError",
     "build_message_history",
+    "build_runtime_user_prompt",
     "extract_unknown_tool_id",
     "to_model_message",
 ]

@@ -1,9 +1,5 @@
-import { formatThinkingTokenCount } from '../../workbench/thinking-display'
 import type {
-  RuntimeCanonicalThinkingSelection,
   RuntimeReasoningDeltaEvent,
-  RuntimeReasoningSuppressionBasis,
-  RuntimeResolvedModelRoute,
   RuntimeRunCompletedEvent,
   RuntimeRunDiagnosticEvent,
   RuntimeRunEvent,
@@ -11,26 +7,33 @@ import type {
   RuntimeRunMetadataEvent,
   RuntimeRunStartedEvent,
   RuntimeRunTerminalEvent,
-  RuntimeRunThinkingMetadata,
   RuntimeTextDeltaEvent,
-  RuntimeThinkingCapability,
-  RuntimeThinkingCapabilityProvenance,
-  RuntimeThinkingControlSpec,
-  RuntimeThinkingLevel,
-  RuntimeThinkingSelection,
-  RuntimeThinkingSelectionResult,
-  RuntimeThinkingVisibility,
   RuntimeToolEvent,
-  RuntimeToolEventPhase,
-  RuntimeToolEventApproval,
   RuntimeToolEventSecurity,
 } from './thread-run-contract'
+import {
+  parseOptionalRuntimeInlineFormRequest,
+  parseOptionalRuntimeRunThinkingMetadata,
+  requireNonEmptyString,
+  requireOptionalString,
+  requireRecord,
+  requireRuntimeResolvedModelRoute,
+  requireRuntimeRunEventType,
+  requireRuntimeRunThinkingMetadata,
+  requireRuntimeToolEventApproval,
+  requireRuntimeToolEventPhase,
+  requireSequence,
+  requireString,
+  requireStringArray,
+} from './_stream/validators'
 
 const TERMINAL_RUNTIME_RUN_EVENT_TYPES = new Set<RuntimeRunEvent['type']>([
   'run_completed',
   'run_failed',
   'run_cancelled',
 ])
+
+const EVENT_PAYLOAD_ASSISTANT_MESSAGE_ID_PATH = 'runtime event payload.assistantMessageId'
 
 export async function* parseRuntimeRunEventStream(
   stream: ReadableStream<Uint8Array>,
@@ -115,991 +118,186 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
 
   switch (eventType) {
     case 'run_started':
-      return {
-        type: 'run_started',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          assistantMessageId: requireNonEmptyString(
-            payload.assistantMessageId,
-            'runtime event payload.assistantMessageId',
-          ),
-          ...parseOptionalRuntimeRunThinkingMetadata(payload, 'runtime event payload'),
-        },
-      } satisfies RuntimeRunStartedEvent
+      return parseRunStartedEvent(runId, sessionId, sequence, payload)
     case 'run_metadata':
-      return {
-        type: 'run_metadata',
-        runId,
-        sessionId,
-        sequence,
-        payload: requireRuntimeRunThinkingMetadata(payload, 'runtime event payload'),
-      } satisfies RuntimeRunMetadataEvent
+      return parseRunMetadataEvent(runId, sessionId, sequence, payload)
     case 'text_delta':
-      return {
-        type: 'text_delta',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          assistantMessageId: requireNonEmptyString(
-            payload.assistantMessageId,
-            'runtime event payload.assistantMessageId',
-          ),
-          delta: requireString(payload.delta, 'runtime event payload.delta'),
-        },
-      } satisfies RuntimeTextDeltaEvent
+      return parseTextDeltaEvent(runId, sessionId, sequence, payload)
     case 'reasoning_delta':
-      return {
-        type: 'reasoning_delta',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          delta: requireString(payload.delta, 'runtime event payload.delta'),
-        },
-      } satisfies RuntimeReasoningDeltaEvent
+      return parseReasoningDeltaEvent(runId, sessionId, sequence, payload)
     case 'run_completed':
-      return {
-        type: 'run_completed',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          assistantMessageId: requireNonEmptyString(
-            payload.assistantMessageId,
-            'runtime event payload.assistantMessageId',
-          ),
-          assistantText: requireString(payload.assistantText, 'runtime event payload.assistantText'),
-          resolvedModelId: requireNonEmptyString(
-            payload.resolvedModelId,
-            'runtime event payload.resolvedModelId',
-          ),
-          resolvedModelRoute: requireRuntimeResolvedModelRoute(
-            payload.resolvedModelRoute,
-            'runtime event payload.resolvedModelRoute',
-          ),
-          resolvedToolIds: requireStringArray(payload.resolvedToolIds, 'runtime event payload.resolvedToolIds'),
-          requestOptions: requireRecord(payload.requestOptions, 'runtime event payload.requestOptions'),
-        },
-      } satisfies RuntimeRunCompletedEvent
+      return parseRunCompletedEvent(runId, sessionId, sequence, payload)
     case 'run_failed':
-      return {
-        type: 'run_failed',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          code: requireNonEmptyString(payload.code, 'runtime event payload.code'),
-          message: requireString(payload.message, 'runtime event payload.message'),
-          details: requireRecord(payload.details, 'runtime event payload.details'),
-        },
-      } satisfies RuntimeRunFailedEvent
+      return parseRunFailedEvent(runId, sessionId, sequence, payload)
     case 'run_cancelled':
-      return {
-        type: 'run_cancelled',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          assistantMessageId: requireNonEmptyString(
-            payload.assistantMessageId,
-            'runtime event payload.assistantMessageId',
-          ),
-          reason: requireString(payload.reason, 'runtime event payload.reason'),
-        },
-      }
+      return parseRunCancelledEvent(runId, sessionId, sequence, payload)
     case 'run_diagnostic':
-      return {
-        type: 'run_diagnostic',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          code: requireNonEmptyString(payload.code, 'runtime event payload.code'),
-          message: requireString(payload.message, 'runtime event payload.message'),
-          details: requireRecord(payload.details, 'runtime event payload.details'),
-          stage: requireNonEmptyString(payload.stage, 'runtime event payload.stage'),
-        },
-      } satisfies RuntimeRunDiagnosticEvent
-    case 'tool_event': {
-      const toolEventPayload: RuntimeToolEvent['payload'] = {
-        toolCallId: requireNonEmptyString(payload.toolCallId, 'runtime event payload.toolCallId'),
-        toolId: requireNonEmptyString(payload.toolId, 'runtime event payload.toolId'),
-        phase: requireRuntimeToolEventPhase(payload.phase),
-        title: requireNonEmptyString(payload.title, 'runtime event payload.title'),
-        summary: requireNonEmptyString(payload.summary, 'runtime event payload.summary'),
-      }
-      const inputSummary = requireOptionalString(payload.inputSummary, 'runtime event payload.inputSummary')
-      const resultSummary = requireOptionalString(payload.resultSummary, 'runtime event payload.resultSummary')
-      const errorSummary = requireOptionalString(payload.errorSummary, 'runtime event payload.errorSummary')
-
-      if (inputSummary !== undefined) {
-        toolEventPayload.inputSummary = inputSummary
-      }
-      if (resultSummary !== undefined) {
-        toolEventPayload.resultSummary = resultSummary
-      }
-      if (errorSummary !== undefined) {
-        toolEventPayload.errorSummary = errorSummary
-      }
-
-      if (payload.security !== undefined && payload.security !== null) {
-        if (typeof payload.security !== 'object' || Array.isArray(payload.security)) {
-          throw new Error('runtime event payload.security must be an object')
-        }
-        const securityObj = payload.security as Record<string, unknown>
-        const riskLevel = securityObj.riskLevel
-        if (riskLevel !== 'safe' && riskLevel !== 'moderate' && riskLevel !== 'high') {
-          throw new Error(`Invalid security riskLevel: ${riskLevel}`)
-        }
-        const approvalMethod = securityObj.approvalMethod
-        if (approvalMethod !== undefined && approvalMethod !== 'accept_reject' && approvalMethod !== 'password') {
-          throw new Error(`Invalid security approvalMethod: ${approvalMethod}`)
-        }
-        const securityPayload: RuntimeToolEventSecurity = { riskLevel }
-        if (approvalMethod) {
-          securityPayload.approvalMethod = approvalMethod
-        }
-        toolEventPayload.security = securityPayload
-      }
-
-      if (payload.approval !== undefined && payload.approval !== null) {
-        toolEventPayload.approval = requireRuntimeToolEventApproval(
-          payload.approval,
-          'runtime event payload.approval',
-        )
-      }
-
-      return {
-        type: 'tool_event',
-        runId,
-        sessionId,
-        sequence,
-        payload: toolEventPayload,
-      } satisfies RuntimeToolEvent
-    }
-  }
-}
-
-function requireRuntimeResolvedModelRoute(value: unknown, label: string): RuntimeResolvedModelRoute {
-  const record = requireRecord(value, label)
-  const routeRef = requireRuntimeModelRouteRef(record.routeRef, `${label}.routeRef`)
-
-  return {
-    routeRef,
-    providerProfileId: requireNonEmptyString(record.providerProfileId, `${label}.providerProfileId`),
-    provider: requireNonEmptyString(record.provider, `${label}.provider`),
-    providerId: requireNonEmptyString(record.providerId, `${label}.providerId`),
-    adapterId: requireNonEmptyString(record.adapterId, `${label}.adapterId`),
-    runtimeStatus: requireNonEmptyString(record.runtimeStatus, `${label}.runtimeStatus`),
-    catalogRevision: requireString(record.catalogRevision, `${label}.catalogRevision`),
-    endpointFamily: requireNonEmptyString(record.endpointFamily, `${label}.endpointFamily`),
-    endpointType: requireNonEmptyString(record.endpointType, `${label}.endpointType`),
-    baseUrl: requireNonEmptyString(record.baseUrl, `${label}.baseUrl`),
-    modelId: requireNonEmptyString(record.modelId, `${label}.modelId`),
-    authKind: requireNonEmptyString(record.authKind, `${label}.authKind`),
-  }
-}
-
-function requireRuntimeToolEventApproval(value: unknown, label: string): RuntimeToolEventApproval {
-  const record = requireRecord(value, label)
-  const mode = requireNonEmptyString(record.mode, `${label}.mode`)
-  if (mode !== 'allow' && mode !== 'ask' && mode !== 'delay' && mode !== 'deny') {
-    throw new Error(`Invalid tool approval mode: ${mode}`)
-  }
-
-  const timeoutAt = requireOptionalString(record.timeoutAt, `${label}.timeoutAt`)
-  const timeoutSeconds = record.timeoutSeconds === undefined
-    ? undefined
-    : requireNullableNumber(record.timeoutSeconds, `${label}.timeoutSeconds`)
-  const timeoutAction = record.timeoutAction
-  if (
-    timeoutAction !== undefined
-    && timeoutAction !== null
-    && timeoutAction !== 'approve'
-    && timeoutAction !== 'deny'
-  ) {
-    throw new Error(`Invalid tool approval timeoutAction: ${timeoutAction}`)
-  }
-
-  return {
-    mode,
-    ...(timeoutAt === undefined ? {} : { timeoutAt }),
-    ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
-    ...(timeoutAction === undefined ? {} : { timeoutAction }),
-  }
-}
-
-function requireRuntimeModelRouteRef(value: unknown, label: string): RuntimeResolvedModelRoute['routeRef'] {
-  const record = requireRecord(value, label)
-  const routeKind = requireNonEmptyString(record.routeKind, `${label}.routeKind`)
-  if (routeKind !== 'provider-model') {
-    throw new Error(`${label}.routeKind must be 'provider-model'.`)
-  }
-
-  return {
-    routeKind,
-    profileId: requireNonEmptyString(record.profileId, `${label}.profileId`),
-    modelId: requireNonEmptyString(record.modelId, `${label}.modelId`),
-  }
-}
-
-function requireRuntimeRunEventType(value: unknown): RuntimeRunEvent['type'] {
-  const eventType = requireNonEmptyString(value, 'runtime event.type')
-  switch (eventType) {
-    case 'run_started':
-    case 'run_metadata':
-    case 'text_delta':
-    case 'reasoning_delta':
-    case 'run_completed':
-    case 'run_failed':
-    case 'run_cancelled':
-    case 'run_diagnostic':
+      return parseRunDiagnosticEvent(runId, sessionId, sequence, payload)
     case 'tool_event':
-      return eventType
-    default:
-      throw new Error(`Unsupported runtime event type: ${eventType}`)
+      return parseToolEvent(runId, sessionId, sequence, payload)
   }
 }
 
-function requireNullableRuntimeThinkingSelection(
-  value: unknown,
-  label: string,
-): RuntimeThinkingSelection | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  return requireRuntimeThinkingSelection(value, label)
-}
-
-function requireRuntimeThinkingSelection(value: unknown, label: string): RuntimeThinkingSelection {
-  const record = requireRecord(value, label)
-  const series = requireNonEmptyString(record.series, `${label}.series`)
-  const runtimeValue = record.value === undefined
-    ? buildRuntimeThinkingValueFromLegacyRecord(record, label)
-    : requireRuntimeThinkingValue(record.value, `${label}.value`)
-
-  if (runtimeValue === null) {
-    throw new Error(`${label}.value must describe a valid thinking series value.`)
-  }
-
+function parseRunStartedEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunStartedEvent {
   return {
-    series,
-    value: runtimeValue,
-    ...deriveLegacyRuntimeThinkingSelectionFields(runtimeValue),
-  }
-}
-
-function requireRuntimeRunThinkingMetadata(
-  value: Record<string, unknown>,
-  label: string,
-): RuntimeRunThinkingMetadata {
-  const thinkingSeriesDecision = requireNullableRuntimeThinkingSelectionResult(
-    value.thinkingSeriesDecision ?? value.thinkingSelectionResult,
-    `${label}.thinkingSeriesDecision`,
-  )
-  const requestedThinkingLevel = hasOwn(value, 'requestedThinkingLevel')
-    ? requireOptionalThinkingLevel(value.requestedThinkingLevel, `${label}.requestedThinkingLevel`)
-    : undefined
-  const appliedThinkingLevel = hasOwn(value, 'appliedThinkingLevel')
-    ? requireOptionalThinkingLevel(value.appliedThinkingLevel, `${label}.appliedThinkingLevel`)
-    : undefined
-
-  return {
-    requestedThinkingSelection: requireNullableRuntimeThinkingSelection(
-      value.requestedThinkingSelection,
-      `${label}.requestedThinkingSelection`,
-    ),
-    appliedThinkingSelection: requireNullableRuntimeThinkingSelection(
-      value.appliedThinkingSelection,
-      `${label}.appliedThinkingSelection`,
-    ),
-    thinkingCapabilitySnapshot: requireNullableRuntimeThinkingCapability(
-      value.thinkingCapabilitySnapshot,
-      `${label}.thinkingCapabilitySnapshot`,
-    ),
-    thinkingSeriesDecision,
-    ...(requestedThinkingLevel === undefined ? {} : { requestedThinkingLevel }),
-    ...(appliedThinkingLevel === undefined ? {} : { appliedThinkingLevel }),
-    reasoningSuppressionBasis: requireNullableRuntimeReasoningSuppressionBasis(
-      value.reasoningSuppressionBasis,
-      `${label}.reasoningSuppressionBasis`,
-    ),
-  }
-}
-
-function parseOptionalRuntimeRunThinkingMetadata(
-  value: Record<string, unknown>,
-  label: string,
-): Partial<RuntimeRunThinkingMetadata> {
-  const partial: Partial<RuntimeRunThinkingMetadata> = {}
-  if (hasOwn(value, 'requestedThinkingSelection')) {
-    partial.requestedThinkingSelection = requireNullableRuntimeThinkingSelection(
-      value.requestedThinkingSelection,
-      `${label}.requestedThinkingSelection`,
-    )
-  }
-  if (hasOwn(value, 'appliedThinkingSelection')) {
-    partial.appliedThinkingSelection = requireNullableRuntimeThinkingSelection(
-      value.appliedThinkingSelection,
-      `${label}.appliedThinkingSelection`,
-    )
-  }
-  if (hasOwn(value, 'requestedThinkingLevel')) {
-    partial.requestedThinkingLevel = requireOptionalThinkingLevel(
-      value.requestedThinkingLevel,
-      `${label}.requestedThinkingLevel`,
-    )
-  }
-  if (hasOwn(value, 'appliedThinkingLevel')) {
-    partial.appliedThinkingLevel = requireOptionalThinkingLevel(
-      value.appliedThinkingLevel,
-      `${label}.appliedThinkingLevel`,
-    )
-  }
-  if (hasOwn(value, 'thinkingCapabilitySnapshot')) {
-    partial.thinkingCapabilitySnapshot = requireNullableRuntimeThinkingCapability(
-      value.thinkingCapabilitySnapshot,
-      `${label}.thinkingCapabilitySnapshot`,
-    )
-  }
-  if (hasOwn(value, 'thinkingSeriesDecision') || hasOwn(value, 'thinkingSelectionResult')) {
-    const thinkingSeriesDecision = requireNullableRuntimeThinkingSelectionResult(
-      value.thinkingSeriesDecision ?? value.thinkingSelectionResult,
-      `${label}.thinkingSeriesDecision`,
-    )
-    partial.thinkingSeriesDecision = thinkingSeriesDecision
-  }
-  if (hasOwn(value, 'reasoningSuppressionBasis')) {
-    partial.reasoningSuppressionBasis = requireNullableRuntimeReasoningSuppressionBasis(
-      value.reasoningSuppressionBasis,
-      `${label}.reasoningSuppressionBasis`,
-    )
-  }
-  return partial
-}
-
-function requireNullableRuntimeThinkingCapability(
-  value: unknown,
-  label: string,
-): RuntimeThinkingCapability | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  return requireRuntimeThinkingCapability(value, label)
-}
-
-function requireRuntimeThinkingCapability(value: unknown, label: string): RuntimeThinkingCapability {
-  const record = requireRecord(value, label)
-  const routeFingerprint = requireRecord(record.routeFingerprint, `${label}.routeFingerprint`)
-
-  return {
-    status: requireRuntimeThinkingCapabilityStatus(record.status, `${label}.status`),
-    source: requireRuntimeThinkingCapabilitySource(record.source, `${label}.source`),
-    series: requireNullableString(record.series, `${label}.series`),
-    seriesLabelZh: requireNullableString(record.seriesLabelZh, `${label}.seriesLabelZh`),
-    editorType: requireNullableRuntimeThinkingEditorType(record.editorType, `${label}.editorType`),
-    allowedValues: requireRuntimeThinkingValueArray(record.allowedValues, `${label}.allowedValues`),
-    defaultValue: requireNullableRuntimeThinkingValue(record.defaultValue, `${label}.defaultValue`),
-    providerBuilderKey: requireNullableString(record.providerBuilderKey, `${label}.providerBuilderKey`),
-    reasonCode: requireNonEmptyString(record.reasonCode, `${label}.reasonCode`),
-    routeFingerprint: {
-      providerProfileId: requireNonEmptyString(routeFingerprint.providerProfileId, `${label}.routeFingerprint.providerProfileId`),
-      provider: requireNonEmptyString(routeFingerprint.provider, `${label}.routeFingerprint.provider`),
-      endpointType: requireNonEmptyString(routeFingerprint.endpointType, `${label}.routeFingerprint.endpointType`),
-      baseUrl: requireNonEmptyString(routeFingerprint.baseUrl, `${label}.routeFingerprint.baseUrl`),
-      modelId: requireNonEmptyString(routeFingerprint.modelId, `${label}.routeFingerprint.modelId`),
-    },
-    ...(hasOwn(record, 'supported') ? { supported: requireBoolean(record.supported, `${label}.supported`) } : {}),
-    ...(hasOwn(record, 'controlSpec')
-      ? { controlSpec: requireNullableRuntimeThinkingControlSpec(record.controlSpec, `${label}.controlSpec`) }
-      : {}),
-    ...(hasOwn(record, 'defaultSelection')
-      ? {
-          defaultSelection: requireNullableRuntimeCanonicalThinkingSelection(
-            record.defaultSelection,
-            `${label}.defaultSelection`,
-          ),
-        }
-      : {}),
-    ...(hasOwn(record, 'supportedLevels')
-      ? { supportedLevels: requireThinkingLevelArray(record.supportedLevels, `${label}.supportedLevels`) }
-      : {}),
-    ...(hasOwn(record, 'defaultLevel')
-      ? { defaultLevel: requireOptionalThinkingLevel(record.defaultLevel, `${label}.defaultLevel`) }
-      : {}),
-    ...(hasOwn(record, 'providerHint')
-      ? { providerHint: requireNullableString(record.providerHint, `${label}.providerHint`) }
-      : {}),
-    ...(hasOwn(record, 'provenance')
-      ? { provenance: requireNullableRuntimeThinkingCapabilityProvenance(record.provenance, `${label}.provenance`) }
-      : {}),
-    ...(hasOwn(record, 'visibility')
-      ? { visibility: requireNullableRuntimeThinkingVisibility(record.visibility, `${label}.visibility`) }
-      : {}),
-    ...(hasOwn(record, 'overrideLevels')
-      ? { overrideLevels: requireThinkingLevelArray(record.overrideLevels, `${label}.overrideLevels`) }
-      : {}),
-  }
-}
-
-function requireNullableRuntimeThinkingEditorType(
-  value: unknown,
-  label: string,
-): RuntimeThinkingCapability['editorType'] {
-  if (value === null || value === undefined) {
-    return null
-  }
-  const normalized = requireNonEmptyString(value, label)
-  switch (normalized) {
-    case 'discrete':
-    case 'budget':
-    case 'fixed':
-      return normalized
-    default:
-      throw new Error(`${label} must be a supported thinking editor type.`)
-  }
-}
-
-function requireRuntimeThinkingValueArray(
-  value: unknown,
-  label: string,
-): RuntimeThinkingCapability['allowedValues'] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${label} must be an array.`)
-  }
-  return value.map((item, index) => requireRuntimeThinkingValue(item, `${label}[${index}]`))
-}
-
-function requireNullableRuntimeThinkingValue(
-  value: unknown,
-  label: string,
-): NonNullable<RuntimeThinkingSelection['value']> | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  return requireRuntimeThinkingValue(value, label)
-}
-
-function requireRuntimeThinkingValue(
-  value: unknown,
-  label: string,
-): NonNullable<RuntimeThinkingSelection['value']> {
-  const record = requireRecord(value, label)
-  const valueType = requireNonEmptyString(record.valueType, `${label}.valueType`)
-  switch (valueType) {
-    case 'code':
-      return {
-        valueType: 'code',
-        code: requireNonEmptyString(record.code, `${label}.code`),
-        labelZh: requireNonEmptyString(record.labelZh, `${label}.labelZh`),
-      }
-    case 'budget': {
-      const mode = requireNonEmptyString(record.mode, `${label}.mode`)
-      if (mode !== 'off' && mode !== 'dynamic' && mode !== 'budget') {
-        throw new Error(`${label}.mode must be off, dynamic, or budget.`)
-      }
-      return {
-        valueType: 'budget',
-        mode,
-        budgetTokens: requireNullableNonNegativeInteger(record.budgetTokens, `${label}.budgetTokens`),
-        labelZh: requireNonEmptyString(record.labelZh, `${label}.labelZh`),
-      }
-    }
-    case 'fixed':
-      return {
-        valueType: 'fixed',
-        code: 'fixed',
-        labelZh: requireNonEmptyString(record.labelZh, `${label}.labelZh`),
-      }
-    default:
-      throw new Error(`${label}.valueType must be a supported thinking value type.`)
-  }
-}
-
-function buildRuntimeThinkingValueFromLegacyRecord(
-  record: Record<string, unknown>,
-  label: string,
-): NonNullable<RuntimeThinkingSelection['value']> | null {
-  const mode = requireNullableString(record.mode, `${label}.mode`)
-  const level = requireNullableString(record.level, `${label}.level`)
-  const budgetTokens = requireNullableNonNegativeInteger(record.budgetTokens, `${label}.budgetTokens`)
-
-  if (mode === 'budget' && budgetTokens !== null) {
-    return {
-      valueType: 'budget',
-      mode: 'budget',
-      budgetTokens,
-      labelZh: formatThinkingTokenCount(budgetTokens),
-    }
-  }
-
-  if (level === null) {
-    return null
-  }
-
-  if (level === 'fixed') {
-    return {
-      valueType: 'fixed',
-      code: 'fixed',
-      labelZh: '固定推理',
-    }
-  }
-
-  const normalizedLevel = requireThinkingLevel(level, `${label}.level`)
-  return {
-    valueType: 'code',
-    code: normalizedLevel,
-    labelZh: normalizedLevel,
-  }
-}
-
-function deriveLegacyRuntimeThinkingSelectionFields(
-  value: NonNullable<RuntimeThinkingSelection['value']>,
-): Pick<RuntimeThinkingSelection, 'mode' | 'level' | 'budgetTokens'> {
-  switch (value.valueType) {
-    case 'budget':
-      return {
-        mode: 'budget',
-        level: null,
-        budgetTokens: value.mode === 'budget' ? value.budgetTokens : null,
-      }
-    case 'fixed':
-      return {
-        mode: 'preset',
-        level: 'fixed',
-        budgetTokens: null,
-      }
-    case 'code':
-      return {
-        mode: 'preset',
-        level: value.code,
-        budgetTokens: null,
-      }
-  }
-}
-
-function requireNullableRuntimeCanonicalThinkingSelection(
-  value: unknown,
-  label: string,
-): RuntimeCanonicalThinkingSelection | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  return requireRuntimeCanonicalThinkingSelection(value, label)
-}
-
-function requireRuntimeCanonicalThinkingSelection(
-  value: unknown,
-  label: string,
-): RuntimeCanonicalThinkingSelection {
-  const record = requireRecord(value, label)
-  const kind = requireRuntimeThinkingSelectionKind(record.kind, `${label}.kind`)
-  if (kind === 'budget') {
-    return {
-      kind,
-      budgetTokens: requireNonNegativeInteger(record.budgetTokens, `${label}.budgetTokens`),
-    }
-  }
-  return {
-    kind,
-    value: requireThinkingLevel(record.value, `${label}.value`),
-  }
-}
-
-function requireNullableRuntimeThinkingControlSpec(
-  value: unknown,
-  label: string,
-): RuntimeThinkingControlSpec | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  const record = requireRecord(value, label)
-  return {
-    kind: requireRuntimeThinkingControlKind(record.kind, `${label}.kind`),
-    selectionKind: requireRuntimeThinkingSelectionKind(record.selectionKind, `${label}.selectionKind`),
-    ...(record.presetOptions === undefined
-      ? {}
-      : {
-          presetOptions: requireRuntimeCanonicalThinkingSelectionArray(
-            record.presetOptions,
-            `${label}.presetOptions`,
-          ),
-        }),
-    ...(record.fixedSelection === undefined
-      ? {}
-      : {
-          fixedSelection: requireNullableRuntimeCanonicalThinkingSelection(
-            record.fixedSelection,
-            `${label}.fixedSelection`,
-          ),
-        }),
-    ...(record.budget === undefined
-      ? {}
-      : {
-          budget: requireNullableRuntimeThinkingControlBudgetSpec(record.budget, `${label}.budget`),
-        }),
-  }
-}
-
-function requireRuntimeCanonicalThinkingSelectionArray(
-  value: unknown,
-  label: string,
-): RuntimeCanonicalThinkingSelection[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${label} must be an array.`)
-  }
-  return value.map((item, index) => requireRuntimeCanonicalThinkingSelection(item, `${label}[${index}]`))
-}
-
-function requireNullableRuntimeThinkingControlBudgetSpec(
-  value: unknown,
-  label: string,
-): RuntimeThinkingControlSpec['budget'] {
-  if (value === null || value === undefined) {
-    return null
-  }
-  const record = requireRecord(value, label)
-  return {
-    ...(record.minTokens === undefined ? {} : { minTokens: requireNonNegativeInteger(record.minTokens, `${label}.minTokens`) }),
-    ...(record.maxTokens === undefined ? {} : { maxTokens: requireNonNegativeInteger(record.maxTokens, `${label}.maxTokens`) }),
-    ...(record.stepTokens === undefined ? {} : { stepTokens: requireNonNegativeInteger(record.stepTokens, `${label}.stepTokens`) }),
-  }
-}
-
-function requireNullableRuntimeThinkingCapabilityProvenance(
-  value: unknown,
-  label: string,
-): RuntimeThinkingCapabilityProvenance | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  const record = requireRecord(value, label)
-  const override = requireRecord(record.override, `${label}.override`)
-  return {
-    routeStatus: requireNonEmptyString(record.routeStatus, `${label}.routeStatus`),
-    override: {
-      present: requireBoolean(override.present, `${label}.override.present`),
-      applied: requireBoolean(override.applied, `${label}.override.applied`),
-      source: requireNullableString(override.source, `${label}.override.source`),
-      format: requireNullableString(override.format, `${label}.override.format`),
+    type: 'run_started', runId, sessionId, sequence,
+    payload: {
+      assistantMessageId: requireNonEmptyString(payload.assistantMessageId, EVENT_PAYLOAD_ASSISTANT_MESSAGE_ID_PATH),
+      ...parseOptionalRuntimeRunThinkingMetadata(payload, 'runtime event payload'),
     },
   }
 }
 
-function requireNullableRuntimeThinkingVisibility(
-  value: unknown,
-  label: string,
-): RuntimeThinkingVisibility | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  const record = requireRecord(value, label)
+function parseRunMetadataEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunMetadataEvent {
   return {
-    reasoning: requireNonEmptyString(record.reasoning, `${label}.reasoning`),
-    supportsSuppression: requireBoolean(record.supportsSuppression, `${label}.supportsSuppression`),
+    type: 'run_metadata', runId, sessionId, sequence,
+    payload: requireRuntimeRunThinkingMetadata(payload, 'runtime event payload'),
   }
 }
 
-function requireNullableRuntimeThinkingSelectionResult(
-  value: unknown,
-  label: string,
-): RuntimeThinkingSelectionResult | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  const record = requireRecord(value, label)
+function parseTextDeltaEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeTextDeltaEvent {
   return {
-    requestedSelection: requireNullableRuntimeThinkingSelection(record.requestedSelection, `${label}.requestedSelection`),
-    appliedSelection: requireNullableRuntimeThinkingSelection(record.appliedSelection, `${label}.appliedSelection`),
-    applied: requireBoolean(record.applied, `${label}.applied`),
-    reasonCode: requireNonEmptyString(record.reasonCode, `${label}.reasonCode`),
-    errorCode: requireNullableString(record.errorCode, `${label}.errorCode`),
-    providerBuilderKey: requireNullableString(record.providerBuilderKey, `${label}.providerBuilderKey`),
-    mappingReasonCode: requireNullableString(record.mappingReasonCode, `${label}.mappingReasonCode`),
-    capabilityStatus: requireRuntimeThinkingCapabilityStatus(record.capabilityStatus, `${label}.capabilityStatus`),
-    capabilitySource: requireRuntimeThinkingCapabilitySource(record.capabilitySource, `${label}.capabilitySource`),
-    capabilitySeries: requireNullableString(record.capabilitySeries, `${label}.capabilitySeries`),
-    capabilitySeriesLabelZh: requireNullableString(record.capabilitySeriesLabelZh, `${label}.capabilitySeriesLabelZh`),
-    capabilityReasonCode: requireNullableString(record.capabilityReasonCode, `${label}.capabilityReasonCode`),
-    ...(hasOwn(record, 'requestedThinkingLevel')
-      ? { requestedThinkingLevel: requireOptionalThinkingLevel(record.requestedThinkingLevel, `${label}.requestedThinkingLevel`) }
-      : {}),
-    ...(hasOwn(record, 'appliedThinkingLevel')
-      ? { appliedThinkingLevel: requireOptionalThinkingLevel(record.appliedThinkingLevel, `${label}.appliedThinkingLevel`) }
-      : {}),
-    ...(hasOwn(record, 'providerMapping')
-      ? { providerMapping: requireNullableString(record.providerMapping, `${label}.providerMapping`) }
-      : {}),
-    ...(hasOwn(record, 'overridePresent')
-      ? { overridePresent: requireBoolean(record.overridePresent, `${label}.overridePresent`) }
-      : {}),
-    ...(hasOwn(record, 'overrideApplied')
-      ? { overrideApplied: requireBoolean(record.overrideApplied, `${label}.overrideApplied`) }
-      : {}),
-    ...(hasOwn(record, 'overrideSource')
-      ? { overrideSource: requireNullableString(record.overrideSource, `${label}.overrideSource`) }
-      : {}),
-    ...(hasOwn(record, 'reasoningVisibility')
-      ? { reasoningVisibility: requireNullableString(record.reasoningVisibility, `${label}.reasoningVisibility`) }
-      : {}),
-    ...(hasOwn(record, 'supportsSuppression')
-      ? { supportsSuppression: requireNullableBoolean(record.supportsSuppression, `${label}.supportsSuppression`) }
-      : {}),
-    ...(record.modelSettings === undefined
-      ? {}
-      : { modelSettings: requireRecord(record.modelSettings, `${label}.modelSettings`) }),
+    type: 'text_delta', runId, sessionId, sequence,
+    payload: {
+      assistantMessageId: requireNonEmptyString(payload.assistantMessageId, EVENT_PAYLOAD_ASSISTANT_MESSAGE_ID_PATH),
+      delta: requireString(payload.delta, 'runtime event payload.delta'),
+    },
   }
 }
 
-function requireNullableRuntimeReasoningSuppressionBasis(
-  value: unknown,
-  label: string,
-): RuntimeReasoningSuppressionBasis | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  const record = requireRecord(value, label)
-  const appliedThinkingLevel = hasOwn(record, 'appliedThinkingLevel')
-    ? requireOptionalThinkingLevel(record.appliedThinkingLevel, `${label}.appliedThinkingLevel`)
-    : undefined
-  const appliedThinkingSelection = hasOwn(record, 'appliedThinkingSelection')
-    ? requireNullableRuntimeThinkingSelection(record.appliedThinkingSelection, `${label}.appliedThinkingSelection`)
-    : null
-
+function parseReasoningDeltaEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeReasoningDeltaEvent {
   return {
-    shouldSuppress: requireBoolean(record.shouldSuppress, `${label}.shouldSuppress`),
-    source: requireNonEmptyString(record.source, `${label}.source`),
-    reasonCode: requireNullableString(record.reasonCode, `${label}.reasonCode`),
-    appliedThinkingSelection,
-    reasoningVisibility: requireNullableString(record.reasoningVisibility, `${label}.reasoningVisibility`),
-    supportsSuppression: requireBoolean(record.supportsSuppression, `${label}.supportsSuppression`),
-    capabilitySource: record.capabilitySource === null || record.capabilitySource === undefined
-      ? null
-      : requireRuntimeThinkingCapabilitySource(record.capabilitySource, `${label}.capabilitySource`),
-    capabilitySeries: requireNullableString(record.capabilitySeries, `${label}.capabilitySeries`),
-    ...(appliedThinkingLevel === undefined ? {} : { appliedThinkingLevel }),
+    type: 'reasoning_delta', runId, sessionId, sequence,
+    payload: {
+      delta: requireString(payload.delta, 'runtime event payload.delta'),
+    },
   }
 }
 
-function requireRuntimeThinkingCapabilityStatus(
+function parseRunCompletedEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunCompletedEvent {
+  return {
+    type: 'run_completed', runId, sessionId, sequence,
+    payload: {
+      assistantMessageId: requireNonEmptyString(payload.assistantMessageId, EVENT_PAYLOAD_ASSISTANT_MESSAGE_ID_PATH),
+      assistantText: requireString(payload.assistantText, 'runtime event payload.assistantText'),
+      resolvedModelId: requireNonEmptyString(payload.resolvedModelId, 'runtime event payload.resolvedModelId'),
+      resolvedModelRoute: requireRuntimeResolvedModelRoute(payload.resolvedModelRoute, 'runtime event payload.resolvedModelRoute'),
+      resolvedToolIds: requireStringArray(payload.resolvedToolIds, 'runtime event payload.resolvedToolIds'),
+      requestOptions: requireRecord(payload.requestOptions, 'runtime event payload.requestOptions'),
+    },
+  }
+}
+
+function parseRunFailedEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunFailedEvent {
+  return {
+    type: 'run_failed', runId, sessionId, sequence,
+    payload: {
+      code: requireNonEmptyString(payload.code, 'runtime event payload.code'),
+      message: requireString(payload.message, 'runtime event payload.message'),
+      details: requireRecord(payload.details, 'runtime event payload.details'),
+    },
+  }
+}
+
+function parseRunCancelledEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunEvent {
+  return {
+    type: 'run_cancelled', runId, sessionId, sequence,
+    payload: {
+      assistantMessageId: requireNonEmptyString(payload.assistantMessageId, EVENT_PAYLOAD_ASSISTANT_MESSAGE_ID_PATH),
+      reason: requireString(payload.reason, 'runtime event payload.reason'),
+    },
+  }
+}
+
+function parseRunDiagnosticEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunDiagnosticEvent {
+  return {
+    type: 'run_diagnostic', runId, sessionId, sequence,
+    payload: {
+      code: requireNonEmptyString(payload.code, 'runtime event payload.code'),
+      message: requireString(payload.message, 'runtime event payload.message'),
+      details: requireRecord(payload.details, 'runtime event payload.details'),
+      stage: requireNonEmptyString(payload.stage, 'runtime event payload.stage'),
+    },
+  }
+}
+
+function parseToolEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeToolEvent {
+  const toolEventPayload: RuntimeToolEvent['payload'] = {
+    toolCallId: requireNonEmptyString(payload.toolCallId, 'runtime event payload.toolCallId'),
+    toolId: requireNonEmptyString(payload.toolId, 'runtime event payload.toolId'),
+    phase: requireRuntimeToolEventPhase(payload.phase),
+    title: requireNonEmptyString(payload.title, 'runtime event payload.title'),
+    summary: requireNonEmptyString(payload.summary, 'runtime event payload.summary'),
+  }
+
+  assignOptionalStringField(toolEventPayload, 'inputSummary', payload.inputSummary, 'runtime event payload.inputSummary')
+  assignOptionalStringField(toolEventPayload, 'resultSummary', payload.resultSummary, 'runtime event payload.resultSummary')
+  assignOptionalStringField(toolEventPayload, 'errorSummary', payload.errorSummary, 'runtime event payload.errorSummary')
+
+  if (payload.security !== undefined && payload.security !== null) {
+    toolEventPayload.security = parseToolEventSecurity(payload.security)
+  }
+
+  if (payload.approval !== undefined && payload.approval !== null) {
+    toolEventPayload.approval = requireRuntimeToolEventApproval(payload.approval, 'runtime event payload.approval')
+  }
+
+  const formRequest = parseOptionalRuntimeInlineFormRequest(payload.formRequest)
+  if (formRequest !== undefined) {
+    toolEventPayload.formRequest = formRequest
+  }
+
+  return { type: 'tool_event', runId, sessionId, sequence, payload: toolEventPayload }
+}
+
+function assignOptionalStringField(
+  target: Record<string, unknown>,
+  key: string,
   value: unknown,
-  label: string,
-): RuntimeThinkingCapability['status'] {
-  const normalized = requireNonEmptyString(value, label)
-  switch (normalized) {
-    case 'verified-supported':
-    case 'verified-unsupported':
-    case 'unknown-without-override':
-    case 'unknown-with-override':
-      return normalized
-    default:
-      throw new Error(`${label} must be a supported thinking capability status.`)
+  path: string,
+): void {
+  const resolved = requireOptionalString(value, path)
+  if (resolved !== undefined) {
+    target[key] = resolved
   }
 }
 
-function requireRuntimeThinkingCapabilitySource(
-  value: unknown,
-  label: string,
-): RuntimeThinkingCapability['source'] {
-  const normalized = requireNonEmptyString(value, label)
-  switch (normalized) {
-    case 'verified':
-    case 'override':
-    case 'unknown':
-      return normalized
-    default:
-      throw new Error(`${label} must be a supported thinking capability source.`)
+function parseToolEventSecurity(security: unknown): RuntimeToolEventSecurity {
+  if (typeof security !== 'object' || security === null || Array.isArray(security)) {
+    throw new Error('runtime event payload.security must be an object')
   }
-}
-
-function requireThinkingLevelArray(
-  value: unknown,
-  label: string,
-): RuntimeThinkingLevel[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${label} must be an array of thinking levels.`)
+  const securityObj = security as Record<string, unknown>
+  const riskLevel = securityObj.riskLevel
+  if (riskLevel !== 'safe' && riskLevel !== 'moderate' && riskLevel !== 'high') {
+    throw new Error(`Invalid security riskLevel: ${riskLevel}`)
   }
-
-  return value.map((item, index) => requireThinkingLevel(item, `${label}[${index}]`))
-}
-
-function requireOptionalThinkingLevel(
-  value: unknown,
-  label: string,
-): RuntimeThinkingLevel | null {
-  if (value === null || value === undefined) {
-    return null
+  const approvalMethod = securityObj.approvalMethod
+  if (approvalMethod !== undefined && approvalMethod !== 'accept_reject' && approvalMethod !== 'password') {
+    throw new Error(`Invalid security approvalMethod: ${approvalMethod}`)
   }
-  return requireThinkingLevel(value, label)
-}
-
-function requireThinkingLevel(
-  value: unknown,
-  label: string,
-): RuntimeThinkingLevel {
-  const normalized = requireNonEmptyString(value, label)
-  switch (normalized) {
-    case 'off':
-    case 'auto':
-    case 'low':
-    case 'medium':
-    case 'high':
-    case 'xhigh':
-      return normalized
-    default:
-      throw new Error(`${label} must be a supported thinking level.`)
+  const securityPayload: RuntimeToolEventSecurity = { riskLevel }
+  if (approvalMethod) {
+    securityPayload.approvalMethod = approvalMethod
   }
-}
-
-function requireBoolean(value: unknown, label: string): boolean {
-  if (typeof value !== 'boolean') {
-    throw new Error(`${label} must be a boolean.`)
-  }
-  return value
-}
-
-function requireNullableBoolean(value: unknown, label: string): boolean | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  return requireBoolean(value, label)
-}
-
-function requireNonNegativeInteger(value: unknown, label: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new Error(`${label} must be a non-negative integer.`)
-  }
-  return value
-}
-
-function requireNullableString(value: unknown, label: string): string | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  return requireString(value, label)
-}
-
-function requireNullableNonNegativeInteger(value: unknown, label: string): number | null {
-  if (value === null || value === undefined) {
-    return null
-  }
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new Error(`${label} must be a non-negative integer.`)
-  }
-  return value
-}
-
-function requireRuntimeThinkingControlKind(
-  value: unknown,
-  label: string,
-): RuntimeThinkingControlSpec['kind'] {
-  const normalized = requireNonEmptyString(value, label)
-  switch (normalized) {
-    case 'fixed':
-    case 'binary':
-    case 'off-auto':
-    case 'discrete':
-    case 'budget':
-      return normalized
-    default:
-      throw new Error(`${label} must be a supported thinking control kind.`)
-  }
-}
-
-function requireRuntimeThinkingSelectionKind(
-  value: unknown,
-  label: string,
-): RuntimeCanonicalThinkingSelection['kind'] {
-  const normalized = requireNonEmptyString(value, label)
-  switch (normalized) {
-    case 'preset':
-    case 'budget':
-      return normalized
-    default:
-      throw new Error(`${label} must be a supported thinking selection kind.`)
-  }
-}
-
-function requireRuntimeToolEventPhase(value: unknown): RuntimeToolEventPhase {
-  const phase = requireNonEmptyString(value, 'runtime event payload.phase')
-  switch (phase) {
-    case 'started':
-    case 'waiting_approval':
-    case 'completed':
-    case 'failed':
-    case 'cancelled':
-      return phase
-    default:
-      throw new Error(`Unsupported runtime tool event phase: ${phase}`)
-  }
-}
-
-function requireSequence(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
-    throw new Error('runtime event.sequence must be a positive integer.')
-  }
-
-  return value
-}
-
-function requireStringArray(value: unknown, label: string): string[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${label} must be an array of strings.`)
-  }
-
-  return value.map((item, index) => requireString(item, `${label}[${index}]`))
-}
-
-function requireOptionalString(value: unknown, label: string): string | undefined {
-  if (value === undefined) {
-    return undefined
-  }
-
-  return requireString(value, label)
-}
-
-function requireNullableNumber(value: unknown, label: string): number | null {
-  if (value === null) {
-    return null
-  }
-
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    throw new Error(`${label} must be a number or null.`)
-  }
-
-  return value
-}
-
-function requireRecord(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`${label} must be an object.`)
-  }
-
-  return value as Record<string, unknown>
-}
-
-function requireString(value: unknown, label: string): string {
-  if (typeof value !== 'string') {
-    throw new Error(`${label} must be a string.`)
-  }
-
-  return value
-}
-
-function requireNonEmptyString(value: unknown, label: string): string {
-  const normalizedValue = requireString(value, label).trim()
-  if (normalizedValue === '') {
-    throw new Error(`${label} must be a non-empty string.`)
-  }
-
-  return normalizedValue
-}
-
-function hasOwn(value: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key)
+  return securityPayload
 }
 
 function normalizeSseBuffer(value: string): string {

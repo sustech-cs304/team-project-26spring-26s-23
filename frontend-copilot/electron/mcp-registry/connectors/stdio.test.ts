@@ -6,6 +6,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createMcpStdioStubServerFixture } from '../test-support'
 import { createStdioMcpServerConnector } from './stdio'
 
+const MCP_FIXED_NOW = '2026-04-21T12:00:00.000Z'
+const TOOL_ID_SEARCH_CAMPUS = 'mcp.test.search-campus'
+const REMOTE_TOOL_NAME_SEARCH_CAMPUS = 'search-campus'
+
 const activeTempRoots: string[] = []
 
 afterEach(async () => {
@@ -14,6 +18,7 @@ afterEach(async () => {
   }))
 })
 
+// eslint-disable-next-line max-lines-per-function -- This describe groups stdio connector lifecycle tests tightly; splitting would duplicate fixture setup and break cross-test ordering invariants.
 describe('createStdioMcpServerConnector', () => {
   it('starts a stdio server, performs newline MCP handshake, and lists tools', async () => {
     const fixture = await createStdioServerFixture('success', 'success')
@@ -29,7 +34,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
         onStateChange(state) {
           states.push(state.connectionState)
@@ -63,25 +68,25 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
       },
     })
 
     await connector.start()
     const result = await connector.callTool({
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: server.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       arguments: { keyword: 'calendar' },
       snapshotRevision: 10,
     })
 
     expect(result).toEqual({
       ok: true,
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: server.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       content: [{ type: 'text', text: 'search-campus completed' }],
       structuredContent: { echoedArguments: { keyword: 'calendar' } },
       snapshotRevision: 10,
@@ -104,7 +109,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 500,
       },
     })
@@ -113,9 +118,9 @@ describe('createStdioMcpServerConnector', () => {
 
     const refreshPromise = connector.refreshCatalog()
     const callPromise = connector.callTool({
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: server.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       arguments: { keyword: 'calendar' },
       snapshotRevision: 10,
     })
@@ -123,9 +128,9 @@ describe('createStdioMcpServerConnector', () => {
     await expect(refreshPromise).resolves.toMatchObject({ ok: true })
     await expect(callPromise).resolves.toEqual({
       ok: true,
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: server.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       content: [{ type: 'text', text: 'search-campus completed' }],
       structuredContent: { echoedArguments: { keyword: 'calendar' } },
       snapshotRevision: 10,
@@ -148,7 +153,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 200,
       },
     })
@@ -156,16 +161,16 @@ describe('createStdioMcpServerConnector', () => {
     await connector.start()
 
     await expect(connector.callTool({
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: server.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       arguments: { keyword: 'calendar' },
       snapshotRevision: 10,
     })).resolves.toEqual({
       ok: true,
-      toolId: 'mcp.test.search-campus',
+      toolId: TOOL_ID_SEARCH_CAMPUS,
       serverId: server.serverId,
-      remoteToolName: 'search-campus',
+      remoteToolName: REMOTE_TOOL_NAME_SEARCH_CAMPUS,
       content: [{ type: 'text', text: 'search-campus completed' }],
       structuredContent: { echoedArguments: { keyword: 'calendar' } },
       snapshotRevision: 10,
@@ -188,7 +193,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
       },
     })
@@ -216,7 +221,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
       },
     })
@@ -240,7 +245,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 200,
       },
     })
@@ -281,7 +286,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 200,
       },
       resolvedCommand: {
@@ -321,7 +326,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
       },
     })
@@ -357,7 +362,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
       },
     })
@@ -391,7 +396,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 100,
       },
     })
@@ -426,7 +431,7 @@ describe('createStdioMcpServerConnector', () => {
     const connector = createStdioMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
       },
     })

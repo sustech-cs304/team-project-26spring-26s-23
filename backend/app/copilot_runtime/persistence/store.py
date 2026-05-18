@@ -43,6 +43,8 @@ if TYPE_CHECKING:
 
 
 _PERSISTENCE_LOGGER = logging.getLogger("uvicorn.error")
+_DEFAULT_THREAD_TITLE = "新话题"
+_DEFAULT_THREAD_TITLE_SOURCE = "deterministic"
 _MANUAL_THREAD_TITLE_SOURCE = "manual"
 _DUPLICATE_THREAD_TITLE_SUFFIX = "（副本）"
 _BACKUP_DIRECTORY_NAME = "backups"
@@ -106,6 +108,9 @@ class SQLiteSessionStore(RuntimeSessionStore):
                 updated_at=now,
             )
             thread_model = repositories.threads.create_from_runtime_record(thread)
+            thread_model.title = _DEFAULT_THREAD_TITLE
+            thread_model.title_source = _DEFAULT_THREAD_TITLE_SOURCE
+            thread_model.updated_at = now
             ProjectionService.refresh_thread_in_transaction(
                 repositories, resolved_thread_id
             )

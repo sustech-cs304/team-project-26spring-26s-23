@@ -14,9 +14,17 @@ import {
   type RuntimeThinkingCapability,
   type RuntimeToolEvent,
 } from './thread-run-contract'
+import {
+  CONTROLLED_INLINE_FORM_TOOL_ID,
+  createDefaultInlineFormValues,
+  INLINE_FORM_AWAITING_INPUT_CODE,
+  isControlledInlineFormToolEvent,
+  type CopilotInlineFormValues,
+} from './inline-form'
 import type {
   CopilotAssistantSegment,
   CopilotDiagnosticSegment,
+  CopilotInlineFormSegment,
   CopilotReasoningSegment,
   CopilotRunDiagnosticSummary,
   CopilotRunFailureSummary,
@@ -25,6 +33,8 @@ import type {
   CopilotToolSegment,
 } from './run-segment-types'
 import type { CopilotRunState } from './types'
+
+const SEGMENT_KIND_INLINE_FORM = 'inline-form'
 
 export function createIdleCopilotRunState(): CopilotRunState {
   return {
@@ -78,6 +88,51 @@ export function registerCopilotRunStartResponse(
     },
     input,
   )
+}
+
+export function expirePendingCopilotInlineFormSegments(
+  state: CopilotRunState,
+): CopilotRunState {
+  const nextSegments = state.segments.map((segment) => {
+    if (segment.kind !== SEGMENT_KIND_INLINE_FORM || segment.formState !== 'pending') {
+      return segment
+    }
+
+    return {
+      ...segment,
+      formState: 'expired',
+    } satisfies CopilotInlineFormSegment
+  })
+
+  return {
+    ...state,
+    segments: nextSegments,
+  }
+}
+
+export function markCopilotInlineFormSubmitted(
+  state: CopilotRunState,
+  input: {
+    toolCallId: string
+    values: CopilotInlineFormValues
+    submittedPayload: Record<string, unknown>
+  },
+): CopilotRunState {
+  return {
+    ...state,
+    segments: state.segments.map((segment) => {
+      if (segment.kind !== SEGMENT_KIND_INLINE_FORM || segment.toolCallId !== input.toolCallId) {
+        return segment
+      }
+
+      return {
+        ...segment,
+        formState: 'submitted',
+        formValues: { ...input.values },
+        submittedPayload: { ...input.submittedPayload },
+      } satisfies CopilotInlineFormSegment
+    }),
+  }
 }
 
 function applyRunThinkingMetadataToState(
@@ -339,6 +394,19 @@ function applyRunFailedToState(
   state: CopilotRunState,
   event: RuntimeRunFailedEvent,
 ): CopilotRunState {
+  if (event.payload.code === INLINE_FORM_AWAITING_INPUT_CODE) {
+    const observedAt = Date.now()
+    return {
+      ...state,
+      phase: 'awaiting_input',
+      runId: event.runId,
+      threadId: event.sessionId,
+      failure: null,
+      cancelReason: null,
+      segments: finalizeStreamingSegmentsForAwaitingInput(state.segments, observedAt),
+    }
+  }
+
   const failure = buildFailureSummary(event.payload)
   const observedAt = Date.now()
 
@@ -471,10 +539,57 @@ function appendReasoningDeltaSegment(
   ]
 }
 
+function finalizeStreamingSegmentsForAwaitingInput(
+  segments: CopilotRunSegment[],
+  observedAt: number,
+): CopilotRunSegment[] {
+  return segments.map((segment) => {
+    if (segment.status !== 'pending' && segment.status !== 'streaming') {
+      return segment
+    }
+
+    if (segment.kind === 'reasoning') {
+      return {
+        ...segment,
+        status: 'completed',
+        observedFinishedAt: segment.observedFinishedAt ?? observedAt,
+      } satisfies CopilotReasoningSegment
+    }
+
+    if (segment.kind === 'tool') {
+      if (segment.toolId === CONTROLLED_INLINE_FORM_TOOL_ID) {
+        return {
+          ...segment,
+          status: 'streaming',
+          summary: '等待用户填写表单。',
+          resultSummary: '等待用户填写表单。',
+        } satisfies CopilotToolSegment
+      }
+
+      return {
+        ...segment,
+        status: 'cancelled',
+      } satisfies CopilotToolSegment
+    }
+
+    return {
+      ...segment,
+      status: 'completed',
+    }
+  })
+}
+
 function upsertToolSegment(
   segments: CopilotRunSegment[],
   event: RuntimeToolEvent,
 ): CopilotRunSegment[] {
+  if (isControlledInlineFormToolEvent({
+    toolId: event.payload.toolId,
+    formRequest: event.payload.formRequest,
+  })) {
+    return upsertInlineFormSegment(segments, event)
+  }
+
   const segmentId = `tool:${event.runId}:${event.payload.toolCallId}`
   const existingIndex = segments.findIndex((segment) => segment.id === segmentId)
   const existingSegment = existingIndex >= 0 && segments[existingIndex]?.kind === 'tool'
@@ -503,6 +618,54 @@ function upsertToolSegment(
   }
 
   return [...segments, nextSegment]
+}
+
+function upsertInlineFormSegment(
+  segments: CopilotRunSegment[],
+  event: RuntimeToolEvent,
+): CopilotRunSegment[] {
+  const formRequest = event.payload.formRequest
+  if (formRequest === undefined) {
+    return segments
+  }
+
+  const segmentId = `${SEGMENT_KIND_INLINE_FORM}:${event.runId}:${event.payload.toolCallId}`
+  const existingIndex = segments.findIndex((segment) => segment.id === segmentId)
+  const existingSegment = existingIndex >= 0 && segments[existingIndex]?.kind === SEGMENT_KIND_INLINE_FORM
+    ? segments[existingIndex]
+    : null
+  const sanitizedSegments = segments.filter((segment) => (
+    !(segment.kind === 'tool' && segment.toolCallId === event.payload.toolCallId)
+  ))
+
+  const nextSegment: CopilotInlineFormSegment = {
+    id: segmentId,
+    kind: 'inline-form',
+    runId: event.runId,
+    startedSequence: existingSegment?.startedSequence ?? event.sequence,
+    lastSequence: event.sequence,
+    status: 'completed',
+    toolCallId: event.payload.toolCallId,
+    toolId: event.payload.toolId,
+    formId: formRequest.formId,
+    title: formRequest.title,
+    summary: event.payload.summary,
+    description: formRequest.description ?? null,
+    submitLabel: formRequest.submitLabel ?? '提交',
+    fields: formRequest.fields.map((field) => ({
+      ...field,
+      ...(field.options === undefined ? {} : { options: field.options.map((option) => ({ ...option })) }),
+    })),
+    formState: existingSegment?.formState ?? 'pending',
+    formValues: existingSegment?.formValues ?? createDefaultInlineFormValues(formRequest.fields),
+    submittedPayload: existingSegment?.submittedPayload ?? null,
+  }
+
+  if (existingIndex >= 0) {
+    return sanitizedSegments.map((segment) => (segment.id === segmentId ? nextSegment : segment))
+  }
+
+  return [...sanitizedSegments, nextSegment]
 }
 
 function appendDiagnosticSegment(

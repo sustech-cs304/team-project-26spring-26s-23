@@ -1,15 +1,12 @@
 import {
   Brain,
-  Code2,
+  CalendarDays,
   Database,
   FileText,
   FolderOpen,
   Link2,
-  MemoryStick,
   MessageSquare,
   Monitor,
-  PlugZap,
-  Search,
   School,
   ServerCog,
   Settings,
@@ -37,7 +34,8 @@ export const railPrimaryItems: RailItem[] = [
   { id: 'assistant', label: '助手', icon: MessageSquare },
   { id: 'capabilities', label: '能力', icon: Sparkles },
   { id: 'files', label: '文件', icon: FolderOpen },
-  { id: 'developer', label: '开发', icon: Code2 },
+  { id: 'sustech', label: 'SUSTech', icon: School },
+  { id: 'developer', label: '日历', icon: CalendarDays },
 ]
 
 export const railSecondaryItems: RailItem[] = [{ id: 'settings', label: '设置', icon: Settings }]
@@ -178,43 +176,35 @@ export const settingsItems: SettingsNavItem[] = [
   { id: 'default-model', label: '默认模型', icon: Brain },
   { id: 'general', label: '常规设置', icon: SlidersHorizontal },
   { id: 'display', label: '显示设置', icon: Monitor },
-  { id: 'data', label: '数据设置', icon: Database },
-  { id: 'mcp', label: 'MCP 服务器', icon: PlugZap },
-  { id: 'search', label: '网络搜索', icon: Search },
-  { id: 'memory', label: '全局记忆', icon: MemoryStick },
-  { id: 'api', label: 'API 服务器', icon: Workflow },
+  { id: 'api', label: 'API 服务器', icon: ServerCog },
+  { id: 'search', label: '搜索设置', icon: Database },
+  { id: 'mcp', label: 'MCP 设置', icon: Workflow },
   { id: 'docs', label: '文档处理', icon: FileText },
   { id: 'external-source', label: '外部源', icon: Link2 },
 ]
 
 export const hubWorkspaceContent: Record<HubWorkspaceView, HubWorkspaceContent> = {
-  files: {
-    eyebrow: '文件工作区',
-    title: '知识文件与资料入口',
-    panelTitle: '文件分区',
-    spotlightTitle: '课程资料与上下文挂载',
-    highlights: ['课程资料库', '会话附件管理', '知识索引与标签'],
-    entries: [
-      { id: 'files-courseware', title: '课程课件目录' },
-      { id: 'files-notes', title: '个人笔记区' },
-      { id: 'files-attachments', title: '对话附件' },
-    ],
-  },
   developer: {
-    eyebrow: '开发工作台',
-    title: '开发任务与联调面板',
-    panelTitle: '开发活动',
-    spotlightTitle: '代码实现与验证流程',
-    highlights: ['任务队列', '构建与测试反馈', '提交与发布记录'],
+    eyebrow: '日历工作台',
+    title: '统一日历与时间轴',
+    panelTitle: '事件源筛选',
+    spotlightTitle: '统一事件视图',
+    highlights: ['全部', 'bb', '课程', '自定义'],
     entries: [
-      { id: 'dev-tasks', title: '实现任务看板' },
-      { id: 'dev-builds', title: '构建与验证' },
-      { id: 'dev-history', title: '变更历史' },
+      { id: 'calendar-all', title: '全部' },
+      { id: 'calendar-bb', title: 'bb' },
+      { id: 'calendar-course', title: '课程' },
+      { id: 'calendar-custom', title: '自定义' },
+    ],
+    sections: [
+      { id: 'calendar-timeline', title: '时间轴视图' },
+      { id: 'calendar-list', title: '列表视图' },
+      { id: 'calendar-summary', title: '事件概览' },
     ],
   },
 }
 
-const hubWorkspaceViews: HubWorkspaceView[] = ['files', 'developer']
+const hubWorkspaceViews: HubWorkspaceView[] = ['developer']
 
 export function isHubWorkspaceView(view: WorkspaceView): view is HubWorkspaceView {
   return hubWorkspaceViews.includes(view as HubWorkspaceView)

@@ -1,3 +1,4 @@
+/* eslint-disable max-lines-per-function */
 import { describe, expect, it } from 'vitest'
 
 import type { ProviderProfile } from './types'
@@ -6,6 +7,11 @@ import {
   resolveThinkingCapability,
   serializeThinkingCapabilityOverrideInput,
 } from './thinking-capabilities'
+
+const SERIES_MINIMAL = 'openai-4-level-minimal-v1'
+const SERIES_BUDGET = 'gemini-2.5-budget-v1'
+const SERIES_6_LEVEL = 'openai-6-level-superset-v1'
+const SOURCE_SETTINGS = 'settings-page'
 
 describe('thinking capabilities', () => {
   it('treats routes without explicit declarations as unsupported instead of applying built-in inference', () => {
@@ -101,7 +107,7 @@ describe('thinking capabilities', () => {
   it('serializes discrete series declarations into series template payloads with chinese labels and real codes', () => {
     expect(serializeThinkingCapabilityOverrideInput({
       supported: true,
-      series: 'openai-4-level-minimal-v1',
+      series: SERIES_MINIMAL,
       template: {
         editorType: 'discrete',
         allowedValues: [
@@ -110,10 +116,10 @@ describe('thinking capabilities', () => {
         ],
         defaultValue: { valueType: 'code', code: 'high', labelZh: '高' },
       },
-      source: 'settings-page',
+      source: SOURCE_SETTINGS,
     })).toEqual({
       supported: true,
-      series: 'openai-4-level-minimal-v1',
+      series: SERIES_MINIMAL,
       template: {
         editorType: 'discrete',
         allowedValues: [
@@ -122,14 +128,14 @@ describe('thinking capabilities', () => {
         ],
         defaultValue: { valueType: 'code', code: 'high', labelZh: '高' },
       },
-      source: 'settings-page',
+      source: SOURCE_SETTINGS,
     })
   })
 
   it('preserves budget series templates during serialization', () => {
     expect(serializeThinkingCapabilityOverrideInput({
       supported: true,
-      series: 'gemini-2.5-budget-v1',
+      series: SERIES_BUDGET,
       template: {
         editorType: 'budget',
         allowedValues: [
@@ -144,10 +150,10 @@ describe('thinking capabilities', () => {
           anchorTokens: [0, 4096, 32768, 131072, 1048576],
         },
       },
-      source: 'settings-page',
+      source: SOURCE_SETTINGS,
     })).toEqual({
       supported: true,
-      series: 'gemini-2.5-budget-v1',
+      series: SERIES_BUDGET,
       template: {
         editorType: 'budget',
         allowedValues: [
@@ -162,14 +168,14 @@ describe('thinking capabilities', () => {
           anchorTokens: [0, 4096, 32768, 131072, 1048576],
         },
       },
-      source: 'settings-page',
+      source: SOURCE_SETTINGS,
     })
   })
 
   it('keeps openai 6-level and 4-level declarations as distinct series', () => {
     const openAi6 = normalizeThinkingCapabilityDeclaration({
       supported: true,
-      series: 'openai-6-level-superset-v1',
+      series: SERIES_6_LEVEL,
       template: {
         editorType: 'discrete',
         allowedValues: [
@@ -182,7 +188,7 @@ describe('thinking capabilities', () => {
     })
     const openAi4 = normalizeThinkingCapabilityDeclaration({
       supported: true,
-      series: 'openai-4-level-minimal-v1',
+      series: SERIES_MINIMAL,
       template: {
         editorType: 'discrete',
         allowedValues: [
@@ -195,7 +201,7 @@ describe('thinking capabilities', () => {
 
     expect(openAi6).toMatchObject({
       supported: true,
-      series: 'openai-6-level-superset-v1',
+      series: SERIES_6_LEVEL,
       template: {
         allowedValues: [
           { valueType: 'code', code: 'none', labelZh: '无' },
@@ -206,7 +212,7 @@ describe('thinking capabilities', () => {
     })
     expect(openAi4).toMatchObject({
       supported: true,
-      series: 'openai-4-level-minimal-v1',
+      series: SERIES_MINIMAL,
       template: {
         allowedValues: [
           { valueType: 'code', code: 'minimal', labelZh: '极简' },

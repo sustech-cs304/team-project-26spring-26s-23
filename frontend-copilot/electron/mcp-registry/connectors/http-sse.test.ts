@@ -1,12 +1,20 @@
+/* eslint-disable sonarjs/no-duplicate-string -- The reference to fake timers "vi.unstubAllGlobals" in afterEach is a test cleanup convention shared across multiple test files. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createMcpHttpSseStubServerFixture } from '../test-support'
 import { createHttpSseMcpServerConnector } from './http-sse'
 
+const TOOL_NAME_FETCH_CALENDAR = 'fetch-calendar'
+const TOOL_TITLE_FETCH_CALENDAR = 'Fetch Calendar'
+const TOOL_DESC_FETCH_CALENDAR = 'Fetch the course calendar.'
+const MCP_FIXED_NOW = '2026-04-21T12:00:00.000Z'
+const TOOL_INPUT_SCHEMA_OBJECT = { type: 'object' }
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// eslint-disable-next-line max-lines-per-function -- This describe groups HTTP/SSE connector lifecycle tests tightly; splitting would fragment setup and break cross-test invariant verification.
 describe('createHttpSseMcpServerConnector', () => {
   it('performs initialize, SSE probe, and tools/list over fetch', async () => {
     const server = createMcpHttpSseStubServerFixture()
@@ -19,11 +27,11 @@ describe('createHttpSseMcpServerConnector', () => {
         id: 2,
         result: {
           tools: [{
-            name: 'fetch-calendar',
-            title: 'Fetch Calendar',
-            description: 'Fetch the course calendar.',
-            inputSchema: { type: 'object' },
-          }],
+              name: TOOL_NAME_FETCH_CALENDAR,
+              title: TOOL_TITLE_FETCH_CALENDAR,
+              description: TOOL_DESC_FETCH_CALENDAR,
+              inputSchema: TOOL_INPUT_SCHEMA_OBJECT,
+            }],
         },
       }))
     vi.stubGlobal('fetch', fetchMock)
@@ -32,7 +40,7 @@ describe('createHttpSseMcpServerConnector', () => {
     const connector = createHttpSseMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
         onStateChange(state) {
           states.push(state.connectionState)
@@ -73,10 +81,10 @@ describe('createHttpSseMcpServerConnector', () => {
         id: 2,
         result: {
           tools: [{
-            name: 'fetch-calendar',
-            title: 'Fetch Calendar',
-            description: 'Fetch the course calendar.',
-            inputSchema: { type: 'object' },
+            name: TOOL_NAME_FETCH_CALENDAR,
+            title: TOOL_TITLE_FETCH_CALENDAR,
+            description: TOOL_DESC_FETCH_CALENDAR,
+            inputSchema: TOOL_INPUT_SCHEMA_OBJECT,
           }],
         },
       }))
@@ -94,7 +102,7 @@ describe('createHttpSseMcpServerConnector', () => {
     const connector = createHttpSseMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
       },
     })
@@ -103,7 +111,7 @@ describe('createHttpSseMcpServerConnector', () => {
     const result = await connector.callTool({
       toolId: 'mcp.test.fetch-calendar',
       serverId: server.serverId,
-      remoteToolName: 'fetch-calendar',
+      remoteToolName: TOOL_NAME_FETCH_CALENDAR,
       arguments: { course: 'CS304' },
       snapshotRevision: 10,
     })
@@ -112,7 +120,7 @@ describe('createHttpSseMcpServerConnector', () => {
       ok: true,
       toolId: 'mcp.test.fetch-calendar',
       serverId: server.serverId,
-      remoteToolName: 'fetch-calendar',
+      remoteToolName: TOOL_NAME_FETCH_CALENDAR,
       content: [{ type: 'text', text: 'fetch-calendar completed' }],
       structuredContent: { echoedArguments: { course: 'CS304' } },
       snapshotRevision: 10,
@@ -125,7 +133,7 @@ describe('createHttpSseMcpServerConnector', () => {
         id: 3,
         method: 'tools/call',
         params: {
-          name: 'fetch-calendar',
+          name: TOOL_NAME_FETCH_CALENDAR,
           arguments: { course: 'CS304' },
         },
       }),
@@ -142,7 +150,7 @@ describe('createHttpSseMcpServerConnector', () => {
     const connector = createHttpSseMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
       },
     })
@@ -171,10 +179,10 @@ describe('createHttpSseMcpServerConnector', () => {
         id: 2,
         result: {
           tools: [{
-            name: 'fetch-calendar',
-            title: 'Fetch Calendar',
-            description: 'Fetch the course calendar.',
-            inputSchema: { type: 'object' },
+            name: TOOL_NAME_FETCH_CALENDAR,
+            title: TOOL_TITLE_FETCH_CALENDAR,
+            description: TOOL_DESC_FETCH_CALENDAR,
+            inputSchema: TOOL_INPUT_SCHEMA_OBJECT,
           }],
         },
       }))
@@ -184,7 +192,7 @@ describe('createHttpSseMcpServerConnector', () => {
     const connector = createHttpSseMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
       },
     })
@@ -215,10 +223,10 @@ describe('createHttpSseMcpServerConnector', () => {
         id: 2,
         result: {
           tools: [{
-            name: 'fetch-calendar',
-            title: 'Fetch Calendar',
-            description: 'Fetch the course calendar.',
-            inputSchema: { type: 'object' },
+            name: TOOL_NAME_FETCH_CALENDAR,
+            title: TOOL_TITLE_FETCH_CALENDAR,
+            description: TOOL_DESC_FETCH_CALENDAR,
+            inputSchema: TOOL_INPUT_SCHEMA_OBJECT,
           }],
         },
       }))
@@ -227,7 +235,7 @@ describe('createHttpSseMcpServerConnector', () => {
     const connector = createHttpSseMcpServerConnector({
       server,
       context: {
-        now: () => '2026-04-21T12:00:00.000Z',
+        now: () => MCP_FIXED_NOW,
         timeoutMs: 1_000,
       },
     })

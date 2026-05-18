@@ -32,6 +32,7 @@ afterEach(async () => {
   }))
 })
 
+// eslint-disable-next-line max-lines-per-function -- This describe groups snapshot-contract tests that share fixtures and invariant checks; splitting would duplicate setup boilerplate.
 describe('mcp snapshot contracts', () => {
   it('builds deterministic tool identifiers with normalized path segments and a stable hash suffix', () => {
     const toolId = buildMcpToolId('Campus HTTP', 'Search Tool')

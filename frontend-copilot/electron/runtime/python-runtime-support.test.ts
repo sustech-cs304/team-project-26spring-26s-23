@@ -16,6 +16,9 @@ import { probeRuntimeReadiness } from './python-runtime-readiness'
 import { createHostedRuntimePaths } from './runtime-paths'
 import { createInitialHostedBackendState, markHostedBackendReady } from './runtime-state'
 
+const READY_URL = 'http://127.0.0.1:9000/ready'
+const ENTRY_MODULE = 'app.desktop_runtime'
+
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
@@ -56,7 +59,7 @@ describe('python runtime readiness helpers', () => {
       text: async () => '{"ready":true}',
     }))
 
-    await expect(probeRuntimeReadiness('http://127.0.0.1:9000/ready', 500)).resolves.toEqual({
+    await expect(probeRuntimeReadiness(READY_URL, 500)).resolves.toEqual({
       ready: true,
       detail: null,
     })
@@ -69,7 +72,7 @@ describe('python runtime readiness helpers', () => {
       text: async () => 'runtime warming up',
     }))
 
-    await expect(probeRuntimeReadiness('http://127.0.0.1:9000/ready', 500)).resolves.toEqual({
+    await expect(probeRuntimeReadiness(READY_URL, 500)).resolves.toEqual({
       ready: false,
       detail: 'Readiness probe returned HTTP 503: runtime warming up',
     })
@@ -87,7 +90,7 @@ describe('python runtime readiness helpers', () => {
       })
     }))
 
-    const probePromise = probeRuntimeReadiness('http://127.0.0.1:9000/ready', 250)
+    const probePromise = probeRuntimeReadiness(READY_URL, 250)
     await vi.advanceTimersByTimeAsync(250)
 
     await expect(probePromise).resolves.toEqual({
@@ -152,25 +155,25 @@ describe('python runtime observability helpers', () => {
       backendDir: 'backend',
       resourcesRoot: 'resources',
       workingDirectory: 'backend',
-      entryModule: 'app.desktop_runtime',
+      entryModule: ENTRY_MODULE,
       command: 'python',
-      args: ['-m', 'app.desktop_runtime'],
+      args: ['-m', ENTRY_MODULE],
       env: {},
       manifestPath: null,
       pythonExecutablePath: null,
       pythonPathEntries: ['backend'],
       sitePackagesEntries: [],
-    }, ['-m', 'app.desktop_runtime', '--port', '9000'])).toEqual({
+    }, ['-m', ENTRY_MODULE, '--port', '9000'])).toEqual({
       mode: 'development',
       workspaceRoot: 'workspace',
       backendDir: 'backend',
       resourcesRoot: 'resources',
       workingDirectory: 'backend',
-      entryModule: 'app.desktop_runtime',
+      entryModule: ENTRY_MODULE,
       command: 'python',
-      baseArgs: ['-m', 'app.desktop_runtime'],
+      baseArgs: ['-m', ENTRY_MODULE],
       runtimeArgs: ['--port', '9000'],
-      args: ['-m', 'app.desktop_runtime', '--port', '9000'],
+      args: ['-m', ENTRY_MODULE, '--port', '9000'],
       manifestPath: null,
       pythonExecutablePath: null,
       pythonPathEntries: ['backend'],
@@ -190,7 +193,7 @@ describe('python runtime observability helpers', () => {
       ...markHostedBackendReady(createInitialHostedBackendState()),
       status: 'degraded' as const,
       mode: 'development' as const,
-      baseUrl: 'http://127.0.0.1:9000',
+      baseUrl: READY_URL.replace('/ready', ''),
       pid: null,
       stoppedAt: '2026-03-29T00:00:00.000Z',
       exitCode: 1,
@@ -201,7 +204,7 @@ describe('python runtime observability helpers', () => {
     expect(summarizeHostedBackendState(state)).toEqual({
       status: 'degraded',
       mode: 'development',
-      baseUrl: 'http://127.0.0.1:9000',
+      baseUrl: READY_URL.replace('/ready', ''),
       pid: null,
       startedAt: state.startedAt,
       readyAt: state.readyAt,

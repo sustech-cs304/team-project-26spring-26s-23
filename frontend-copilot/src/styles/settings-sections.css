@@ -4,12 +4,15 @@
   background: var(--surface-bg);
   box-shadow: none;
   overflow: hidden;
-  transition: background-color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    transform 0.18s ease;
 }
 
 .settings-card:hover,
 .hub-card:hover {
   background: var(--surface-muted);
+  transform: translateY(-1px);
 }
 
 .settings-card--form {

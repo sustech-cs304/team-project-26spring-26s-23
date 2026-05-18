@@ -7,9 +7,9 @@ from typing import Any, Literal, TypedDict, cast
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from app.copilot_runtime.agent import AgentExecutionError, PydanticAIAgentExecutor, RuntimeToolLifecycleEvent
+from app.copilot_runtime.agent import AwaitingUserInputError, AgentExecutionError, PydanticAIAgentExecutor, RuntimeToolLifecycleEvent
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventType
-from app.copilot_runtime.execution_support import ThreadNotFoundError
+from app.copilot_runtime.execution_support import ThreadNotFoundError, build_message_history, build_runtime_user_prompt
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
 from app.copilot_runtime.run_events import encode_runtime_run_event
 from app.copilot_runtime.model_routes import (
@@ -28,10 +28,10 @@ from app.copilot_runtime.contracts import (
     build_runtime_scaffold,
 )
 from app.copilot_runtime.agent_registry import build_default_agent_registry
-from app.copilot_runtime.session_store import InMemorySessionStore
+from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
 from app.copilot_runtime.tool_approval_coordinator import RuntimeToolApprovalCoordinator
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
-from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
+from app.copilot_runtime.tool_registry import REQUEST_USER_FORM_TOOL_ID, WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
 
 
 class _ExecutorCallRecord(TypedDict):
@@ -780,7 +780,7 @@ def test_stream_events_filters_denied_tools_from_enabled_tools() -> None:
 
     request = _build_request(
         thread_id="thread-1",
-        enabled_tools=("tool.file-convert",),
+        enabled_tools=("tool.fs.read",),
         tool_permission_policy=RuntimeToolPermissionPolicy(
             schemaVersion=1,
             defaultMode="allow",
@@ -790,7 +790,7 @@ def test_stream_events_filters_denied_tools_from_enabled_tools() -> None:
     events = asyncio.run(_collect_events(orchestrator, request))
 
     assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
-    assert executor.calls[0]["enabled_tools"] == ["tool.file-convert"]
+    assert executor.calls[0]["enabled_tools"] == ["tool.fs.read"]
     assert not any(WEATHER_CURRENT_TOOL_ID in call["enabled_tools"] for call in executor.calls)
 
 
@@ -1218,6 +1218,102 @@ def test_stream_events_recoverable_tool_failure_allows_run_completion() -> None:
     ]
     assert "run_failed" not in [event.type for event in events]
     assert events[-1].payload["assistantText"] == "Tool failed but I can still help."
+    assert store.list_messages("thread-1") == ()
+
+
+def test_stream_events_form_request_interrupts_run_and_ends_with_awaiting_user_input() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    executor = _EventStreamingExecutor(
+        events=[
+            RuntimeExecutionEvent(
+                type="tool_completed",
+                payload={
+                    "toolCallId": f"{REQUEST_USER_FORM_TOOL_ID}:call-1",
+                    "toolId": REQUEST_USER_FORM_TOOL_ID,
+                    "phase": "completed",
+                    "title": "请求用户表单",
+                    "summary": "请填写课程编码。",
+                    "resultSummary": "表单请求已发送，等待用户提交。",
+                    "formRequest": {
+                        "formId": "course-form",
+                        "title": "请求课程表单",
+                        "description": "请填写课程编码。",
+                        "fields": [{
+                            "name": "courseCode",
+                            "label": "课程编码",
+                            "type": "text",
+                            "required": True,
+                        }],
+                    },
+                },
+            ),
+        ],
+        output=AwaitingUserInputError(
+            tool_id=REQUEST_USER_FORM_TOOL_ID,
+            tool_call_id=f"{REQUEST_USER_FORM_TOOL_ID}:call-1",
+            form_request={
+                "formId": "course-form",
+                "title": "请求课程表单",
+                "description": "请填写课程编码。",
+                "fields": [{
+                    "name": "courseCode",
+                    "label": "课程编码",
+                    "type": "text",
+                    "required": True,
+                }],
+            },
+            summary="请填写课程编码。",
+        ),
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(thread_id="thread-1", enabled_tools=(REQUEST_USER_FORM_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "run_failed",
+    ]
+    assert events[2].payload["toolId"] == REQUEST_USER_FORM_TOOL_ID
+    assert events[2].payload["summary"] == "请填写课程编码。"
+    assert events[3].payload == {
+        "code": "awaiting_user_input",
+        "message": "Run interrupted until the user submits the requested form.",
+        "details": {
+            "toolId": REQUEST_USER_FORM_TOOL_ID,
+            "toolCallId": f"{REQUEST_USER_FORM_TOOL_ID}:call-1",
+            "summary": "请填写课程编码。",
+            "formRequest": {
+                "formId": "course-form",
+                "title": "请求课程表单",
+                "description": "请填写课程编码。",
+                "fields": [{
+                    "name": "courseCode",
+                    "label": "课程编码",
+                    "type": "text",
+                    "required": True,
+                }],
+            },
+        },
+    }
     assert store.list_messages("thread-1") == ()
 
 
@@ -2432,3 +2528,43 @@ def _build_request(
         ),
         agent_id="default",
     )
+
+
+def test_build_message_history_keeps_projected_structured_payload_context() -> None:
+    history = build_message_history(
+        (
+            RuntimeTextMessage(
+                role="user",
+                content=(
+                    "已提交表单：请求课程表单\n\n"
+                    "[structured_payload]\n"
+                    '{"formId": "course-form", "type": "inline_form_submission"}'
+                ),
+            ),
+            RuntimeTextMessage(role="assistant", content="已收到课程编码。"),
+        )
+    )
+
+    assert '"type": "inline_form_submission"' in str(history[0])
+
+
+
+def test_build_runtime_user_prompt_appends_structured_payload_block() -> None:
+    prompt = build_runtime_user_prompt(
+        RuntimeMessagePayload(
+            role="user",
+            content="已提交表单：请求课程表单\n课程编码: CS304",
+            structuredPayload={
+                "type": "inline_form_submission",
+                "formId": "course-form",
+                "values": {
+                    "courseCode": "CS304",
+                },
+            },
+        )
+    )
+
+    assert "已提交表单：请求课程表单" in prompt
+    assert "[structured_payload]" in prompt
+    assert '"formId": "course-form"' in prompt
+    assert '"courseCode": "CS304"' in prompt

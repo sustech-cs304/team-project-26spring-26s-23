@@ -39,6 +39,7 @@ function projectSegmentToTurn(
       return []
     case 'tool':
       return [projectToolSegment(segment)]
+    case 'inline-form':
     case 'diagnostic':
     case 'terminal':
       return []
@@ -55,7 +56,7 @@ function projectAssistantSegment(
     kind: 'assistant',
     title: '助手响应',
     content: segment.text,
-    status: mapAssistantSegmentStatus(segment.status),
+    status: mapSegmentStatus(segment.status),
     resolvedModelId: segment.resolvedModelId ?? undefined,
     resolvedModelRoute: segment.resolvedModelRoute ?? undefined,
     resolvedToolIds: [...segment.resolvedToolIds],
@@ -73,7 +74,7 @@ function projectToolSegment(segment: CopilotToolSegment): CopilotConversationTur
     kind: 'tool',
     title: segment.title,
     content: segment.summary,
-    status: mapToolSegmentStatus(segment.status),
+    status: mapSegmentStatus(segment.status),
     toolCallId: segment.toolCallId,
     toolId: segment.toolId,
     toolPhase: segment.toolPhase,
@@ -220,22 +221,10 @@ function cloneRuntimeThinkingCapability(
   return cloneRuntimeThinkingCapabilityValue(capability)
 }
 
-function mapAssistantSegmentStatus(
-  status: CopilotAssistantSegment['status'],
-): NonNullable<CopilotConversationTurn['status']> {
-  switch (status) {
-    case 'pending':
-      return 'streaming'
-    case 'streaming':
-    case 'completed':
-    case 'failed':
-    case 'cancelled':
-      return status
-  }
-}
+type SegmentStatus = 'pending' | 'streaming' | 'completed' | 'failed' | 'cancelled'
 
-function mapToolSegmentStatus(
-  status: CopilotToolSegment['status'],
+function mapSegmentStatus(
+  status: SegmentStatus,
 ): NonNullable<CopilotConversationTurn['status']> {
   switch (status) {
     case 'pending':

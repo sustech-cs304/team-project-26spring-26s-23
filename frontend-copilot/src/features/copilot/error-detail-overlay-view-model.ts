@@ -3,93 +3,31 @@ import type {
   RuntimeResolvedModelRoute,
 } from './thread-run-contract'
 
-export type CopilotErrorDetailSourceKind = 'preflight' | 'run-start' | 'streaming'
+import type {
+  CopilotErrorDetailMeta,
+  CopilotErrorDetailSourceKind,
+  CopilotErrorDetailSource,
+  ErrorDetailOverlayGroupKey,
+  ErrorDetailOverlayStructuredJsonValue,
+  ErrorDetailOverlayContentItem,
+  ErrorDetailOverlayGroup,
+  ErrorDetailOverlayViewModel,
+} from './_error-detail-overlay-view-model/types'
 
-export interface CopilotErrorDetailMeta {
-  stage?: string | null
-  requestedMethod?: string | null
-  status?: number | null
-  rawMessage?: string | null
-  summaryMessage?: string | null
-  resolvedToolIds?: string[]
+import { ERROR_DETAIL_META_KEYS, groupOrder } from './_error-detail-overlay-view-model/constants'
+
+export type {
+  CopilotErrorDetailSourceKind,
+  CopilotErrorDetailMeta,
+  CopilotErrorDetailSource,
+  ErrorDetailOverlayGroupKey,
+  ErrorDetailOverlayStructuredJsonValue,
+  ErrorDetailOverlayContentItem,
+  ErrorDetailOverlayGroup,
+  ErrorDetailOverlayViewModel,
 }
 
-export interface CopilotErrorDetailSource {
-  source: CopilotErrorDetailSourceKind
-  title: string
-  summaryMessage: string
-  rawMessage: string | null
-  code: string | null
-  stage: string | null
-  requestedMethod: string | null
-  status: number | null
-  details: Record<string, unknown>
-  resolvedModelId: string | null
-  resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
-  resolvedToolIds: string[]
-  requestOptions: Record<string, unknown>
-}
-
-export type ErrorDetailOverlayGroupKey =
-  | 'summary'
-  | 'request-context'
-  | 'tool-model-context'
-  | 'raw-details'
-
-export type ErrorDetailOverlayStructuredJsonValue = Record<string, unknown> | unknown[]
-
-export type ErrorDetailOverlayContentItem =
-  | {
-      kind: 'key-value'
-      label: string
-      value: string
-    }
-  | {
-      kind: 'list'
-      label: string
-      values: string[]
-    }
-  | {
-      kind: 'text'
-      label: string | null
-      text: string
-      presentation?: 'plain-text' | 'json'
-      structuredValue?: ErrorDetailOverlayStructuredJsonValue
-    }
-
-export interface ErrorDetailOverlayGroup {
-  key: ErrorDetailOverlayGroupKey
-  title: string
-  description: string
-  items: ErrorDetailOverlayContentItem[]
-}
-
-export interface ErrorDetailOverlayViewModel {
-  title: string
-  summaryMessage: string
-  source: CopilotErrorDetailSourceKind
-  code: string | null
-  stage: string | null
-  groups: ErrorDetailOverlayGroup[]
-  hasAdditionalDetails: boolean
-  emptyStateMessage: string | null
-}
-
-const ERROR_DETAIL_META_KEYS = {
-  stage: '__copilotMeta_stage',
-  requestedMethod: '__copilotMeta_requestedMethod',
-  status: '__copilotMeta_status',
-  rawMessage: '__copilotMeta_rawMessage',
-  summaryMessage: '__copilotMeta_summaryMessage',
-  resolvedToolIds: '__copilotMeta_resolvedToolIds',
-} as const
-
-const groupOrder: Record<ErrorDetailOverlayGroupKey, number> = {
-  summary: 0,
-  'request-context': 1,
-  'tool-model-context': 2,
-  'raw-details': 3,
-}
+export { ERROR_DETAIL_META_KEYS, groupOrder }
 
 export function withCopilotErrorDetailMeta(
   details: Record<string, unknown> | null | undefined,
@@ -468,7 +406,9 @@ function stringifyRecord(record: Record<string, unknown>): string | null {
   return serialized === undefined || serialized.trim() === '' ? null : serialized
 }
 
-function readMcpFailureDetail(source: CopilotErrorDetailSource): {
+const MCP_NOT_PROVIDED = '未提供' as const
+
+interface McpFailureDetail {
   toolName: string
   toolId: string
   toolCallId: string
@@ -480,7 +420,9 @@ function readMcpFailureDetail(source: CopilotErrorDetailSource): {
   snapshotRevision: string
   catalogVersion: string
   targetSummary: string
-} | null {
+}
+
+function readMcpFailureDetail(source: CopilotErrorDetailSource): McpFailureDetail | null {
   const details = source.details
   const toolId = readOptionalString(details.toolId)
   const serverId = readOptionalString(details.serverId)
@@ -488,60 +430,102 @@ function readMcpFailureDetail(source: CopilotErrorDetailSource): {
   const remoteToolName = readOptionalString(details.remoteToolName)
   const requestedRemoteToolName = readOptionalString(details.requestedRemoteToolName)
 
-  const isMcpToolId = toolId !== null && /^mcp[.:/]/iu.test(toolId)
-  const hasMcpContext = serverId !== null
-    || requestedServerId !== null
-    || remoteToolName !== null
-    || requestedRemoteToolName !== null
-
-  if (!isMcpToolId && !hasMcpContext) {
+  if (!isMcpRelatedFailure({ toolId, serverId, requestedServerId, remoteToolName, requestedRemoteToolName })) {
     return null
   }
 
-  const toolName = remoteToolName
-    ?? requestedRemoteToolName
-    ?? deriveToolNameFromToolId(toolId)
-    ?? '未提供'
-  const resolvedServerId = serverId ?? requestedServerId ?? '未提供'
-  const resolvedToolId = toolId ?? '未提供'
-  const resolvedToolCallId = readOptionalString(details.toolCallId) ?? '未提供'
-  const serverName = readOptionalString(details.serverName)
-    ?? readOptionalString(details.displayName)
-    ?? resolvedServerId
-  const phase = readOptionalString(details.phase)
-    ?? readOptionalString(details.stage)
-    ?? source.stage
-    ?? '未提供'
-  const diagnosticSummary = readOptionalString(details.diagnosticSummary)
-    ?? readOptionalString(details.errorSummary)
-    ?? readOptionalString(details.diagnostic)
-    ?? '未提供'
-  const stderrSummary = readOptionalString(details.stderrSummary) ?? '未提供'
-  const snapshotRevision = readOptionalIntegerText(details.snapshotRevision)
-    ?? readOptionalIntegerText(details.requestedSnapshotRevision)
-    ?? '未提供'
-  const catalogVersion = readOptionalIntegerText(details.catalogVersion)
-    ?? readOptionalIntegerText(details.catalogRevision)
-    ?? '未提供'
-  const targetSummary = summarizeDefinedEntries({
-    serverId: resolvedServerId === '未提供' ? null : resolvedServerId,
-    remoteToolName: toolName === '未提供' ? null : toolName,
-    toolCallId: resolvedToolCallId === '未提供' ? null : resolvedToolCallId,
-  }) ?? '未提供'
+  const resolvedServerId = serverId ?? requestedServerId ?? MCP_NOT_PROVIDED
+  const resolvedToolId = toolId ?? MCP_NOT_PROVIDED
+  const resolvedToolCallId = readOptionalString(details.toolCallId) ?? MCP_NOT_PROVIDED
 
   return {
-    toolName,
+    toolName: readMcpFailureToolName(remoteToolName, requestedRemoteToolName, toolId),
     toolId: resolvedToolId,
     toolCallId: resolvedToolCallId,
-    serverName,
+    serverName: readMcpFailureServerName(details, resolvedServerId),
     serverId: resolvedServerId,
-    phase,
-    diagnosticSummary,
-    stderrSummary,
-    snapshotRevision,
-    catalogVersion,
-    targetSummary,
+    phase: readMcpFailurePhase(details, source.stage),
+    diagnosticSummary: readMcpFailureDiagnosticSummary(details),
+    stderrSummary: readOptionalString(details.stderrSummary) ?? MCP_NOT_PROVIDED,
+    snapshotRevision: resolveMcpSnapshotRevision(details),
+    catalogVersion: resolveMcpCatalogVersion(details),
+    targetSummary: summarizeDefinedEntries({
+      serverId: resolvedServerId === MCP_NOT_PROVIDED ? null : resolvedServerId,
+      remoteToolName: readMcpFailureToolName(remoteToolName, requestedRemoteToolName, toolId) === MCP_NOT_PROVIDED ? null : readMcpFailureToolName(remoteToolName, requestedRemoteToolName, toolId),
+      toolCallId: resolvedToolCallId === MCP_NOT_PROVIDED ? null : resolvedToolCallId,
+    }) ?? MCP_NOT_PROVIDED,
   }
+}
+
+function isMcpRelatedFailure(input: {
+  toolId: string | null
+  serverId: string | null
+  requestedServerId: string | null
+  remoteToolName: string | null
+  requestedRemoteToolName: string | null
+}): boolean {
+  const isMcpToolId = input.toolId !== null && /^mcp[.:/]/iu.test(input.toolId)
+  const hasMcpContext = input.serverId !== null
+    || input.requestedServerId !== null
+    || input.remoteToolName !== null
+    || input.requestedRemoteToolName !== null
+  return isMcpToolId || hasMcpContext
+}
+
+function readMcpFailureToolName(
+  remoteToolName: string | null,
+  requestedRemoteToolName: string | null,
+  toolId: string | null,
+): string {
+  return readWithFallback(
+    [remoteToolName, requestedRemoteToolName, deriveToolNameFromToolId(toolId)],
+    MCP_NOT_PROVIDED,
+  )
+}
+
+function readMcpFailureServerName(details: Record<string, unknown>, resolvedServerId: string): string {
+  return readWithFallback(
+    [readOptionalString(details.serverName), readOptionalString(details.displayName), resolvedServerId],
+    MCP_NOT_PROVIDED,
+  )
+}
+
+function readMcpFailurePhase(details: Record<string, unknown>, stage: string | null): string {
+  return readWithFallback(
+    [readOptionalString(details.phase), readOptionalString(details.stage), stage],
+    MCP_NOT_PROVIDED,
+  )
+}
+
+function readMcpFailureDiagnosticSummary(details: Record<string, unknown>): string {
+  return readWithFallback(
+    [readOptionalString(details.diagnosticSummary), readOptionalString(details.errorSummary), readOptionalString(details.diagnostic)],
+    MCP_NOT_PROVIDED,
+  )
+}
+
+function resolveMcpSnapshotRevision(details: Record<string, unknown>): string {
+  return readOptionalIntegerText(details.snapshotRevision)
+    ?? readOptionalIntegerText(details.requestedSnapshotRevision)
+    ?? MCP_NOT_PROVIDED
+}
+
+function resolveMcpCatalogVersion(details: Record<string, unknown>): string {
+  return readOptionalIntegerText(details.catalogVersion)
+    ?? readOptionalIntegerText(details.catalogRevision)
+    ?? MCP_NOT_PROVIDED
+}
+
+function readWithFallback(
+  candidates: readonly (string | null)[],
+  fallback: string,
+): string {
+  for (const candidate of candidates) {
+    if (candidate !== null) {
+      return candidate
+    }
+  }
+  return fallback
 }
 
 function readOptionalIntegerText(value: unknown): string | null {

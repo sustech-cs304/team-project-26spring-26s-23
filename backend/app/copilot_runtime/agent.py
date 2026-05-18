@@ -6,7 +6,7 @@ from collections.abc import AsyncIterable, AsyncIterator, Callable, Mapping, Seq
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Protocol, cast
 
 from datetime import UTC, datetime
 
@@ -44,14 +44,9 @@ from .skill_snapshot_provider import (
 )
 from .debug_log_store import DebugLogCategory, DebugLogLevel, RuntimeDebugLogWriter
 from .execution_event_graph import (
-    TOOL_COMPLETED_EVENT_TYPE,
-    TOOL_FAILED_EVENT_TYPE,
-    TOOL_STARTED_EVENT_TYPE,
-    TOOL_WAITING_APPROVAL_EVENT_TYPE,
     RuntimeExecutionEvent,
     RuntimeExecutionEventBuffer,
     RuntimeExecutionEventFactory,
-    RuntimeExecutionEventType,
 )
 from .model_routes import ResolvedRuntimeModelRoute
 from .provider_adapter_registry import (
@@ -66,6 +61,7 @@ from .tool_approval_coordinator import (
 from .tool_permissions import RuntimeToolPermissionResolver
 from .tool_registry import (
     DEFAULT_WEATHER_LOCATION,
+    REQUEST_USER_FORM_TOOL_ID,
     ToolRegistry,
     WEATHER_CURRENT_TOOL_DESCRIPTION,
     WEATHER_CURRENT_TOOL_ID,
@@ -80,11 +76,30 @@ from app.tooling.runtime_adapter.copilot_runtime import (
     runtime_tool_execution_scope,
 )
 
+from .agent_exceptions import (
+    AgentExecutionError,
+    AwaitingUserInputError,
+    ModelNotConfiguredError,
+    ProviderAdapterExecutionError,
+)
+from .agent_tool_lifecycle import (
+    RuntimeToolLifecycleEvent,
+    ToolLifecycleSink,
+    _sanitize_tool_result_for_display,
+    tool_lifecycle_event_to_execution_event,
+)
+
+from app.tooling.prompts import PromptContext, get_tool_description
+from app.tooling.prompts.system import SHARED_CONVENTIONS, TOOL_SELECTION_GUIDE
+
 DEFAULT_AGENT_NAME = "default"
 DEFAULT_AGENT_SYSTEM_PROMPT = (
     "You are the SUSTech Copilot backend assistant. "
     "Provide concise, accurate, text-only answers. "
-    "Do not claim to have used tools when no tools are available."
+    "Do not claim to have used tools when no tools are available. "
+    "When structured user input would be clearer than a free-text follow-up, prefer the request_user_form tool, including for a single well-defined field. "
+    "After sending a form, wait for the user's next message to continue. "
+    "Do not use forms to request file uploads or sensitive credentials such as secrets, passwords, or tokens."
 )
 _RETRYABLE_TOOL_ERROR_CODES = frozenset(
     {
@@ -99,7 +114,6 @@ _RETRYABLE_TOOL_ERROR_CODES = frozenset(
         "timeout",
     }
 )
-ToolLifecyclePhase = Literal["started", "waiting_approval", "completed", "failed"]
 _EVENT_STREAM_DONE = object()
 AgentStreamEvent = (
     PartStartEvent
@@ -140,125 +154,6 @@ def _coerce_model_settings(
     return cast(ModelSettings, normalized)
 
 
-class ModelNotConfiguredError(RuntimeError):
-    pass
-
-
-class AgentExecutionError(RuntimeError):
-    pass
-
-
-class ToolInvocationError(AgentExecutionError):
-    def __init__(
-        self,
-        *,
-        code: str,
-        message: str,
-        tool_id: str,
-        tool_call_id: str | None = None,
-        details: Mapping[str, Any] | None = None,
-    ) -> None:
-        self.code = code
-        self.tool_id = tool_id
-        self.tool_call_id = tool_call_id
-        normalized_details: dict[str, Any] = {"toolId": tool_id}
-        if tool_call_id is not None:
-            normalized_details["toolCallId"] = tool_call_id
-        if details is not None:
-            normalized_details.update(dict(details))
-        self.details = normalized_details
-        super().__init__(message)
-
-
-class ProviderAdapterExecutionError(AgentExecutionError):
-    def __init__(
-        self,
-        *,
-        code: str,
-        message: str,
-        details: Mapping[str, Any] | None = None,
-    ) -> None:
-        self.code = code
-        self.details = dict(details or {})
-        super().__init__(message)
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeToolLifecycleEvent:
-    tool_call_id: str
-    tool_id: str
-    phase: ToolLifecyclePhase
-    title: str
-    summary: str
-    input_summary: str | None = None
-    result_summary: str | None = None
-    error_summary: str | None = None
-    approval: dict[str, Any] | None = None
-
-    def to_payload(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "toolCallId": self.tool_call_id,
-            "toolId": self.tool_id,
-            "phase": self.phase,
-            "title": self.title,
-            "summary": self.summary,
-        }
-        if self.input_summary is not None:
-            payload["inputSummary"] = self.input_summary
-        if self.result_summary is not None:
-            payload["resultSummary"] = self.result_summary
-        if self.error_summary is not None:
-            payload["errorSummary"] = self.error_summary
-        if self.approval is not None:
-            payload["approval"] = dict(self.approval)
-        return payload
-
-
-def _serialize_tool_result_for_display(result: Any) -> str:
-    try:
-        return json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
-    except TypeError:
-        return json.dumps(
-            result, ensure_ascii=False, indent=2, sort_keys=True, default=str
-        )
-
-
-def _sanitize_tool_result_for_display(tool_id: str, result: dict[str, Any]) -> str:
-    if tool_id not in {SKILL_ACTIVATE_TOOL_ID, SKILL_READ_RESOURCE_TOOL_ID}:
-        return _serialize_tool_result_for_display(result)
-
-    sanitized: dict[str, Any] = {
-        "ok": result.get("ok"),
-    }
-    for key in ("skillId", "displayName", "path", "snapshotRevision", "errorCode"):
-        if key in result:
-            sanitized[key] = result[key]
-    if isinstance(result.get("resources"), list):
-        sanitized["resourceCount"] = len(cast(list[Any], result.get("resources")))
-    if isinstance(result.get("entryContent"), str):
-        sanitized["entryContentLength"] = len(cast(str, result.get("entryContent")))
-    if isinstance(result.get("content"), str):
-        sanitized["contentLength"] = len(cast(str, result.get("content")))
-    return _serialize_tool_result_for_display(sanitized)
-
-
-ToolLifecycleSink = Callable[[RuntimeToolLifecycleEvent], None]
-
-
-def tool_lifecycle_event_to_execution_event(
-    tool_event: RuntimeToolLifecycleEvent,
-) -> RuntimeExecutionEvent:
-    if tool_event.phase == "started":
-        event_type: RuntimeExecutionEventType = TOOL_STARTED_EVENT_TYPE
-    elif tool_event.phase == "waiting_approval":
-        event_type = TOOL_WAITING_APPROVAL_EVENT_TYPE
-    elif tool_event.phase == "completed":
-        event_type = TOOL_COMPLETED_EVENT_TYPE
-    else:
-        event_type = TOOL_FAILED_EVENT_TYPE
-    return RuntimeExecutionEvent(type=event_type, payload=tool_event.to_payload())
-
-
 @dataclass(slots=True)
 class _PydanticAIAgentRunDeps:
     tool_registry: ToolRegistry
@@ -268,6 +163,7 @@ class _PydanticAIAgentRunDeps:
     default_root: str
     tool_permission_resolver: RuntimeToolPermissionResolver
     approval_coordinator: RuntimeToolApprovalCoordinator
+    resolved_model_route: dict[str, Any] | None = None
     run_id: str | None = None
     debug_enabled: bool = False
     skill_runtime_index: SkillRuntimeIndex | None = None
@@ -792,6 +688,7 @@ class PydanticAIAgentExecutor:
         deps = self._build_runtime_deps(
             enabled_tools=enabled_tool_ids,
             emit_tool_event=emit_tool_event,
+            resolved_model_route=model_route,
             run_id=run_id,
             debug_enabled=debug_enabled,
             tool_permission_resolver=tool_permission_resolver,
@@ -841,6 +738,7 @@ class PydanticAIAgentExecutor:
         *,
         enabled_tools: Sequence[str],
         emit_tool_event: ToolLifecycleSink,
+        resolved_model_route: ResolvedRuntimeModelRoute | None = None,
         run_id: str | None = None,
         debug_enabled: bool = False,
         tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
@@ -855,6 +753,11 @@ class PydanticAIAgentExecutor:
             tool_permission_resolver=tool_permission_resolver
             or RuntimeToolPermissionResolver(),
             approval_coordinator=self._approval_coordinator,
+            resolved_model_route=(
+                None
+                if resolved_model_route is None
+                else resolved_model_route.to_resolved_route_dict()
+            ),
             run_id=run_id,
             debug_enabled=debug_enabled,
             skill_runtime_index=skill_runtime_index,
@@ -892,11 +795,15 @@ class PydanticAIAgentExecutor:
                 continue
             if tool_id == WEATHER_CURRENT_TOOL_ID:
                 continue
+            description = (
+                get_tool_description(tool_id)
+                or executable_tool.descriptor.description
+            )
             tools.append(
                 self._build_contract_agent_tool(
                     tool_id=tool_id,
                     function_name=executable_tool.function_name,
-                    description=executable_tool.descriptor.description,
+                    description=description,
                     parameters_json_schema=executable_tool.parameters_json_schema,
                 )
             )
@@ -931,9 +838,17 @@ class PydanticAIAgentExecutor:
         return tool
 
     def _compose_system_prompt(self, skill_system_prompt: str | None) -> str:
-        if skill_system_prompt is None or skill_system_prompt.strip() == "":
-            return DEFAULT_AGENT_SYSTEM_PROMPT
-        return f"{DEFAULT_AGENT_SYSTEM_PROMPT}\n\n{skill_system_prompt.strip()}"
+        context = PromptContext(
+            current_month_year=datetime.now(UTC).strftime("%Y年%m月"),
+        )
+        parts = [
+            DEFAULT_AGENT_SYSTEM_PROMPT,
+            context.inject(TOOL_SELECTION_GUIDE),
+            context.inject(SHARED_CONVENTIONS),
+        ]
+        if skill_system_prompt and skill_system_prompt.strip():
+            parts.append(skill_system_prompt.strip())
+        return "\n\n".join(parts)
 
     def _build_stream_model(self, model_route: ResolvedRuntimeModelRoute) -> Any:
         try:
@@ -1256,18 +1171,22 @@ class PydanticAIAgentExecutor:
         display_name: str,
         enabled_tool_ids: Sequence[str],
     ) -> RuntimeToolExecutionContext:
+        metadata: dict[str, Any] = {
+            "displayName": display_name,
+            "enabledToolIds": list(enabled_tool_ids),
+            "fileSystemState": self._build_bound_tool_file_system_state(ctx),
+            "skillRuntime": self._build_bound_tool_skill_runtime_state(ctx, tool_id),
+        }
+        resolved_model_route = getattr(ctx.deps, "resolved_model_route", None)
+        if isinstance(resolved_model_route, Mapping):
+            metadata["resolvedModelRoute"] = dict(resolved_model_route)
         return RuntimeToolExecutionContext(
             tool_call_id=tool_call_id,
             run_id=ctx.deps.run_id,
             actor="agent",
             requested_at=datetime.now(UTC),
             trace={"toolCallId": tool_call_id, "toolId": tool_id},
-            metadata={
-                "displayName": display_name,
-                "enabledToolIds": list(enabled_tool_ids),
-                "fileSystemState": self._build_bound_tool_file_system_state(ctx),
-                "skillRuntime": self._build_bound_tool_skill_runtime_state(ctx, tool_id),
-            },
+            metadata=metadata,
         )
 
     def _build_bound_tool_file_system_state(
@@ -1416,11 +1335,30 @@ class PydanticAIAgentExecutor:
             tool_id=tool_id,
             result=result,
         )
-        result_summary = summarize_tool_result(result)
+        result_summary = (
+            "表单请求已发送，等待用户提交。"
+            if tool_id == REQUEST_USER_FORM_TOOL_ID
+            else summarize_tool_result(result)
+        )
         result_payload = _sanitize_tool_result_for_display(tool_id, result)
+        form_request = (
+            result.get("formRequest")
+            if isinstance(result.get("formRequest"), Mapping)
+            else None
+        )
         completed_title = self._build_completed_title(
             tool_id=tool_id,
             display_name=display_name,
+        )
+        awaiting_user_input_error = (
+            None
+            if tool_id != REQUEST_USER_FORM_TOOL_ID or form_request is None
+            else AwaitingUserInputError(
+                tool_id=tool_id,
+                tool_call_id=tool_call_id,
+                form_request=form_request,
+                summary=result_payload,
+            )
         )
         self._emit_tool_event(
             ctx,
@@ -1432,6 +1370,7 @@ class PydanticAIAgentExecutor:
                 summary=result_payload,
                 input_summary=input_summary,
                 result_summary=result_summary,
+                form_request=None if form_request is None else dict(form_request),
             ),
         )
         self._write_debug_event(
@@ -1449,6 +1388,8 @@ class PydanticAIAgentExecutor:
                 "status": "succeeded",
             },
         )
+        if awaiting_user_input_error is not None:
+            raise awaiting_user_input_error
         return result
 
     def _apply_bound_tool_side_effects(

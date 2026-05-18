@@ -41,7 +41,7 @@ export function ProviderSecretPanel({
 
   const copy = getProviderSecretCopy(language)
   const isSuccessFeedback = apiKeyFeedback !== null
-    && copy.successPrefixes.some((prefix) => apiKeyFeedback.startsWith(prefix))
+    && copy.successPrefixes.some((prefix: string) => apiKeyFeedback.startsWith(prefix))
 
   return (
     <label className="form-field form-field--full" htmlFor="provider-api-key-input">

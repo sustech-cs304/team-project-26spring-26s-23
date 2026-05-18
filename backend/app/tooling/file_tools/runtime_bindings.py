@@ -15,6 +15,7 @@ from app.tooling.contract.results import (
 )
 from app.tooling.contract.schema import ToolSchema
 from app.tooling.host_capabilities import ToolHostCapabilities
+from app.tooling.prompts import get_tool_description
 from app.tooling.runtime_adapter.copilot_runtime import (
     RuntimeExecutableToolBinding,
     build_contract_runtime_binding,
@@ -269,7 +270,8 @@ _FILE_TOOL_SWITCH_ROOT_INPUT_SCHEMA = ToolSchema(
 _RUNTIME_FILE_TOOL_READ_METADATA = ToolMetadata(
     tool_id=FILE_TOOL_READ_ID,
     display_name="File Read",
-    description="Read UTF-8 text files from the workspace with line-based pagination.",
+    description=get_tool_description(FILE_TOOL_READ_ID)
+    or "Read files from the workspace.",
     kind="operation",
     input_schema=_FILE_TOOL_READ_INPUT_SCHEMA,
     idempotent=True,
@@ -278,7 +280,8 @@ _RUNTIME_FILE_TOOL_READ_METADATA = ToolMetadata(
 _RUNTIME_FILE_TOOL_WRITE_METADATA = ToolMetadata(
     tool_id=FILE_TOOL_WRITE_ID,
     display_name="File Write",
-    description="Create or overwrite UTF-8 text files in the workspace with guarded overwrite semantics.",
+    description=get_tool_description(FILE_TOOL_WRITE_ID)
+    or "Write files to the workspace.",
     kind="operation",
     input_schema=_FILE_TOOL_WRITE_INPUT_SCHEMA,
     idempotent=False,
@@ -287,7 +290,8 @@ _RUNTIME_FILE_TOOL_WRITE_METADATA = ToolMetadata(
 _RUNTIME_FILE_TOOL_EDIT_METADATA = ToolMetadata(
     tool_id=FILE_TOOL_EDIT_ID,
     display_name="File Edit",
-    description="Edit UTF-8 text files in the workspace using exact replacement semantics.",
+    description=get_tool_description(FILE_TOOL_EDIT_ID)
+    or "Edit files in the workspace.",
     kind="operation",
     input_schema=_FILE_TOOL_EDIT_INPUT_SCHEMA,
     idempotent=False,
@@ -296,7 +300,8 @@ _RUNTIME_FILE_TOOL_EDIT_METADATA = ToolMetadata(
 _RUNTIME_FILE_TOOL_GLOB_METADATA = ToolMetadata(
     tool_id=FILE_TOOL_GLOB_ID,
     display_name="File Glob",
-    description="Discover workspace files and directories by glob pattern without reading contents.",
+    description=get_tool_description(FILE_TOOL_GLOB_ID)
+    or "Discover files by glob pattern.",
     kind="operation",
     input_schema=_FILE_TOOL_GLOB_INPUT_SCHEMA,
     idempotent=True,
@@ -305,7 +310,8 @@ _RUNTIME_FILE_TOOL_GLOB_METADATA = ToolMetadata(
 _RUNTIME_FILE_TOOL_GREP_METADATA = ToolMetadata(
     tool_id=FILE_TOOL_GREP_ID,
     display_name="File Grep",
-    description="Search workspace text files by literal or regex pattern with bounded line context.",
+    description=get_tool_description(FILE_TOOL_GREP_ID)
+    or "Search workspace files by pattern.",
     kind="operation",
     input_schema=_FILE_TOOL_GREP_INPUT_SCHEMA,
     idempotent=True,
@@ -314,7 +320,8 @@ _RUNTIME_FILE_TOOL_GREP_METADATA = ToolMetadata(
 _RUNTIME_FILE_TOOL_SWITCH_ROOT_METADATA = ToolMetadata(
     tool_id=FILE_TOOL_SWITCH_ROOT_ID,
     display_name="File Switch Root",
-    description="Validate and resolve a new default file root directory for later tool calls.",
+    description=get_tool_description(FILE_TOOL_SWITCH_ROOT_ID)
+    or "Switch the default file root directory.",
     kind="operation",
     input_schema=_FILE_TOOL_SWITCH_ROOT_INPUT_SCHEMA,
     idempotent=True,
@@ -323,7 +330,8 @@ _RUNTIME_FILE_TOOL_SWITCH_ROOT_METADATA = ToolMetadata(
 _RUNTIME_FILE_TOOL_NOTEBOOK_EDIT_METADATA = ToolMetadata(
     tool_id=FILE_TOOL_NOTEBOOK_EDIT_ID,
     display_name="Notebook Edit",
-    description="Edit workspace notebooks with transactional cell operations.",
+    description=get_tool_description(FILE_TOOL_NOTEBOOK_EDIT_ID)
+    or "Edit notebook cells.",
     kind="operation",
     input_schema=_FILE_TOOL_NOTEBOOK_EDIT_INPUT_SCHEMA,
     idempotent=False,

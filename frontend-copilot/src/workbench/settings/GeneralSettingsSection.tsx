@@ -1,34 +1,25 @@
-import { getGeneralSettingsCopy, getLanguageOptions, getProxyModeOptions } from '../locale'
+import { getGeneralSettingsCopy, getLanguageOptions } from '../locale'
 import { SelectField, ToggleSwitch } from '../components/FormFields'
 
 interface GeneralSettingsSectionProps {
   language: string
-  proxyMode: string
   assistantNotificationsEnabled: boolean
-  backupEnabled: boolean
   debugModeEnabled: boolean
   onLanguageChange: (value: string) => void
-  onProxyModeChange: (value: string) => void
   onAssistantNotificationsEnabledChange: (value: boolean) => void
-  onBackupEnabledChange: (value: boolean) => void
   onDebugModeEnabledChange: (value: boolean) => void
 }
 
 export function GeneralSettingsSection({
   language,
-  proxyMode,
   assistantNotificationsEnabled,
-  backupEnabled,
   debugModeEnabled,
   onLanguageChange,
-  onProxyModeChange,
   onAssistantNotificationsEnabledChange,
-  onBackupEnabledChange,
   onDebugModeEnabledChange,
 }: GeneralSettingsSectionProps) {
   const copy = getGeneralSettingsCopy(language)
   const languageOptions = getLanguageOptions(language)
-  const proxyModeOptions = getProxyModeOptions(language)
 
   return (
     <div className="settings-page">
@@ -42,7 +33,6 @@ export function GeneralSettingsSection({
         <div className="settings-stack">
           <div className="form-grid form-grid--two">
             <SelectField label={copy.languageLabel} value={language} options={languageOptions} onChange={onLanguageChange} />
-            <SelectField label={copy.proxyModeLabel} value={proxyMode} options={proxyModeOptions} onChange={onProxyModeChange} />
           </div>
 
           <div className="toggle-grid">
@@ -51,7 +41,6 @@ export function GeneralSettingsSection({
               checked={assistantNotificationsEnabled}
               onChange={onAssistantNotificationsEnabledChange}
             />
-            <ToggleSwitch label={copy.backupLabel} checked={backupEnabled} onChange={onBackupEnabledChange} />
             <ToggleSwitch
               label={copy.debugModeLabel}
               description={copy.debugModeDescription}

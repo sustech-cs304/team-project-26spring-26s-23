@@ -63,44 +63,8 @@ const INITIAL_STATE: McpRegistryState = {
 export function useMcpRegistry(client?: McpRegistryClient): UseMcpRegistryResult {
   const resolvedClient = useMemo(() => client ?? createWindowMcpRegistryClient(), [client])
   const [registryState, setRegistryState] = useState<McpRegistryState>(INITIAL_STATE)
-  const mountedRef = useRef(true)
 
-  useEffect(() => {
-    mountedRef.current = true
-    let cancelled = false
-
-    setRegistryState((previous) => ({ ...previous, loadStatus: 'loading', loadError: null }))
-
-    void resolvedClient.loadRegistry({ includeDisabled: true }).then((result) => {
-      if (cancelled) {
-        return
-      }
-
-      setRegistryState((previous) => result.ok
-        ? {
-            ...previous,
-            loadStatus: 'ready',
-            loadError: null,
-            registryRevision: result.registryRevision,
-            snapshotRevision: result.snapshotRevision,
-            servers: result.servers.map(cloneServerRecord),
-            states: result.states.map(cloneStateSummary),
-          }
-        : { ...previous, loadStatus: 'error', loadError: result.error })
-    })
-
-    const unsubscribe = resolvedClient.subscribe((event) => {
-      if (!cancelled) {
-        setRegistryState((previous) => applyRegistrySubscriptionEvent(previous, event))
-      }
-    })
-
-    return () => {
-      cancelled = true
-      mountedRef.current = false
-      unsubscribe()
-    }
-  }, [resolvedClient])
+  useMcpRegistryLoad(resolvedClient, setRegistryState)
 
   const setBusyOperation = useCallback((serverId: string, operation: McpBusyOperation | null) => {
     setRegistryState((previous) => ({
@@ -119,66 +83,12 @@ export function useMcpRegistry(client?: McpRegistryClient): UseMcpRegistryResult
     }))
   }, [])
 
-  const saveEditorDraft = useCallback(async (
-    mode: McpServerEditorMode,
-    value: string,
-  ): Promise<McpRegistryEditorSaveResult> => {
-    const parsed = parseMcpRegistryEditorValue(mode, value)
-    if (!parsed.ok) {
-      return { ok: false, errorMessage: 'MCP 配置草稿校验失败。', validationErrors: parsed.validationErrors }
-    }
-
-    const existingServerIds = new Set(registryState.servers.map((server) => server.serverId))
-    const nextServerIds = new Set(parsed.drafts.map((draft) => draft.serverId))
-
-    for (const draft of parsed.drafts) {
-      setBusyOperation(draft.serverId, 'saving')
-      try {
-        const saveResult = await resolvedClient.saveServer(draft)
-        if (!saveResult.ok) {
-          return {
-            ok: false,
-            errorMessage: saveResult.error,
-            validationErrors: saveResult.validationErrors ?? [],
-          }
-        }
-
-        setRegistryState((previous) => applySavedServer(previous, saveResult.server, saveResult.state, {
-          registryRevision: saveResult.registryRevision,
-          snapshotRevision: saveResult.snapshotRevision,
-        }))
-        setOperationMessage(draft.serverId, formatMcpSaveServerMessage(saveResult.server, saveResult.state))
-      } finally {
-        setBusyOperation(draft.serverId, null)
-      }
-    }
-
-    if (mode === 'edit') {
-      for (const existingServerId of existingServerIds) {
-        if (nextServerIds.has(existingServerId)) {
-          continue
-        }
-
-        setBusyOperation(existingServerId, 'deleting')
-        try {
-          const deleteResult = await resolvedClient.deleteServer(existingServerId)
-          if (!deleteResult.ok) {
-            return { ok: false, errorMessage: deleteResult.error, validationErrors: [] }
-          }
-
-          setRegistryState((previous) => removeServer({
-            ...previous,
-            registryRevision: deleteResult.registryRevision,
-            snapshotRevision: deleteResult.snapshotRevision,
-          }, existingServerId))
-        } finally {
-          setBusyOperation(existingServerId, null)
-        }
-      }
-    }
-
-    return { ok: true }
-  }, [registryState.servers, resolvedClient, setBusyOperation, setOperationMessage])
+  const saveEditorDraft = useMcpRegistrySaveDraft(
+    resolvedClient,
+    registryState.servers,
+    setRegistryState,
+    { setBusyOperation, setOperationMessage },
+  )
 
   const toggleServerEnabled = useCallback(async (serverId: string) => {
     const server = registryState.servers.find((entry) => entry.serverId === serverId)
@@ -268,6 +178,125 @@ export function useMcpRegistry(client?: McpRegistryClient): UseMcpRegistryResult
     testServerConnection,
     refreshServerCatalog,
   }
+}
+
+function useMcpRegistryLoad(
+  resolvedClient: McpRegistryClient,
+  setRegistryState: React.Dispatch<React.SetStateAction<McpRegistryState>>,
+) {
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    let cancelled = false
+
+    setRegistryState((previous) => ({ ...previous, loadStatus: 'loading', loadError: null }))
+
+    void resolvedClient.loadRegistry({ includeDisabled: true }).then((result) => {
+      if (cancelled) {
+        return
+      }
+
+      setRegistryState((previous) => result.ok
+        ? {
+            ...previous,
+            loadStatus: 'ready',
+            loadError: null,
+            registryRevision: result.registryRevision,
+            snapshotRevision: result.snapshotRevision,
+            servers: result.servers.map(cloneServerRecord),
+            states: result.states.map(cloneStateSummary),
+          }
+        : { ...previous, loadStatus: 'error', loadError: result.error })
+    })
+
+    const unsubscribe = resolvedClient.subscribe((event) => {
+      if (!cancelled) {
+        setRegistryState((previous) => applyRegistrySubscriptionEvent(previous, event))
+      }
+    })
+
+    return () => {
+      cancelled = true
+      mountedRef.current = false
+      unsubscribe()
+    }
+  }, [resolvedClient, setRegistryState])
+}
+
+interface McpRegistryOpSetters {
+  setBusyOperation: (serverId: string, operation: McpBusyOperation | null) => void
+  setOperationMessage: (serverId: string, message: string | null) => void
+}
+
+function useMcpRegistrySaveDraft(
+  resolvedClient: McpRegistryClient,
+  servers: readonly McpServerRecord[],
+  setRegistryState: React.Dispatch<React.SetStateAction<McpRegistryState>>,
+  opSetters: McpRegistryOpSetters,
+) {
+  const { setBusyOperation, setOperationMessage } = opSetters
+
+  return useCallback(async (
+    mode: McpServerEditorMode,
+    value: string,
+  ): Promise<McpRegistryEditorSaveResult> => {
+    const parsed = parseMcpRegistryEditorValue(mode, value)
+    if (!parsed.ok) {
+      return { ok: false, errorMessage: 'MCP 配置草稿校验失败。', validationErrors: parsed.validationErrors }
+    }
+
+    const existingServerIds = new Set(servers.map((server) => server.serverId))
+    const nextServerIds = new Set(parsed.drafts.map((draft) => draft.serverId))
+
+    for (const draft of parsed.drafts) {
+      setBusyOperation(draft.serverId, 'saving')
+      try {
+        const saveResult = await resolvedClient.saveServer(draft)
+        if (!saveResult.ok) {
+          return {
+            ok: false,
+            errorMessage: saveResult.error,
+            validationErrors: saveResult.validationErrors ?? [],
+          }
+        }
+
+        setRegistryState((previous) => applySavedServer(previous, saveResult.server, saveResult.state, {
+          registryRevision: saveResult.registryRevision,
+          snapshotRevision: saveResult.snapshotRevision,
+        }))
+        setOperationMessage(draft.serverId, formatMcpSaveServerMessage(saveResult.server, saveResult.state))
+      } finally {
+        setBusyOperation(draft.serverId, null)
+      }
+    }
+
+    if (mode === 'edit') {
+      for (const existingServerId of existingServerIds) {
+        if (nextServerIds.has(existingServerId)) {
+          continue
+        }
+
+        setBusyOperation(existingServerId, 'deleting')
+        try {
+          const deleteResult = await resolvedClient.deleteServer(existingServerId)
+          if (!deleteResult.ok) {
+            return { ok: false, errorMessage: deleteResult.error, validationErrors: [] }
+          }
+
+          setRegistryState((previous) => removeServer({
+            ...previous,
+            registryRevision: deleteResult.registryRevision,
+            snapshotRevision: deleteResult.snapshotRevision,
+          }, existingServerId))
+        } finally {
+          setBusyOperation(existingServerId, null)
+        }
+      }
+    }
+
+    return { ok: true }
+  }, [servers, resolvedClient, setRegistryState, setBusyOperation, setOperationMessage])
 }
 
 function resolveStatusMessage(registryState: McpRegistryState): string | null {

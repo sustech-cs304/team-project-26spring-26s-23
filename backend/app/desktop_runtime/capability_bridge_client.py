@@ -22,12 +22,18 @@ from app.desktop_runtime.capability_bridge_protocol import (
     validate_desktop_capability_bridge_result,
 )
 from app.tooling import ToolInvocationContext
-from app.tooling.host_capabilities import HostCapabilityOperationError
+from app.tooling.host_capabilities import (
+    HostArtifact,
+    HostBrowserPage,
+    HostBrowserScreenshot,
+    HostCapabilityOperationError,
+)
 
 _HOST_CAPABILITY_BRIDGE_AUTH_HEADER_NAME = "X-Host-Capability-Bridge-Token"
 HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME = _HOST_CAPABILITY_BRIDGE_AUTH_HEADER_NAME
 _DEFAULT_TIMEOUT = 5.0
 _MCP_TOOL_CALL_TIMEOUT = 20.0
+_BROWSER_OPERATION_TIMEOUT = 60.0
 
 
 def _normalize_optional_text(value: Any) -> str | None:
@@ -358,6 +364,215 @@ class DesktopCapabilityBridgeClient:
             context=context,
             payload=payload,
             timeout=max(self._timeout, _MCP_TOOL_CALL_TIMEOUT),
+        )
+        return dict(result)
+
+    async def open_browser_page(
+        self,
+        *,
+        context: ToolInvocationContext,
+        url: str,
+        show_window: bool = False,
+        new_tab: bool = False,
+        selector: str | None = None,
+        format: str | None = None,
+    ) -> HostBrowserPage:
+        payload: dict[str, Any] = {"url": url}
+        if show_window:
+            payload["showWindow"] = show_window
+        if new_tab:
+            payload["newTab"] = new_tab
+        if selector is not None:
+            payload["selector"] = selector
+        if format is not None:
+            payload["format"] = format
+        result = await self._call_async(
+            capability="browser",
+            operation="open",
+            context=context,
+            payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
+        )
+        return HostBrowserPage(
+            tab_id=str(result["tabId"]),
+            current_url=str(result["currentUrl"]),
+            title=_normalize_optional_text(result.get("title")),
+            window_visible=(
+                result.get("windowVisible")
+                if isinstance(result.get("windowVisible"), bool)
+                else None
+            ),
+        )
+
+    async def capture_browser_screenshot(
+        self,
+        *,
+        context: ToolInvocationContext,
+        name: str | None = None,
+    ) -> HostBrowserScreenshot:
+        payload: dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        result = await self._call_async(
+            capability="browser",
+            operation="screenshot",
+            context=context,
+            payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
+        )
+        page = HostBrowserPage(
+            tab_id=str(result["tabId"]),
+            current_url=str(result["currentUrl"]),
+            title=_normalize_optional_text(result.get("title")),
+            window_visible=(
+                result.get("windowVisible")
+                if isinstance(result.get("windowVisible"), bool)
+                else None
+            ),
+        )
+        artifact = HostArtifact(
+            artifact_id=str(result["artifactId"]),
+            uri=_normalize_optional_text(result.get("uri")),
+            name=_normalize_optional_text(result.get("name")),
+            content_type=_normalize_optional_text(result.get("contentType")),
+            metadata=_normalize_mapping(
+                result.get("metadata") if isinstance(result.get("metadata"), Mapping) else None
+            ),
+        )
+        return HostBrowserScreenshot(page=page, artifact=artifact)
+
+    async def list_browser_tabs(
+        self,
+        *,
+        context: ToolInvocationContext,
+    ) -> list[HostBrowserPage]:
+        result = await self._call_async(
+            capability="browser",
+            operation="list_tabs",
+            context=context,
+            payload={},
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
+        )
+        tabs_raw = result.get("tabs")
+        if isinstance(tabs_raw, list):
+            return [
+                HostBrowserPage(
+                    tab_id=str(item["tabId"]),
+                    current_url=str(item["currentUrl"]),
+                    title=_normalize_optional_text(item.get("title")),
+                    window_visible=(
+                        item.get("windowVisible")
+                        if isinstance(item.get("windowVisible"), bool)
+                        else None
+                    ),
+                )
+                for item in tabs_raw
+                if isinstance(item, Mapping)
+            ]
+        return []
+
+    async def close_browser_tab(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str | None = None,
+    ) -> HostBrowserPage:
+        payload: dict[str, Any] = {}
+        if tab_id is not None:
+            payload["tabId"] = tab_id
+        result = await self._call_async(
+            capability="browser",
+            operation="close_tab",
+            context=context,
+            payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
+        )
+        return HostBrowserPage(
+            tab_id=str(result["tabId"]),
+            current_url=str(result["currentUrl"]),
+            title=_normalize_optional_text(result.get("title")),
+            window_visible=(
+                result.get("windowVisible")
+                if isinstance(result.get("windowVisible"), bool)
+                else None
+            ),
+        )
+
+    async def switch_browser_tab(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str,
+    ) -> HostBrowserPage:
+        result = await self._call_async(
+            capability="browser",
+            operation="switch_tab",
+            context=context,
+            payload={"tabId": tab_id},
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
+        )
+        return HostBrowserPage(
+            tab_id=str(result["tabId"]),
+            current_url=str(result["currentUrl"]),
+            title=_normalize_optional_text(result.get("title")),
+            window_visible=(
+                result.get("windowVisible")
+                if isinstance(result.get("windowVisible"), bool)
+                else None
+            ),
+        )
+
+    async def execute_browser_script(
+        self,
+        *,
+        context: ToolInvocationContext,
+        script: str,
+        tab_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"script": script}
+        if tab_id is not None:
+            payload["tabId"] = tab_id
+        result = await self._call_async(
+            capability="browser",
+            operation="execute",
+            context=context,
+            payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
+        )
+        return dict(result)
+
+    async def reset_browser(
+        self,
+        *,
+        context: ToolInvocationContext,
+    ) -> dict[str, Any]:
+        result = await self._call_async(
+            capability="browser",
+            operation="reset",
+            context=context,
+            payload={},
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
+        )
+        return dict(result)
+
+    async def capture_browser_snapshot(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if tab_id is not None:
+            payload["tabId"] = tab_id
+        if selector is not None:
+            payload["selector"] = selector
+        result = await self._call_async(
+            capability="browser",
+            operation="snapshot",
+            context=context,
+            payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
         )
         return dict(result)
 

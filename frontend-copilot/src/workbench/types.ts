@@ -2,8 +2,8 @@ import type { LucideIcon } from 'lucide-react'
 
 import type { RuntimeToolDirectoryEntry } from '../features/copilot/chat-contract'
 
-export type WorkspaceView = 'assistant' | 'capabilities' | 'files' | 'developer' | 'settings'
-export type HubWorkspaceView = Exclude<WorkspaceView, 'assistant' | 'capabilities' | 'settings'>
+export type WorkspaceView = 'assistant' | 'capabilities' | 'files' | 'sustech' | 'developer' | 'settings'
+export type HubWorkspaceView = Extract<WorkspaceView, 'developer'>
 export type AgentTypeId = string
 export type SettingsSection =
   | 'sustech-info'
@@ -11,11 +11,9 @@ export type SettingsSection =
   | 'default-model'
   | 'general'
   | 'display'
-  | 'data'
-  | 'mcp'
-  | 'search'
-  | 'memory'
   | 'api'
+  | 'search'
+  | 'mcp'
   | 'docs'
   | 'external-source'
 
@@ -236,6 +234,7 @@ export interface HubWorkspaceContent {
   spotlightTitle: string
   highlights: string[]
   entries: HubEntry[]
+  sections: HubEntry[]
 }
 
 export interface ProviderProfile {

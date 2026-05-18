@@ -16,38 +16,19 @@ import {
   parseSerializedModelRouteRef,
   serializeModelRouteRef,
 } from '../../workbench/settings/settings-workspace-model-options'
+import type {
+  CopilotModelCatalog,
+  CopilotModelGroup,
+  CopilotModelIconSpec,
+  CopilotModelOption,
+} from './_model-picker/types'
 
-export interface CopilotModelIconSpec {
-  label: string
-  accent: string
-}
-
-export interface CopilotModelOption {
-  id: string
-  selectionValue: string
-  modelId: string
-  name: string
-  provider: string
-  group: string
-  tags: string[]
-  icon: CopilotModelIconSpec
-  routeRef: ModelRouteRef | null
-  route: RuntimeModelRoute
-  available: boolean
-  unavailableReason: string | null
-  thinkingCapabilityOverride: Record<string, unknown> | null
-}
-
-export interface CopilotModelGroup {
-  key: string
-  title: string
-  models: CopilotModelOption[]
-}
-
-export interface CopilotModelCatalog {
-  groups: CopilotModelGroup[]
-  models: CopilotModelOption[]
-}
+export type {
+  CopilotModelCatalog,
+  CopilotModelGroup,
+  CopilotModelIconSpec,
+  CopilotModelOption,
+} from './_model-picker/types'
 
 export function isRuntimeModelRouteSupportedForStreamingChat(route: RuntimeModelRoute | null): boolean {
   return getRuntimeModelRouteStreamingSupportReason(route) === null

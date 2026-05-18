@@ -1,14 +1,16 @@
 .workbench-shell {
   display: grid;
   grid-template-columns: 60px minmax(0, 1fr);
-  height: 100vh;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: var(--app-bg);
   color: var(--text-primary);
   overflow: hidden;
 }
 
 .workbench-rail,
+.workbench-viewport,
+.workbench-view,
 .workspace-stage,
 .workspace-panel,
 .workspace-main,
@@ -28,6 +30,61 @@
   padding: 0.9rem 0.55rem;
   border-right: 1px solid var(--border-color);
   background: var(--rail-bg);
+}
+
+.workbench-viewport {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.workbench-viewport > .startup-screen,
+.workbench-view > .startup-screen {
+  min-height: 100%;
+}
+
+.workbench-view {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.workbench-view--active {
+  z-index: 2;
+  pointer-events: auto;
+  animation: workbench-view-fade-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.workbench-view--exiting {
+  z-index: 1;
+  pointer-events: none;
+  animation: workbench-view-fade-out 160ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes workbench-view-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes workbench-view-fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
 }
 
 .rail-button {
@@ -111,8 +168,8 @@
 
 .workspace-stage {
   display: grid;
-  height: 100vh;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 100%;
   overflow: hidden;
 }
 
@@ -120,9 +177,12 @@
   grid-template-columns: 280px 332px minmax(0, 1fr);
 }
 
-.settings-workspace,
-.hub-workspace {
+.settings-workspace {
   grid-template-columns: 300px minmax(0, 1fr);
+}
+
+.hub-workspace {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .workspace-panel {
@@ -379,6 +439,21 @@
   min-height: 100%;
 }
 
+/* Keepalive wrapper: restore direct-child layout semantics
+   when .copilot-panel is wrapped by a keepalive container.
+   Active panel wrapper must fill the chat layout identically. */
+.conversation-workspace .workspace-chat-layout > .workspace-chat-keepalive-panel:not([hidden]) {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 100%;
+}
+
+.conversation-workspace .workspace-chat-layout > .workspace-chat-keepalive-panel:not([hidden]) > .copilot-panel {
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+
 .workspace-main__content {
   flex: 1 1 auto;
   display: flex;
@@ -390,10 +465,39 @@
 }
 
 .settings-workspace .workspace-main__content--flush {
+  position: relative;
+  display: grid;
+  grid-template-areas: 'settings-section';
+  grid-template-rows: minmax(0, 1fr);
   align-items: stretch;
 }
 
 .settings-workspace .workspace-main__content--flush > .settings-page {
   flex: 1 1 auto;
   min-height: 100%;
+}
+
+/* Settings keepalive wrapper: restore direct-child layout semantics
+   when .settings-page is wrapped by a section-visit keepalive container. */
+.settings-workspace .workspace-main__content--flush > .settings-section-keepalive-panel {
+  grid-area: settings-section;
+  min-width: 0;
+  min-height: 100%;
+}
+
+.settings-workspace .workspace-main__content--flush > .settings-section-keepalive-panel:not([hidden]) {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 100%;
+}
+
+.settings-workspace .workspace-main__content--flush > .settings-section-keepalive-panel:not([hidden]) > .settings-page {
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+
+/* Keepalive containers: hidden workspaces / panels must not participate in layout or accessibility */
+[aria-hidden='true'][hidden] {
+  display: none;
 }

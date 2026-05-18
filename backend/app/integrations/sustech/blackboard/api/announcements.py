@@ -31,6 +31,15 @@ def _clean_tag_text(node: Tag | None, *, max_length: int) -> str:
     return clean_field(node.get_text(" ", strip=True), max_length=max_length)
 
 
+def _clean_tag_html(node: Tag | None, *, max_length: int) -> str:
+    if not isinstance(node, Tag):
+        return ""
+    html = node.decode_contents().strip()
+    if not html:
+        return ""
+    return html[:max_length]
+
+
 def _first_link_with_href(block: Tag) -> Tag | None:
     link = block.find("a", href=True)
     return link if isinstance(link, Tag) else None
@@ -177,28 +186,54 @@ class BlackboardAnnouncementAPI:
             self._normalize_announcement_course_key(merged_course_name), ""
         )
 
+    @staticmethod
+    def _extract_merged_field(
+        item: Mapping[str, object],
+        key: str,
+        *fallback_keys: str,
+        max_length: int,
+        nullable: bool = False,
+    ) -> str | None:
+        """Extract and clean a single field with optional fallback keys."""
+        value = str(item.get(key) or "")
+        if not value and fallback_keys:
+            for fb in fallback_keys:
+                value = str(item.get(fb) or "")
+                if value:
+                    break
+        cleaned = clean_field(value, max_length=max_length)
+        if nullable:
+            return cleaned or None
+        return cleaned
+
     def _normalize_merged_announcement(
         self,
         item: Mapping[str, object],
         course_name_to_id: Mapping[str, str],
     ) -> AnnouncementDTO:
         announcement_url = str(item.get("url") or "")
-        merged_course_name = (
-            clean_field(str(item.get("course_name") or ""), max_length=160) or None
+        merged_course_name = self._extract_merged_field(
+            item, "course_name", max_length=160, nullable=True
         )
-        publish_time = (
-            clean_field(str(item.get("publish_time") or ""), max_length=120) or None
+        publish_time = self._extract_merged_field(
+            item, "publish_time", max_length=120, nullable=True
         )
-        detail = (
-            clean_field(
-                str(item.get("detail") or item.get("content") or ""), max_length=600
-            )
-            or None
+        detail = self._extract_merged_field(
+            item, "detail", "content", max_length=600, nullable=True
         )
-        title = clean_field(str(item.get("title") or ""), max_length=200)
-        author = clean_field(str(item.get("author") or ""), max_length=255) or None
-        source_page = (
-            clean_field(str(item.get("source_page") or ""), max_length=500) or None
+        raw_detail_html = str(
+            item.get("detail_html") or item.get("content_html") or ""
+        ).strip()
+        detail_html = raw_detail_html[:12000] or None
+        title = self._extract_merged_field(item, "title", max_length=200) or ""
+        author = self._extract_merged_field(
+            item, "author", max_length=255, nullable=True
+        )
+        source_page = self._extract_merged_field(
+            item, "source_page", max_length=500, nullable=True
+        )
+        linked_content_candidates = self._normalize_linked_content_candidates(
+            item.get("linked_content_candidates")
         )
         merged_course_id = self._resolve_merged_announcement_course_id(
             item,
@@ -206,17 +241,22 @@ class BlackboardAnnouncementAPI:
             merged_course_name,
             course_name_to_id,
         )
+        announcement_id = self._extract_merged_field(
+            item, "announcement_id", max_length=128
+        ) or self._extract_announcement_id(announcement_url)
         return AnnouncementDTO(
-            announcement_id=self._extract_announcement_id(announcement_url),
+            announcement_id=announcement_id,
             course_id=merged_course_id or None,
             course_name=merged_course_name,
             title=title,
             publish_time=publish_time,
             publish_time_parsed=parse_datetime_safe(publish_time or ""),
             detail=detail,
+            detail_html=detail_html,
             author=author,
             url=announcement_url or None,
             source_page=source_page,
+            linked_content_candidates=linked_content_candidates,
         )
 
     def _announcement_dto_key(self, item: AnnouncementDTO) -> str:
@@ -319,14 +359,17 @@ class BlackboardAnnouncementAPI:
         announcement: Mapping[str, object],
     ) -> dict[str, object]:
         return {
+            "announcement_id": announcement.get("announcement_id"),
             "course_id": course_id,
             "course_name": course_name,
             "title": announcement.get("title"),
             "publish_time": announcement.get("publish_time"),
             "detail": announcement.get("detail"),
+            "detail_html": announcement.get("detail_html"),
             "author": announcement.get("author"),
             "url": announcement.get("url"),
             "source_page": announcement.get("source_page"),
+            "linked_content_candidates": announcement.get("linked_content_candidates"),
         }
 
     def _load_course_announcement_fallback_payloads(
@@ -415,25 +458,30 @@ class BlackboardAnnouncementAPI:
     def _build_course_announcement_dto(
         self,
         *,
+        announcement_id: str | None,
         course_id: str,
         page_url: str,
         title: str,
         publish_time: str,
         detail: str,
+        detail_html: str | None,
         author: str | None,
         url: str,
+        linked_content_candidates: list[dict[str, object]],
     ) -> AnnouncementDTO:
         return AnnouncementDTO(
-            announcement_id=self._extract_announcement_id(url),
+            announcement_id=announcement_id or self._extract_announcement_id(url),
             course_id=course_id,
             course_name=None,
             title=title,
             publish_time=publish_time,
             publish_time_parsed=parse_datetime_safe(publish_time),
             detail=detail[:600],
+            detail_html=detail_html[:12000] if detail_html else None,
             author=author,
             url=url,
             source_page=page_url,
+            linked_content_candidates=linked_content_candidates,
         )
 
     def _course_announcement_key(self, item: AnnouncementDTO) -> str:
@@ -477,16 +525,27 @@ class BlackboardAnnouncementAPI:
             max_length=3000,
         )
         body_text = _clean_tag_text(_announcement_body_node(block), max_length=3000)
+        body_html = _clean_tag_html(_announcement_body_node(block), max_length=12000)
         link_node = _first_link_with_href(block)
         url = _announcement_link_url(self.context, page_url, link_node)
+        linked_content_candidates = self._extract_linked_content_candidates(
+            block, page_url
+        )
         return self._build_course_announcement_dto(
+            announcement_id=self._resolve_announcement_record_id(
+                block,
+                announcement_url=url,
+                linked_content_candidates=linked_content_candidates,
+            ),
             course_id=course_id,
             page_url=page_url,
             title=self._course_announcement_title(block, block_text),
             publish_time=extract_date_text_safe(details_text or block_text),
             detail=body_text or details_text or block_text,
+            detail_html=body_html or None,
             author=self._extract_author_from_announcement_block(block),
             url=url,
+            linked_content_candidates=linked_content_candidates,
         )
 
     def _parse_primary_course_announcement_dtos(
@@ -525,6 +584,9 @@ class BlackboardAnnouncementAPI:
         course_id: str,
         page_url: str,
     ) -> AnnouncementDTO | None:
+        if self._looks_like_course_content_item(container):
+            return None
+
         text = container.get_text(" ", strip=True)
         if (
             not text
@@ -537,14 +599,24 @@ class BlackboardAnnouncementAPI:
         url = _announcement_link_url(self.context, page_url, link)
         title = link.get_text(strip=True) if link is not None else ""
         detail = _trim_announcement_detail(text, title)
+        linked_content_candidates = self._extract_linked_content_candidates(
+            container, page_url
+        )
         return self._build_course_announcement_dto(
+            announcement_id=self._resolve_announcement_record_id(
+                container,
+                announcement_url=url,
+                linked_content_candidates=linked_content_candidates,
+            ),
             course_id=course_id,
             page_url=page_url,
             title=title or text[:100],
             publish_time=extract_date_text_safe(text),
             detail=detail,
+            detail_html=None,
             author=self._extract_author_from_announcement_block(container),
             url=url,
+            linked_content_candidates=linked_content_candidates,
         )
 
     def _parse_fallback_course_announcement_dtos(
@@ -569,8 +641,130 @@ class BlackboardAnnouncementAPI:
         return announcements
 
     def _extract_announcement_id(self, url: str) -> str | None:
-        ids = self.context.extract_ids(url, id_types=("xid", "rid", "content_id"))
-        return ids.get("xid") or ids.get("rid") or ids.get("content_id")
+        ids = self.context.extract_ids(
+            url,
+            id_types=("ann_id", "xid", "rid", "content_id"),
+        )
+        return (
+            ids.get("ann_id")
+            or ids.get("xid")
+            or ids.get("rid")
+            or ids.get("content_id")
+        )
+
+    def _normalize_linked_content_candidates(
+        self,
+        value: object,
+    ) -> list[dict[str, object]]:
+        if not isinstance(value, list):
+            return []
+
+        normalized: list[dict[str, object]] = []
+        for item in value:
+            if not isinstance(item, Mapping):
+                continue
+            normalized_item: dict[str, object] = {}
+            for key, raw in item.items():
+                key_text = clean_field(str(key), max_length=64)
+                if not key_text:
+                    continue
+                if raw is None or isinstance(raw, bool):
+                    normalized_item[key_text] = raw
+                    continue
+                normalized_item[key_text] = clean_field(str(raw), max_length=5120)
+            if normalized_item:
+                normalized.append(normalized_item)
+        return normalized
+
+    def _extract_block_dom_announcement_id(self, block: Tag) -> str | None:
+        raw_id = clean_field(str(block.get("id") or ""), max_length=128)
+        if raw_id and re.fullmatch(r"_\d+_\d+", raw_id):
+            return raw_id
+        return None
+
+    def _extract_linked_content_candidates(
+        self,
+        block: Tag,
+        page_url: str,
+    ) -> list[dict[str, object]]:
+        candidates: list[dict[str, object]] = []
+        seen_keys: set[str] = set()
+        for link in block.select("a[href]"):
+            absolute_url = _announcement_link_url(self.context, page_url, link)
+            lower_url = absolute_url.lower()
+            ids = self.context.extract_ids(
+                absolute_url,
+                id_types=(
+                    "ann_id",
+                    "course_id",
+                    "content_id",
+                    "pk1",
+                    "xid",
+                    "rid",
+                    "id",
+                ),
+            )
+            is_launch_link = "launchlink.jsp" in lower_url
+            if not (
+                is_launch_link
+                or ids.get("ann_id")
+                or ids.get("content_id")
+                or ids.get("pk1")
+                or ids.get("xid")
+                or ids.get("rid")
+            ):
+                continue
+
+            path_text = (
+                clean_field(link.get_text(" ", strip=True), max_length=300) or None
+            )
+            candidate_key = "|".join(
+                [
+                    absolute_url,
+                    str(ids.get("ann_id") or ""),
+                    str(ids.get("content_id") or ""),
+                    str(path_text or ""),
+                ]
+            )
+            if candidate_key in seen_keys:
+                continue
+            seen_keys.add(candidate_key)
+            candidates.append(
+                {
+                    "url": absolute_url,
+                    "path_text": path_text,
+                    "ann_id": ids.get("ann_id"),
+                    "course_id": ids.get("course_id"),
+                    "content_id": ids.get("content_id"),
+                    "pk1": ids.get("pk1"),
+                    "xid": ids.get("xid"),
+                    "rid": ids.get("rid"),
+                    "source": ids.get("source"),
+                    "is_launch_link": is_launch_link,
+                }
+            )
+        return candidates
+
+    def _resolve_announcement_record_id(
+        self,
+        block: Tag,
+        *,
+        announcement_url: str,
+        linked_content_candidates: list[dict[str, object]],
+    ) -> str | None:
+        block_id = self._extract_block_dom_announcement_id(block)
+        if block_id:
+            return block_id
+
+        extracted = self._extract_announcement_id(announcement_url)
+        if extracted:
+            return extracted
+
+        for candidate in linked_content_candidates:
+            ann_id = clean_field(str(candidate.get("ann_id") or ""), max_length=128)
+            if ann_id:
+                return ann_id
+        return None
 
     def _extract_course_name_from_announcement_text(self, text: str) -> str:
         normalized = clean_field(text, max_length=500)
@@ -691,26 +885,32 @@ class BlackboardAnnouncementAPI:
     def _build_announcement_payload(
         self,
         *,
+        announcement_id: str | None,
         course_id: str | None,
         course_code: str | None,
         course_name: str,
         title: str,
         publish_time: str,
         detail: str,
+        detail_html: str | None,
         author: str | None,
         url: str,
         source_page: str,
+        linked_content_candidates: list[dict[str, object]],
     ) -> dict[str, object]:
         return {
+            "announcement_id": announcement_id,
             "course_id": course_id,
             "course_code": course_code,
             "course_name": course_name,
             "title": title,
             "publish_time": publish_time,
             "detail": detail,
+            "detail_html": detail_html,
             "author": author,
             "url": url,
             "source_page": source_page,
+            "linked_content_candidates": linked_content_candidates,
         }
 
     def _append_unique_announcement(
@@ -757,6 +957,42 @@ class BlackboardAnnouncementAPI:
 
         return candidate_blocks
 
+    def _looks_like_course_content_item(self, block: Tag) -> bool:
+        block_id = str(block.get("id") or "").strip().lower()
+        if block_id.startswith("contentlistitem:"):
+            return True
+
+        parent = block.find_parent(
+            id=lambda value: (
+                isinstance(value, str) and value.lower().startswith("contentlistitem:")
+            )
+        )
+        if isinstance(parent, Tag):
+            return True
+
+        has_content_shell = block.select_one(".item h3") is not None
+        has_rich_text_body = block.select_one(".vtbegenerated") is not None
+        has_attachment_header = (
+            block.select_one(".contextItemDetailsHeaders") is not None
+        )
+        return has_content_shell and (has_rich_text_body or has_attachment_header)
+
+    def _has_explicit_announcement_metadata(
+        self, block: Tag, details_text: str
+    ) -> bool:
+        if block.select_one(".announcementInfo") is not None:
+            return True
+
+        hint = _parent_block_hint(block)
+        if "announcement" in hint and not self._looks_like_course_content_item(block):
+            return True
+
+        lower_details = details_text.lower()
+        return any(
+            token in lower_details
+            for token in ("posted on", "posted to", "posted by", "author")
+        )
+
     def _parse_announcement_table_row(
         self, row: Tag, page_url: str
     ) -> dict[str, object] | None:
@@ -797,7 +1033,15 @@ class BlackboardAnnouncementAPI:
 
         detail = clean_field(row_text, max_length=600)
         url = self.context.absolute_url(page_url, str(link.get("href") or "").strip())
+        linked_content_candidates = self._extract_linked_content_candidates(
+            row, page_url
+        )
         return self._build_announcement_payload(
+            announcement_id=self._resolve_announcement_record_id(
+                row,
+                announcement_url=url,
+                linked_content_candidates=linked_content_candidates,
+            ),
             course_id=self._extract_course_id_from_announcement_block(row, page_url),
             course_code=self._extract_course_code_from_announcement_block(
                 row, page_url
@@ -806,9 +1050,11 @@ class BlackboardAnnouncementAPI:
             title=title,
             publish_time=publish_time,
             detail=detail,
+            detail_html=None,
             author=self._extract_author_from_announcement_block(row),
             url=url,
             source_page=page_url,
+            linked_content_candidates=linked_content_candidates,
         )
 
     def _extract_announcement_title(self, block: Tag, block_text: str) -> str:
@@ -842,6 +1088,9 @@ class BlackboardAnnouncementAPI:
     def _parse_announcement_block(
         self, block: Tag, page_url: str
     ) -> dict[str, object] | None:
+        if self._looks_like_course_content_item(block):
+            return None
+
         block_text = clean_field(block.get_text(" ", strip=True), max_length=3000)
         if not block_text or is_navigation_noise(block_text):
             return None
@@ -862,7 +1111,10 @@ class BlackboardAnnouncementAPI:
             or "公告" in block_text
             or "通知" in block_text
         )
-        if not publish_time and not has_announcement_signal:
+        has_announcement_metadata = self._has_explicit_announcement_metadata(
+            block, details_text
+        )
+        if not has_announcement_signal and not has_announcement_metadata:
             return None
 
         title = self._extract_announcement_title(block, block_text)
@@ -876,10 +1128,19 @@ class BlackboardAnnouncementAPI:
             else (details_text or block_text),
             max_length=600,
         )
+        detail_html = _clean_tag_html(body_node, max_length=12000) or None
         dom_id = clean_field(str(block.get("id") or ""), max_length=120)
         url = f"{page_url}#{dom_id}" if dom_id else page_url
+        linked_content_candidates = self._extract_linked_content_candidates(
+            block, page_url
+        )
 
         return self._build_announcement_payload(
+            announcement_id=self._resolve_announcement_record_id(
+                block,
+                announcement_url=url,
+                linked_content_candidates=linked_content_candidates,
+            ),
             course_id=self._extract_course_id_from_announcement_block(block, page_url),
             course_code=self._extract_course_code_from_announcement_block(
                 block, page_url
@@ -888,9 +1149,11 @@ class BlackboardAnnouncementAPI:
             title=title,
             publish_time=publish_time,
             detail=detail,
+            detail_html=detail_html,
             author=self._extract_author_from_announcement_block(block),
             url=url,
             source_page=page_url,
+            linked_content_candidates=linked_content_candidates,
         )
 
     def _parse_all_announcements_from_html(

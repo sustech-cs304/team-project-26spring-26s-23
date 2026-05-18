@@ -224,28 +224,40 @@ function normalizeTransportConfig(
   transportKind: McpServerRecord['transportKind'],
 ): McpServerRecord['transportConfig'] | null {
   if (transportKind === 'stdio') {
-    if (value.kind !== 'stdio' || typeof value.command !== 'string' || !Array.isArray(value.args)) {
-      return null
-    }
-
-    if (!value.args.every((entry) => typeof entry === 'string')) {
-      return null
-    }
-
-    const env = normalizeStringRecord(value.env)
-    if (env === null) {
-      return null
-    }
-
-    return {
-      kind: 'stdio',
-      command: value.command,
-      args: [...value.args],
-      cwd: typeof value.cwd === 'string' ? value.cwd : null,
-      ...(env === undefined ? {} : { env }),
-    }
+    return normalizeStdioTransportConfig(value)
   }
 
+  return normalizeHttpSseTransportConfig(value)
+}
+
+function normalizeStdioTransportConfig(
+  value: Record<string, unknown>,
+): McpServerRecord['transportConfig'] | null {
+  if (value.kind !== 'stdio' || typeof value.command !== 'string' || !Array.isArray(value.args)) {
+    return null
+  }
+
+  if (!value.args.every((entry) => typeof entry === 'string')) {
+    return null
+  }
+
+  const env = normalizeStringRecord(value.env)
+  if (env === null) {
+    return null
+  }
+
+  return {
+    kind: 'stdio',
+    command: value.command,
+    args: [...value.args],
+    cwd: typeof value.cwd === 'string' ? value.cwd : null,
+    ...(env === undefined ? {} : { env }),
+  }
+}
+
+function normalizeHttpSseTransportConfig(
+  value: Record<string, unknown>,
+): McpServerRecord['transportConfig'] | null {
   if (value.kind !== 'http-sse' || typeof value.baseUrl !== 'string') {
     return null
   }

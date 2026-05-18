@@ -1,3 +1,4 @@
+/* eslint-disable max-lines-per-function */
 import { describe, expect, it } from 'vitest'
 
 import { createConfigCenterBootstrapService } from './bootstrap/ConfigCenterBootstrapService'
@@ -14,12 +15,15 @@ import {
   writeRawDomainDocuments,
 } from './test-support/ConfigCenterTestSupport'
 
+const LEGACY_RUNTIME_URL = 'http://127.0.0.1:4310'
+const LEGACY_AGENT_NAME = 'planner'
+
 describe('createUnifiedConfigCenter legacy migration', () => {
   it('migrates runtimeUrl and agentName from legacy CopilotSettings once', async () => {
     await withConfigCenterFixture(async (fixture) => {
       await writeLegacyCopilotSettings(fixture, {
-        runtimeUrl: '  http://127.0.0.1:4310  ',
-        agentName: '  planner  ',
+        runtimeUrl: `  ${LEGACY_RUNTIME_URL}  `,
+        agentName: `  ${LEGACY_AGENT_NAME}  `,
       })
 
       const migrated = await fixture.configCenter.loadSnapshot()
@@ -27,24 +31,24 @@ describe('createUnifiedConfigCenter legacy migration', () => {
       expect(migrated.source).toBe('migrated-legacy')
       expect(migrated.migratedFrom).toBe(fixture.hostedPaths.copilotSettingsFile)
       expect(migrated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG].values.runtimeUrl).toBe(
-        'http://127.0.0.1:4310',
+        LEGACY_RUNTIME_URL,
       )
       expect(
         migrated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.agentName,
-      ).toBe('planner')
+      ).toBe(LEGACY_AGENT_NAME)
       expect(
         migrated.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.debugModeEnabled,
       ).toBe(false)
       expect(await readStoredDomainDocument(fixture, UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG)).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG, {
-          runtimeUrl: 'http://127.0.0.1:4310',
+          runtimeUrl: LEGACY_RUNTIME_URL,
         }),
       )
       expect(
         await readStoredDomainDocument(fixture, UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR),
       ).toEqual(
         createUnifiedConfigDomainDocument(UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR, {
-          agentName: 'planner',
+          agentName: LEGACY_AGENT_NAME,
           debugModeEnabled: false,
         }),
       )
@@ -58,11 +62,11 @@ describe('createUnifiedConfigCenter legacy migration', () => {
 
       expect(reloaded.source).toBe('stored')
       expect(reloaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.HOST_CONFIG].values.runtimeUrl).toBe(
-        'http://127.0.0.1:4310',
+        LEGACY_RUNTIME_URL,
       )
       expect(
         reloaded.snapshot.documents[UNIFIED_CONFIG_DOMAIN_KEYS.ASSISTANT_BEHAVIOR].values.agentName,
-      ).toBe('planner')
+      ).toBe(LEGACY_AGENT_NAME)
     })
   })
 

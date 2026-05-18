@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import re
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from collections.abc import Collection
+from typing import Any, cast
+from urllib.parse import urljoin
 
+from bs4 import BeautifulSoup
 from app.integrations.sustech.blackboard.api import BlackboardAPIContext
 from app.integrations.sustech.blackboard.api.announcements import (
     BlackboardAnnouncementAPI,
@@ -34,6 +38,7 @@ from app.integrations.sustech.blackboard.provider.results import (
 from app.integrations.sustech.blackboard.data import DatabaseManager
 from app.integrations.sustech.blackboard.shared import (
     create_log_session,
+    extract_blackboard_ids_from_url,
     split_score_text,
 )
 from app.integrations.sustech.blackboard.shared.logging import (
@@ -56,6 +61,7 @@ _SYNC_TABLES: tuple[str, ...] = (
 class _SnapshotAPIs:
     course_api: BlackboardCourseAPI
     assignment_api: BlackboardAssignmentAPI
+    content_api: BlackboardContentAPI
     grade_api: BlackboardGradeAPI
     announcement_api: BlackboardAnnouncementAPI
 
@@ -153,6 +159,65 @@ def _normalize_name(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip().lower()
 
 
+_RELATION_TITLE_STOP_TOKENS: set[str] = {
+    "assignment",
+    "assigment",
+    "homework",
+    "project",
+    "lab",
+    "released",
+    "release",
+    "submission",
+    "submitting",
+    "submit",
+    "instructions",
+    "instruction",
+    "extended",
+    "extension",
+    "deadline",
+    "ddl",
+    "form",
+    "information",
+    "notice",
+    "reminder",
+    "exam",
+    "midterm",
+    "final",
+    "course",
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "this",
+    "that",
+    "your",
+    "you",
+    "are",
+    "was",
+    "were",
+    "has",
+    "have",
+    "had",
+    "been",
+    "into",
+    "onto",
+    "here",
+}
+
+
+def _relation_title_tokens(value: Any) -> set[str]:
+    normalized = _normalize_name(value)
+    if not normalized:
+        return set()
+    return {
+        token
+        for token in re.split(r"[^0-9a-zA-Z\u4e00-\u9fff]+", normalized)
+        if (len(token) >= 2 or token.isdigit())
+        and token not in _RELATION_TITLE_STOP_TOKENS
+    }
+
+
 def _normalize_code(value: Any) -> str:
     return re.sub(r"\s+", "", str(value or "")).strip().upper()
 
@@ -188,6 +253,74 @@ def _build_course_payloads(
 def _build_assignment_payloads(
     assignments_by_course: dict[str, list[Any]],
 ) -> dict[str, list[dict[str, Any]]]:
+    def _has_value(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, list):
+            return bool(value)
+        return True
+
+    def _assignment_row_score(
+        row: dict[str, Any],
+    ) -> tuple[int, int, int, int, int, int, str]:
+        assignment_id = str(row.get("assignment_id") or "").strip()
+        url = str(row.get("url") or "").strip().lower()
+        source_page = str(row.get("source_page") or "").strip().lower()
+        return (
+            1 if _has_value(row.get("description_html")) else 0,
+            1 if _has_value(row.get("description")) else 0,
+            1 if _has_value(row.get("attachments")) else 0,
+            1 if _has_value(row.get("submission_status")) else 0,
+            1 if _has_value(row.get("due_date")) else 0,
+            1 if "/webapps/assignment/" in url or "content_id=" in source_page else 0,
+            assignment_id,
+        )
+
+    def _merge_attachment_payload_rows(
+        *attachment_groups: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        seen_keys: set[tuple[str, str, str]] = set()
+        for group in attachment_groups:
+            for attachment in group:
+                if not isinstance(attachment, dict):
+                    continue
+                title = str(
+                    attachment.get("title") or attachment.get("name") or ""
+                ).strip()
+                url = str(attachment.get("url") or "").strip()
+                resource_id = str(attachment.get("resource_id") or "").strip()
+                dedupe_key = (resource_id, url, title)
+                if dedupe_key == ("", "", "") or dedupe_key in seen_keys:
+                    continue
+                seen_keys.add(dedupe_key)
+                merged.append(
+                    {
+                        **attachment,
+                        "title": attachment.get("title") or title,
+                        "name": attachment.get("name") or title,
+                        "url": url or None,
+                        "resource_id": resource_id or None,
+                    }
+                )
+        return merged
+
+    def _merge_relation_tokens(*values: Any) -> list[str]:
+        merged: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not isinstance(value, list):
+                continue
+            for item in value:
+                token = str(item or "").strip()
+                if not token or token in seen:
+                    continue
+                seen.add(token)
+                merged.append(token)
+        return merged
+
     assignment_payloads: dict[str, list[dict[str, Any]]] = {}
     for course_id, items in assignments_by_course.items():
         payload: list[dict[str, Any]] = []
@@ -199,6 +332,9 @@ def _build_assignment_payloads(
             if not assignment_id:
                 assignment_id = _stable_id("asg", course_id, url, title, due_date)
             score, total_score = split_score_text(_value(item, "score"))
+            content_id_candidates, pk1_candidates = _extract_assignment_relation_tokens(
+                item
+            )
             payload.append(
                 {
                     "assignment_id": assignment_id,
@@ -210,13 +346,95 @@ def _build_assignment_payloads(
                     "url": url or None,
                     "summary": _value(item, "summary"),
                     "description": _value(item, "description"),
+                    "description_html": _value(item, "description_html"),
                     "attachments": _attachment_payloads(_value(item, "attachments")),
                     "source_page": _value(item, "source_page"),
                     "submission_status": _value(item, "submission_status"),
+                    "content_id_candidates": content_id_candidates,
+                    "pk1_candidates": pk1_candidates,
                 }
             )
-        assignment_payloads[course_id] = payload
+
+        merged_by_assignment_id: dict[str, dict[str, Any]] = {}
+        passthrough_rows: list[dict[str, Any]] = []
+        for row in payload:
+            assignment_id_key = str(row.get("assignment_id") or "").strip()
+            if not assignment_id_key:
+                passthrough_rows.append(dict(row))
+                continue
+
+            existing = merged_by_assignment_id.get(assignment_id_key)
+            if existing is None:
+                merged_by_assignment_id[assignment_id_key] = dict(row)
+                continue
+
+            preferred = (
+                row
+                if _assignment_row_score(row) > _assignment_row_score(existing)
+                else existing
+            )
+            fallback = existing if preferred is row else row
+            merged_row = dict(preferred)
+            for field_name in (
+                "due_date",
+                "status",
+                "score",
+                "total_score",
+                "url",
+                "summary",
+                "description",
+                "description_html",
+                "source_page",
+                "submission_status",
+            ):
+                if not _has_value(merged_row.get(field_name)) and _has_value(
+                    fallback.get(field_name)
+                ):
+                    merged_row[field_name] = fallback.get(field_name)
+
+            merged_row["attachments"] = _merge_attachment_payload_rows(
+                preferred.get("attachments", []),
+                fallback.get("attachments", []),
+            )
+            merged_row["content_id_candidates"] = _merge_relation_tokens(
+                preferred.get("content_id_candidates"),
+                fallback.get("content_id_candidates"),
+            )
+            merged_row["pk1_candidates"] = _merge_relation_tokens(
+                preferred.get("pk1_candidates"),
+                fallback.get("pk1_candidates"),
+            )
+            merged_by_assignment_id[assignment_id_key] = merged_row
+
+        assignment_payloads[course_id] = [
+            *merged_by_assignment_id.values(),
+            *passthrough_rows,
+        ]
     return assignment_payloads
+
+
+def _extract_assignment_relation_tokens(item: Any) -> tuple[list[str], list[str]]:
+    content_ids: set[str] = set()
+    pk1_ids: set[str] = set()
+
+    for raw_value in (
+        _text_value(item, "url"),
+        _text_value(item, "source_page"),
+    ):
+        if not raw_value:
+            continue
+        ids = extract_blackboard_ids_from_url(
+            raw_value,
+            id_types=("content_id", "pk1"),
+        )
+        content_id = str(ids.get("content_id") or "").strip()
+        pk1 = str(ids.get("pk1") or "").strip()
+        if content_id:
+            content_ids.add(content_id)
+        if pk1:
+            pk1_ids.add(pk1)
+
+    return sorted(content_ids), sorted(pk1_ids)
 
 
 def _collect_assignment_ids_by_course(
@@ -505,14 +723,676 @@ def _build_announcements_payload(
                 "course_name": _value(item, "course_name"),
                 "title": title,
                 "content": _value(item, "content", "detail"),
+                "content_html": _value(item, "content_html", "detail_html"),
                 "author": _value(item, "author"),
                 "publish_time": posted_at_text or None,
                 "url": url or None,
                 "source_page": _value(item, "source_page"),
+                "linked_content_candidates": _value(item, "linked_content_candidates"),
             }
         )
 
     return announcements_payload
+
+
+def _coerce_relation_token_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        token = str(item or "").strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        result.append(token)
+    return result
+
+
+def _normalize_path_tail(path_text: Any) -> str:
+    raw = str(path_text or "").strip()
+    if not raw:
+        return ""
+    segments = [segment.strip() for segment in raw.split("/") if segment.strip()]
+    if not segments:
+        return ""
+    return _normalize_name(segments[-1])
+
+
+def _build_assignment_relation_indexes(
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+) -> tuple[
+    dict[str, dict[str, list[dict[str, Any]]]],
+    dict[str, dict[str, list[dict[str, Any]]]],
+    dict[str, dict[str, list[dict[str, Any]]]],
+    dict[str, dict[str, list[dict[str, Any]]]],
+]:
+    title_index_by_course: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    content_index_by_course: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    pk1_index_by_course: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    title_token_index_by_course: dict[str, dict[str, list[dict[str, Any]]]] = {}
+
+    def _assignment_row_score(row: dict[str, Any]) -> tuple[int, int, int, int, int]:
+        assignment_id = str(row.get("assignment_id") or "").strip()
+        url = str(row.get("url") or "").strip().lower()
+        source_page = str(row.get("source_page") or "").strip().lower()
+        content_candidates = len(
+            _coerce_relation_token_list(row.get("content_id_candidates"))
+        )
+        pk1_candidates = len(_coerce_relation_token_list(row.get("pk1_candidates")))
+        return (
+            1 if content_candidates > 0 else 0,
+            1 if pk1_candidates > 0 else 0,
+            1 if "/webapps/assignment/" in url else 0,
+            1 if "content_id=" in url or "content_id=" in source_page else 0,
+            1 if assignment_id and not assignment_id.startswith("asg_") else 0,
+        )
+
+    for course_id, rows in assignment_payloads.items():
+        title_index: dict[str, list[dict[str, Any]]] = {}
+        content_index: dict[str, list[dict[str, Any]]] = {}
+        pk1_index: dict[str, list[dict[str, Any]]] = {}
+        title_token_index: dict[str, list[dict[str, Any]]] = {}
+        best_row_by_title: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            normalized_title = _normalize_name(row.get("title"))
+            if normalized_title:
+                best_existing = best_row_by_title.get(normalized_title)
+                if best_existing is None or _assignment_row_score(
+                    row
+                ) > _assignment_row_score(best_existing):
+                    best_row_by_title[normalized_title] = row
+
+            for content_id in _coerce_relation_token_list(
+                row.get("content_id_candidates")
+            ):
+                content_index.setdefault(content_id, []).append(row)
+
+            for pk1 in _coerce_relation_token_list(row.get("pk1_candidates")):
+                pk1_index.setdefault(pk1, []).append(row)
+
+        for normalized_title, best_row in best_row_by_title.items():
+            title_index.setdefault(normalized_title, []).append(best_row)
+            for token in _relation_title_tokens(best_row.get("title")):
+                title_token_index.setdefault(token, []).append(best_row)
+
+        title_index_by_course[course_id] = title_index
+        content_index_by_course[course_id] = content_index
+        pk1_index_by_course[course_id] = pk1_index
+        title_token_index_by_course[course_id] = title_token_index
+
+    return (
+        title_index_by_course,
+        content_index_by_course,
+        pk1_index_by_course,
+        title_token_index_by_course,
+    )
+
+
+def _serialize_relation_evidence(value: dict[str, Any]) -> dict[str, Any]:
+    return json.loads(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    )
+
+
+def _try_single_key_match(
+    candidate: dict[str, Any],
+    key: str,
+    index_by_course: dict[str, dict[str, list[dict[str, Any]]]],
+    candidate_course_id: str,
+) -> dict[str, Any] | None:
+    """Try matching by a single ID key lookup.
+
+    Returns matched_assignment dict if exactly one match, or None.
+    """
+    id_val = str(candidate.get(key) or "").strip()
+    if not id_val:
+        return None
+    matches = index_by_course.get(candidate_course_id, {}).get(id_val, [])
+    return matches[0] if len(matches) == 1 else None
+
+
+def _try_path_tail_title_match(
+    candidate: dict[str, Any],
+    candidate_course_id: str,
+    title_index_by_course: dict[str, dict[str, list[dict[str, Any]]]],
+) -> tuple[dict[str, Any] | None, str, str]:
+    """Try matching by path tail against title index.
+
+    Returns (matched_assignment_or_none, link_source, confidence).
+    """
+    path_tail = _normalize_path_tail(candidate.get("path_text"))
+    if not path_tail:
+        return None, "", ""
+    title_matches = title_index_by_course.get(candidate_course_id, {}).get(
+        path_tail, []
+    )
+    if len(title_matches) != 1:
+        return None, "", ""
+    is_launch = bool(candidate.get("is_launch_link"))
+    link_source = "ann_id_launch_link" if is_launch else "title_due_date_match"
+    confidence = "high" if is_launch else "medium"
+    return title_matches[0], link_source, confidence
+
+
+def _try_token_path_match(
+    candidate: dict[str, Any],
+    candidate_course_id: str,
+    title_token_index_by_course: dict[str, dict[str, list[dict[str, Any]]]],
+) -> dict[str, Any] | None:
+    """Try matching candidate by tokenizing its path tail.
+
+    Returns matched_assignment dict or None.
+    """
+    path_tail = _normalize_path_tail(candidate.get("path_text"))
+    if not path_tail:
+        return None
+    token_matches: dict[str, dict[str, Any]] = {}
+    for token in _relation_title_tokens(path_tail):
+        for token_match in title_token_index_by_course.get(candidate_course_id, {}).get(
+            token, []
+        ):
+            assignment_id_key = str(token_match.get("assignment_id") or "").strip()
+            if assignment_id_key:
+                token_matches[assignment_id_key] = token_match
+    if len(token_matches) == 1:
+        return next(iter(token_matches.values()))
+    return None
+
+
+def _try_match_candidate_links(
+    linked_candidates: list[dict[str, Any]],
+    course_id: str,
+    announcement_id: str,
+    content_index_by_course: dict[str, dict[str, list[dict[str, Any]]]],
+    pk1_index_by_course: dict[str, dict[str, list[dict[str, Any]]]],
+    title_index_by_course: dict[str, dict[str, list[dict[str, Any]]]],
+    title_token_index_by_course: dict[str, dict[str, list[dict[str, Any]]]],
+    seen_assignment_ids: set[str],
+) -> tuple[bool, list[dict[str, Any]]]:
+    """Match announcement linked-content candidates to known assignments.
+
+    Returns (matched_any, link_payloads).
+    """
+    matched_any = False
+    link_payloads: list[dict[str, Any]] = []
+    for candidate in linked_candidates:
+        if not isinstance(candidate, dict):
+            continue
+        candidate_course_id = str(candidate.get("course_id") or course_id).strip()
+        if not candidate_course_id:
+            continue
+
+        matched_assignment: dict[str, Any] | None = None
+        link_source = ""
+        confidence = "high"
+        # Strategy: content_id match
+        matched_assignment = _try_single_key_match(
+            candidate, "content_id", content_index_by_course, candidate_course_id
+        )
+        if matched_assignment is not None:
+            link_source = "content_id_match"
+
+        # Strategy: pk1 match
+        if matched_assignment is None:
+            matched_assignment = _try_single_key_match(
+                candidate, "pk1", pk1_index_by_course, candidate_course_id
+            )
+            if matched_assignment is not None:
+                link_source = "content_id_match"
+
+        # Strategy: title path tail match
+        if matched_assignment is None:
+            matched_assignment, link_source, confidence = _try_path_tail_title_match(
+                candidate, candidate_course_id, title_index_by_course
+            )
+
+        # Strategy: title token match on path tail
+        if matched_assignment is None:
+            matched_assignment = _try_token_path_match(
+                candidate, candidate_course_id, title_token_index_by_course
+            )
+            if matched_assignment is not None:
+                link_source = "title_token_match"
+                confidence = "medium"
+
+        if matched_assignment is None:
+            continue
+
+        assignment_id = str(matched_assignment.get("assignment_id") or "").strip()
+        if not assignment_id or assignment_id in seen_assignment_ids:
+            continue
+
+        seen_assignment_ids.add(assignment_id)
+        matched_any = True
+        link_payloads.append(
+            {
+                "announcement_id": announcement_id,
+                "assignment_id": assignment_id,
+                "course_id": candidate_course_id,
+                "link_source": link_source or "ann_id_launch_link",
+                "confidence": confidence,
+                "evidence_json": _serialize_relation_evidence(
+                    {
+                        "candidate": candidate,
+                        "matched_assignment": {
+                            "assignment_id": assignment_id,
+                            "title": matched_assignment.get("title"),
+                            "url": matched_assignment.get("url"),
+                            "source_page": matched_assignment.get("source_page"),
+                            "content_id_candidates": matched_assignment.get(
+                                "content_id_candidates"
+                            ),
+                            "pk1_candidates": matched_assignment.get("pk1_candidates"),
+                        },
+                    }
+                ),
+            }
+        )
+    return matched_any, link_payloads
+
+
+def _try_exact_title_match(
+    course_id: str,
+    normalized_announcement_title: str,
+    announcement_id: str,
+    title_index_by_course: dict[str, dict[str, list[dict[str, Any]]]],
+    row: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Try matching by exact announcement title match.
+
+    Returns a link_payload dict if matched, or None.
+    """
+    title_matches = title_index_by_course.get(course_id, {}).get(
+        normalized_announcement_title, []
+    )
+    if len(title_matches) != 1:
+        return None
+    matched_assignment = title_matches[0]
+    assignment_id = str(matched_assignment.get("assignment_id") or "").strip()
+    if not assignment_id:
+        return None
+    row["relation_type"] = "assignment_notice"
+    row["relation_confidence"] = "medium"
+    return {
+        "announcement_id": announcement_id,
+        "assignment_id": assignment_id,
+        "course_id": course_id,
+        "link_source": "announcement_title_exact_match",
+        "confidence": "medium",
+        "evidence_json": _serialize_relation_evidence(
+            {
+                "announcement_title": row.get("title"),
+                "matched_assignment": {
+                    "assignment_id": assignment_id,
+                    "title": matched_assignment.get("title"),
+                    "url": matched_assignment.get("url"),
+                    "source_page": matched_assignment.get("source_page"),
+                },
+            }
+        ),
+    }
+
+
+def _try_contains_title_match(
+    course_id: str,
+    normalized_announcement_title: str,
+    announcement_id: str,
+    title_index_by_course: dict[str, dict[str, list[dict[str, Any]]]],
+    row: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Try matching by substring/contains announcement title match.
+
+    Returns a link_payload dict if matched, or None.
+    """
+    contains_matches: dict[str, dict[str, Any]] = {}
+    for assignment_title, title_rows in title_index_by_course.get(
+        course_id, {}
+    ).items():
+        if not assignment_title:
+            continue
+        if (
+            assignment_title in normalized_announcement_title
+            or normalized_announcement_title in assignment_title
+        ):
+            for title_row in title_rows:
+                assignment_id = str(title_row.get("assignment_id") or "").strip()
+                if assignment_id:
+                    contains_matches[assignment_id] = title_row
+    if len(contains_matches) != 1:
+        return None
+    matched_assignment = next(iter(contains_matches.values()))
+    assignment_id = str(matched_assignment.get("assignment_id") or "").strip()
+    row["relation_type"] = "assignment_notice"
+    row["relation_confidence"] = "medium"
+    return {
+        "announcement_id": announcement_id,
+        "assignment_id": assignment_id,
+        "course_id": course_id,
+        "link_source": "announcement_title_contains_match",
+        "confidence": "medium",
+        "evidence_json": _serialize_relation_evidence(
+            {
+                "announcement_title": row.get("title"),
+                "matched_assignment": {
+                    "assignment_id": assignment_id,
+                    "title": matched_assignment.get("title"),
+                    "url": matched_assignment.get("url"),
+                    "source_page": matched_assignment.get("source_page"),
+                },
+            }
+        ),
+    }
+
+
+def _try_token_title_match(
+    course_id: str,
+    announcement_title_tokens: Collection[str],
+    announcement_id: str,
+    title_token_index_by_course: dict[str, dict[str, list[dict[str, Any]]]],
+    row: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Try matching by token-based announcement title matching.
+
+    Returns a link_payload dict if matched, or None.
+    """
+    token_scores: dict[str, dict[str, Any]] = {}
+    for token in announcement_title_tokens:
+        for token_match in title_token_index_by_course.get(course_id, {}).get(
+            token, []
+        ):
+            assignment_id = str(token_match.get("assignment_id") or "").strip()
+            if not assignment_id:
+                continue
+            bucket: dict[str, Any] = token_scores.setdefault(
+                assignment_id,
+                {"row": token_match, "score": 0, "tokens": set()},
+            )
+            bucket["score"] = int(bucket["score"]) + 1
+            cast_tokens = bucket.get("tokens")
+            if isinstance(cast_tokens, set):
+                cast_tokens.add(token)
+    ranked = sorted(
+        token_scores.items(),
+        key=lambda item: (int(item[1]["score"]), len(item[1]["tokens"])),
+        reverse=True,
+    )
+    if not ranked:
+        return None
+    best_assignment_id, best_payload = ranked[0]
+    best_score = int(best_payload["score"])
+    second_score = int(ranked[1][1]["score"]) if len(ranked) > 1 else -1
+    if not (
+        best_score > second_score
+        and (best_score >= 2 or len(announcement_title_tokens) == 1)
+    ):
+        return None
+    matched_assignment = cast(dict[str, Any], best_payload["row"])
+    row["relation_type"] = "assignment_notice"
+    row["relation_confidence"] = "medium"
+    return {
+        "announcement_id": announcement_id,
+        "assignment_id": best_assignment_id,
+        "course_id": course_id,
+        "link_source": "announcement_title_token_match",
+        "confidence": "medium",
+        "evidence_json": _serialize_relation_evidence(
+            {
+                "announcement_title": row.get("title"),
+                "matched_tokens": sorted(best_payload["tokens"]),
+                "matched_assignment": {
+                    "assignment_id": best_assignment_id,
+                    "title": matched_assignment.get("title"),
+                    "url": matched_assignment.get("url"),
+                    "source_page": matched_assignment.get("source_page"),
+                },
+            }
+        ),
+    }
+
+
+def _classify_announcements_and_build_links(
+    announcements_payload: list[dict[str, Any]],
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    (
+        title_index_by_course,
+        content_index_by_course,
+        pk1_index_by_course,
+        title_token_index_by_course,
+    ) = _build_assignment_relation_indexes(assignment_payloads)
+    link_payloads: list[dict[str, Any]] = []
+
+    for row in announcements_payload:
+        course_id = str(row.get("course_id") or "").strip()
+        announcement_id = str(row.get("announcement_id") or "").strip()
+        normalized_announcement_title = _normalize_name(row.get("title"))
+        announcement_title_tokens = _relation_title_tokens(row.get("title"))
+        raw_candidates = row.get("linked_content_candidates")
+        linked_candidates = raw_candidates if isinstance(raw_candidates, list) else []
+
+        seen_assignment_ids: set[str] = set()
+
+        matched_any, candidate_payloads = _try_match_candidate_links(
+            linked_candidates,
+            course_id,
+            announcement_id,
+            content_index_by_course,
+            pk1_index_by_course,
+            title_index_by_course,
+            title_token_index_by_course,
+            seen_assignment_ids,
+        )
+        if matched_any:
+            row["relation_type"] = "assignment_notice"
+            row["relation_confidence"] = "high"
+            link_payloads.extend(candidate_payloads)
+
+        if matched_any:
+            continue
+
+        if course_id:
+            link_payload = _try_exact_title_match(
+                course_id,
+                normalized_announcement_title,
+                announcement_id,
+                title_index_by_course,
+                row,
+            )
+            if link_payload is not None:
+                link_payloads.append(link_payload)
+                continue
+
+        if course_id and normalized_announcement_title:
+            link_payload = _try_contains_title_match(
+                course_id,
+                normalized_announcement_title,
+                announcement_id,
+                title_index_by_course,
+                row,
+            )
+            if link_payload is not None:
+                link_payloads.append(link_payload)
+                continue
+
+        if course_id and announcement_title_tokens:
+            link_payload = _try_token_title_match(
+                course_id,
+                announcement_title_tokens,
+                announcement_id,
+                title_token_index_by_course,
+                row,
+            )
+            if link_payload is not None:
+                link_payloads.append(link_payload)
+                continue
+
+        if linked_candidates:
+            row["relation_type"] = "content_linked_announcement"
+            row["relation_confidence"] = "high"
+        elif course_id:
+            row["relation_type"] = "plain_course_announcement"
+            row["relation_confidence"] = "none"
+        else:
+            row["relation_type"] = "unknown"
+            row["relation_confidence"] = "none"
+
+    return link_payloads
+
+
+def _extract_linked_content_candidates_from_stored_html(
+    content_html: Any,
+    *,
+    page_url: str,
+) -> list[dict[str, Any]]:
+    html = str(content_html or "").strip()
+    if not html:
+        return []
+
+    soup = BeautifulSoup(html, "html.parser")
+    candidates: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for link in soup.select("a[href]"):
+        href = str(link.get("href") or "").strip()
+        if not href:
+            continue
+        absolute_url = urljoin(page_url, href)
+        ids = extract_blackboard_ids_from_url(
+            absolute_url,
+            id_types=("ann_id", "course_id", "content_id", "pk1", "xid", "rid", "id"),
+        )
+        is_launch_link = "launchlink.jsp" in absolute_url.lower()
+        if not (
+            is_launch_link
+            or ids.get("ann_id")
+            or ids.get("content_id")
+            or ids.get("pk1")
+            or ids.get("xid")
+            or ids.get("rid")
+        ):
+            continue
+
+        path_text = str(link.get_text(" ", strip=True) or "").strip() or None
+        key = "|".join(
+            [
+                absolute_url,
+                str(ids.get("ann_id") or ""),
+                str(ids.get("content_id") or ""),
+                str(path_text or ""),
+            ]
+        )
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        candidates.append(
+            {
+                "url": absolute_url,
+                "path_text": path_text,
+                "ann_id": ids.get("ann_id"),
+                "course_id": ids.get("course_id"),
+                "content_id": ids.get("content_id"),
+                "pk1": ids.get("pk1"),
+                "xid": ids.get("xid"),
+                "rid": ids.get("rid"),
+                "source": ids.get("source"),
+                "is_launch_link": is_launch_link,
+            }
+        )
+    return candidates
+
+
+def rebuild_announcement_assignment_links(
+    db_manager: DatabaseManager,
+    *,
+    course_id: str | None = None,
+    logger: BlackboardLogger | None = None,
+) -> dict[str, Any]:
+    from app.integrations.sustech.blackboard.data.models import (
+        Announcement,
+        Assignment,
+        Course,
+    )
+
+    with db_manager._session_scope() as session:
+        course_query = session.query(Course).filter(Course.is_deleted.is_(False))
+        assignment_query = session.query(Assignment).filter(
+            Assignment.is_deleted.is_(False)
+        )
+        announcement_query = session.query(Announcement).filter(
+            Announcement.is_deleted.is_(False)
+        )
+        if course_id:
+            course_query = course_query.filter(Course.course_id == course_id)
+            assignment_query = assignment_query.filter(
+                Assignment.course_id == course_id
+            )
+            announcement_query = announcement_query.filter(
+                Announcement.course_id == course_id
+            )
+
+        courses = course_query.order_by(Course.name.asc()).all()
+        assignments = assignment_query.order_by(Assignment.title.asc()).all()
+        announcements = announcement_query.order_by(Announcement.posted_at.desc()).all()
+
+    assignments_by_course: dict[str, list[Any]] = {}
+    for assignment in assignments:
+        assignments_by_course.setdefault(str(assignment.course_id), []).append(
+            assignment
+        )
+
+    assignment_payloads = _build_assignment_payloads(assignments_by_course)
+    announcement_input = [
+        {
+            "announcement_id": announcement.announcement_id,
+            "course_id": announcement.course_id,
+            "course_name": announcement.course_name,
+            "title": announcement.title,
+            "content": announcement.content,
+            "content_html": announcement.content_html,
+            "author": announcement.author,
+            "publish_time": announcement.posted_at.isoformat()
+            if announcement.posted_at is not None
+            else None,
+            "url": announcement.url,
+            "source_page": announcement.source_page,
+            "linked_content_candidates": _extract_linked_content_candidates_from_stored_html(
+                announcement.content_html,
+                page_url=str(
+                    announcement.url
+                    or announcement.source_page
+                    or "https://bb.sustech.edu.cn/"
+                ),
+            ),
+        }
+        for announcement in announcements
+    ]
+    valid_course_ids = {
+        str(course.course_id).strip()
+        for course in courses
+        if str(course.course_id).strip()
+    }
+    announcements_payload = _build_announcements_payload(
+        announcement_input,
+        list(courses),
+        valid_course_ids,
+    )
+    link_payloads = _classify_announcements_and_build_links(
+        announcements_payload,
+        assignment_payloads,
+    )
+    sync_stats = db_manager.sync_announcements(
+        announcements_payload,
+        links_data=link_payloads,
+        logger=logger,
+    )
+    return {
+        "course_id": course_id,
+        "courses": len(courses),
+        "assignments": sum(len(rows) for rows in assignment_payloads.values()),
+        "announcements": len(announcements_payload),
+        "links": len(link_payloads),
+        "sync_stats": sync_stats,
+    }
 
 
 def _log_sync_payload_summary(
@@ -569,6 +1449,10 @@ def build_blackboard_sync_payloads(
         courses,
         valid_course_ids,
     )
+    announcement_assignment_link_payloads = _classify_announcements_and_build_links(
+        announcements_payload,
+        assignment_payloads,
+    )
     _log_sync_payload_summary(
         course_payload,
         assignment_payloads,
@@ -585,6 +1469,7 @@ def build_blackboard_sync_payloads(
         resource_payloads=resource_payloads,
         grade_payloads=grade_payloads,
         announcements_payload=announcements_payload,
+        announcement_assignment_link_payloads=announcement_assignment_link_payloads,
     )
 
 
@@ -651,6 +1536,7 @@ def sync_blackboard_payloads(
 
     stats["announcements"] = db_manager.sync_announcements(
         payloads.announcements_payload,
+        links_data=payloads.announcement_assignment_link_payloads,
         logger=None
         if logger is None
         else logger.child("provider.use_cases.snapshot_sync.data.announcements"),
@@ -797,6 +1683,7 @@ def _build_snapshot_apis(
             cas_client.client, parser=BlackboardCourseParser()
         ),
         assignment_api=BlackboardAssignmentAPI(context),
+        content_api=BlackboardContentAPI(context),
         grade_api=BlackboardGradeAPI(context),
         announcement_api=BlackboardAnnouncementAPI(context),
     )
@@ -840,6 +1727,14 @@ def _build_course_logger(
     )
 
 
+def _normalize_parallel_workers(value: int | None) -> int:
+    try:
+        parsed = int(value or 1)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, min(6, parsed))
+
+
 def _fetch_snapshot_course_assignments(
     course_id: str,
     assignment_api: BlackboardAssignmentAPI,
@@ -881,51 +1776,157 @@ def _fetch_snapshot_course_grades(
         return []
 
 
+def _fetch_single_snapshot_course_data(
+    *,
+    index: int,
+    total_courses: int,
+    course: CourseDTO,
+    assignment_api: BlackboardAssignmentAPI,
+    content_api: BlackboardContentAPI,
+    grade_api: BlackboardGradeAPI,
+    logger: BlackboardLogger,
+    progress: ProgressCallback | None,
+) -> tuple[int, str, list[AssignmentDTO], list[ResourceDTO], list[GradeDTO]]:
+    course_id = str(course.course_id or "").strip()
+    course_name = str(course.name or course_id).strip()
+    course_logger = _build_course_logger(
+        logger,
+        source="provider.use_cases.snapshot_sync.course",
+        course_id=course_id,
+        course_name=course_name,
+        course_index=index,
+        total_courses=total_courses,
+    )
+    _emit(
+        progress,
+        f"▶ 处理课程 [{index}/{total_courses}]: {course_name} ({course_id})",
+    )
+    course_logger.info("▶ 开始抓取课程基础数据")
+    assignments = _fetch_snapshot_course_assignments(
+        course_id,
+        assignment_api,
+        course_logger=course_logger,
+        progress=progress,
+    )
+    resources, _ = _fetch_resource_sync_resources(
+        course_id,
+        content_api,
+        course_logger=course_logger,
+        progress=progress,
+    )
+    grades = _fetch_snapshot_course_grades(
+        course_id,
+        grade_api,
+        course_logger=course_logger,
+        progress=progress,
+    )
+    return index, course_id, assignments, resources, grades
+
+
 def _fetch_snapshot_course_data(
     courses: list[CourseDTO],
     assignment_api: BlackboardAssignmentAPI,
+    content_api: BlackboardContentAPI,
     grade_api: BlackboardGradeAPI,
     *,
+    parallel_workers: int,
     logger: BlackboardLogger,
     progress: ProgressCallback | None,
-) -> tuple[dict[str, list[AssignmentDTO]], dict[str, list[GradeDTO]]]:
+) -> tuple[
+    dict[str, list[AssignmentDTO]],
+    dict[str, list[ResourceDTO]],
+    dict[str, list[GradeDTO]],
+]:
     assignments_by_course: dict[str, list[AssignmentDTO]] = {}
+    resources_by_course: dict[str, list[ResourceDTO]] = {}
     grades_by_course: dict[str, list[GradeDTO]] = {}
     total_courses = len(courses)
+    normalized_parallel_workers = _normalize_parallel_workers(parallel_workers)
+    valid_courses = [
+        (index, course)
+        for index, course in enumerate(courses, 1)
+        if str(course.course_id or "").strip()
+    ]
 
-    for index, course in enumerate(courses, 1):
-        course_id = str(course.course_id or "").strip()
-        course_name = str(course.name or course_id).strip()
-        if not course_id:
-            continue
-
-        course_logger = _build_course_logger(
-            logger,
-            source="provider.use_cases.snapshot_sync.course",
-            course_id=course_id,
-            course_name=course_name,
-            course_index=index,
-            total_courses=total_courses,
+    if normalized_parallel_workers > 1 and len(valid_courses) > 1:
+        logger.info(
+            "▶ 启用课程数据并行抓取",
+            payload={
+                "parallel_workers": normalized_parallel_workers,
+                "course_count": len(valid_courses),
+            },
         )
         _emit(
             progress,
-            f"▶ 处理课程 [{index}/{total_courses}]: {course_name} ({course_id})",
-        )
-        course_logger.info("▶ 开始抓取课程基础数据")
-        assignments_by_course[course_id] = _fetch_snapshot_course_assignments(
-            course_id,
-            assignment_api,
-            course_logger=course_logger,
-            progress=progress,
-        )
-        grades_by_course[course_id] = _fetch_snapshot_course_grades(
-            course_id,
-            grade_api,
-            course_logger=course_logger,
-            progress=progress,
+            f"▶ 使用 {normalized_parallel_workers} 个并行线程抓取课程作业、资源与成绩",
         )
 
-    return assignments_by_course, grades_by_course
+        completed_results: list[
+            tuple[int, str, list[AssignmentDTO], list[ResourceDTO], list[GradeDTO]]
+        ] = []
+        with ThreadPoolExecutor(
+            max_workers=normalized_parallel_workers,
+            thread_name_prefix="bb-snapshot-course",
+        ) as executor:
+            future_to_course = {
+                executor.submit(
+                    _fetch_single_snapshot_course_data,
+                    index=index,
+                    total_courses=total_courses,
+                    course=course,
+                    assignment_api=assignment_api,
+                    content_api=content_api,
+                    grade_api=grade_api,
+                    logger=logger,
+                    progress=progress,
+                ): (index, str(course.course_id or "").strip())
+                for index, course in valid_courses
+            }
+
+            for future in as_completed(future_to_course):
+                index, course_id = future_to_course[future]
+                try:
+                    completed_results.append(future.result())
+                except Exception as ex:
+                    logger.exception(
+                        "❌ 课程并行抓取失败",
+                        ex,
+                        payload={"course_id": course_id, "course_index": index},
+                    )
+                    _emit(
+                        progress,
+                        f"❌ 课程抓取失败 [{index}/{total_courses}] ({course_id}): {ex}",
+                    )
+                    completed_results.append((index, course_id, [], [], []))
+
+        for index, course_id, assignments, resources, grades in sorted(
+            completed_results, key=lambda item: item[0]
+        ):
+            assignments_by_course[course_id] = assignments
+            resources_by_course[course_id] = resources
+            grades_by_course[course_id] = grades
+        return assignments_by_course, resources_by_course, grades_by_course
+
+    for index, course in enumerate(courses, 1):
+        course_id = str(course.course_id or "").strip()
+        if not course_id:
+            continue
+
+        _, _, assignments, resources, grades = _fetch_single_snapshot_course_data(
+            index=index,
+            total_courses=total_courses,
+            course=course,
+            assignment_api=assignment_api,
+            content_api=content_api,
+            grade_api=grade_api,
+            logger=logger,
+            progress=progress,
+        )
+        assignments_by_course[course_id] = assignments
+        resources_by_course[course_id] = resources
+        grades_by_course[course_id] = grades
+
+    return assignments_by_course, resources_by_course, grades_by_course
 
 
 def _course_loader_payload(courses: list[CourseDTO]) -> list[dict[str, str | None]]:
@@ -999,6 +2000,7 @@ def _log_snapshot_fetch_summary(
     logger: BlackboardLogger,
     courses: list[CourseDTO],
     assignments_by_course: dict[str, list[AssignmentDTO]],
+    resources_by_course: dict[str, list[ResourceDTO]],
     grades_by_course: dict[str, list[GradeDTO]],
     announcements: list[AnnouncementDTO],
 ) -> None:
@@ -1010,7 +2012,7 @@ def _log_snapshot_fetch_summary(
                 "assignments": sum(
                     len(rows) for rows in assignments_by_course.values()
                 ),
-                "resources": 0,
+                "resources": sum(len(rows) for rows in resources_by_course.values()),
                 "grades": sum(len(rows) for rows in grades_by_course.values()),
                 "announcements": len(announcements),
             }
@@ -1018,18 +2020,49 @@ def _log_snapshot_fetch_summary(
     )
 
 
+def _filter_courses_for_current_term(
+    courses: list[CourseDTO],
+    *,
+    logger: BlackboardLogger,
+    progress: ProgressCallback | None,
+) -> list[CourseDTO]:
+    parser = BlackboardCourseParser()
+    current_term = parser.current_term_label()
+    filtered = [course for course in courses if parser.is_current_term(course.term)]
+    logger.info(
+        "✅ 已按当前学期筛选 Blackboard 课程",
+        payload={
+            "current_term": current_term,
+            "total_courses": len(courses),
+            "selected_courses": len(filtered),
+        },
+    )
+    _emit(
+        progress,
+        f"✅ 已按当前学期筛选课程：{len(filtered)}/{len(courses)} 门（当前学期：{current_term}）",
+    )
+    return filtered
+
+
 def fetch_blackboard_snapshot(
     username: str,
     password: str,
     *,
+    current_term_only: bool = False,
+    parallel_workers: int = 1,
     progress: ProgressCallback | None = None,
     enable_console_logging: bool = False,
     _log_session: BlackboardLogSession | None = None,
 ) -> BlackboardSnapshotFetchResult:
     log_session = _log_session or create_log_session(console=enable_console_logging)
+    normalized_parallel_workers = _normalize_parallel_workers(parallel_workers)
     logger = log_session.make_logger(
         layer="provider",
         source="provider.use_cases.snapshot_sync",
+        context={
+            "parallel_workers": normalized_parallel_workers,
+            "current_term_only": current_term_only,
+        },
     )
     normalized_username, normalized_password = _normalize_blackboard_credentials(
         username,
@@ -1057,12 +2090,22 @@ def fetch_blackboard_snapshot(
             logger=logger,
             progress=progress,
         )
-        assignments_by_course, grades_by_course = _fetch_snapshot_course_data(
-            courses,
-            snapshot_apis.assignment_api,
-            snapshot_apis.grade_api,
-            logger=logger,
-            progress=progress,
+        if current_term_only:
+            courses = _filter_courses_for_current_term(
+                courses,
+                logger=logger,
+                progress=progress,
+            )
+        assignments_by_course, resources_by_course, grades_by_course = (
+            _fetch_snapshot_course_data(
+                courses,
+                snapshot_apis.assignment_api,
+                snapshot_apis.content_api,
+                snapshot_apis.grade_api,
+                parallel_workers=normalized_parallel_workers,
+                logger=logger,
+                progress=progress,
+            )
         )
         announcements = _fetch_snapshot_announcements(
             courses,
@@ -1074,13 +2117,14 @@ def fetch_blackboard_snapshot(
             logger,
             courses,
             assignments_by_course,
+            resources_by_course,
             grades_by_course,
             announcements,
         )
         return BlackboardSnapshotFetchResult(
             courses=courses,
             assignments_by_course=assignments_by_course,
-            resources_by_course={},
+            resources_by_course=resources_by_course,
             grades_by_course=grades_by_course,
             announcements=announcements,
             logs=log_session.snapshot(),
@@ -1100,18 +2144,27 @@ def run_blackboard_snapshot_sync(
     db_path: str | Path | None = None,
     reset_schema: bool = False,
     verify_second_sync: bool = True,
+    current_term_only: bool = False,
+    parallel_workers: int = 1,
     progress: ProgressCallback | None = None,
     enable_console_logging: bool = False,
 ) -> BlackboardSnapshotSyncReport:
     log_session = create_log_session(console=enable_console_logging)
+    normalized_parallel_workers = _normalize_parallel_workers(parallel_workers)
     logger = log_session.make_logger(
         layer="provider",
         source="provider.use_cases.snapshot_sync.run",
-        context={"verify_second_sync": verify_second_sync},
+        context={
+            "verify_second_sync": verify_second_sync,
+            "current_term_only": current_term_only,
+            "parallel_workers": normalized_parallel_workers,
+        },
     )
     snapshot = fetch_blackboard_snapshot(
         username,
         password,
+        current_term_only=current_term_only,
+        parallel_workers=normalized_parallel_workers,
         progress=progress,
         _log_session=log_session,
     )
@@ -1152,6 +2205,7 @@ def run_blackboard_snapshot_sync(
 
     second_sync_stats: dict[str, dict[str, int]] | None = None
     if verify_second_sync:
+        _emit(progress, "▶ 开始执行第二次同步验证")
         logger.info("▶ 开始执行第二次同步验证")
         second_sync_stats = sync_blackboard_payloads(
             db_manager,
@@ -1159,6 +2213,7 @@ def run_blackboard_snapshot_sync(
             allow_assignment_attachment_resource_upsert=False,
             logger=logger.child("provider.use_cases.snapshot_sync.second_sync"),
         )
+        _emit(progress, "💾 第二次同步验证完成")
         logger.info(
             "💾 第二次同步验证完成", payload={"second_sync_stats": second_sync_stats}
         )

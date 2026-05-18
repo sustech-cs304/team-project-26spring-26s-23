@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any, ClassVar, Literal, Self, cast
+from typing import Any, ClassVar, Self
 
 from pydantic import (
     BaseModel,
@@ -17,634 +17,44 @@ from pydantic import (
 
 from app.tooling.contract.results import ToolArtifactReference
 
-DesktopCapabilityName = Literal[
-    "secret",
-    "workspace",
-    "database",
-    "artifact",
-    "state",
-    "event",
-    "mcp",
-]
-
-DESKTOP_CAPABILITY_NAMES: tuple[DesktopCapabilityName, ...] = (
-    "secret",
-    "workspace",
-    "database",
-    "artifact",
-    "state",
-    "event",
-    "mcp",
-)
-
-DesktopCapabilityOperation = Literal[
-    "get_secret",
-    "has_secret",
-    "resolve_path",
-    "ensure_directory",
-    "save_text",
-    "save_bytes",
-    "describe_artifact",
-    "get_value",
-    "put_value",
-    "delete_value",
-    "emit_event",
-    "call_tool",
-]
-
-DESKTOP_CAPABILITY_OPERATIONS: tuple[DesktopCapabilityOperation, ...] = (
-    "get_secret",
-    "has_secret",
-    "resolve_path",
-    "ensure_directory",
-    "save_text",
-    "save_bytes",
-    "describe_artifact",
-    "get_value",
-    "put_value",
-    "delete_value",
-    "emit_event",
-    "call_tool",
-)
-
-DesktopCapabilityStateScope = Literal["tool", "run"]
-DESKTOP_CAPABILITY_STATE_SCOPES: tuple[DesktopCapabilityStateScope, ...] = (
-    "tool",
-    "run",
-)
-
-DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: dict[
-    DesktopCapabilityName,
-    tuple[DesktopCapabilityOperation, ...],
-] = {
-    "secret": ("get_secret", "has_secret"),
-    "workspace": ("resolve_path", "ensure_directory"),
-    "database": ("resolve_path",),
-    "artifact": ("save_text", "save_bytes", "describe_artifact"),
-    "state": ("get_value", "put_value", "delete_value"),
-    "event": ("emit_event",),
-    "mcp": ("call_tool",),
-}
-
-DesktopCapabilityBridgeErrorCode = Literal[
-    "invalid_request",
-    "unsupported_capability",
-    "unsupported_operation",
-    "permission_denied",
-    "not_found",
-    "conflict",
-    "payload_too_large",
-    "temporarily_unavailable",
-    "timeout",
-    "internal_error",
-]
-
-DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES: tuple[DesktopCapabilityBridgeErrorCode, ...] = (
-    "invalid_request",
-    "unsupported_capability",
-    "unsupported_operation",
-    "permission_denied",
-    "not_found",
-    "conflict",
-    "payload_too_large",
-    "temporarily_unavailable",
-    "timeout",
-    "internal_error",
-)
-
-DESKTOP_CAPABILITY_BRIDGE_RETRYABLE_ERROR_CODES = frozenset(
-    {"temporarily_unavailable", "timeout"}
-)
-
-DesktopCapabilityBridgeOperationKey = tuple[
+from ._capability_bridge.constants import (
+    DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES,
+    DESKTOP_CAPABILITY_BRIDGE_REQUEST_ENVELOPE_SCHEMA,
+    DESKTOP_CAPABILITY_BRIDGE_REQUEST_PAYLOAD_SCHEMAS,
+    DESKTOP_CAPABILITY_BRIDGE_RESPONSE_ENVELOPE_SCHEMA,
+    DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS,
+    DESKTOP_CAPABILITY_BRIDGE_RETRYABLE_ERROR_CODES,
+    DESKTOP_CAPABILITY_NAMES,
+    DESKTOP_CAPABILITY_OPERATIONS,
+    DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY,
+    DESKTOP_CAPABILITY_STATE_SCOPES,
+    DesktopCapabilityBridgeErrorCode,
+    DesktopCapabilityBridgeOperationKey,
     DesktopCapabilityName,
     DesktopCapabilityOperation,
-]
+    DesktopCapabilityStateScope,
+    _normalize_mapping,
+)
 
-_ARTIFACT_DESCRIPTOR_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["artifactId", "metadata"],
-    "properties": {
-        "artifactId": {"type": "string", "minLength": 1},
-        "uri": {"type": "string", "minLength": 1},
-        "name": {"type": "string", "minLength": 1},
-        "contentType": {"type": "string", "minLength": 1},
-        "metadata": {"type": "object"},
-    },
-}
-
-DESKTOP_CAPABILITY_BRIDGE_REQUEST_ENVELOPE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": [
-        "requestId",
-        "capability",
-        "operation",
-        "toolId",
-        "runId",
-        "toolCallId",
-        "payload",
-    ],
-    "properties": {
-        "requestId": {"type": "string", "minLength": 1},
-        "capability": {"enum": list(DESKTOP_CAPABILITY_NAMES)},
-        "operation": {"enum": list(DESKTOP_CAPABILITY_OPERATIONS)},
-        "toolId": {"type": "string", "minLength": 1},
-        "runId": {"type": "string", "minLength": 1},
-        "toolCallId": {"type": "string", "minLength": 1},
-        "payload": {"type": "object"},
-    },
-}
-
-DESKTOP_CAPABILITY_BRIDGE_RESPONSE_ENVELOPE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["requestId", "ok"],
-    "properties": {
-        "requestId": {"type": "string", "minLength": 1},
-        "ok": {"type": "boolean"},
-        "result": {"type": "object"},
-        "errorCode": {"enum": list(DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES)},
-        "errorMessage": {"type": "string", "minLength": 1},
-        "errorRetryable": {"type": "boolean"},
-        "details": {"type": "object"},
-    },
-    "anyOf": [
-        {
-            "required": ["requestId", "ok"],
-            "properties": {
-                "ok": {"const": True},
-            },
-        },
-        {
-            "required": [
-                "requestId",
-                "ok",
-                "errorCode",
-                "errorMessage",
-                "errorRetryable",
-                "details",
-            ],
-            "properties": {
-                "ok": {"const": False},
-            },
-        },
-    ],
-}
-
-DESKTOP_CAPABILITY_BRIDGE_REQUEST_PAYLOAD_SCHEMAS: dict[
-    DesktopCapabilityBridgeOperationKey,
-    dict[str, Any],
-] = {
-    ("secret", "get_secret"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["secretName"],
-        "properties": {
-            "secretName": {"type": "string", "minLength": 1},
-        },
-    },
-    ("secret", "has_secret"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["secretName"],
-        "properties": {
-            "secretName": {"type": "string", "minLength": 1},
-        },
-    },
-    ("workspace", "resolve_path"): {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "relativePath": {"type": "string", "minLength": 1},
-        },
-    },
-    ("database", "resolve_path"): {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "relativePath": {"type": "string", "minLength": 1},
-        },
-    },
-    ("workspace", "ensure_directory"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["relativePath"],
-        "properties": {
-            "relativePath": {"type": "string", "minLength": 1},
-        },
-    },
-    ("artifact", "save_text"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["name", "text"],
-        "properties": {
-            "name": {"type": "string", "minLength": 1},
-            "text": {"type": "string"},
-            "contentType": {"type": "string", "minLength": 1},
-            "metadata": {"type": "object"},
-        },
-    },
-    ("artifact", "save_bytes"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["name", "contentBase64"],
-        "properties": {
-            "name": {"type": "string", "minLength": 1},
-            "contentBase64": {"type": "string", "minLength": 1},
-            "contentType": {"type": "string", "minLength": 1},
-            "metadata": {"type": "object"},
-        },
-    },
-    ("artifact", "describe_artifact"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["artifactId"],
-        "properties": {
-            "artifactId": {"type": "string", "minLength": 1},
-        },
-    },
-    ("state", "get_value"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["scope", "key"],
-        "properties": {
-            "scope": {"enum": list(DESKTOP_CAPABILITY_STATE_SCOPES)},
-            "key": {"type": "string", "minLength": 1},
-        },
-    },
-    ("state", "put_value"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["scope", "key", "value"],
-        "properties": {
-            "scope": {"enum": list(DESKTOP_CAPABILITY_STATE_SCOPES)},
-            "key": {"type": "string", "minLength": 1},
-            "value": {"type": "object"},
-        },
-    },
-    ("state", "delete_value"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["scope", "key"],
-        "properties": {
-            "scope": {"enum": list(DESKTOP_CAPABILITY_STATE_SCOPES)},
-            "key": {"type": "string", "minLength": 1},
-        },
-    },
-    ("event", "emit_event"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["eventType"],
-        "properties": {
-            "eventType": {"type": "string", "minLength": 1},
-            "message": {"type": "string", "minLength": 1},
-            "data": {"type": "object"},
-        },
-    },
-    ("mcp", "call_tool"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["serverId", "remoteToolName", "arguments"],
-        "properties": {
-            "serverId": {"type": "string", "minLength": 1},
-            "remoteToolName": {"type": "string", "minLength": 1},
-            "arguments": {"type": "object"},
-            "snapshotRevision": {"type": "integer", "minimum": 0},
-        },
-    },
-}
-
-DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS: dict[
-    DesktopCapabilityBridgeOperationKey,
-    dict[str, Any],
-] = {
-    ("secret", "get_secret"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["value"],
-        "properties": {
-            "value": {"type": ["string", "null"]},
-        },
-    },
-    ("secret", "has_secret"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["present"],
-        "properties": {
-            "present": {"type": "boolean"},
-        },
-    },
-    ("workspace", "resolve_path"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["path"],
-        "properties": {
-            "path": {"type": "string", "minLength": 1},
-        },
-    },
-    ("database", "resolve_path"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["path"],
-        "properties": {
-            "path": {"type": "string", "minLength": 1},
-        },
-    },
-    ("workspace", "ensure_directory"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["path"],
-        "properties": {
-            "path": {"type": "string", "minLength": 1},
-        },
-    },
-    ("artifact", "save_text"): deepcopy(_ARTIFACT_DESCRIPTOR_SCHEMA),
-    ("artifact", "save_bytes"): deepcopy(_ARTIFACT_DESCRIPTOR_SCHEMA),
-    ("artifact", "describe_artifact"): deepcopy(_ARTIFACT_DESCRIPTOR_SCHEMA),
-    ("state", "get_value"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["found", "value"],
-        "properties": {
-            "found": {"type": "boolean"},
-            "value": {"type": ["object", "null"]},
-        },
-    },
-    ("state", "put_value"): {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {},
-    },
-    ("state", "delete_value"): {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {},
-    },
-    ("event", "emit_event"): {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {},
-    },
-    ("mcp", "call_tool"): {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["ok", "toolId", "serverId", "remoteToolName"],
-        "properties": {
-            "ok": {"type": "boolean"},
-            "toolId": {"type": "string", "minLength": 1},
-            "serverId": {"type": "string", "minLength": 1},
-            "remoteToolName": {"type": "string", "minLength": 1},
-            "content": {"type": "array"},
-            "structuredContent": {},
-            "snapshotRevision": {"type": ["integer", "null"], "minimum": 0},
-            "isError": {"const": False},
-            "error": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["code", "message", "retryable"],
-                "properties": {
-                    "code": {"type": "string", "minLength": 1},
-                    "message": {"type": "string", "minLength": 1},
-                    "retryable": {"type": "boolean"},
-                    "observedAt": {"type": "string", "minLength": 1},
-                    "details": {"type": "object"},
-                },
-            },
-        },
-        "anyOf": [
-            {
-                "required": ["ok", "toolId", "serverId", "remoteToolName", "content"],
-                "properties": {"ok": {"const": True}},
-            },
-            {
-                "required": ["ok", "toolId", "serverId", "remoteToolName", "error"],
-                "properties": {"ok": {"const": False}},
-            },
-        ],
-    },
-}
-
-
-def _normalize_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
-    return deepcopy(dict(value))
-
-
-def _require_non_empty_text(value: str, *, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string.")
-    normalized = value.strip()
-    if normalized == "":
-        raise ValueError(f"{field_name} must be a non-empty string.")
-    return normalized
-
-
-def _normalize_optional_text(value: Any, *, field_name: str) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string when provided.")
-    normalized = value.strip()
-    return normalized or None
-
-
-def _normalize_capability_name(value: str) -> DesktopCapabilityName:
-    if not isinstance(value, str):
-        raise ValueError("Desktop capability must be a string.")
-    normalized = value.strip()
-    if normalized not in DESKTOP_CAPABILITY_NAMES:
-        raise ValueError(
-            "Unknown desktop capability "
-            f"'{value}'. Expected one of {', '.join(DESKTOP_CAPABILITY_NAMES)}."
-        )
-    return cast(DesktopCapabilityName, normalized)
-
-
-def _normalize_operation_name(value: str) -> DesktopCapabilityOperation:
-    if not isinstance(value, str):
-        raise ValueError("Desktop capability operation must be a string.")
-    normalized = value.strip()
-    if normalized not in DESKTOP_CAPABILITY_OPERATIONS:
-        raise ValueError(
-            "Unknown desktop capability operation "
-            f"'{value}'. Expected one of {', '.join(DESKTOP_CAPABILITY_OPERATIONS)}."
-        )
-    return cast(DesktopCapabilityOperation, normalized)
-
-
-def _normalize_state_scope(value: str) -> DesktopCapabilityStateScope:
-    if not isinstance(value, str):
-        raise ValueError("Desktop capability state scope must be a string.")
-    normalized = value.strip()
-    if normalized not in DESKTOP_CAPABILITY_STATE_SCOPES:
-        raise ValueError(
-            "Unknown desktop capability state scope "
-            f"'{value}'. Expected one of {', '.join(DESKTOP_CAPABILITY_STATE_SCOPES)}."
-        )
-    return cast(DesktopCapabilityStateScope, normalized)
-
-
-def _normalize_error_code(value: str) -> DesktopCapabilityBridgeErrorCode:
-    if not isinstance(value, str):
-        raise ValueError("Desktop capability bridge error code must be a string.")
-    normalized = value.strip()
-    if normalized not in DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES:
-        raise ValueError(
-            "Unknown desktop capability bridge error code "
-            f"'{value}'. Expected one of "
-            f"{', '.join(DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES)}."
-        )
-    return cast(DesktopCapabilityBridgeErrorCode, normalized)
-
-
-def _normalize_operation_key(
-    capability: str,
-    operation: str,
-) -> DesktopCapabilityBridgeOperationKey:
-    normalized_capability = _normalize_capability_name(capability)
-    normalized_operation = _normalize_operation_name(operation)
-    if (
-        normalized_operation
-        not in DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY[normalized_capability]
-    ):
-        raise ValueError(
-            f"Operation '{normalized_operation}' is not supported for capability "
-            f"'{normalized_capability}'."
-        )
-    return normalized_capability, normalized_operation
-
-
-def _require_mapping(value: Any, *, field_name: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{field_name} must be an object mapping.")
-    return value
-
-
-def _assert_allowed_fields(
-    value: Mapping[str, Any],
-    *,
-    allowed_fields: set[str],
-    field_name: str,
-) -> None:
-    unexpected_fields = sorted(str(key) for key in value if key not in allowed_fields)
-    if unexpected_fields:
-        formatted = ", ".join(unexpected_fields)
-        raise ValueError(f"{field_name} contains unsupported field(s): {formatted}.")
-
-
-def _validation_error_to_message(exc: ValidationError) -> str:
-    errors = exc.errors()
-    if errors:
-        first_error = errors[0]
-        context = first_error.get("ctx")
-        if isinstance(context, dict):
-            error = context.get("error")
-            if error is not None:
-                return str(error)
-        message = first_error.get("msg")
-        if isinstance(message, str):
-            return message
-    return str(exc)
-
-
-def _require_text_field_value(
-    value: Any,
-    *,
-    field_name: str,
-    field_context: str,
-    allow_empty: bool = False,
-) -> str:
-    if not isinstance(value, str):
-        raise ValueError(f"{field_context} field '{field_name}' must be a string.")
-    if allow_empty:
-        return value
-    return _require_non_empty_text(
-        value,
-        field_name=f"{field_context} field '{field_name}'",
-    )
-
-
-def _normalize_optional_text_field_value(
-    value: Any,
-    *,
-    field_name: str,
-    field_context: str,
-) -> str | None:
-    return _normalize_optional_text(
-        value,
-        field_name=f"{field_context} field '{field_name}'",
-    )
-
-
-def _normalize_optional_mapping_field_value(
-    value: Any,
-    *,
-    field_name: str,
-    field_context: str,
-) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    if not isinstance(value, Mapping):
-        raise ValueError(
-            f"{field_context} field '{field_name}' must be an object when provided."
-        )
-    return _normalize_mapping(value)
-
-
-def _require_mapping_field_value(
-    value: Any,
-    *,
-    field_name: str,
-    field_context: str,
-) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        raise ValueError(
-            f"{field_context} field '{field_name}' must be an object mapping."
-        )
-    return _normalize_mapping(value)
-
-
-def _require_boolean_field_value(
-    value: Any,
-    *,
-    field_name: str,
-    field_context: str,
-) -> bool:
-    if not isinstance(value, bool):
-        raise ValueError(f"{field_context} field '{field_name}' must be a boolean.")
-    return value
-
-
-def _normalize_bridge_model_dict(
-    value: BaseModel,
-    *,
-    exclude_none: bool,
-) -> dict[str, Any]:
-    return _normalize_mapping(
-        value.model_dump(by_alias=True, exclude_none=exclude_none)
-    )
-
-
-def _artifact_descriptor_to_dict(
-    *,
-    artifact_id: str,
-    uri: str | None,
-    name: str | None,
-    content_type: str | None,
-    metadata: Mapping[str, Any],
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "artifactId": artifact_id,
-        "metadata": _normalize_mapping(metadata),
-    }
-    if uri is not None:
-        payload["uri"] = uri
-    if name is not None:
-        payload["name"] = name
-    if content_type is not None:
-        payload["contentType"] = content_type
-    return payload
+from ._capability_bridge.validators import (
+    _artifact_descriptor_to_dict,
+    _assert_allowed_fields,
+    _normalize_bridge_model_dict,
+    _normalize_capability_name,
+    _normalize_error_code,
+    _normalize_operation_key,
+    _normalize_operation_name,
+    _normalize_optional_mapping_field_value,
+    _normalize_optional_text,
+    _normalize_optional_text_field_value,
+    _normalize_state_scope,
+    _require_boolean_field_value,
+    _require_mapping,
+    _require_mapping_field_value,
+    _require_non_empty_text,
+    _require_text_field_value,
+    _validation_error_to_message,
+)
 
 
 class _DesktopCapabilityBridgeModel(BaseModel):
@@ -1493,6 +903,577 @@ class _EmptyResult(_BridgeResultModel):
     _bridge_allowed_fields: ClassVar[set[str] | None] = set()
 
 
+class _BrowserPagePayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"url", "showWindow", "newTab", "selector", "format"}
+
+    url: str = Field(min_length=1)
+    show_window: bool | None = Field(
+        default=None,
+        validation_alias="showWindow",
+        serialization_alias="showWindow",
+    )
+    new_tab: bool | None = Field(
+        default=None,
+        validation_alias="newTab",
+        serialization_alias="newTab",
+    )
+    selector: str | None = Field(default=None, min_length=1)
+    format: str | None = Field(default=None, min_length=1)
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _validate_url(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="url",
+            field_context="payload",
+        )
+
+    @field_validator("show_window", mode="before")
+    @classmethod
+    def _validate_show_window(cls, value: Any) -> bool | None:
+        if value is None:
+            return None
+        return _require_boolean_field_value(
+            value,
+            field_name="showWindow",
+            field_context="payload",
+        )
+
+    @field_validator("new_tab", mode="before")
+    @classmethod
+    def _validate_new_tab(cls, value: Any) -> bool | None:
+        if value is None:
+            return None
+        return _require_boolean_field_value(
+            value,
+            field_name="newTab",
+            field_context="payload",
+        )
+
+    @field_validator("selector", mode="before")
+    @classmethod
+    def _validate_selector(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="selector",
+            field_context="payload",
+        )
+
+    @field_validator("format", mode="before")
+    @classmethod
+    def _validate_format(cls, value: Any) -> str | None:
+        normalized = _normalize_optional_text_field_value(
+            value,
+            field_name="format",
+            field_context="payload",
+        )
+        if normalized is not None and normalized not in {"text", "html", "markdown"}:
+            raise ValueError("format must be one of: text, html, markdown")
+        return normalized
+
+    def to_bridge_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"url": self.url}
+        if self.show_window is not None:
+            payload["showWindow"] = self.show_window
+        if self.new_tab is not None:
+            payload["newTab"] = self.new_tab
+        if self.selector is not None:
+            payload["selector"] = self.selector
+        if self.format is not None:
+            payload["format"] = self.format
+        return payload
+
+
+class _BrowserScreenshotPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"name"}
+
+    name: str | None = Field(default=None, min_length=1)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _validate_name(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="name",
+            field_context="payload",
+        )
+
+
+class _BrowserListTabsPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = set()
+
+
+class _BrowserCloseTabPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"tabId"}
+
+    tab_id: str | None = Field(
+        default=None,
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="payload",
+        )
+
+    def to_bridge_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if self.tab_id is not None:
+            payload["tabId"] = self.tab_id
+        return payload
+
+
+class _BrowserSwitchTabPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"tabId"}
+
+    tab_id: str = Field(
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="payload",
+        )
+
+
+class _BrowserExecutePayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"script", "tabId"}
+
+    script: str = Field(min_length=1)
+    tab_id: str | None = Field(
+        default=None,
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+
+    @field_validator("script", mode="before")
+    @classmethod
+    def _validate_script(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="script",
+            field_context="payload",
+        )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="payload",
+        )
+
+    def to_bridge_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"script": self.script}
+        if self.tab_id is not None:
+            payload["tabId"] = self.tab_id
+        return payload
+
+
+class _BrowserResetPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = set()
+
+
+class _BrowserSnapshotPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"selector", "tabId"}
+
+    selector: str | None = Field(default=None, min_length=1)
+    tab_id: str | None = Field(
+        default=None,
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+
+    @field_validator("selector", mode="before")
+    @classmethod
+    def _validate_selector(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="selector",
+            field_context="payload",
+        )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="payload",
+        )
+
+    def to_bridge_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if self.selector is not None:
+            payload["selector"] = self.selector
+        if self.tab_id is not None:
+            payload["tabId"] = self.tab_id
+        return payload
+
+
+class _BrowserPageResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "tabId",
+        "currentUrl",
+        "title",
+        "windowVisible",
+        "content",
+    }
+
+    tab_id: str = Field(validation_alias="tabId", serialization_alias="tabId", min_length=1)
+    current_url: str = Field(validation_alias="currentUrl", serialization_alias="currentUrl")
+    title: str | None = Field(default=None, min_length=1)
+    window_visible: bool | None = Field(
+        default=None,
+        validation_alias="windowVisible",
+        serialization_alias="windowVisible",
+    )
+    content: str | None = Field(default=None, min_length=0)
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="result",
+        )
+
+    @field_validator("current_url", mode="before")
+    @classmethod
+    def _validate_current_url(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="currentUrl",
+            field_context="result",
+        )
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _validate_title(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="title",
+            field_context="result",
+        )
+
+    @field_validator("window_visible", mode="before")
+    @classmethod
+    def _validate_window_visible(cls, value: Any) -> bool | None:
+        if value is None:
+            return None
+        return _require_boolean_field_value(
+            value,
+            field_name="windowVisible",
+            field_context="result",
+        )
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "tabId": self.tab_id,
+            "currentUrl": self.current_url,
+        }
+        if self.title is not None:
+            payload["title"] = self.title
+        if self.window_visible is not None:
+            payload["windowVisible"] = self.window_visible
+        if self.content is not None:
+            payload["content"] = self.content
+        return payload
+
+
+class _BrowserScreenshotResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "tabId",
+        "currentUrl",
+        "title",
+        "windowVisible",
+        "artifactId",
+        "uri",
+        "name",
+        "contentType",
+        "metadata",
+    }
+
+    tab_id: str = Field(validation_alias="tabId", serialization_alias="tabId", min_length=1)
+    current_url: str = Field(validation_alias="currentUrl", serialization_alias="currentUrl")
+    title: str | None = Field(default=None, min_length=1)
+    window_visible: bool | None = Field(
+        default=None,
+        validation_alias="windowVisible",
+        serialization_alias="windowVisible",
+    )
+    artifact_id: str = Field(validation_alias="artifactId", serialization_alias="artifactId", min_length=1)
+    uri: str | None = Field(default=None, min_length=1)
+    name: str | None = Field(default=None, min_length=1)
+    content_type: str | None = Field(
+        default=None,
+        validation_alias="contentType",
+        serialization_alias="contentType",
+        min_length=1,
+    )
+    metadata: dict[str, Any]
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="result",
+        )
+
+    @field_validator("current_url", mode="before")
+    @classmethod
+    def _validate_current_url(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="currentUrl",
+            field_context="result",
+        )
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _validate_title(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="title",
+            field_context="result",
+        )
+
+    @field_validator("window_visible", mode="before")
+    @classmethod
+    def _validate_window_visible(cls, value: Any) -> bool | None:
+        if value is None:
+            return None
+        return _require_boolean_field_value(
+            value,
+            field_name="windowVisible",
+            field_context="result",
+        )
+
+    @field_validator("artifact_id", mode="before")
+    @classmethod
+    def _validate_artifact_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="artifactId",
+            field_context="result",
+        )
+
+    @field_validator("uri", mode="before")
+    @classmethod
+    def _validate_uri(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="uri",
+            field_context="result",
+        )
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _validate_name(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="name",
+            field_context="result",
+        )
+
+    @field_validator("content_type", mode="before")
+    @classmethod
+    def _validate_content_type(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="contentType",
+            field_context="result",
+        )
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _validate_metadata(cls, value: Any) -> dict[str, Any]:
+        return _require_mapping_field_value(
+            value,
+            field_name="metadata",
+            field_context="result",
+        )
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "tabId": self.tab_id,
+            "currentUrl": self.current_url,
+            "artifactId": self.artifact_id,
+            "metadata": _normalize_mapping(self.metadata),
+        }
+        if self.title is not None:
+            payload["title"] = self.title
+        if self.window_visible is not None:
+            payload["windowVisible"] = self.window_visible
+        if self.uri is not None:
+            payload["uri"] = self.uri
+        if self.name is not None:
+            payload["name"] = self.name
+        if self.content_type is not None:
+            payload["contentType"] = self.content_type
+        return payload
+
+
+class _BrowserListTabsResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"tabs"}
+
+    tabs: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("tabs", mode="before")
+    @classmethod
+    def _validate_tabs(cls, value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            raise ValueError("tabs must be a list")
+        validated: list[dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                validated.append({})
+                continue
+            if not isinstance(item.get("tabId"), str) or item["tabId"].strip() == "":
+                raise ValueError("each tab must have a non-empty tabId")
+            if not isinstance(item.get("currentUrl"), str):
+                raise ValueError("each tab must have a currentUrl string")
+            validated.append(item)
+        return validated
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        return {"tabs": self.tabs}
+
+
+class _BrowserExecuteResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"result", "tabId"}
+
+    result: Any = None
+    tab_id: str | None = Field(
+        default=None,
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="result",
+        )
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"result": self.result}
+        if self.tab_id is not None:
+            payload["tabId"] = self.tab_id
+        return payload
+
+
+class _BrowserResetResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"closedCount"}
+
+    closed_count: int = Field(
+        default=0,
+        validation_alias="closedCount",
+        serialization_alias="closedCount",
+        ge=0,
+    )
+
+    @field_validator("closed_count", mode="before")
+    @classmethod
+    def _validate_closed_count(cls, value: Any) -> int:
+        if isinstance(value, int):
+            return max(0, value)
+        raise ValueError("closedCount must be an integer")
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        return {"closedCount": self.closed_count}
+
+
+class _BrowserSnapshotResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "snapshot",
+        "tabId",
+        "elementCount",
+        "interactiveCount",
+    }
+
+    snapshot: str = Field(default="", min_length=0)
+    tab_id: str = Field(
+        default="",
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+    element_count: int = Field(
+        default=0,
+        validation_alias="elementCount",
+        serialization_alias="elementCount",
+        ge=0,
+    )
+    interactive_count: int = Field(
+        default=0,
+        validation_alias="interactiveCount",
+        serialization_alias="interactiveCount",
+        ge=0,
+    )
+
+    @field_validator("snapshot", mode="before")
+    @classmethod
+    def _validate_snapshot(cls, value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        return str(value) if value is not None else ""
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="result",
+        )
+
+    @field_validator("element_count", mode="before")
+    @classmethod
+    def _validate_element_count(cls, value: Any) -> int:
+        if isinstance(value, (int, float)):
+            return max(0, int(value))
+        raise ValueError("elementCount must be an integer")
+
+    @field_validator("interactive_count", mode="before")
+    @classmethod
+    def _validate_interactive_count(cls, value: Any) -> int:
+        if isinstance(value, (int, float)):
+            return max(0, int(value))
+        raise ValueError("interactiveCount must be an integer")
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        return {
+            "snapshot": self.snapshot,
+            "tabId": self.tab_id,
+            "elementCount": self.element_count,
+            "interactiveCount": self.interactive_count,
+        }
+
+
 class DesktopCapabilityBridgeError(_DesktopCapabilityBridgeModel):
     """Stable error model returned by desktop capability bridge failures."""
 
@@ -1850,6 +1831,14 @@ _PAYLOAD_MODELS: dict[
     ("state", "delete_value"): _StateAddressPayload,
     ("event", "emit_event"): _EmitEventPayload,
     ("mcp", "call_tool"): _McpToolCallPayload,
+    ("browser", "open"): _BrowserPagePayload,
+    ("browser", "screenshot"): _BrowserScreenshotPayload,
+    ("browser", "list_tabs"): _BrowserListTabsPayload,
+    ("browser", "close_tab"): _BrowserCloseTabPayload,
+    ("browser", "switch_tab"): _BrowserSwitchTabPayload,
+    ("browser", "execute"): _BrowserExecutePayload,
+    ("browser", "reset"): _BrowserResetPayload,
+    ("browser", "snapshot"): _BrowserSnapshotPayload,
 }
 
 _RESULT_MODELS: dict[
@@ -1869,6 +1858,14 @@ _RESULT_MODELS: dict[
     ("state", "delete_value"): _EmptyResult,
     ("event", "emit_event"): _EmptyResult,
     ("mcp", "call_tool"): _McpToolCallResult,
+    ("browser", "open"): _BrowserPageResult,
+    ("browser", "screenshot"): _BrowserScreenshotResult,
+    ("browser", "list_tabs"): _BrowserListTabsResult,
+    ("browser", "close_tab"): _BrowserPageResult,
+    ("browser", "switch_tab"): _BrowserPageResult,
+    ("browser", "execute"): _BrowserExecuteResult,
+    ("browser", "reset"): _BrowserResetResult,
+    ("browser", "snapshot"): _BrowserSnapshotResult,
 }
 
 

@@ -67,523 +67,583 @@ export interface CreateMcpRegistryServiceOptions {
   ) => void | Promise<void>
 }
 
-export function createMcpRegistryService(
-  options: CreateMcpRegistryServiceOptions,
-): McpRegistryService {
-  const now = options.now ?? (() => new Date().toISOString())
-  const resolvedCommandMetadata = new Map<string, {
+interface ServiceContext {
+  options: CreateMcpRegistryServiceOptions
+  now: () => string
+  resolvedCommandMetadata: Map<string, {
     requestedCommand: string
     resolutionKind: 'raw' | 'managed'
     managedFamily?: 'node' | 'uv'
-  }>()
-  const connectorHub = options.connectorHub ?? createMcpConnectorHub({
-    now,
-    publishEvent: options.publishEvent,
-    getResolvedCommand(server) {
-      return resolvedCommandMetadata.get(server.serverId) ?? null
-    },
-  })
-  let runtimeSnapshotRevision: number | null = null
+  }>
+  connectorHub: McpConnectorHub
+  runtimeSnapshotRevision: number | null
+}
 
-  const persistSnapshotArtifacts = async (
-    snapshot: McpRegistryStoreSnapshot,
-    snapshotRevision: number,
-  ): Promise<McpRegistryStoreSnapshot> => {
-    let persistedSnapshot = overrideSnapshotRevision(snapshot, snapshotRevision)
-
-    if (snapshot.snapshotRevision !== snapshotRevision) {
-      try {
-        persistedSnapshot = await options.store.saveSnapshotRevision(snapshotRevision)
-      } catch (error) {
-        await options.appendLog?.('error', '[mcp-registry] Failed to persist the MCP snapshot revision.', {
-          registryRevision: snapshot.registryRevision,
-          snapshotRevision,
-          detail: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-
-    if (options.snapshotSink !== undefined) {
-      try {
-        const states = connectorHub.getAllStates(persistedSnapshot.servers)
-        const capabilitySnapshot = createMcpCapabilitySnapshot({
-          registryRevision: persistedSnapshot.registryRevision,
-          snapshotRevision,
-          generatedAt: now(),
-          servers: persistedSnapshot.servers,
-          states,
-          toolsByServerId: new Map(
-            persistedSnapshot.servers.map((server) => [
-              server.serverId,
-              connectorHub.getTools(server.serverId),
-            ]),
-          ),
-        })
-        await options.snapshotSink.write(capabilitySnapshot)
-      } catch (error) {
-        await options.appendLog?.('error', '[mcp-registry] Failed to persist the MCP capability snapshot.', {
-          registryRevision: snapshot.registryRevision,
-          snapshotRevision,
-          detail: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-
-    return persistedSnapshot
+export function createMcpRegistryService(
+  options: CreateMcpRegistryServiceOptions,
+): McpRegistryService {
+  const ctx: ServiceContext = {
+    options,
+    now: options.now ?? (() => new Date().toISOString()),
+    resolvedCommandMetadata: new Map(),
+    connectorHub: options.connectorHub ?? createMcpConnectorHub({
+      now: options.now ?? (() => new Date().toISOString()),
+      publishEvent: options.publishEvent,
+      getResolvedCommand(server) {
+        return ctx.resolvedCommandMetadata.get(server.serverId) ?? null
+      },
+    }),
+    runtimeSnapshotRevision: null,
   }
 
   return {
-    async loadRegistry(request) {
-      const snapshot = await options.store.load()
-      const revisions = resolveRuntimeRevisions(snapshot)
-      await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), revisions)
-      const persistedSnapshot = await persistSnapshotArtifacts(snapshot, revisions.snapshotRevision)
-      return buildLoadResult(persistedSnapshot, request?.includeDisabled ?? true, connectorHub, revisions)
-    },
-    async saveServer(draft) {
-      const snapshot = await options.store.load()
-      const existing = snapshot.servers.find((server) => server.serverId === draft.serverId)
-      const normalized = normalizeDraft(draft, existing, now())
+    loadRegistry: (request) => serviceLoadRegistry(ctx, request),
+    saveServer: (draft) => serviceSaveServer(ctx, draft),
+    deleteServer: (serverId) => serviceDeleteServer(ctx, serverId),
+    setServerEnabled: (request) => serviceSetServerEnabled(ctx, request),
+    testConnection: (request) => serviceTestConnection(ctx, request),
+    refreshCatalog: (request) => serviceRefreshCatalog(ctx, request),
+    warmupEnabledServersOnStartup: () => serviceWarmup(ctx),
+    executeTool: (request) => serviceExecuteTool(ctx, request),
+  }
+}
 
-      if (!normalized.ok) {
-        return createMcpRegistryApiFailure(
-          'MCP server draft failed validation.',
-          MCP_REGISTRY_VALIDATION_ERROR_CODE,
-          normalized.validationErrors,
-        )
-      }
+async function servicePersistSnapshotArtifacts(
+  ctx: ServiceContext,
+  snapshot: McpRegistryStoreSnapshot,
+  snapshotRevision: number,
+): Promise<McpRegistryStoreSnapshot> {
+  let persistedSnapshot = overrideSnapshotRevision(snapshot, snapshotRevision)
 
-      const currentRevisions = resolveRuntimeRevisions(snapshot)
-      const nextServers = upsertServer(snapshot.servers, normalized.server)
-      const stored = await options.store.saveServers(nextServers, {
-        snapshotRevision: currentRevisions.snapshotRevision,
-      })
-
-      const synchronization = normalized.server.enabled
-        ? await synchronizeSavedEnabledServer(stored, normalized.server.serverId, currentRevisions.snapshotRevision)
-        : await synchronizeDisabledServer(stored, normalized.server, currentRevisions.snapshotRevision, existing?.enabled === true)
-
-      return {
-        ok: true,
-        registryRevision: stored.registryRevision,
-        snapshotRevision: synchronization.snapshotRevision,
-        server: normalized.server,
-        state: synchronization.state,
-        validationErrors: [],
-      }
-    },
-    async deleteServer(serverId) {
-      const snapshot = await options.store.load()
-      const existing = snapshot.servers.find((server) => server.serverId === serverId)
-      if (existing === undefined) {
-        return createMcpRegistryApiFailure(
-          `MCP server "${serverId}" was not found.`,
-          MCP_REGISTRY_NOT_FOUND_ERROR_CODE,
-        )
-      }
-
-      const currentRevisions = resolveRuntimeRevisions(snapshot)
-      const stored = await options.store.saveServers(
-        snapshot.servers.filter((server) => server.serverId !== serverId),
-        { snapshotRevision: currentRevisions.snapshotRevision },
-      )
-      await connectorHub.removeServer(serverId, {
-        registryRevision: stored.registryRevision,
-        snapshotRevision: currentRevisions.snapshotRevision,
-      })
-
-      const nextSnapshotRevision = existing.enabled
-        ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
-        : currentRevisions.snapshotRevision
-      runtimeSnapshotRevision = nextSnapshotRevision
-      const persistedSnapshot = await persistSnapshotArtifacts(stored, nextSnapshotRevision)
-      await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
-
-      return {
-        ok: true,
-        registryRevision: stored.registryRevision,
-        snapshotRevision: nextSnapshotRevision,
-        serverId,
-        deleted: true,
-      }
-    },
-    async setServerEnabled(request) {
-      const snapshot = await options.store.load()
-      const existing = snapshot.servers.find((server) => server.serverId === request.serverId)
-      if (existing === undefined) {
-        return createMcpRegistryApiFailure(
-          `MCP server "${request.serverId}" was not found.`,
-          MCP_REGISTRY_NOT_FOUND_ERROR_CODE,
-        )
-      }
-
-      const updatedServer: McpServerRecord = {
-        ...cloneServerRecord(existing),
-        enabled: request.enabled,
-        updatedAt: now(),
-      }
-      const currentRevisions = resolveRuntimeRevisions(snapshot)
-      const stored = await options.store.saveServers(
-        upsertServer(snapshot.servers, updatedServer),
-        { snapshotRevision: currentRevisions.snapshotRevision },
-      )
-
-      const synchronization = request.enabled
-        ? await synchronizeSavedEnabledServer(stored, updatedServer.serverId, currentRevisions.snapshotRevision)
-        : await synchronizeDisabledServer(stored, updatedServer, currentRevisions.snapshotRevision, existing.enabled)
-
-      return {
-        ok: true,
-        registryRevision: stored.registryRevision,
-        snapshotRevision: synchronization.snapshotRevision,
-        server: updatedServer,
-        state: synchronization.state,
-      }
-    },
-    async testConnection(request) {
-      const startedAt = Date.now()
-      const resolved = await resolveConnectionTestTarget(request, options.store, now())
-      if (!resolved.ok) {
-        return resolved.failure
-      }
-
-      const result = await connectorHub.testConnection(await resolveManagedTransportConfig(resolved.server))
-      if (!result.success) {
-        await options.appendLog?.('warn', '[mcp-registry] MCP testConnection failed.', {
-          serverId: resolved.server.serverId,
-          transportKind: result.transportKind,
-          phase: result.phase,
-          errorCode: result.error?.code ?? null,
-          retryable: result.error?.retryable ?? null,
-          diagnosticSummary: result.diagnosticSummary,
-          stderrSummary: typeof result.error?.details?.stderrSummary === 'string'
-            ? result.error.details.stderrSummary
-            : null,
-        })
-      } else if (typeof request.serverId === 'string' && request.serverId.trim() !== '') {
-        await synchronizeConnectedServerAfterSuccessfulTest(request.serverId)
-      }
-
-      return {
-        ok: true,
-        success: result.success,
-        transportKind: result.transportKind,
-        toolCount: result.toolCount,
-        durationMs: Math.max(result.durationMs, Date.now() - startedAt),
-        phase: result.phase,
-        diagnosticSummary: result.diagnosticSummary,
-        error: result.error,
-        warnings: result.warnings,
-      }
-    },
-    async refreshCatalog(request) {
-      const snapshot = await options.store.load()
-      const currentRevisions = resolveRuntimeRevisions(snapshot)
-      await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), currentRevisions)
-
-      const resolvedTargets = resolveRefreshTargets(snapshot, request)
-      if (!resolvedTargets.ok) {
-        return resolvedTargets.failure
-      }
-
-      const disabledResults = resolvedTargets.servers
-        .filter((server) => !server.enabled)
-        .map((server) => createDisabledRefreshCatalogServerResult(server, now()))
-      const enabledServers = resolvedTargets.servers.filter((server) => server.enabled)
-      const refreshed = enabledServers.length === 0
-        ? []
-        : await connectorHub.refreshCatalog(
-            enabledServers.map((server) => server.serverId),
-            currentRevisions,
-          )
-
-      const hasSuccessfulRefresh = refreshed.some((entry) => entry.success)
-      const nextSnapshotRevision = hasSuccessfulRefresh
-        ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
-        : currentRevisions.snapshotRevision
-      runtimeSnapshotRevision = nextSnapshotRevision
-
-      const results: McpRefreshCatalogServerResult[] = [
-        ...refreshed.map((entry) => ({
-          serverId: entry.serverId,
-          toolCount: entry.toolCount,
-          connectionState: entry.state.connectionState,
-          error: entry.error,
-        })),
-        ...disabledResults,
-      ].sort((left, right) => left.serverId.localeCompare(right.serverId, 'en'))
-
-      await options.publishEvent?.({
-        kind: 'catalog',
+  if (snapshot.snapshotRevision !== snapshotRevision) {
+    try {
+      persistedSnapshot = await ctx.options.store.saveSnapshotRevision(snapshotRevision)
+    } catch (error) {
+      await ctx.options.appendLog?.('error', '[mcp-registry] Failed to persist the MCP snapshot revision.', {
         registryRevision: snapshot.registryRevision,
-        snapshotRevision: nextSnapshotRevision,
-        refreshedServerIds: results.map((entry) => entry.serverId),
-        serverId: request?.serverId ?? null,
+        snapshotRevision,
+        detail: error instanceof Error ? error.message : String(error),
       })
-      const persistedSnapshot = await persistSnapshotArtifacts(snapshot, nextSnapshotRevision)
-      await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
+    }
+  }
 
-      return {
-        ok: true,
+  if (ctx.options.snapshotSink !== undefined) {
+    try {
+      const states = ctx.connectorHub.getAllStates(persistedSnapshot.servers)
+      const capabilitySnapshot = createMcpCapabilitySnapshot({
+        registryRevision: persistedSnapshot.registryRevision,
+        snapshotRevision,
+        generatedAt: ctx.now(),
+        servers: persistedSnapshot.servers,
+        states,
+        toolsByServerId: new Map(
+          persistedSnapshot.servers.map((server) => [
+            server.serverId,
+            ctx.connectorHub.getTools(server.serverId),
+          ]),
+        ),
+      })
+      await ctx.options.snapshotSink.write(capabilitySnapshot)
+    } catch (error) {
+      await ctx.options.appendLog?.('error', '[mcp-registry] Failed to persist the MCP capability snapshot.', {
         registryRevision: snapshot.registryRevision,
-        snapshotRevision: nextSnapshotRevision,
-        refreshedServerIds: results.map((entry) => entry.serverId),
-        results,
-      }
-    },
-    async warmupEnabledServersOnStartup() {
-      const snapshot = await options.store.load()
-      const currentRevisions = resolveRuntimeRevisions(snapshot)
-      await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), currentRevisions)
+        snapshotRevision,
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
 
-      const enabledServers = snapshot.servers.filter((server) => server.enabled)
-      if (enabledServers.length === 0) {
-        const persistedSnapshot = await persistSnapshotArtifacts(snapshot, currentRevisions.snapshotRevision)
-        await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, currentRevisions.snapshotRevision)
-        return
-      }
+  return persistedSnapshot
+}
 
-      const refreshed = await connectorHub.refreshCatalog(
+async function serviceLoadRegistry(
+  ctx: ServiceContext,
+  request?: McpRegistryLoadRequest,
+): Promise<McpRegistryLoadResult> {
+  const snapshot = await ctx.options.store.load()
+  const revisions = serviceResolveRuntimeRevisions(ctx, snapshot)
+  await ctx.connectorHub.reconcile(await serviceResolveManagedServers(ctx, snapshot.servers), revisions)
+  const persistedSnapshot = await servicePersistSnapshotArtifacts(ctx, snapshot, revisions.snapshotRevision)
+  return buildLoadResult(persistedSnapshot, request?.includeDisabled ?? true, ctx.connectorHub, revisions)
+}
+
+async function serviceSaveServer(
+  ctx: ServiceContext,
+  draft: McpServerDraft,
+): Promise<McpSaveServerResult> {
+  const snapshot = await ctx.options.store.load()
+  const existing = snapshot.servers.find((server) => server.serverId === draft.serverId)
+  const normalized = normalizeDraft(draft, existing, ctx.now())
+
+  if (!normalized.ok) {
+    return createMcpRegistryApiFailure(
+      'MCP server draft failed validation.',
+      MCP_REGISTRY_VALIDATION_ERROR_CODE,
+      normalized.validationErrors,
+    )
+  }
+
+  const currentRevisions = serviceResolveRuntimeRevisions(ctx, snapshot)
+  const nextServers = upsertServer(snapshot.servers, normalized.server)
+  const stored = await ctx.options.store.saveServers(nextServers, {
+    snapshotRevision: currentRevisions.snapshotRevision,
+  })
+
+  const synchronization = normalized.server.enabled
+    ? await serviceSynchronizeSavedEnabledServer(ctx, stored, normalized.server.serverId, currentRevisions.snapshotRevision)
+    : await serviceSynchronizeDisabledServer(ctx, stored, { server: normalized.server, baseSnapshotRevision: currentRevisions.snapshotRevision, shouldBumpSnapshot: existing?.enabled === true })
+
+  return {
+    ok: true,
+    registryRevision: stored.registryRevision,
+    snapshotRevision: synchronization.snapshotRevision,
+    server: normalized.server,
+    state: synchronization.state,
+    validationErrors: [],
+  }
+}
+
+async function serviceDeleteServer(
+  ctx: ServiceContext,
+  serverId: string,
+): Promise<McpDeleteServerResult> {
+  const snapshot = await ctx.options.store.load()
+  const existing = snapshot.servers.find((server) => server.serverId === serverId)
+  if (existing === undefined) {
+    return createMcpRegistryApiFailure(
+      `MCP server "${serverId}" was not found.`,
+      MCP_REGISTRY_NOT_FOUND_ERROR_CODE,
+    )
+  }
+
+  const currentRevisions = serviceResolveRuntimeRevisions(ctx, snapshot)
+  const stored = await ctx.options.store.saveServers(
+    snapshot.servers.filter((server) => server.serverId !== serverId),
+    { snapshotRevision: currentRevisions.snapshotRevision },
+  )
+  await ctx.connectorHub.removeServer(serverId, {
+    registryRevision: stored.registryRevision,
+    snapshotRevision: currentRevisions.snapshotRevision,
+  })
+
+  const nextSnapshotRevision = existing.enabled
+    ? serviceBumpRuntimeSnapshotRevision(ctx, currentRevisions.snapshotRevision)
+    : currentRevisions.snapshotRevision
+  ctx.runtimeSnapshotRevision = nextSnapshotRevision
+  const persistedSnapshot = await servicePersistSnapshotArtifacts(ctx, stored, nextSnapshotRevision)
+  await publishSnapshotEvent(persistedSnapshot, ctx.connectorHub, ctx.options.publishEvent, nextSnapshotRevision)
+
+  return {
+    ok: true,
+    registryRevision: stored.registryRevision,
+    snapshotRevision: nextSnapshotRevision,
+    serverId,
+    deleted: true,
+  }
+}
+
+async function serviceSetServerEnabled(
+  ctx: ServiceContext,
+  request: McpSetServerEnabledRequest,
+): Promise<McpSetServerEnabledResult> {
+  const snapshot = await ctx.options.store.load()
+  const existing = snapshot.servers.find((server) => server.serverId === request.serverId)
+  if (existing === undefined) {
+    return createMcpRegistryApiFailure(
+      `MCP server "${request.serverId}" was not found.`,
+      MCP_REGISTRY_NOT_FOUND_ERROR_CODE,
+    )
+  }
+
+  const updatedServer: McpServerRecord = {
+    ...cloneServerRecord(existing),
+    enabled: request.enabled,
+    updatedAt: ctx.now(),
+  }
+  const currentRevisions = serviceResolveRuntimeRevisions(ctx, snapshot)
+  const stored = await ctx.options.store.saveServers(
+    upsertServer(snapshot.servers, updatedServer),
+    { snapshotRevision: currentRevisions.snapshotRevision },
+  )
+
+  const synchronization = request.enabled
+    ? await serviceSynchronizeSavedEnabledServer(ctx, stored, updatedServer.serverId, currentRevisions.snapshotRevision)
+    : await serviceSynchronizeDisabledServer(ctx, stored, { server: updatedServer, baseSnapshotRevision: currentRevisions.snapshotRevision, shouldBumpSnapshot: existing.enabled })
+
+  return {
+    ok: true,
+    registryRevision: stored.registryRevision,
+    snapshotRevision: synchronization.snapshotRevision,
+    server: updatedServer,
+    state: synchronization.state,
+  }
+}
+
+async function serviceTestConnection(
+  ctx: ServiceContext,
+  request: McpTestConnectionRequest,
+): Promise<McpTestConnectionResult> {
+  const startedAt = Date.now()
+  const resolved = await resolveConnectionTestTarget(request, ctx.options.store, ctx.now())
+  if (!resolved.ok) {
+    return resolved.failure
+  }
+
+  const result = await ctx.connectorHub.testConnection(await serviceResolveManagedTransportConfig(ctx, resolved.server))
+  if (!result.success) {
+    await ctx.options.appendLog?.('warn', '[mcp-registry] MCP testConnection failed.', {
+      serverId: resolved.server.serverId,
+      transportKind: result.transportKind,
+      phase: result.phase,
+      errorCode: result.error?.code ?? null,
+      retryable: result.error?.retryable ?? null,
+      diagnosticSummary: result.diagnosticSummary,
+      stderrSummary: typeof result.error?.details?.stderrSummary === 'string'
+        ? result.error.details.stderrSummary
+        : null,
+    })
+  } else if (typeof request.serverId === 'string' && request.serverId.trim() !== '') {
+    await serviceSynchronizeConnectedServerAfterSuccessfulTest(ctx, request.serverId)
+  }
+
+  return {
+    ok: true,
+    success: result.success,
+    transportKind: result.transportKind,
+    toolCount: result.toolCount,
+    durationMs: Math.max(result.durationMs, Date.now() - startedAt),
+    phase: result.phase,
+    diagnosticSummary: result.diagnosticSummary,
+    error: result.error,
+    warnings: result.warnings,
+  }
+}
+
+async function serviceRefreshCatalog(
+  ctx: ServiceContext,
+  request?: McpRefreshCatalogRequest,
+): Promise<McpRefreshCatalogResult> {
+  const snapshot = await ctx.options.store.load()
+  const currentRevisions = serviceResolveRuntimeRevisions(ctx, snapshot)
+  await ctx.connectorHub.reconcile(await serviceResolveManagedServers(ctx, snapshot.servers), currentRevisions)
+
+  const resolvedTargets = resolveRefreshTargets(snapshot, request)
+  if (!resolvedTargets.ok) {
+    return resolvedTargets.failure
+  }
+
+  const disabledResults = resolvedTargets.servers
+    .filter((server) => !server.enabled)
+    .map((server) => createDisabledRefreshCatalogServerResult(server, ctx.now()))
+  const enabledServers = resolvedTargets.servers.filter((server) => server.enabled)
+  const refreshed = enabledServers.length === 0
+    ? []
+    : await ctx.connectorHub.refreshCatalog(
         enabledServers.map((server) => server.serverId),
         currentRevisions,
       )
-      const nextSnapshotRevision = refreshed.length > 0
-        ? bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
-        : currentRevisions.snapshotRevision
 
-      runtimeSnapshotRevision = nextSnapshotRevision
+  const hasSuccessfulRefresh = refreshed.some((entry) => entry.success)
+  const nextSnapshotRevision = hasSuccessfulRefresh
+    ? serviceBumpRuntimeSnapshotRevision(ctx, currentRevisions.snapshotRevision)
+    : currentRevisions.snapshotRevision
+  ctx.runtimeSnapshotRevision = nextSnapshotRevision
 
-      await options.publishEvent?.({
-        kind: 'catalog',
-        registryRevision: snapshot.registryRevision,
-        snapshotRevision: nextSnapshotRevision,
-        refreshedServerIds: refreshed.map((entry) => entry.serverId),
-        serverId: null,
-      })
+  const results: McpRefreshCatalogServerResult[] = [
+    ...refreshed.map((entry) => ({
+      serverId: entry.serverId,
+      toolCount: entry.toolCount,
+      connectionState: entry.state.connectionState,
+      error: entry.error,
+    })),
+    ...disabledResults,
+  ].sort((left, right) => left.serverId.localeCompare(right.serverId, 'en'))
 
-      const persistedSnapshot = await persistSnapshotArtifacts(snapshot, nextSnapshotRevision)
-      await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
+  await ctx.options.publishEvent?.({
+    kind: 'catalog',
+    registryRevision: snapshot.registryRevision,
+    snapshotRevision: nextSnapshotRevision,
+    refreshedServerIds: results.map((entry) => entry.serverId),
+    serverId: request?.serverId ?? null,
+  })
+  const persistedSnapshot = await servicePersistSnapshotArtifacts(ctx, snapshot, nextSnapshotRevision)
+  await publishSnapshotEvent(persistedSnapshot, ctx.connectorHub, ctx.options.publishEvent, nextSnapshotRevision)
 
-      await options.appendLog?.(
-        refreshed.some((entry) => entry.success) ? 'info' : 'warn',
-        refreshed.some((entry) => entry.success)
-          ? '[mcp-registry] Warmed enabled MCP servers during application startup.'
-          : '[mcp-registry] Completed MCP startup warmup without a successful catalog sync.',
-        {
-          registryRevision: snapshot.registryRevision,
-          snapshotRevision: nextSnapshotRevision,
-          enabledServerCount: enabledServers.length,
-          refreshedServerIds: refreshed.map((entry) => entry.serverId),
-          successfulServerIds: refreshed.filter((entry) => entry.success).map((entry) => entry.serverId),
-          failedServerIds: refreshed.filter((entry) => !entry.success).map((entry) => entry.serverId),
-        },
-      )
-    },
-    async executeTool(request) {
-      const snapshot = await options.store.load()
-      const currentRevisions = resolveRuntimeRevisions(snapshot)
-      await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), currentRevisions)
+  return {
+    ok: true,
+    registryRevision: snapshot.registryRevision,
+    snapshotRevision: nextSnapshotRevision,
+    refreshedServerIds: results.map((entry) => entry.serverId),
+    results,
+  }
+}
 
-      const resolved = resolveToolCallTarget(
-        snapshot,
-        connectorHub,
-        request,
-        currentRevisions.snapshotRevision,
-        now,
-      )
-      if (!resolved.ok) {
-        return resolved.failure
-      }
+async function serviceWarmup(ctx: ServiceContext): Promise<void> {
+  const snapshot = await ctx.options.store.load()
+  const currentRevisions = serviceResolveRuntimeRevisions(ctx, snapshot)
+  await ctx.connectorHub.reconcile(await serviceResolveManagedServers(ctx, snapshot.servers), currentRevisions)
 
-      return await connectorHub.callTool(resolved.request)
-    },
+  const enabledServers = snapshot.servers.filter((server) => server.enabled)
+  if (enabledServers.length === 0) {
+    const persistedSnapshot = await servicePersistSnapshotArtifacts(ctx, snapshot, currentRevisions.snapshotRevision)
+    await publishSnapshotEvent(persistedSnapshot, ctx.connectorHub, ctx.options.publishEvent, currentRevisions.snapshotRevision)
+    return
   }
 
-  async function synchronizeConnectedServerAfterSuccessfulTest(serverId: string): Promise<void> {
-    const snapshot = await options.store.load()
-    const currentRevisions = resolveRuntimeRevisions(snapshot)
-    const targetServer = snapshot.servers.find((server) => server.serverId === serverId)
+  const refreshed = await ctx.connectorHub.refreshCatalog(
+    enabledServers.map((server) => server.serverId),
+    currentRevisions,
+  )
+  const nextSnapshotRevision = refreshed.length > 0
+    ? serviceBumpRuntimeSnapshotRevision(ctx, currentRevisions.snapshotRevision)
+    : currentRevisions.snapshotRevision
 
-    if (targetServer === undefined || !targetServer.enabled) {
-      return
-    }
+  ctx.runtimeSnapshotRevision = nextSnapshotRevision
 
-    await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), currentRevisions)
+  await ctx.options.publishEvent?.({
+    kind: 'catalog',
+    registryRevision: snapshot.registryRevision,
+    snapshotRevision: nextSnapshotRevision,
+    refreshedServerIds: refreshed.map((entry) => entry.serverId),
+    serverId: null,
+  })
 
-    const reconciledState = connectorHub.getState(serverId)
-    const canReuseManagedCatalog = reconciledState?.connectionState === 'connected'
-      && reconciledState.lastCatalogSyncAt !== null
+  const persistedSnapshot = await servicePersistSnapshotArtifacts(ctx, snapshot, nextSnapshotRevision)
+  await publishSnapshotEvent(persistedSnapshot, ctx.connectorHub, ctx.options.publishEvent, nextSnapshotRevision)
 
-    const refreshedTarget = canReuseManagedCatalog
-      ? null
-      : (await connectorHub.refreshCatalog([serverId], currentRevisions)).find((entry) => entry.serverId === serverId) ?? null
-    const connectedState = connectorHub.getState(serverId)
-    const shouldPublishSnapshot = refreshedTarget?.success === true
-      || connectedState?.connectionState === 'connected'
-      || connectedState?.connectionState === 'degraded'
+  await ctx.options.appendLog?.(
+    refreshed.some((entry) => entry.success) ? 'info' : 'warn',
+    refreshed.some((entry) => entry.success)
+      ? '[mcp-registry] Warmed enabled MCP servers during application startup.'
+      : '[mcp-registry] Completed MCP startup warmup without a successful catalog sync.',
+    {
+      registryRevision: snapshot.registryRevision,
+      snapshotRevision: nextSnapshotRevision,
+      enabledServerCount: enabledServers.length,
+      refreshedServerIds: refreshed.map((entry) => entry.serverId),
+      successfulServerIds: refreshed.filter((entry) => entry.success).map((entry) => entry.serverId),
+      failedServerIds: refreshed.filter((entry) => !entry.success).map((entry) => entry.serverId),
+    },
+  )
+}
 
-    if (!shouldPublishSnapshot) {
-      return
-    }
+async function serviceExecuteTool(
+  ctx: ServiceContext,
+  request: McpToolCallRequest,
+): Promise<McpToolCallResult> {
+  const snapshot = await ctx.options.store.load()
+  const currentRevisions = serviceResolveRuntimeRevisions(ctx, snapshot)
+  await ctx.connectorHub.reconcile(await serviceResolveManagedServers(ctx, snapshot.servers), currentRevisions)
 
-    const nextSnapshotRevision = bumpRuntimeSnapshotRevision(currentRevisions.snapshotRevision)
-    runtimeSnapshotRevision = nextSnapshotRevision
+  const resolved = resolveToolCallTarget(
+    snapshot,
+    ctx.connectorHub,
+    request,
+    { currentSnapshotRevision: currentRevisions.snapshotRevision, now: ctx.now },
+  )
+  if (!resolved.ok) {
+    return resolved.failure
+  }
 
-    await options.publishEvent?.({
+  return await ctx.connectorHub.callTool(resolved.request)
+}
+
+async function serviceSynchronizeConnectedServerAfterSuccessfulTest(
+  ctx: ServiceContext,
+  serverId: string,
+): Promise<void> {
+  const snapshot = await ctx.options.store.load()
+  const currentRevisions = serviceResolveRuntimeRevisions(ctx, snapshot)
+  const targetServer = snapshot.servers.find((server) => server.serverId === serverId)
+
+  if (targetServer === undefined || !targetServer.enabled) {
+    return
+  }
+
+  await ctx.connectorHub.reconcile(await serviceResolveManagedServers(ctx, snapshot.servers), currentRevisions)
+
+  const reconciledState = ctx.connectorHub.getState(serverId)
+  const canReuseManagedCatalog = reconciledState?.connectionState === 'connected'
+    && reconciledState.lastCatalogSyncAt !== null
+
+  const refreshedTarget = canReuseManagedCatalog
+    ? null
+    : (await ctx.connectorHub.refreshCatalog([serverId], currentRevisions)).find((entry) => entry.serverId === serverId) ?? null
+  const connectedState = ctx.connectorHub.getState(serverId)
+  const shouldPublishSnapshot = refreshedTarget?.success === true
+    || connectedState?.connectionState === 'connected'
+    || connectedState?.connectionState === 'degraded'
+
+  if (!shouldPublishSnapshot) {
+    return
+  }
+
+  const nextSnapshotRevision = serviceBumpRuntimeSnapshotRevision(ctx, currentRevisions.snapshotRevision)
+  ctx.runtimeSnapshotRevision = nextSnapshotRevision
+
+  await ctx.options.publishEvent?.({
+    kind: 'catalog',
+    registryRevision: snapshot.registryRevision,
+    snapshotRevision: nextSnapshotRevision,
+    refreshedServerIds: [serverId],
+    serverId,
+  })
+
+  const persistedSnapshot = await servicePersistSnapshotArtifacts(ctx, snapshot, nextSnapshotRevision)
+  await publishSnapshotEvent(persistedSnapshot, ctx.connectorHub, ctx.options.publishEvent, nextSnapshotRevision)
+}
+
+async function serviceSynchronizeSavedEnabledServer(
+  ctx: ServiceContext,
+  snapshot: McpRegistryStoreSnapshot,
+  serverId: string,
+  baseSnapshotRevision: number,
+): Promise<{ state: McpServerStateSummary, snapshotRevision: number }> {
+  const revisions = {
+    registryRevision: snapshot.registryRevision,
+    snapshotRevision: baseSnapshotRevision,
+  }
+  const reconcileResult = await ctx.connectorHub.reconcile(await serviceResolveManagedServers(ctx, snapshot.servers), revisions)
+  const state = reconcileResult.states.find((entry) => entry.serverId === serverId)
+    ?? ctx.connectorHub.getState(serverId)
+    ?? createDefaultServerState(
+      snapshot.servers.find((server) => server.serverId === serverId)
+        ?? createPlaceholderServerRecord(serverId, ctx.now()),
+    )
+
+  const connected = state.connectionState === 'connected' || state.connectionState === 'degraded'
+  const hasHydratedCatalog = state.lastCatalogSyncAt !== null && ctx.connectorHub.getTools(serverId).length > 0
+
+  const refreshedTarget = connected && !hasHydratedCatalog
+    ? (await ctx.connectorHub.refreshCatalog([serverId], revisions)).find((entry) => entry.serverId === serverId) ?? null
+    : null
+  const finalState = ctx.connectorHub.getState(serverId) ?? state
+  const finalStateConnected = finalState.connectionState === 'connected' || finalState.connectionState === 'degraded'
+  const shouldPublishCatalog = finalStateConnected || refreshedTarget?.success === true
+  const shouldBumpSnapshot = shouldPublishCatalog || finalState.connectionState === 'disabled' || finalState.connectionState === 'error'
+  const nextSnapshotRevision = shouldBumpSnapshot
+    ? serviceBumpRuntimeSnapshotRevision(ctx, baseSnapshotRevision)
+    : baseSnapshotRevision
+
+  ctx.runtimeSnapshotRevision = nextSnapshotRevision
+
+  if (shouldPublishCatalog) {
+    await ctx.options.publishEvent?.({
       kind: 'catalog',
       registryRevision: snapshot.registryRevision,
       snapshotRevision: nextSnapshotRevision,
       refreshedServerIds: [serverId],
       serverId,
     })
-
-    const persistedSnapshot = await persistSnapshotArtifacts(snapshot, nextSnapshotRevision)
-    await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
   }
 
-  async function synchronizeSavedEnabledServer(
-    snapshot: McpRegistryStoreSnapshot,
-    serverId: string,
-    baseSnapshotRevision: number,
-  ): Promise<{ state: McpServerStateSummary, snapshotRevision: number }> {
-    const revisions = {
-      registryRevision: snapshot.registryRevision,
-      snapshotRevision: baseSnapshotRevision,
-    }
-    const reconcileResult = await connectorHub.reconcile(await resolveManagedServers(snapshot.servers), revisions)
-    const state = reconcileResult.states.find((entry) => entry.serverId === serverId)
-      ?? connectorHub.getState(serverId)
-      ?? createDefaultServerState(
-        snapshot.servers.find((server) => server.serverId === serverId)
-          ?? createPlaceholderServerRecord(serverId, now()),
-      )
+  const persistedSnapshot = await servicePersistSnapshotArtifacts(ctx, snapshot, nextSnapshotRevision)
+  await publishSnapshotEvent(persistedSnapshot, ctx.connectorHub, ctx.options.publishEvent, nextSnapshotRevision)
 
-    const connected = state.connectionState === 'connected' || state.connectionState === 'degraded'
-    const hasHydratedCatalog = state.lastCatalogSyncAt !== null && connectorHub.getTools(serverId).length > 0
-
-    const refreshedTarget = connected && !hasHydratedCatalog
-      ? (await connectorHub.refreshCatalog([serverId], revisions)).find((entry) => entry.serverId === serverId) ?? null
-      : null
-    const finalState = connectorHub.getState(serverId) ?? state
-    const finalStateConnected = finalState.connectionState === 'connected' || finalState.connectionState === 'degraded'
-    const shouldPublishCatalog = finalStateConnected || refreshedTarget?.success === true
-    const shouldBumpSnapshot = shouldPublishCatalog || finalState.connectionState === 'disabled' || finalState.connectionState === 'error'
-    const nextSnapshotRevision = shouldBumpSnapshot
-      ? bumpRuntimeSnapshotRevision(baseSnapshotRevision)
-      : baseSnapshotRevision
-
-    runtimeSnapshotRevision = nextSnapshotRevision
-
-    if (shouldPublishCatalog) {
-      await options.publishEvent?.({
-        kind: 'catalog',
-        registryRevision: snapshot.registryRevision,
-        snapshotRevision: nextSnapshotRevision,
-        refreshedServerIds: [serverId],
-        serverId,
-      })
-    }
-
-    const persistedSnapshot = await persistSnapshotArtifacts(snapshot, nextSnapshotRevision)
-    await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
-
-    return {
-      state: finalState,
-      snapshotRevision: nextSnapshotRevision,
-    }
+  return {
+    state: finalState,
+    snapshotRevision: nextSnapshotRevision,
   }
+}
 
-  async function synchronizeDisabledServer(
-    snapshot: McpRegistryStoreSnapshot,
-    server: McpServerRecord,
-    baseSnapshotRevision: number,
-    shouldBumpSnapshot: boolean,
-  ): Promise<{ state: McpServerStateSummary, snapshotRevision: number }> {
-    const state = await connectorHub.setServerDisabled(server, {
-      registryRevision: snapshot.registryRevision,
-      snapshotRevision: baseSnapshotRevision,
+async function serviceSynchronizeDisabledServer(
+  ctx: ServiceContext,
+  snapshot: McpRegistryStoreSnapshot,
+  options: { server: McpServerRecord, baseSnapshotRevision: number, shouldBumpSnapshot: boolean },
+): Promise<{ state: McpServerStateSummary, snapshotRevision: number }> {
+  const state = await ctx.connectorHub.setServerDisabled(options.server, {
+    registryRevision: snapshot.registryRevision,
+    snapshotRevision: options.baseSnapshotRevision,
+  })
+  const nextSnapshotRevision = options.shouldBumpSnapshot
+    ? serviceBumpRuntimeSnapshotRevision(ctx, options.baseSnapshotRevision)
+    : options.baseSnapshotRevision
+
+  ctx.runtimeSnapshotRevision = nextSnapshotRevision
+  const persistedSnapshot = await servicePersistSnapshotArtifacts(ctx, snapshot, nextSnapshotRevision)
+  await publishSnapshotEvent(persistedSnapshot, ctx.connectorHub, ctx.options.publishEvent, nextSnapshotRevision)
+
+  return {
+    state,
+    snapshotRevision: nextSnapshotRevision,
+  }
+}
+
+function serviceResolveRuntimeRevisions(
+  ctx: ServiceContext,
+  snapshot: McpRegistryStoreSnapshot,
+): McpConnectorHubRevisionState {
+  ctx.runtimeSnapshotRevision = ctx.runtimeSnapshotRevision === null
+    ? snapshot.snapshotRevision
+    : Math.max(ctx.runtimeSnapshotRevision, snapshot.snapshotRevision)
+
+  return {
+    registryRevision: snapshot.registryRevision,
+    snapshotRevision: ctx.runtimeSnapshotRevision,
+  }
+}
+
+function serviceBumpRuntimeSnapshotRevision(ctx: ServiceContext, baseRevision: number): number {
+  return Math.max(ctx.runtimeSnapshotRevision ?? 0, baseRevision) + 1
+}
+
+async function serviceResolveManagedTransportConfig(
+  ctx: ServiceContext,
+  server: McpServerRecord,
+): Promise<McpServerRecord> {
+  if (server.transportConfig.kind !== 'stdio' || ctx.options.managedRuntimeService === undefined) {
+    ctx.resolvedCommandMetadata.set(server.serverId, {
+      requestedCommand: server.transportConfig.kind === 'stdio' ? server.transportConfig.command : '',
+      resolutionKind: 'raw',
     })
-    const nextSnapshotRevision = shouldBumpSnapshot
-      ? bumpRuntimeSnapshotRevision(baseSnapshotRevision)
-      : baseSnapshotRevision
-
-    runtimeSnapshotRevision = nextSnapshotRevision
-    const persistedSnapshot = await persistSnapshotArtifacts(snapshot, nextSnapshotRevision)
-    await publishSnapshotEvent(persistedSnapshot, connectorHub, options.publishEvent, nextSnapshotRevision)
-
-    return {
-      state,
-      snapshotRevision: nextSnapshotRevision,
-    }
+    return cloneServerRecord(server)
   }
 
-  function resolveRuntimeRevisions(snapshot: McpRegistryStoreSnapshot): McpConnectorHubRevisionState {
-    runtimeSnapshotRevision = runtimeSnapshotRevision === null
-      ? snapshot.snapshotRevision
-      : Math.max(runtimeSnapshotRevision, snapshot.snapshotRevision)
-
-    return {
-      registryRevision: snapshot.registryRevision,
-      snapshotRevision: runtimeSnapshotRevision,
-    }
-  }
-
-  function bumpRuntimeSnapshotRevision(baseRevision: number): number {
-    return Math.max(runtimeSnapshotRevision ?? 0, baseRevision) + 1
-  }
-
-  async function resolveManagedTransportConfig(server: McpServerRecord): Promise<McpServerRecord> {
-    if (server.transportConfig.kind !== 'stdio' || options.managedRuntimeService === undefined) {
-      resolvedCommandMetadata.set(server.serverId, {
-        requestedCommand: server.transportConfig.kind === 'stdio' ? server.transportConfig.command : '',
-        resolutionKind: 'raw',
-      })
+  const resolution = await ctx.options.managedRuntimeService.resolveLauncher(server.transportConfig.command)
+  if (!resolution.ok) {
+    ctx.resolvedCommandMetadata.set(server.serverId, {
+      requestedCommand: server.transportConfig.command,
+      resolutionKind: 'raw',
+    })
+    if (resolution.reason !== 'managed_runtime_unavailable') {
       return cloneServerRecord(server)
     }
 
-    const resolution = await options.managedRuntimeService.resolveLauncher(server.transportConfig.command)
-    if (!resolution.ok) {
-      resolvedCommandMetadata.set(server.serverId, {
-        requestedCommand: server.transportConfig.command,
-        resolutionKind: 'raw',
-      })
-      if (resolution.reason !== 'managed_runtime_unavailable') {
-        return cloneServerRecord(server)
-      }
-
-      return createManagedUnavailableServer(server, resolution.message ?? 'Managed runtime is unavailable.', now, {
-        requestedCommand: server.transportConfig.command,
-        normalizedCommand: resolution.normalizedCommand ?? null,
-        managedFamily: resolution.family ?? null,
-        managedRuntimeStatus: resolution.status ?? null,
-        detail: resolution.detail ?? null,
-      })
-    }
-
-    resolvedCommandMetadata.set(server.serverId, {
+    return createManagedUnavailableServer(server, resolution.message ?? 'Managed runtime is unavailable.', ctx.now, {
       requestedCommand: server.transportConfig.command,
-      resolutionKind: 'managed',
-      managedFamily: resolution.family,
+      normalizedCommand: resolution.normalizedCommand ?? null,
+      managedFamily: resolution.family ?? null,
+      managedRuntimeStatus: resolution.status ?? null,
+      detail: resolution.detail ?? null,
     })
-
-    const nextArgs = resolution.windowsCommandChain === null
-      ? [...server.transportConfig.args]
-      : [...resolution.windowsCommandChain.argsPrefix, ...server.transportConfig.args]
-    const nextCommand = resolution.windowsCommandChain?.command ?? resolution.executablePath
-
-    return {
-      ...cloneServerRecord(server),
-      transportConfig: {
-        ...server.transportConfig,
-        command: nextCommand,
-        args: nextArgs,
-      },
-    }
   }
 
-  async function resolveManagedServers(servers: readonly McpServerRecord[]): Promise<McpServerRecord[]> {
-    return await Promise.all(servers.map(async (server) => await resolveManagedTransportConfig(server)))
+  ctx.resolvedCommandMetadata.set(server.serverId, {
+    requestedCommand: server.transportConfig.command,
+    resolutionKind: 'managed',
+    managedFamily: resolution.family,
+  })
+
+  const nextArgs = resolution.windowsCommandChain === null
+    ? [...server.transportConfig.args]
+    : [...resolution.windowsCommandChain.argsPrefix, ...server.transportConfig.args]
+  const nextCommand = resolution.windowsCommandChain?.command ?? resolution.executablePath
+
+  return {
+    ...cloneServerRecord(server),
+    transportConfig: {
+      ...server.transportConfig,
+      command: nextCommand,
+      args: nextArgs,
+    },
   }
+}
+
+async function serviceResolveManagedServers(
+  ctx: ServiceContext,
+  servers: readonly McpServerRecord[],
+): Promise<McpServerRecord[]> {
+  return await Promise.all(servers.map(async (server) => await serviceResolveManagedTransportConfig(ctx, server)))
 }
 
 function buildLoadResult(
@@ -732,15 +792,115 @@ function resolveRefreshTargets(
   }
 }
 
+interface ResolveServerNotReadyOptions {
+  requestedServer: McpServerRecord | undefined
+  requestedState: McpServerStateSummary | null
+  requestedConnectorToolCount: number
+  currentSnapshotRevision: number
+  now: () => string
+}
+
+function resolveServerNotReady(
+  request: McpToolCallRequest,
+  options: ResolveServerNotReadyOptions,
+): { ok: false, failure: McpToolCallFailure } | null {
+  const { requestedServer, requestedState, requestedConnectorToolCount, currentSnapshotRevision, now } = options
+  if (
+    requestedServer !== undefined
+    && (!requestedServer.enabled || (requestedState !== null && requestedState.connectionState !== 'connected' && requestedState.connectionState !== 'degraded'))
+  ) {
+    return {
+      ok: false,
+      failure: createToolCallFailure(request, {
+        code: 'server_not_ready',
+        message: 'The MCP server is not ready to execute tools.',
+        retryable: true,
+        details: {
+          requestedServerId: requestedServer.serverId,
+          requestedRemoteToolName: typeof request.remoteToolName === 'string' ? request.remoteToolName.trim() : '',
+          connectionState: requestedState?.connectionState ?? 'disabled',
+          connectorToolCount: requestedConnectorToolCount,
+          requestedSnapshotRevision: request.snapshotRevision ?? null,
+          snapshotRevision: currentSnapshotRevision,
+        },
+        now,
+      }),
+    }
+  }
+
+  return null
+}
+
+interface RequestedTargetContext {
+  requestedServerId: string
+  requestedRemoteToolName: string
+  requestedServer: McpServerRecord | undefined
+  requestedState: McpServerStateSummary | null
+  requestedConnectorToolCount: number
+}
+
+function tryResolveByRequestedTool(
+  request: McpToolCallRequest,
+  connectorHub: McpConnectorHub,
+  ctx: RequestedTargetContext,
+  currentSnapshotRevision: number,
+): { ok: true, request: McpToolCallRequest } | null {
+  if (ctx.requestedServerId === '' || ctx.requestedRemoteToolName === '') {
+    return null
+  }
+
+  const hasRequestedTool = connectorHub
+    .getTools(ctx.requestedServerId)
+    .some((tool) => tool.name === ctx.requestedRemoteToolName)
+
+  if (ctx.requestedServer !== undefined && hasRequestedTool) {
+    return {
+      ok: true,
+      request: {
+        ...request,
+        serverId: ctx.requestedServer.serverId,
+        remoteToolName: ctx.requestedRemoteToolName,
+        snapshotRevision: currentSnapshotRevision,
+      },
+    }
+  }
+
+  if (
+    ctx.requestedServer !== undefined
+    && ctx.requestedConnectorToolCount === 0
+    && ctx.requestedServer.enabled
+    && (ctx.requestedState === null
+      || ctx.requestedState.connectionState === 'connected'
+      || ctx.requestedState.connectionState === 'degraded')
+  ) {
+    return {
+      ok: true,
+      request: {
+        ...request,
+        serverId: ctx.requestedServer.serverId,
+        remoteToolName: ctx.requestedRemoteToolName,
+        snapshotRevision: currentSnapshotRevision,
+      },
+    }
+  }
+
+  return null
+}
+
+interface ResolveToolCallTargetOptions {
+  currentSnapshotRevision: number
+  now: () => string
+}
+
 function resolveToolCallTarget(
   snapshot: McpRegistryStoreSnapshot,
   connectorHub: McpConnectorHub,
   request: McpToolCallRequest,
-  currentSnapshotRevision: number,
-  now: () => string,
-): 
+  options: ResolveToolCallTargetOptions,
+):
   | { ok: true, request: McpToolCallRequest }
   | { ok: false, failure: McpToolCallFailure } {
+  const { currentSnapshotRevision, now } = options
   const requestedServerId = typeof request.serverId === 'string' ? request.serverId.trim() : ''
   const requestedRemoteToolName = typeof request.remoteToolName === 'string' ? request.remoteToolName.trim() : ''
   const requestedServer = requestedServerId === ''
@@ -753,12 +913,7 @@ function resolveToolCallTarget(
     ? 0
     : connectorHub.getTools(requestedServer.serverId).length
 
-  const matchingTarget = snapshot.servers.flatMap((server) => connectorHub.getTools(server.serverId).map((tool) => ({
-    server,
-    tool,
-    toolId: buildMcpToolId(server.serverId, tool.name),
-  }))).find((entry) => entry.toolId === request.toolId)
-
+  const matchingTarget = findMatchingToolTarget(snapshot, connectorHub, request.toolId)
   if (matchingTarget !== undefined) {
     return {
       ok: true,
@@ -771,58 +926,28 @@ function resolveToolCallTarget(
     }
   }
 
-  if (requestedServerId !== '' && requestedRemoteToolName !== '') {
-    const hasRequestedTool = connectorHub
-      .getTools(requestedServerId)
-      .some((tool) => tool.name === requestedRemoteToolName)
-
-    if (requestedServer !== undefined && hasRequestedTool) {
-      return {
-        ok: true,
-        request: {
-          ...request,
-          serverId: requestedServer.serverId,
-          remoteToolName: requestedRemoteToolName,
-          snapshotRevision: currentSnapshotRevision,
-        },
-      }
-    }
-
-    if (
-      requestedServer !== undefined
-      && requestedConnectorToolCount === 0
-      && requestedServer.enabled
-      && (requestedState === null
-        || requestedState.connectionState === 'connected'
-        || requestedState.connectionState === 'degraded')
-    ) {
-      return {
-        ok: true,
-        request: {
-          ...request,
-          serverId: requestedServer.serverId,
-          remoteToolName: requestedRemoteToolName,
-          snapshotRevision: currentSnapshotRevision,
-        },
-      }
-    }
+  const targetContext: RequestedTargetContext = {
+    requestedServerId,
+    requestedRemoteToolName,
+    requestedServer,
+    requestedState,
+    requestedConnectorToolCount,
   }
 
-  if (
-    requestedServer !== undefined
-    && (!requestedServer.enabled || (requestedState !== null && requestedState.connectionState !== 'connected' && requestedState.connectionState !== 'degraded'))
-  ) {
-    return {
-      ok: false,
-      failure: createToolCallFailure(request, 'server_not_ready', 'The MCP server is not ready to execute tools.', true, {
-        requestedServerId,
-        requestedRemoteToolName,
-        connectionState: requestedState?.connectionState ?? 'disabled',
-        connectorToolCount: requestedConnectorToolCount,
-        requestedSnapshotRevision: request.snapshotRevision ?? null,
-        snapshotRevision: currentSnapshotRevision,
-      }, now),
-    }
+  const requestedResult = tryResolveByRequestedTool(request, connectorHub, targetContext, currentSnapshotRevision)
+  if (requestedResult !== null) {
+    return requestedResult
+  }
+
+  const notReadyResult = resolveServerNotReady(request, {
+    requestedServer,
+    requestedState,
+    requestedConnectorToolCount,
+    currentSnapshotRevision,
+    now,
+  })
+  if (notReadyResult !== null) {
+    return notReadyResult
   }
 
   const isDirectoryDrift = request.snapshotRevision !== undefined
@@ -833,21 +958,35 @@ function resolveToolCallTarget(
     ok: false,
     failure: createToolCallFailure(
       request,
-      isDirectoryDrift ? 'directory_drift' : 'tool_not_found',
-      isDirectoryDrift
-        ? 'The requested MCP tool no longer exists in the current snapshot.'
-        : `The MCP tool '${request.toolId}' was not found.`,
-      false,
       {
-        requestedServerId,
-        requestedRemoteToolName,
-        connectorToolCount: requestedConnectorToolCount,
-        requestedSnapshotRevision: request.snapshotRevision ?? null,
-        snapshotRevision: currentSnapshotRevision,
+        code: isDirectoryDrift ? 'directory_drift' : 'tool_not_found',
+        message: isDirectoryDrift
+          ? 'The requested MCP tool no longer exists in the current snapshot.'
+          : `The MCP tool '${request.toolId}' was not found.`,
+        retryable: false,
+        details: {
+          requestedServerId,
+          requestedRemoteToolName,
+          connectorToolCount: requestedConnectorToolCount,
+          requestedSnapshotRevision: request.snapshotRevision ?? null,
+          snapshotRevision: currentSnapshotRevision,
+        },
+        now,
       },
-      now,
     ),
   }
+}
+
+function findMatchingToolTarget(
+  snapshot: McpRegistryStoreSnapshot,
+  connectorHub: McpConnectorHub,
+  toolId: string,
+): { server: McpServerRecord, tool: { name: string } } | undefined {
+  return snapshot.servers.flatMap((server) => connectorHub.getTools(server.serverId).map((tool) => ({
+    server,
+    tool,
+    toolId: buildMcpToolId(server.serverId, tool.name),
+  }))).find((entry) => entry.toolId === toolId)
 }
 
 function createDisabledRefreshCatalogServerResult(
@@ -884,13 +1023,17 @@ function createPlaceholderServerRecord(serverId: string, timestamp: string): Mcp
   }
 }
 
+interface CreateToolCallFailureOptions {
+  code: string
+  message: string
+  retryable: boolean
+  details?: Record<string, unknown> | null
+  now: () => string
+}
+
 function createToolCallFailure(
   request: McpToolCallRequest,
-  code: string,
-  message: string,
-  retryable: boolean,
-  details: Record<string, unknown> | null = null,
-  now: () => string = () => new Date().toISOString(),
+  options: CreateToolCallFailureOptions,
 ): McpToolCallFailure {
   return {
     ok: false,
@@ -899,11 +1042,11 @@ function createToolCallFailure(
     remoteToolName: request.remoteToolName,
     snapshotRevision: request.snapshotRevision ?? null,
     error: {
-      code,
-      message,
-      retryable,
-      observedAt: now(),
-      details,
+      code: options.code,
+      message: options.message,
+      retryable: options.retryable,
+      observedAt: options.now(),
+      details: options.details ?? null,
     },
   }
 }
@@ -928,7 +1071,7 @@ async function publishSnapshotEvent(
 }
 
 function createDefaultServerState(server: McpServerRecord): McpServerStateSummary {
-  return createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, () => new Date().toISOString())
+  return createConnectorState(server, server.enabled ? 'idle' : 'disabled', 0, {})
 }
 
 function cloneStateSummary(state: McpServerStateSummary): McpServerStateSummary {

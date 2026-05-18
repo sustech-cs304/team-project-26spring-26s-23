@@ -18,8 +18,11 @@ const PRELOAD_BRIDGE_KEYS = [
   'skillRegistry',
   'skillRegistrySubscription',
   'toolCatalog',
+  'attachmentManager',
   'desktopNotification',
+  'windowControls',
   'bootstrapWindow',
+  'fileManager',
 ] as const satisfies ReadonlyArray<keyof PreloadBridgeApis>
 
 export function exposePreloadBridgeApis(

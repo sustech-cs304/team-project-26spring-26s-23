@@ -4,7 +4,9 @@ import type {
   ThinkingLevelIntent,
 } from '../../workbench/types'
 import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../electron/settings-workspace/schema'
+import type { CopilotComposerAttachment } from './attachments/types'
 import { sanitizeEnabledToolIds } from './tool-picker'
+import type { CopilotTransientErrorState } from './copilot-conversation-turns'
 import {
   THINKING_BUDGET_DEFAULT_MAX_TOKENS,
   THINKING_BUDGET_DEFAULT_MIN_TOKENS,
@@ -22,19 +24,14 @@ import {
   RuntimeRequestError,
   cloneRuntimeThinkingSelection,
   type RuntimeModelRoute,
-  type RuntimeResolvedModelRoute,
-  type RuntimeRunCompletedEvent,
   type RuntimeThinkingCapability,
   type RuntimeThinkingSelection,
   type RuntimeToolPermissionPolicy,
   type RuntimeToolPermissionMode,
-  type RuntimeToolEvent,
-  type RuntimeToolEventPhase,
 } from './thread-run-contract'
 import type {
   CopilotBootstrapState,
   CopilotDiagnosticsSummary,
-  CopilotRunDiagnosticSummary,
 } from './types'
 
 export interface CopilotChatComposerDraft {
@@ -54,6 +51,7 @@ export interface RuntimeMessageSendInput {
   message: {
     role: 'user'
     content: string
+    structuredPayload?: Record<string, unknown> | null
   }
   modelRoute: RuntimeModelRoute
   thinkingSelection: RuntimeThinkingSelection | null
@@ -68,35 +66,23 @@ export type {
   RuntimeToolPermissionPolicy,
 } from './thread-run-contract'
 
-export type CopilotToolStepPhase = RuntimeToolEventPhase | 'cancelled'
+export type {
+  CopilotConversationTurn,
+  CopilotToolStepPhase,
+  CopilotTransientErrorState,
+} from './copilot-conversation-turns'
 
-export interface CopilotTransientErrorState {
-  message: string
-  errorDetail: CopilotErrorDetailSource | null
-}
-
-export interface CopilotConversationTurn {
-  id: string
-  runId?: string
-  kind: 'user' | 'assistant' | 'error' | 'tool' | 'diagnostic' | 'terminal'
-  title: string
-  content: string
-  status?: 'streaming' | 'completed' | 'failed' | 'cancelled'
-  resolvedModelId?: string
-  resolvedModelRoute?: RuntimeResolvedModelRoute | RuntimeModelRoute
-  resolvedToolIds?: string[]
-  requestOptions?: Record<string, unknown>
-  requestedThinkingLevel?: ThinkingLevelIntent | null
-  appliedThinkingLevel?: ThinkingLevelIntent | null
-  thinkingCapabilitySnapshot?: RuntimeThinkingCapability | null
-  diagnostic?: CopilotRunDiagnosticSummary | null
-  toolCallId?: string
-  toolId?: string
-  toolPhase?: CopilotToolStepPhase
-  inputSummary?: string | null
-  resultSummary?: string | null
-  errorSummary?: string | null
-}
+export {
+  appendAssistantDelta,
+  cancelAssistantTurn,
+  cancelStreamingToolTurns,
+  completeAssistantTurn,
+  createErrorTurn,
+  createPendingAssistantTurn,
+  createUserTurn,
+  failAssistantTurn,
+  upsertToolStepTurn,
+} from './copilot-conversation-turns'
 
 export function createCopilotTransientErrorState(input: {
   message: string
@@ -141,11 +127,49 @@ export function createComposerDraftFromSession(
   }
 }
 
+export function createComposerDraftFromPersistedHistoryRun(input: {
+  selectedModelId?: string | null
+  resolvedModelId?: string | null
+  selectedModelRoute?: RuntimeModelRoute | null
+  appliedThinkingSelection?: RuntimeThinkingSelection | null
+  enabledTools?: readonly string[] | null
+  requestOptions?: Record<string, unknown> | null
+}): CopilotChatComposerDraft {
+  const baseDraft = createEmptyComposerDraft()
+  const selectedModelRoute = input.selectedModelRoute === undefined || input.selectedModelRoute === null
+    ? null
+    : cloneRuntimeModelRoute(input.selectedModelRoute)
+  const thinkingSelection = input.appliedThinkingSelection === undefined
+    ? null
+    : cloneRuntimeThinkingSelection(input.appliedThinkingSelection)
+  const selectedModelId = input.selectedModelId?.trim()
+    || (selectedModelRoute === null || selectedModelRoute.routeRef === undefined || selectedModelRoute.routeRef === null
+      ? ''
+      : serializeModelRouteRef(selectedModelRoute.routeRef))
+    || input.resolvedModelId?.trim()
+    || ''
+
+  return {
+    ...baseDraft,
+    selectedModelId,
+    selectedModelRoute,
+    thinkingSelection,
+    enabledTools: Array.isArray(input.enabledTools)
+      ? dedupeToolIds([...input.enabledTools])
+      : [],
+    requestOptionsText: input.requestOptions === null || input.requestOptions === undefined
+      ? baseDraft.requestOptionsText
+      : JSON.stringify(input.requestOptions),
+  }
+}
+
 export function buildRuntimeMessageSendInput(input: {
   runtimeUrl: string
   sessionShell: AssistantSessionShell
   draft: CopilotChatComposerDraft
+  attachments?: readonly Pick<CopilotComposerAttachment, 'path'>[]
   requestOptions: Record<string, unknown>
+  structuredPayload?: Record<string, unknown> | null
   toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   thinkingCapabilityOverride?: Record<string, unknown> | null
 }): RuntimeMessageSendInput {
@@ -170,7 +194,8 @@ export function buildRuntimeMessageSendInput(input: {
     agent: input.sessionShell.boundAgent.id,
     message: {
       role: 'user',
-      content: input.draft.messageText.trim(),
+      content: buildComposerMessageContentWithAttachments(input.draft.messageText, input.attachments ?? []),
+      ...(input.structuredPayload === undefined ? {} : { structuredPayload: input.structuredPayload }),
     },
     modelRoute: cloneRuntimeModelRoute(input.draft.selectedModelRoute),
     thinkingSelection,
@@ -185,6 +210,50 @@ export function buildRuntimeMessageSendInput(input: {
     ...(toolPermissionPolicy === null ? {} : { toolPermissionPolicy }),
     requestOptions: { ...input.requestOptions },
   }
+}
+
+export function buildComposerMessageContentWithAttachments(
+  messageText: string,
+  attachments: readonly Pick<CopilotComposerAttachment, 'path'>[],
+): string {
+  const trimmedMessage = messageText.trim()
+  const normalizedPaths = dedupeComposerAttachmentPaths(attachments)
+  if (normalizedPaths.length === 0) {
+    return trimmedMessage
+  }
+
+  const attachmentSection = [
+    'User attached files:',
+    ...normalizedPaths.map((path) => `- ${path}`),
+    'Please process these files accordingly, for example, use `tool.fs.read` tool to read the content of these files.',
+  ].join('\n')
+
+  return trimmedMessage === ''
+    ? attachmentSection
+    : `${trimmedMessage}\n\n${attachmentSection}`
+}
+
+function dedupeComposerAttachmentPaths(
+  attachments: readonly Pick<CopilotComposerAttachment, 'path'>[],
+): string[] {
+  const seen = new Set<string>()
+  const normalizedPaths: string[] = []
+
+  for (const attachment of attachments) {
+    const normalizedPath = sanitizeComposerAttachmentPath(attachment.path)
+    if (normalizedPath === '' || seen.has(normalizedPath)) {
+      continue
+    }
+
+    seen.add(normalizedPath)
+    normalizedPaths.push(normalizedPath)
+  }
+
+  return normalizedPaths
+}
+
+function sanitizeComposerAttachmentPath(path: string): string {
+  return path.trim().replace(/[\r\n]+/g, ' ')
 }
 
 export function buildRuntimeToolPermissionPolicy(input: {
@@ -228,6 +297,21 @@ export function buildRuntimeToolPermissionPolicy(input: {
 
 function normalizeRuntimeToolPermissionMode(value: unknown): RuntimeToolPermissionMode | null {
   return value === 'allow' || value === 'ask' || value === 'deny' || value === 'delay' ? value : null
+}
+
+function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {
+  return {
+    ...(route.routeRef === undefined || route.routeRef === null
+      ? {}
+      : {
+          routeRef: {
+            routeKind: route.routeRef.routeKind,
+            profileId: route.routeRef.profileId,
+            modelId: route.routeRef.modelId,
+          },
+        }),
+    ...(route.catalogRevision === undefined ? {} : { catalogRevision: route.catalogRevision }),
+  }
 }
 
 export function buildThinkingSessionMemoryKey(route: RuntimeModelRoute): string {
@@ -383,34 +467,43 @@ function normalizeRuntimeThinkingValueForCapability(
       return cloneRuntimeThinkingValue(fixedValue)
     }
     case 'budget':
-      if (value.valueType !== 'budget') {
-        return null
-      }
-      if (value.mode === 'budget' && typeof value.budgetTokens === 'number') {
-        if (!supportsExactBudgetThinkingSelection(capability)) {
-          return null
-        }
-        const budgetTokens = normalizeBudgetTokens(value.budgetTokens)
-        return budgetTokens === null
-          ? null
-          : {
-              valueType: 'budget',
-              mode: 'budget',
-              budgetTokens,
-              labelZh: formatThinkingTokenCount(budgetTokens),
-            }
-      }
-      return cloneRuntimeThinkingValue(
-        capability.allowedValues.find((candidate) => (
-          candidate.valueType === 'budget' && candidate.mode === value.mode
-        )) ?? null,
-      )
+      return normalizeBudgetThinkingValue(value, capability)
     case 'discrete':
       if (value.valueType !== 'code') {
         return null
       }
       return cloneRuntimeThinkingValue(findThinkingCodeValue(capability.allowedValues, value.code))
   }
+}
+
+function normalizeBudgetThinkingValue(
+  value: NonNullable<RuntimeThinkingSelection['value']> | null | undefined,
+  capability: RuntimeThinkingCapability,
+): NonNullable<RuntimeThinkingSelection['value']> | null {
+  if (value?.valueType !== 'budget') {
+    return null
+  }
+
+  if (value.mode === 'budget' && typeof value.budgetTokens === 'number') {
+    if (!supportsExactBudgetThinkingSelection(capability)) {
+      return null
+    }
+    const budgetTokens = normalizeBudgetTokens(value.budgetTokens)
+    return budgetTokens === null
+      ? null
+      : {
+          valueType: 'budget',
+          mode: 'budget',
+          budgetTokens,
+          labelZh: formatThinkingTokenCount(budgetTokens),
+        }
+  }
+
+  return cloneRuntimeThinkingValue(
+    capability.allowedValues.find((candidate) => (
+      candidate.valueType === 'budget' && candidate.mode === value.mode
+    )) ?? null,
+  )
 }
 
 function supportsExactBudgetThinkingSelection(capability: RuntimeThinkingCapability): boolean {
@@ -612,37 +705,40 @@ export function parseRequestOptionsText(requestOptionsText: string): Record<stri
   return { ...(parsed as Record<string, unknown>) }
 }
 
+const SESSION_STALE_CODES = new Set(['agent_mismatch', 'capabilities_version_stale'])
+const TOOL_UNAVAILABLE_CODES = new Set(['tool_not_found', 'tool_unavailable'])
+const MODEL_UNAVAILABLE_CODES = new Set([
+  'provider_catalog_only', 'provider_legacy_unsupported', 'provider_runtime_not_enabled',
+  'adapter_missing', 'provider_adapter_mismatch', 'provider_profile_not_found',
+  'route_ref_snapshot_mismatch', 'host_model_route_unavailable', 'host_model_route_access_denied',
+])
+const PROVIDER_CONFIG_CODES = new Set([
+  'provider_auth_missing', 'provider_secret_missing',
+  'provider_auth_kind_unsupported', 'provider_base_url_missing',
+])
+
 export function formatRuntimeMessageSendError(error: unknown): string {
   if (error instanceof RuntimeRequestError) {
-    switch (error.code) {
-      case 'agent_mismatch':
-      case 'capabilities_version_stale':
-        return '当前会话已更新，请重新发送。'
-      case 'tool_not_found':
-      case 'tool_unavailable':
-        return '当前所选工具暂不可用，请调整后重试。'
-      case 'invalid_request':
-        return '当前消息暂时无法发送，请调整内容后重试。'
-      case 'thinking_not_supported_for_route':
-        return '当前模型暂不支持所选思考设置，请调整后重试。'
-      case 'provider_catalog_only':
-      case 'provider_legacy_unsupported':
-      case 'provider_runtime_not_enabled':
-      case 'adapter_missing':
-      case 'provider_adapter_mismatch':
-      case 'provider_profile_not_found':
-      case 'route_ref_snapshot_mismatch':
-      case 'host_model_route_unavailable':
-      case 'host_model_route_access_denied':
-        return '当前模型不可用，请重新选择模型。'
-      case 'provider_auth_missing':
-      case 'provider_secret_missing':
-      case 'provider_auth_kind_unsupported':
-      case 'provider_base_url_missing':
-        return '请先完成模型服务配置后再试。'
-      default:
-        return error.message
+    const code = error.code ?? ''
+    if (SESSION_STALE_CODES.has(code)) {
+      return '当前会话已更新，请重新发送。'
     }
+    if (TOOL_UNAVAILABLE_CODES.has(code)) {
+      return '当前所选工具暂不可用，请调整后重试。'
+    }
+    if (code === 'invalid_request') {
+      return '当前消息暂时无法发送，请调整内容后重试。'
+    }
+    if (code === 'thinking_not_supported_for_route') {
+      return '当前模型暂不支持所选思考设置，请调整后重试。'
+    }
+    if (MODEL_UNAVAILABLE_CODES.has(code)) {
+      return '当前模型不可用，请重新选择模型。'
+    }
+    if (PROVIDER_CONFIG_CODES.has(code)) {
+      return '请先完成模型服务配置后再试。'
+    }
+    return error.message
   }
 
   return error instanceof Error ? error.message : String(error)
@@ -832,203 +928,6 @@ export function buildSessionDebugSummary(sessionShell: AssistantSessionShell) {
     },
   }
 }
-
-export function createUserTurn(content: string): CopilotConversationTurn {
-  return {
-    id: `user:${content}:${Math.random().toString(36).slice(2)}`,
-    kind: 'user',
-    title: '',
-    content,
-    status: 'completed',
-  }
-}
-
-export function createPendingAssistantTurn(input: {
-  assistantMessageId: string
-  diagnostic?: CopilotRunDiagnosticSummary | null
-}): CopilotConversationTurn {
-  return {
-    id: input.assistantMessageId,
-    kind: 'assistant',
-    title: '助手响应',
-    content: '',
-    status: 'streaming',
-    diagnostic: input.diagnostic ?? null,
-  }
-}
-
-export function appendAssistantDelta(
-  turns: CopilotConversationTurn[],
-  input: {
-    assistantMessageId: string
-    delta: string
-  },
-): CopilotConversationTurn[] {
-  return turns.map((turn) => {
-    if (turn.id !== input.assistantMessageId) {
-      return turn
-    }
-
-    return {
-      ...turn,
-      content: `${turn.content}${input.delta}`,
-      status: 'streaming',
-    }
-  })
-}
-
-export function completeAssistantTurn(
-  turns: CopilotConversationTurn[],
-  event: RuntimeRunCompletedEvent,
-  diagnostic: CopilotRunDiagnosticSummary | null,
-): CopilotConversationTurn[] {
-  const nextTurns: CopilotConversationTurn[] = turns.map((turn): CopilotConversationTurn => {
-    if (turn.id !== event.payload.assistantMessageId) {
-      return turn
-    }
-
-    return {
-      ...turn,
-      content: event.payload.assistantText,
-      status: 'completed',
-      resolvedModelId: event.payload.resolvedModelId,
-      resolvedModelRoute: cloneRuntimeResolvedModelRoute(event.payload.resolvedModelRoute),
-      resolvedToolIds: [...event.payload.resolvedToolIds],
-      requestOptions: { ...event.payload.requestOptions },
-      diagnostic,
-    }
-  })
-
-  return ensureAssistantTurnExists(nextTurns, {
-    id: event.payload.assistantMessageId,
-    kind: 'assistant',
-    title: '助手响应',
-    content: event.payload.assistantText,
-    status: 'completed',
-    resolvedModelId: event.payload.resolvedModelId,
-    resolvedModelRoute: cloneRuntimeResolvedModelRoute(event.payload.resolvedModelRoute),
-    resolvedToolIds: [...event.payload.resolvedToolIds],
-    requestOptions: { ...event.payload.requestOptions },
-    diagnostic,
-  })
-}
-
-export function upsertToolStepTurn(
-  turns: CopilotConversationTurn[],
-  event: RuntimeToolEvent,
-  input: {
-    assistantMessageId: string | null
-  },
-): CopilotConversationTurn[] {
-  const nextTurn = buildToolStepTurn(event)
-  const existingTurnIndex = turns.findIndex((turn) => turn.toolCallId === event.payload.toolCallId)
-  if (existingTurnIndex >= 0) {
-    return turns.map((turn, index) => (index === existingTurnIndex ? {
-      ...turn,
-      ...nextTurn,
-    } : turn))
-  }
-
-  const insertIndex = resolveToolTurnInsertIndex(turns, input.assistantMessageId)
-  return [
-    ...turns.slice(0, insertIndex),
-    nextTurn,
-    ...turns.slice(insertIndex),
-  ]
-}
-
-export function cancelStreamingToolTurns(turns: CopilotConversationTurn[]): CopilotConversationTurn[] {
-  return turns.map((turn) => {
-    if (turn.kind !== 'tool' || turn.status !== 'streaming') {
-      return turn
-    }
-
-    return {
-      ...turn,
-      status: 'cancelled',
-      toolPhase: 'cancelled',
-    }
-  })
-}
-
-export function failAssistantTurn(
-  turns: CopilotConversationTurn[],
-  input: {
-    assistantMessageId: string | null
-    content: string
-    diagnostic: CopilotRunDiagnosticSummary | null
-  },
-): CopilotConversationTurn[] {
-  if (input.assistantMessageId === null) {
-    return [...turns, createErrorTurn(input.content, input.diagnostic)]
-  }
-
-  const nextTurns: CopilotConversationTurn[] = turns.map((turn): CopilotConversationTurn => {
-    if (turn.id !== input.assistantMessageId) {
-      return turn
-    }
-
-    return {
-      ...turn,
-      kind: 'error',
-      title: '发送失败',
-      content: input.content,
-      status: 'failed',
-      diagnostic: input.diagnostic,
-    }
-  })
-
-  return ensureAssistantTurnExists(nextTurns, {
-    id: input.assistantMessageId,
-    kind: 'error',
-    title: '发送失败',
-    content: input.content,
-    status: 'failed',
-    diagnostic: input.diagnostic,
-  })
-}
-
-export function cancelAssistantTurn(
-  turns: CopilotConversationTurn[],
-  input: {
-    assistantMessageId: string | null
-    reason: string
-    diagnostic: CopilotRunDiagnosticSummary | null
-  },
-): CopilotConversationTurn[] {
-  if (input.assistantMessageId === null) {
-    return turns
-  }
-
-  return turns.map((turn) => {
-    if (turn.id !== input.assistantMessageId) {
-      return turn
-    }
-
-    return {
-      ...turn,
-      status: 'cancelled',
-      title: '已取消',
-      content: turn.content === '' ? formatCancelledReason(input.reason) : turn.content,
-      diagnostic: input.diagnostic,
-    }
-  })
-}
-
-export function createErrorTurn(
-  content: string,
-  diagnostic: CopilotRunDiagnosticSummary | null = null,
-): CopilotConversationTurn {
-  return {
-    id: `error:${content}:${Math.random().toString(36).slice(2)}`,
-    kind: 'error',
-    title: '发送失败',
-    content,
-    status: 'failed',
-    diagnostic,
-  }
-}
-
 export function clampComposerHeight(height: number): number {
   return Math.min(MAX_COPILOT_COMPOSER_HEIGHT, Math.max(MIN_COPILOT_COMPOSER_HEIGHT, Math.round(height)))
 }
@@ -1048,109 +947,6 @@ function dedupeToolIds(toolIds: string[]): string[] {
   }
 
   return [...uniqueToolIds]
-}
-
-function ensureAssistantTurnExists(
-  turns: CopilotConversationTurn[],
-  turn: CopilotConversationTurn,
-): CopilotConversationTurn[] {
-  return turns.some((currentTurn) => currentTurn.id === turn.id)
-    ? turns
-    : [...turns, turn]
-}
-
-function buildToolStepTurn(event: RuntimeToolEvent): CopilotConversationTurn {
-  return {
-    id: `tool:${event.payload.toolCallId}`,
-    kind: 'tool',
-    title: event.payload.title,
-    content: event.payload.summary,
-    status: mapToolPhaseToTurnStatus(event.payload.phase),
-    toolCallId: event.payload.toolCallId,
-    toolId: event.payload.toolId,
-    toolPhase: event.payload.phase,
-    inputSummary: event.payload.inputSummary ?? null,
-    resultSummary: event.payload.resultSummary ?? null,
-    errorSummary: event.payload.errorSummary ?? null,
-  }
-}
-
-function mapToolPhaseToTurnStatus(
-  phase: RuntimeToolEventPhase,
-): NonNullable<CopilotConversationTurn['status']> {
-  switch (phase) {
-    case 'started':
-    case 'waiting_approval':
-      return 'streaming'
-    case 'completed':
-      return 'completed'
-    case 'failed':
-      return 'failed'
-    case 'cancelled':
-      return 'cancelled'
-  }
-}
-
-function resolveToolTurnInsertIndex(
-  turns: CopilotConversationTurn[],
-  assistantMessageId: string | null,
-): number {
-  if (assistantMessageId === null) {
-    return turns.length
-  }
-
-  const assistantTurnIndex = turns.findIndex((turn) => turn.id === assistantMessageId)
-  if (assistantTurnIndex < 0) {
-    return turns.length
-  }
-
-  const assistantTurn = turns[assistantTurnIndex]
-  if (assistantTurn.kind === 'assistant' && assistantTurn.status === 'streaming' && assistantTurn.content === '') {
-    return assistantTurnIndex
-  }
-
-  return turns.length
-}
-
-function cloneRuntimeModelRoute(route: RuntimeModelRoute): RuntimeModelRoute {
-  return {
-    ...(route.routeRef === undefined || route.routeRef === null
-      ? {}
-      : {
-          routeRef: {
-            routeKind: route.routeRef.routeKind,
-            profileId: route.routeRef.profileId,
-            modelId: route.routeRef.modelId,
-          },
-        }),
-    ...(route.catalogRevision === undefined ? {} : { catalogRevision: route.catalogRevision }),
-  }
-}
-
-function cloneRuntimeResolvedModelRoute(route: RuntimeResolvedModelRoute): RuntimeResolvedModelRoute {
-  return {
-    routeRef: {
-      routeKind: route.routeRef.routeKind,
-      profileId: route.routeRef.profileId,
-      modelId: route.routeRef.modelId,
-    },
-    providerProfileId: route.providerProfileId,
-    provider: route.provider,
-    providerId: route.providerId,
-    adapterId: route.adapterId,
-    runtimeStatus: route.runtimeStatus,
-    catalogRevision: route.catalogRevision,
-    endpointFamily: route.endpointFamily,
-    endpointType: route.endpointType,
-    baseUrl: route.baseUrl,
-    modelId: route.modelId,
-    authKind: route.authKind,
-  }
-}
-
-function formatCancelledReason(reason: string): string {
-  const trimmedReason = reason.trim()
-  return trimmedReason === '' ? '本次响应已取消。' : `本次响应已取消：${trimmedReason}`
 }
 
 export function formatRuntimeSource(source: 'hosted' | 'dev-override' | 'none'): string {
