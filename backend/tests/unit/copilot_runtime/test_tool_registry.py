@@ -18,6 +18,18 @@ from app.copilot_runtime.tool_registry import (
     COMMAND_RUN_TOOL_DESCRIPTION,
     COMMAND_RUN_TOOL_DISPLAY_NAME,
     COMMAND_RUN_TOOL_ID,
+    SHELL_RUN_TOOL_DESCRIPTION,
+    SHELL_RUN_TOOL_DISPLAY_NAME,
+    SHELL_RUN_TOOL_ID,
+    SHELL_SESSION_CLOSE_TOOL_DESCRIPTION,
+    SHELL_SESSION_CLOSE_TOOL_DISPLAY_NAME,
+    SHELL_SESSION_CLOSE_TOOL_ID,
+    SHELL_SESSION_EXEC_TOOL_DESCRIPTION,
+    SHELL_SESSION_EXEC_TOOL_DISPLAY_NAME,
+    SHELL_SESSION_EXEC_TOOL_ID,
+    SHELL_SESSION_START_TOOL_DESCRIPTION,
+    SHELL_SESSION_START_TOOL_DISPLAY_NAME,
+    SHELL_SESSION_START_TOOL_ID,
     DEFAULT_WEATHER_LOCATION,
     FILE_TOOL_READ_DESCRIPTION,
     FILE_TOOL_READ_DISPLAY_NAME,
@@ -111,6 +123,10 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         FILE_TOOL_SWITCH_ROOT_ID,
         WEATHER_CURRENT_TOOL_ID,
         COMMAND_RUN_TOOL_ID,
+        SHELL_RUN_TOOL_ID,
+        SHELL_SESSION_START_TOOL_ID,
+        SHELL_SESSION_EXEC_TOOL_ID,
+        SHELL_SESSION_CLOSE_TOOL_ID,
         REQUEST_USER_FORM_TOOL_ID,
         SKILL_ACTIVATE_TOOL_ID,
         SKILL_READ_RESOURCE_TOOL_ID,
@@ -257,6 +273,86 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "displayNameEn": COMMAND_RUN_TOOL_DISPLAY_NAME,
         "descriptionZh": "在后端运行一条命令并返回 stdout/stderr 以及退出码。",
         "descriptionEn": COMMAND_RUN_TOOL_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
+    assert catalog_by_id[SHELL_RUN_TOOL_ID] == {
+        "toolId": SHELL_RUN_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Shell 命令执行",
+        "description": "在后端使用 shell 执行一条命令（支持管道、重定向等 shell 特性）。",
+        "prompt": "当你需要 |、>、&& 等真实 shell 特性时使用此工具。请提供完整 command 字符串；除非必要，不要显式指定 shell。涉及删除、覆盖、安装、网络访问等高风险操作必须先征求用户明确批准。",
+        "displayNameZh": "Shell 命令执行",
+        "displayNameEn": SHELL_RUN_TOOL_DISPLAY_NAME,
+        "descriptionZh": "在后端使用 shell 执行一条命令（支持管道、重定向等 shell 特性）。",
+        "descriptionEn": SHELL_RUN_TOOL_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
+    assert catalog_by_id[SHELL_SESSION_START_TOOL_ID] == {
+        "toolId": SHELL_SESSION_START_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Shell 会话启动",
+        "description": "在后端启动一个可持续的 shell 会话（会保留 cd、环境变量等状态）。",
+        "prompt": "当你需要像真实终端一样保持状态（如 cd 后目录保持、设置环境变量后持续生效）时，先用此工具启动会话并获得 sessionId。",
+        "displayNameZh": "Shell 会话启动",
+        "displayNameEn": SHELL_SESSION_START_TOOL_DISPLAY_NAME,
+        "descriptionZh": "在后端启动一个可持续的 shell 会话（会保留 cd、环境变量等状态）。",
+        "descriptionEn": SHELL_SESSION_START_TOOL_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
+    assert catalog_by_id[SHELL_SESSION_EXEC_TOOL_ID] == {
+        "toolId": SHELL_SESSION_EXEC_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Shell 会话输入",
+        "description": "向已启动的 shell 会话发送输入并返回输出。",
+        "prompt": "使用此工具向 shell 会话发送下一条命令或输入。请传入 sessionId 和 input 文本。",
+        "displayNameZh": "Shell 会话输入",
+        "displayNameEn": SHELL_SESSION_EXEC_TOOL_DISPLAY_NAME,
+        "descriptionZh": "向已启动的 shell 会话发送输入并返回输出。",
+        "descriptionEn": SHELL_SESSION_EXEC_TOOL_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
+    assert catalog_by_id[SHELL_SESSION_CLOSE_TOOL_ID] == {
+        "toolId": SHELL_SESSION_CLOSE_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Shell 会话关闭",
+        "description": "关闭一个 shell 会话并释放后端资源。",
+        "prompt": "当不再需要 shell 会话时，使用此工具关闭它以释放资源。",
+        "displayNameZh": "Shell 会话关闭",
+        "displayNameEn": SHELL_SESSION_CLOSE_TOOL_DISPLAY_NAME,
+        "descriptionZh": "关闭一个 shell 会话并释放后端资源。",
+        "descriptionEn": SHELL_SESSION_CLOSE_TOOL_DESCRIPTION,
         "group": {
             "id": "builtin-core",
             "label": "内置基础工具",
@@ -644,6 +740,51 @@ def test_command_run_tool_executes_python_inline() -> None:
     assert result["timedOut"] is False
     assert result["exitCode"] == 0
     assert "ok" in result["stdout"]
+
+
+def test_shell_run_tool_executes_echo_ok() -> None:
+    registry = build_default_tool_registry()
+    resolved_tool = registry.resolve_tool(SHELL_RUN_TOOL_ID)
+    result = _run_awaitable(
+        resolved_tool.execute(
+            {
+                "shell": "auto",
+                "command": "echo ok",
+                "timeoutSeconds": 10,
+                "maxOutputChars": 2000,
+            }
+        )
+    )
+
+    assert resolved_tool.descriptor.kind == "builtin"
+    assert resolved_tool.function_name == "shell_run"
+    assert resolved_tool.parameters_json_schema is not None
+    assert result["timedOut"] is False
+    assert result["exitCode"] == 0
+    assert "ok" in result["stdout"].lower()
+
+
+def test_shell_session_tools_execute_echo_ok_and_persist_state() -> None:
+    registry = build_default_tool_registry()
+    start_tool = registry.resolve_tool(SHELL_SESSION_START_TOOL_ID)
+    exec_tool = registry.resolve_tool(SHELL_SESSION_EXEC_TOOL_ID)
+    close_tool = registry.resolve_tool(SHELL_SESSION_CLOSE_TOOL_ID)
+
+    started = _run_awaitable(start_tool.execute({"shell": "auto"}))
+    session_id = cast(str, started["sessionId"])
+
+    first = _run_awaitable(exec_tool.execute({"sessionId": session_id, "input": "echo ok"}))
+    assert first["closed"] is False
+    assert first["exitCode"] is None
+    assert "ok" in cast(str, first["stdout"]).lower()
+
+    second = _run_awaitable(exec_tool.execute({"sessionId": session_id, "input": "echo ok2"}))
+    assert second["closed"] is False
+    assert second["exitCode"] is None
+    assert "ok2" in cast(str, second["stdout"]).lower()
+
+    closed = _run_awaitable(close_tool.execute({"sessionId": session_id}))
+    assert closed["closed"] is True
 
 
 def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
