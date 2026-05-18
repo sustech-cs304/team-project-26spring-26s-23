@@ -119,6 +119,4 @@ jobs:
         run: uv sync --project backend --extra dev --extra test --frozen
 
       - name: Run command tools unit pytest
-        run: |
-          uv run --project backend python -m pytest -c backend/pyproject.toml -m "not live and not e2e" \
-            backend/tests/unit/copilot_runtime/test_tool_registry.py -k "command_run_tool_executes_python_inline or shell_run_tool_executes_echo_ok or shell_session_tools_execute_echo_ok_and_persist_state"
+        run: uv run --project backend python -m pytest -c backend/pyproject.toml -m "not live and not e2e" backend/tests/unit/copilot_runtime/test_tool_registry.py -k "command_run_tool_executes_python_inline or shell_run_tool_executes_echo_ok or shell_session_tools_execute_echo_ok_and_persist_state"

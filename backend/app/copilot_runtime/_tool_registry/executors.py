@@ -443,6 +443,48 @@ async def _read_available_output(
     return bytes(buffer), truncated
 
 
+async def _read_until_marker(
+    stream: asyncio.StreamReader | None,
+    *,
+    marker: bytes,
+    limit_bytes: int,
+    timeout_seconds: float,
+) -> tuple[bytes, bool, bool]:
+    if stream is None:
+        return b"", False, False
+    buffer = bytearray()
+    truncated = False
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    found = False
+    while True:
+        if marker and marker in buffer:
+            found = True
+            break
+        if asyncio.get_running_loop().time() >= deadline:
+            break
+        remaining_wait = deadline - asyncio.get_running_loop().time()
+        try:
+            chunk = await asyncio.wait_for(
+                stream.read(4096),
+                timeout=min(0.2, remaining_wait),
+            )
+        except asyncio.TimeoutError:
+            continue
+        if not chunk:
+            break
+        remaining = limit_bytes - len(buffer)
+        if remaining > 0:
+            buffer.extend(chunk[:remaining])
+            if len(chunk) > remaining:
+                truncated = True
+        else:
+            truncated = True
+        if marker and marker in buffer:
+            found = True
+            break
+    return bytes(buffer), truncated, found
+
+
 def _decode_output(data: bytes) -> str:
     if not data:
         return ""
@@ -582,14 +624,33 @@ async def execute_shell_session_exec_tool(
             }
         if proc.stdin is None:
             raise RuntimeError("shell session stdin is not available")
-        proc.stdin.write(input_text.encode("utf-8", errors="replace"))
+        raw_line = input_text.strip()
+        is_exit = raw_line.lower() in {"exit", "logout"}
+        marker_text = f"__TRAE_SHELL_DONE_{uuid.uuid4().hex}__"
+        marker_bytes = marker_text.encode("utf-8")
+        if is_exit:
+            payload_line = raw_line
+            marker_bytes = b""
+        else:
+            if session.shell == "cmd":
+                payload_line = f"{raw_line} & echo {marker_text}"
+            else:
+                payload_line = f"{raw_line}; echo {marker_text}"
+
+        line_ending = "\r\n" if session.shell == "cmd" else "\n"
+        proc.stdin.write((payload_line + line_ending).encode("utf-8", errors="replace"))
         await proc.stdin.drain()
 
-        stdout_bytes, stdout_truncated = await _read_available_output(
+        stdout_bytes, stdout_truncated, marker_found = await _read_until_marker(
             proc.stdout,
+            marker=marker_bytes,
             limit_bytes=max_output_bytes,
-            max_wait_seconds=float(resolved_timeout_seconds),
+            timeout_seconds=float(resolved_timeout_seconds),
         )
+        if marker_bytes and marker_found:
+            marker_index = stdout_bytes.find(marker_bytes)
+            if marker_index >= 0:
+                stdout_bytes = stdout_bytes[:marker_index]
         stderr_bytes, stderr_truncated = await _read_available_output(
             proc.stderr,
             limit_bytes=max_output_bytes,
