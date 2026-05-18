@@ -57,7 +57,10 @@ def test_resolve_path_blocks_symlink_escape(workspace_root: Path) -> None:
     secret = outside / "secret.txt"
     secret.write_text("secret", encoding="utf-8")
     link_path = workspace_root / "linked-secret.txt"
-    link_path.symlink_to(secret)
+    try:
+        link_path.symlink_to(secret)
+    except OSError:
+        pytest.skip("symlink creation unsupported or blocked on this platform")
     policy = FileToolPathPolicy(workspace_root=workspace_root)
 
     with pytest.raises(FileToolError) as exc_info:

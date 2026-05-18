@@ -108,9 +108,15 @@ class ToolDescriptor:
         entry = self.build_catalog_entry()
         if self.kind == DEFAULT_TOOL_KIND:
             localized_fields = resolve_builtin_tool_locale(self.tool_id, language)
-            entry["displayName"] = localized_fields["displayName"]
-            entry["description"] = localized_fields["description"]
-            entry["prompt"] = localized_fields["prompt"]
+            display_name = localized_fields.get("displayName") or self.tool_id
+            description = localized_fields.get("description") or ""
+            prompt = localized_fields.get("prompt")
+            entry["displayName"] = display_name
+            entry["description"] = description
+            if prompt is not None:
+                normalized_prompt = prompt.strip()
+                if normalized_prompt != "":
+                    entry["prompt"] = normalized_prompt
         elif self.presentation is not None:
             entry.update(self.presentation.build_catalog_view(language))
         return entry

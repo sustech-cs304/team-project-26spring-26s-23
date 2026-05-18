@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from ._tool_registry.builders import build_default_tool_registry
 from ._tool_registry.constants import (
+    CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
+    CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
+    CAMPUS_INFO_SEARCH_TOOL_ID,
     DEFAULT_TOOLSET_NAME,
     DEFAULT_WEATHER_LOCATION,
     FILE_CONVERT_TOOL_DESCRIPTION,
@@ -55,6 +58,9 @@ from ._tool_registry.models import (
 
 
 __all__ = [
+    "CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION",
+    "CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME",
+    "CAMPUS_INFO_SEARCH_TOOL_ID",
     "DEFAULT_TOOLSET_NAME",
     "DEFAULT_WEATHER_LOCATION",
     "ExecutableTool",

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from app.tools.file_convert import convert_file_to_str
+from app.copilot_runtime.campus_info_search_tool import execute_campus_info_search_tool
 
 from .constants import DEFAULT_WEATHER_LOCATION, WEATHER_SAMPLE_RESULTS
 
@@ -61,6 +62,12 @@ async def execute_default_weather_tool(
     arguments: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     return await execute_weather_current_tool(arguments)
+
+
+async def execute_default_campus_info_search_tool(
+    arguments: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    return await execute_campus_info_search_tool(arguments)
 
 
 async def execute_request_user_form_tool(

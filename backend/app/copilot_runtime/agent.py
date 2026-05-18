@@ -841,11 +841,14 @@ class PydanticAIAgentExecutor:
         context = PromptContext(
             current_month_year=datetime.now(UTC).strftime("%Y年%m月"),
         )
-        parts = [
-            DEFAULT_AGENT_SYSTEM_PROMPT,
+        parts = [DEFAULT_AGENT_SYSTEM_PROMPT]
+        for fragment in (
             context.inject(TOOL_SELECTION_GUIDE),
             context.inject(SHARED_CONVENTIONS),
-        ]
+        ):
+            normalized = fragment.strip()
+            if normalized:
+                parts.append(normalized)
         if skill_system_prompt and skill_system_prompt.strip():
             parts.append(skill_system_prompt.strip())
         return "\n\n".join(parts)

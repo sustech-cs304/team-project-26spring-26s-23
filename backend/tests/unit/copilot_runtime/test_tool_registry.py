@@ -97,7 +97,6 @@ def test_tool_registry_returns_registered_default_toolset() -> None:
 def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> None:
     registry = build_default_tool_registry()
     expected_tool_ids = (
-        
         FILE_TOOL_READ_ID,
         FILE_TOOL_WRITE_ID,
         "tool.fs.edit",
@@ -106,15 +105,12 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "tool.fs.notebook_edit",
         FILE_TOOL_SWITCH_ROOT_ID,
         FILE_CONVERT_TOOL_ID,
-       
         WEATHER_CURRENT_TOOL_ID,
         REQUEST_USER_FORM_TOOL_ID,
         SKILL_ACTIVATE_TOOL_ID,
         SKILL_READ_RESOURCE_TOOL_ID,
-       
-        *CONTRACT_TOOL_IDS,
-    ,
         CAMPUS_INFO_SEARCH_TOOL_ID,
+        *CONTRACT_TOOL_IDS,
     )
     catalog = registry.build_tool_catalog(language="zh-CN")
     catalog_by_id = {entry["toolId"]: entry for entry in catalog}

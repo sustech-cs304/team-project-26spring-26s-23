@@ -72,6 +72,13 @@ SKILL_READ_RESOURCE_TOOL_PROMPT = (
     "Pass the skill id or display name plus the listed resource path."
 )
 
+CAMPUS_INFO_SEARCH_TOOL_ID = "tool.campus-info.search"
+CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME = "校园信息检索"
+CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION = (
+    "搜索已索引的校园官方文档，并返回可用于引用的命中片段与元数据。"
+)
+CAMPUS_INFO_SEARCH_TOOL_PROMPT = ""
+
 FILE_TOOL_READ_DISPLAY_NAME = "File Read"
 FILE_TOOL_READ_DESCRIPTION = (
     "Read UTF-8 text files from the workspace with line-based pagination."
@@ -168,6 +175,11 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "读取已启用 Skill 资源索引中的 UTF-8 文本资源，不要求先激活。",
             "prompt": "需要 Skill 资源摘要中列出的相对路径时，用此工具传入 skill id 或显示名称以及该资源路径。",
         },
+        CAMPUS_INFO_SEARCH_TOOL_ID: {
+            "displayName": CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
+            "description": CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
+            "prompt": CAMPUS_INFO_SEARCH_TOOL_PROMPT,
+        },
     },
     "en-US": {
         FILE_CONVERT_TOOL_ID: {
@@ -229,6 +241,11 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": SKILL_READ_RESOURCE_TOOL_DISPLAY_NAME,
             "description": SKILL_READ_RESOURCE_TOOL_DESCRIPTION,
             "prompt": SKILL_READ_RESOURCE_TOOL_PROMPT,
+        },
+        CAMPUS_INFO_SEARCH_TOOL_ID: {
+            "displayName": "Campus Info Search",
+            "description": "Search indexed campus documents and return relevant snippets with source metadata.",
+            "prompt": "",
         },
     },
 }
@@ -301,6 +318,49 @@ SKILL_READ_RESOURCE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["skill_id", "path"],
+}
+
+CAMPUS_INFO_SEARCH_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Natural-language query about campus official information.",
+        },
+        "topK": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Maximum number of hits to return.",
+        },
+        "maxPerDoc": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "Maximum number of merged hits per source document.",
+        },
+        "contextChars": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 500,
+            "description": "Snippet context window size in characters.",
+        },
+        "includeContent": {
+            "type": "boolean",
+            "description": "Include the full matched content chunk in each hit.",
+        },
+        "cacheDir": {
+            "type": "string",
+            "description": "Optional cache directory containing the index.sqlite file.",
+        },
+        "dbPath": {
+            "type": "string",
+            "description": "Optional explicit path to the SQLite index file.",
+        },
+    },
+    "required": ["query"],
 }
 
 REQUEST_USER_FORM_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
