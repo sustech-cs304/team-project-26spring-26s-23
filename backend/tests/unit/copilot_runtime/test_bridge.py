@@ -712,7 +712,10 @@ def test_stream_run_honors_cancel_requested_state_for_started_runs() -> None:
     ]
     assert updated_run.status == "cancelled"
     assert updated_run.cancel_requested is True
-    assert store.list_messages("thread-1") == ()
+    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
+        ("user", "Hello"),
+        ("assistant", "partial"),
+    ]
 
 
 def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> None:

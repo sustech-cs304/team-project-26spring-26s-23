@@ -98,6 +98,69 @@ def test_sqlite_session_store_persists_history_and_allocates_event_sequences(
         second_store.dispose()
 
 
+def test_sqlite_session_store_projects_cancelled_run_interrupted_draft_from_events(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+
+    first_store = SQLiteSessionStore(db_path=db_path)
+    try:
+        first_store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        first_store.create_run(
+            thread_id="thread-1",
+            run_id="run-cancelled",
+            request=_build_stored_run_input(user_text="please continue"),
+        )
+        first_store.record_run_event(
+            "run-cancelled",
+            event_type="run_started",
+            payload={"assistantMessageId": "run-cancelled:assistant"},
+            sequence=1,
+        )
+        first_store.record_run_event(
+            "run-cancelled",
+            event_type="text_delta",
+            payload={"delta": "partial cancelled draft"},
+            sequence=2,
+        )
+        first_store.mark_run_cancelled(
+            "run-cancelled",
+            metadata={
+                "terminal_event": "run_cancelled",
+                "terminal_payload": {"reason": "cancelled"},
+            },
+        )
+
+        assert [
+            (event.event_type, event.payload)
+            for event in first_store.list_run_events("run-cancelled")
+        ] == [
+            ("run_started", {"assistantMessageId": "run-cancelled:assistant"}),
+            ("text_delta", {"delta": "partial cancelled draft"}),
+        ]
+        assert [
+            (message.role, message.content)
+            for message in first_store.list_messages("thread-1")
+        ] == [
+            ("user", "please continue"),
+            ("assistant", "partial cancelled draft"),
+        ]
+    finally:
+        first_store.dispose()
+
+    second_store = SQLiteSessionStore(db_path=db_path)
+    try:
+        assert [
+            (message.role, message.content)
+            for message in second_store.list_messages("thread-1")
+        ] == [
+            ("user", "please continue"),
+            ("assistant", "partial cancelled draft"),
+        ]
+    finally:
+        second_store.dispose()
+
+
 def test_sqlite_session_store_persists_tool_permission_policy_round_trip(
     tmp_path: Path,
 ) -> None:
