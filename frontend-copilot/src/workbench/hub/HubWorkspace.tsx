@@ -23,10 +23,9 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
     const controller = new AbortController()
     let active = true
 
-    let actualRuntimeUrl = 'http://127.0.0.1:8765'
     if (bootstrap) {
       if (bootstrap.state.status === 'ready' || bootstrap.state.status === 'degraded') {
-        actualRuntimeUrl = bootstrap.state.runtimeUrl
+        // no-op, component can proceed
       } else {
         return
       }
@@ -36,21 +35,11 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       setIsLoading(true)
       setError(null)
       try {
-        const response = await fetch(`${actualRuntimeUrl}/calendar/events`, {
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          const errText = await response.text().catch(() => 'No text')
-          throw new Error(`Failed to fetch events: ${response.status} ${response.statusText} ${errText}`)
-        }
-        const data = await response.json()
+        const response = await window.timelineDatabase.loadEvents()
         if (active) {
-          setEvents(data.items || [])
+          setEvents(response.items || [])
         }
       } catch (err: unknown) {
-        if (controller.signal.aborted) {
-          return
-        }
         if (active) {
           setError(err instanceof Error ? err.message : String(err))
         }

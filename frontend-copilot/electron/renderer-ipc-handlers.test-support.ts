@@ -95,6 +95,14 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
     ...createAttachmentManagerFixtures(),
     ...createDesktopWindowFixtures(),
     ...createFileManagerFixtures(),
+    ...createTimelineDatabaseFixtures(),
+  }
+}
+
+function createTimelineDatabaseFixtures(): Pick<RendererIpcHandlers, 'loadTimelineEvents' | 'addTimelineEvent'> {
+  return {
+    loadTimelineEvents: vi.fn(async () => ({ items: [] })),
+    addTimelineEvent: vi.fn(async (_request) => ({ id: 1 })),
   }
 }
 

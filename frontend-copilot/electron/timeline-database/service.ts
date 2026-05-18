@@ -36,7 +36,7 @@ export function getCalendarEvents(): UnifiedCalendarEvent[] {
   }))
 }
 
-export function addCalendarEvent(event: Omit<UnifiedCalendarEvent, 'id'>): number | bigint {
+export function addCalendarEvent(event: Omit<UnifiedCalendarEvent, 'id'>): number {
   const db = getTimelineDatabase()
   const stmt = db.prepare(`
     INSERT INTO timeline_events (
@@ -63,5 +63,5 @@ export function addCalendarEvent(event: Omit<UnifiedCalendarEvent, 'id'>): numbe
     progress: event.progress ?? 0,
   })
 
-  return info.lastInsertRowid
+  return Number(info.lastInsertRowid)
 }
