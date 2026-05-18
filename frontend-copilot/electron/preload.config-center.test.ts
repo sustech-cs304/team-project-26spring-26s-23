@@ -4,7 +4,6 @@ import { CONFIG_CENTER_PUBLIC_PATCH_CHANNEL, type ConfigCenterPublicPatchApi } f
 import {
   CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL,
   CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL,
-  type ConfigCenterPublicSnapshot,
   type ConfigCenterPublicSnapshotApi,
   type ConfigCenterPublicSnapshotSubscriptionApi,
 } from './config-center/public-snapshot'
@@ -52,7 +51,7 @@ describe('preload config center bridge', () => {
 
     const stop = subscriptionApi.subscribe(listener)
     const registeredListener = getRegisteredOnListener<
-      (event: unknown, payload: ConfigCenterPublicSnapshot) => void
+      (...args: unknown[]) => void
     >(CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL)
     const snapshot = createConfigCenterPublicSnapshotFixture()
 

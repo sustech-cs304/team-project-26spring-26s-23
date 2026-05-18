@@ -7,7 +7,9 @@ import type {
   SelectOption,
 } from '../types'
 
-const MODEL_ROUTE_SELECTION_PREFIX = 'provider-model|'
+const PROVIDER_MODEL_ROUTE_KIND = 'provider-model'
+const MODEL_ROUTE_SELECTION_PREFIX = `${PROVIDER_MODEL_ROUTE_KIND}|`
+const MODEL_UNAVAILABLE_REASON = '当前模型不可用，请重新选择。'
 
 export function collectAllModelOptions(
   providerProfiles: ProviderProfile[],
@@ -71,7 +73,7 @@ export function parseSerializedModelRouteRef(value: string): ModelRouteRef | nul
   }
 
   const [routeKind, encodedProfileId, encodedModelId] = parts
-  if (routeKind !== 'provider-model') {
+  if (routeKind !== PROVIDER_MODEL_ROUTE_KIND) {
     return null
   }
 
@@ -82,7 +84,7 @@ export function parseSerializedModelRouteRef(value: string): ModelRouteRef | nul
   }
 
   return {
-    routeKind: 'provider-model',
+    routeKind: PROVIDER_MODEL_ROUTE_KIND,
     profileId,
     modelId,
   }
@@ -107,7 +109,7 @@ export function syncTrackedModelSelectionValue(
 
     return nextModelId?.trim()
       ? serializeModelRouteRef({
-          routeKind: 'provider-model',
+          routeKind: PROVIDER_MODEL_ROUTE_KIND,
           profileId,
           modelId: nextModelId.trim(),
         })
@@ -139,7 +141,7 @@ function resolveProviderDefaultRouteAvailability(profile: ProviderProfile): {
   if (compatibility?.status === 'legacy' || compatibility?.status === 'unsupported') {
     return {
       available: false,
-      reason: '当前模型不可用，请重新选择。',
+      reason: MODEL_UNAVAILABLE_REASON,
     }
   }
 
@@ -147,14 +149,14 @@ function resolveProviderDefaultRouteAvailability(profile: ProviderProfile): {
   if (catalogEntry === null) {
     return {
       available: false,
-      reason: '当前模型不可用，请重新选择。',
+      reason: MODEL_UNAVAILABLE_REASON,
     }
   }
 
   if (catalogEntry.runtimeStatus !== 'enabled') {
     return {
       available: false,
-      reason: '当前模型不可用，请重新选择。',
+      reason: MODEL_UNAVAILABLE_REASON,
     }
   }
 
@@ -193,7 +195,7 @@ function createCurrentSelectionFallbackOption(
 
 function buildModelRouteRef(profileId: string, modelId: string): ModelRouteRef {
   return {
-    routeKind: 'provider-model',
+    routeKind: PROVIDER_MODEL_ROUTE_KIND,
     profileId,
     modelId,
   }

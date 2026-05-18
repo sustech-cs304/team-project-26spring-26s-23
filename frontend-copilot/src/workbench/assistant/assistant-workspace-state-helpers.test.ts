@@ -46,7 +46,7 @@ describe('assistant-workspace-state-helpers', () => {
       y: 240,
     })).toEqual({
       sessionId: 'session-1',
-      sessionLabel: '通用智能体',
+      sessionLabel: '新话题',
       x: 320,
       y: 240,
       activeSubmenu: null,

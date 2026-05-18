@@ -71,16 +71,9 @@ export function createElectronSettingsWorkspaceService(
         await options.appendLog?.('info', 'Initialized settings workspace persistence documents.', null)
       }
 
-      return {
-        ok: true,
-        source: result.source,
-        state: result.state,
-      }
+      return { ok: true, source: result.source, state: result.state }
     } catch (error) {
-      return {
-        ok: false,
-        error: `Failed to load settings workspace state: ${formatUnknownError(error)}`,
-      }
+      return { ok: false, error: errorMessage(error, 'load settings workspace state') }
     }
   }
 
@@ -89,16 +82,9 @@ export function createElectronSettingsWorkspaceService(
       const storage = await createStorage(options)
       const result = await storage.saveState(input)
       await snapshotSubscription.publishStateSnapshot(result.state)
-
-      return {
-        ok: true,
-        state: result.state,
-      }
+      return { ok: true, state: result.state }
     } catch (error) {
-      return {
-        ok: false,
-        error: `Failed to save settings workspace state: ${formatUnknownError(error)}`,
-      }
+      return { ok: false, error: errorMessage(error, 'save settings workspace state') }
     }
   }
 
@@ -108,16 +94,9 @@ export function createElectronSettingsWorkspaceService(
     try {
       const storage = await createStorage(options)
       const result = await storage.loadSecretStates(request?.profileIds)
-
-      return {
-        ok: true,
-        states: result.states,
-      }
+      return { ok: true, states: result.states }
     } catch (error) {
-      return {
-        ok: false,
-        error: `Failed to load settings workspace secret states: ${formatUnknownError(error)}`,
-      }
+      return { ok: false, error: errorMessage(error, 'load settings workspace secret states') }
     }
   }
 
@@ -125,16 +104,9 @@ export function createElectronSettingsWorkspaceService(
     try {
       const storage = await createStorage(options)
       const result = await storage.loadSustechCasSecret()
-
-      return {
-        ok: true,
-        state: result.state,
-      }
+      return { ok: true, state: result.state }
     } catch (error) {
-      return {
-        ok: false,
-        error: `Failed to load settings workspace sustech CAS secret: ${formatUnknownError(error)}`,
-      }
+      return { ok: false, error: errorMessage(error, 'load settings workspace sustech CAS secret') }
     }
   }
 
@@ -145,17 +117,9 @@ export function createElectronSettingsWorkspaceService(
       const storage = await createStorage(options)
       const result = await storage.saveProfileSecret(request.profileId, request.apiKey)
       await snapshotSubscription.publishProfileSecretSnapshot(request.profileId, result.state)
-
-      return {
-        ok: true,
-        profileId: request.profileId,
-        state: result.state,
-      }
+      return { ok: true, profileId: request.profileId, state: result.state }
     } catch (error) {
-      return {
-        ok: false,
-        error: `Failed to save settings workspace profile secret: ${formatUnknownError(error)}`,
-      }
+      return { ok: false, error: errorMessage(error, 'save settings workspace profile secret') }
     }
   }
 
@@ -166,17 +130,9 @@ export function createElectronSettingsWorkspaceService(
       const storage = await createStorage(options)
       const result = await storage.clearProfileSecret(request.profileId)
       await snapshotSubscription.publishProfileSecretSnapshot(request.profileId, result.state)
-
-      return {
-        ok: true,
-        profileId: request.profileId,
-        state: result.state,
-      }
+      return { ok: true, profileId: request.profileId, state: result.state }
     } catch (error) {
-      return {
-        ok: false,
-        error: `Failed to clear settings workspace profile secret: ${formatUnknownError(error)}`,
-      }
+      return { ok: false, error: errorMessage(error, 'clear settings workspace profile secret') }
     }
   }
 
@@ -187,16 +143,9 @@ export function createElectronSettingsWorkspaceService(
       const storage = await createStorage(options)
       const result = await storage.saveSustechCasSecret(request.password)
       await snapshotSubscription.publishSustechCasSecretSnapshot(result.state)
-
-      return {
-        ok: true,
-        state: result.state,
-      }
+      return { ok: true, state: result.state }
     } catch (error) {
-      return {
-        ok: false,
-        error: `Failed to save settings workspace sustech CAS secret: ${formatUnknownError(error)}`,
-      }
+      return { ok: false, error: errorMessage(error, 'save settings workspace sustech CAS secret') }
     }
   }
 
@@ -205,16 +154,9 @@ export function createElectronSettingsWorkspaceService(
       const storage = await createStorage(options)
       const result = await storage.clearSustechCasSecret()
       await snapshotSubscription.publishSustechCasSecretSnapshot(result.state)
-
-      return {
-        ok: true,
-        state: result.state,
-      }
+      return { ok: true, state: result.state }
     } catch (error) {
-      return {
-        ok: false,
-        error: `Failed to clear settings workspace sustech CAS secret: ${formatUnknownError(error)}`,
-      }
+      return { ok: false, error: errorMessage(error, 'clear settings workspace sustech CAS secret') }
     }
   }
 
@@ -226,29 +168,22 @@ export function createElectronSettingsWorkspaceService(
   }
 
   return {
-    loadState,
-    saveState,
-    loadSecretStates,
-    loadSustechCasSecret,
-    saveProfileSecret,
-    clearProfileSecret,
-    saveSustechCasSecret,
-    clearSustechCasSecret,
+    loadState, saveState, loadSecretStates, loadSustechCasSecret,
+    saveProfileSecret, clearProfileSecret, saveSustechCasSecret, clearSustechCasSecret,
     resolveProviderRoute,
   }
 }
 
 async function createStorage(options: CreateElectronSettingsWorkspaceServiceOptions) {
   const paths = await options.prepareRuntimePaths()
-  return createSettingsWorkspaceStorage({
-    paths: createSettingsWorkspacePaths(paths),
-  })
+  return createSettingsWorkspaceStorage({ paths: createSettingsWorkspacePaths(paths) })
 }
 
 function formatUnknownError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-
+  if (error instanceof Error) return error.message
   return String(error)
+}
+
+function errorMessage(error: unknown, context: string): string {
+  return `Failed to ${context}: ${formatUnknownError(error)}`
 }

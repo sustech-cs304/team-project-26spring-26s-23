@@ -128,6 +128,27 @@ def test_history_routes_expose_persisted_threads_details_and_run_replay(tmp_path
     assert replay_payload["availabilityInterpretation"]["requiresExplicitRebind"] is False
 
 
+def test_history_routes_initialize_empty_threads_with_new_topic_title(tmp_path: Path) -> None:
+    app = create_app(
+        _build_config(tmp_path, local_token="history-token"),
+        model_route_resolver=_StaticTestModelRouteResolver(),
+    )
+
+    with TestClient(app) as client:
+        store = app.state.copilot_runtime_session_store
+        store.create_thread(bound_agent_id="default", thread_id="thread-empty")
+
+        headers = {LOCAL_TOKEN_HEADER_NAME: "history-token"}
+        threads_response = client.get("/history/threads", headers=headers)
+
+    assert threads_response.status_code == 200
+    threads_payload = threads_response.json()
+
+    assert threads_payload["threads"][0]["threadId"] == "thread-empty"
+    assert threads_payload["threads"][0]["title"] == "新话题"
+    assert threads_payload["threads"][0]["titleSource"] == "deterministic"
+
+
 
 def test_history_routes_surface_backend_drift_conclusions_in_thread_detail_and_replay(tmp_path: Path) -> None:
     app = create_app(

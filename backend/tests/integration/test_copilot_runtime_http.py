@@ -652,20 +652,21 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         *,
         db_path: Path | None = None,
         reset_schema: bool = False,
-        resource_course_limit: int = 3,
         verify_second_sync: bool = True,
+        current_term_only: bool = False,
+        parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
-        _ = enable_console_logging
+        _ = (enable_console_logging, current_term_only)
         captured_sync.update(
             {
                 "username": username,
                 "password": password,
                 "db_path": db_path,
                 "reset_schema": reset_schema,
-                "resource_course_limit": resource_course_limit,
                 "verify_second_sync": verify_second_sync,
+                "parallel_workers": parallel_workers,
             }
         )
         if progress is not None:
@@ -692,7 +693,6 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
             tool_id="blackboard.snapshot.sync",
             tool_arguments={
                 "dbRelativePath": "blackboard/snapshot.db",
-                "resourceCourseLimit": 2,
                 "verifySecondSync": False,
                 "stateKey": "snapshot-latest",
                 "artifactName": "snapshot.json",
@@ -725,8 +725,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         "password": "secret",
         "db_path": Path("database-root/blackboard/snapshot.db"),
         "reset_schema": False,
-        "resource_course_limit": 3,
         "verify_second_sync": False,
+        "parallel_workers": 1,
     }
     event_types = [event["type"] for event in events]
     tool_events = [event for event in events if event["type"] == "tool_event"]
@@ -738,11 +738,15 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
         ("event", "emit_event"),
+        ("state", "put_value"),
         ("secret", "get_secret"),
         ("secret", "get_secret"),
         ("database", "resolve_path"),
         ("state", "put_value"),
+        ("state", "put_value"),
+        ("state", "put_value"),
         ("artifact", "save_text"),
+        ("state", "put_value"),
         ("event", "emit_event"),
     ]
     assert all(item["toolId"] == "blackboard.snapshot.sync" for item in captured_bridge_payloads)
@@ -779,20 +783,21 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
         *,
         db_path: Path | None = None,
         reset_schema: bool = False,
-        resource_course_limit: int = 3,
         verify_second_sync: bool = True,
+        current_term_only: bool = False,
+        parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
-        _ = enable_console_logging
+        _ = (enable_console_logging, current_term_only)
         captured_sync.update(
             {
                 "username": username,
                 "password": password,
                 "db_path": db_path,
                 "reset_schema": reset_schema,
-                "resource_course_limit": resource_course_limit,
                 "verify_second_sync": verify_second_sync,
+                "parallel_workers": parallel_workers,
             }
         )
         if progress is not None:
@@ -849,8 +854,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
         "password": "secret",
         "db_path": Path("database-root/blackboard/sustech.db"),
         "reset_schema": False,
-        "resource_course_limit": 3,
         "verify_second_sync": True,
+        "parallel_workers": 1,
     }
     event_types = [event["type"] for event in events]
     tool_events = [event for event in events if event["type"] == "tool_event"]
@@ -862,11 +867,15 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
         ("event", "emit_event"),
+        ("state", "put_value"),
         ("secret", "get_secret"),
         ("secret", "get_secret"),
         ("database", "resolve_path"),
         ("state", "put_value"),
+        ("state", "put_value"),
+        ("state", "put_value"),
         ("artifact", "save_text"),
+        ("state", "put_value"),
         ("event", "emit_event"),
     ]
     database_request = next(

@@ -6,4 +6,7 @@
 @import './styles/workbench.css';
 @import './styles/settings.css';
 @import './styles/capabilities-workspace.css';
+@import './styles/file-workspace.css';
+@import './styles/sustech-workspace.css';
+@import './styles/calendar-gantt.css';
 @import './styles/responsive.css';

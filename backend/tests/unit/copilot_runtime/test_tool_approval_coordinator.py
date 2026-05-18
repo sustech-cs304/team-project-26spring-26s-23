@@ -145,7 +145,7 @@ def test_manual_reject_resolves_request(fake_loop: _FakeLoop) -> None:
     coordinator.create_request(
         run_id="run-2",
         tool_call_id="call-2",
-        tool_id="tool.file-convert",
+        tool_id="tool.fs.read",
         mode="ask",
     )
 
@@ -184,7 +184,7 @@ def test_duplicate_resolution_raises_not_found_after_completion(fake_loop: _Fake
     coordinator.create_request(
         run_id="run-3",
         tool_call_id="call-3",
-        tool_id="tool.file-convert",
+        tool_id="tool.fs.read",
         mode="ask",
     )
     coordinator.resolve(
@@ -211,7 +211,7 @@ def test_delay_timeout_auto_rejects_and_wait_for_resolution_observes_result(fake
     request, future = coordinator.create_request(
         run_id="run-4",
         tool_call_id="call-4",
-        tool_id="tool.file-convert",
+        tool_id="tool.fs.read",
         mode="delay",
         timeout_seconds=5,
         timeout_action="deny",
@@ -244,7 +244,7 @@ def test_delay_timeout_auto_approves_when_configured(fake_loop: _FakeLoop) -> No
     _, future = coordinator.create_request(
         run_id="run-5",
         tool_call_id="call-5",
-        tool_id="tool.file-convert",
+        tool_id="tool.fs.read",
         mode="delay",
         timeout_seconds=7,
         timeout_action="approve",
@@ -271,7 +271,7 @@ def test_manual_resolution_wins_over_later_timeout(fake_loop: _FakeLoop) -> None
     _, future = coordinator.create_request(
         run_id="run-6",
         tool_call_id="call-6",
-        tool_id="tool.file-convert",
+        tool_id="tool.fs.read",
         mode="delay",
         timeout_seconds=9,
         timeout_action="deny",
@@ -302,7 +302,7 @@ def test_wait_for_resolution_cancellation_discards_pending_request(fake_loop: _F
     coordinator.create_request(
         run_id="run-cancelled",
         tool_call_id="call-cancelled",
-        tool_id="tool.file-convert",
+        tool_id="tool.fs.read",
         mode="ask",
     )
 
@@ -336,7 +336,7 @@ def test_discard_run_clears_all_pending_requests(fake_loop: _FakeLoop) -> None:
     first_request, first_future = coordinator.create_request(
         run_id="run-discard",
         tool_call_id="call-1",
-        tool_id="tool.file-convert",
+        tool_id="tool.fs.read",
         mode="ask",
     )
     second_request, second_future = coordinator.create_request(

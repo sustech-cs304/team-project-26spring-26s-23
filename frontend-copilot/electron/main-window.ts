@@ -36,6 +36,7 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     width: 1440,
     height: 960,
     show: false,
+    frame: false,
     autoHideMenuBar: true,
     backgroundColor: '#f3f5f8',
     webPreferences: {

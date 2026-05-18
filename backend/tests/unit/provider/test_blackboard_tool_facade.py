@@ -563,6 +563,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
@@ -574,6 +575,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
                 "db_path": db_path,
                 "reset_schema": reset_schema,
                 "verify_second_sync": verify_second_sync,
+                "parallel_workers": parallel_workers,
             }
         )
         if progress is not None:
@@ -659,6 +661,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
             "password": " secret ",
             "dbRelativePath": "blackboard/snapshot.db",
             "verifySecondSync": "false",
+            "parallelWorkers": 4,
             "stateKey": "snapshot-latest",
             "artifactName": "snapshot.json",
         },
@@ -677,6 +680,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "db_path": Path("database-root/blackboard/snapshot.db"),
         "reset_schema": False,
         "verify_second_sync": False,
+        "parallel_workers": 4,
     }
     assert result.output is not None
     assert set(result.output) == {
@@ -755,6 +759,12 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert database.requests == ["blackboard/snapshot.db"]
     persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
     persisted_state_output = state_store.values[("blackboard.snapshot_sync", "snapshot-latest")]["output"]
+    latest_status = state_store.values[
+        (
+            facade_tools._STATE_NAMESPACE_SNAPSHOT_SYNC,
+            facade_tools._LATEST_STATUS_STATE_KEY,
+        )
+    ]
     assert persisted_state_output == persisted_artifact_output
     assert set(persisted_artifact_output) == {
         "dbPath",
@@ -777,10 +787,49 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert "resourcePayloadsByCourse" not in persisted_artifact_output
     assert "courses" not in persisted_artifact_output
     assert "payloads" not in persisted_artifact_output
+    assert latest_status["status"] == "completed"
+    assert latest_status["lastSyncError"] is None
+    assert latest_status["progressMessage"] is None
+    assert latest_status["progressStage"] is None
+    assert latest_status["progressLogs"] == ["fetching courses", "syncing sqlite"]
     assert [event.event_type for event in event_sink.events] == [
         "blackboard.snapshot.sync.started",
         "blackboard.snapshot.sync.completed",
     ]
+
+
+def test_snapshot_sync_tool_persists_failed_latest_status(monkeypatch: Any) -> None:
+    state_store = StubStateStore()
+
+    def _boom_sync(*_args: Any, **_kwargs: Any) -> BlackboardSnapshotSyncReport:
+        raise RuntimeError("snapshot boom")
+
+    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _boom_sync)
+
+    result = _invoke_tool(
+        BlackboardSnapshotSyncTool(),
+        arguments={
+            "username": "alice",
+            "password": "secret",
+        },
+        host=ToolHostCapabilities(
+            database_resolver=StubDatabaseResolver(Path("database-root")),
+            state_store=state_store,
+        ),
+    )
+
+    assert result.status == "error"
+    latest_status = state_store.values[
+        (
+            facade_tools._STATE_NAMESPACE_SNAPSHOT_SYNC,
+            facade_tools._LATEST_STATUS_STATE_KEY,
+        )
+    ]
+    assert latest_status["status"] == "failed"
+    assert latest_status["lastSyncError"] == "snapshot boom"
+    assert latest_status["progressMessage"] == "snapshot boom"
+    assert latest_status["progressStage"] is None
+    assert latest_status["progressLogs"] == ["snapshot boom"]
 
 
 def test_course_resources_sync_tool_requires_course_ids_and_persists_artifact_and_state(
@@ -991,6 +1040,7 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
@@ -1002,6 +1052,7 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
                 "db_path": db_path,
                 "reset_schema": reset_schema,
                 "verify_second_sync": verify_second_sync,
+                "parallel_workers": parallel_workers,
             }
         )
         return BlackboardSnapshotSyncReport(
@@ -1064,6 +1115,7 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
         "db_path": tmp_path / "database-root" / "blackboard/sustech.db",
         "reset_schema": False,
         "verify_second_sync": True,
+        "parallel_workers": 1,
     }
     assert result.metadata == {
         "toolId": "blackboard.snapshot.sync",
@@ -1178,6 +1230,7 @@ def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
@@ -1187,6 +1240,7 @@ def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
             db_path,
             reset_schema,
             verify_second_sync,
+            parallel_workers,
             progress,
             enable_console_logging,
         )
@@ -1224,6 +1278,7 @@ def test_snapshot_sync_tool_maps_explicit_invalid_credentials_message(monkeypatc
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
@@ -1233,6 +1288,7 @@ def test_snapshot_sync_tool_maps_explicit_invalid_credentials_message(monkeypatc
             db_path,
             reset_schema,
             verify_second_sync,
+            parallel_workers,
             progress,
             enable_console_logging,
         )

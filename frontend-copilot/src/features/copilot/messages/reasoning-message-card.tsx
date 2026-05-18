@@ -1,45 +1,12 @@
 import { useEffect, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import rehypeMathjax from 'rehype-mathjax/svg'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
-import type { Components } from 'react-markdown'
+import { Lightbulb } from 'lucide-react'
 
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import { formatCopilotReasoningDurationLabel, type CopilotReasoningMessageItem } from '../run-segment-view-model'
 
-const assistantMarkdownComponents: Components = {
-  hr({ className, ...props }) {
-    return (
-      <hr
-        {...props}
-        className={[
-          'copilot-chat__markdown-divider',
-          className,
-        ].filter((value) => value !== undefined && value !== '').join(' ')}
-      />
-    )
-  },
-}
-
-const assistantMarkdownRemarkPlugins = [remarkGfm, remarkMath]
-const assistantMarkdownRehypePlugins = [rehypeMathjax]
+import { renderAssistantMarkdownMessageBody } from './assistant-markdown'
 
 const reasoningTimerRefreshMs = 100
-
-function renderMarkdownMessageBody(content: string) {
-  return (
-    <div className="copilot-chat__message-text copilot-chat__message-text--markdown">
-      <ReactMarkdown
-        components={assistantMarkdownComponents}
-        remarkPlugins={assistantMarkdownRemarkPlugins}
-        rehypePlugins={assistantMarkdownRehypePlugins}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  )
-}
 
 interface ReasoningMessageCardProps {
   turn: CopilotReasoningMessageItem
@@ -93,6 +60,9 @@ export function ReasoningMessageCard({
               }}
             >
               <span className="copilot-chat__reasoning-toggle-main">
+                <span className="copilot-chat__step-icon copilot-chat__step-icon--reasoning" aria-hidden="true">
+                  <Lightbulb size={14} strokeWidth={2.2} />
+                </span>
                 <span className="copilot-chat__reasoning-toggle-icon" aria-hidden="true">▾</span>
                 <span className="copilot-chat__message-label">{reasoningTitle}</span>
               </span>
@@ -116,6 +86,9 @@ export function ReasoningMessageCard({
               }}
             >
               <span className="copilot-chat__reasoning-toggle-main">
+                <span className="copilot-chat__step-icon copilot-chat__step-icon--reasoning" aria-hidden="true">
+                  <Lightbulb size={14} strokeWidth={2.2} />
+                </span>
                 <span className="copilot-chat__reasoning-toggle-icon" aria-hidden="true">▸</span>
                 <span className="copilot-chat__message-label">{reasoningTitle}</span>
               </span>
@@ -128,7 +101,7 @@ export function ReasoningMessageCard({
           )}
       {expanded && (
         <div className="copilot-chat__reasoning-panel" id={panelId} data-testid={`chat-message-reasoning-panel-${index}`}>
-          {renderMarkdownMessageBody(turn.content)}
+          {renderAssistantMarkdownMessageBody(turn.content)}
         </div>
       )}
     </div>

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -13,11 +13,65 @@ from .dto import AssignmentAttachmentDTO, AssignmentDTO
 from .scrape_support import (
     extract_date_text_safe,
     extract_status_text,
+    is_course_content_page_url,
     is_navigation_noise,
     is_valid_assignment,
     normalize_assignment_title,
     parse_datetime_safe,
 )
+
+
+def _extract_node_inner_html(node: Tag | None) -> str:
+    if not isinstance(node, Tag):
+        return ""
+    return node.decode_contents().strip()
+
+
+def _first_non_empty_text(*values: str | None) -> str | None:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return None
+
+
+def _normalize_compact_text(value: str | None) -> str:
+    return " ".join(str(value or "").split()).strip().lower()
+
+
+def _strip_html_tags(value: str | None) -> str | None:
+    html = str(value or "").strip()
+    if not html:
+        return None
+    return BeautifulSoup(html, "html.parser").get_text(" ", strip=True) or None
+
+
+def _prefer_fallback_when_primary_is_title_shell(
+    *,
+    title: str,
+    primary_text: str | None,
+    primary_html: str | None,
+    fallback_text: str | None,
+    fallback_html: str | None,
+) -> tuple[str | None, str | None]:
+    normalized_title = _normalize_compact_text(title)
+    normalized_primary_text = _normalize_compact_text(primary_text)
+    normalized_primary_html_text = _normalize_compact_text(
+        _strip_html_tags(primary_html)
+    )
+    primary_looks_like_title_shell = bool(normalized_title) and (
+        normalized_primary_text == normalized_title
+        or normalized_primary_html_text == normalized_title
+    )
+    if primary_looks_like_title_shell:
+        return (
+            _first_non_empty_text(fallback_text, primary_text),
+            _first_non_empty_text(fallback_html, primary_html),
+        )
+    return (
+        _first_non_empty_text(primary_text, fallback_text),
+        _first_non_empty_text(primary_html, fallback_html),
+    )
 
 
 class BlackboardAssignmentAPI:
@@ -55,19 +109,55 @@ class BlackboardAssignmentAPI:
         assignments: list[AssignmentDTO] = []
         seen_keys: set[str] = set()
 
-        for page_url in self._build_assignment_candidate_urls(course_id):
+        queue = self._build_assignment_candidate_urls(course_id)
+        queued_urls = {
+            self._normalize_assignment_page_url(url) for url in queue if url.strip()
+        }
+        visited_urls: set[str] = set()
+
+        max_pages = 40
+        while queue and len(visited_urls) < max_pages:
+            page_url = queue.pop(0)
+            normalized_page_url = self._normalize_assignment_page_url(page_url)
+            queued_urls.discard(normalized_page_url)
+            if not normalized_page_url or normalized_page_url in visited_urls:
+                continue
+            visited_urls.add(normalized_page_url)
+
             soup = self._fetch_assignment_page(page_url)
             if soup is None:
                 continue
 
-            assignments.extend(
-                self._collect_row_assignments(course_id, page_url, soup, seen_keys)
+            row_assignments = self._collect_row_assignments(
+                course_id, page_url, soup, seen_keys
             )
-            if assignments:
+            assignments.extend(row_assignments)
+            if row_assignments:
+                self._enqueue_assignment_content_page_urls(
+                    queue,
+                    queued_urls,
+                    visited_urls,
+                    self._discover_assignment_content_page_urls(
+                        soup,
+                        page_url,
+                        course_id,
+                    ),
+                )
                 continue
 
             assignments.extend(
                 self._collect_fallback_assignments(course_id, page_url, soup, seen_keys)
+            )
+
+            self._enqueue_assignment_content_page_urls(
+                queue,
+                queued_urls,
+                visited_urls,
+                self._discover_assignment_content_page_urls(
+                    soup,
+                    page_url,
+                    course_id,
+                ),
             )
 
         assignments.sort(
@@ -82,7 +172,71 @@ class BlackboardAssignmentAPI:
             f"{self.context.base_url}/webapps/bb-mygrades-BBLEARN/myGrades?course_id={course_id}&stream_name=mygrades&is_stream=false",
             f"{self.context.base_url}/webapps/bb-assignment-BBLEARN/execute/manageCourseAssignment?course_id={course_id}",
             f"{self.context.base_url}/webapps/blackboard/content/listContent.jsp?course_id={course_id}",
+            f"{self.context.base_url}/webapps/blackboard/execute/launcher?type=Course&id={course_id}",
         ]
+
+    def _normalize_assignment_page_url(self, url: str) -> str:
+        return urlparse(str(url or ""))._replace(fragment="").geturl()
+
+    def _discover_assignment_content_page_urls(
+        self,
+        soup: BeautifulSoup,
+        page_url: str,
+        course_id: str,
+    ) -> list[str]:
+        discovered: list[str] = []
+        seen_urls: set[str] = set()
+        current_page_url = self._normalize_assignment_page_url(page_url)
+
+        for link in soup.find_all("a", href=True):
+            if not isinstance(link, Tag):
+                continue
+
+            href = str(link.get("href") or "").strip()
+            if not href:
+                continue
+
+            absolute_url = self.context.absolute_url(page_url, href)
+            normalized_url = self._normalize_assignment_page_url(absolute_url)
+            if not normalized_url or normalized_url == current_page_url:
+                continue
+            if normalized_url in seen_urls:
+                continue
+            if not is_course_content_page_url(
+                normalized_url,
+                course_id,
+                base_url=self.context.base_url,
+            ):
+                continue
+
+            parsed = urlparse(normalized_url)
+            if "execute/launcher" in parsed.path.lower():
+                continue
+            if "content_id" not in parse_qs(parsed.query):
+                continue
+
+            seen_urls.add(normalized_url)
+            discovered.append(normalized_url)
+
+        return discovered
+
+    def _enqueue_assignment_content_page_urls(
+        self,
+        queue: list[str],
+        queued_urls: set[str],
+        visited_urls: set[str],
+        candidate_urls: list[str],
+    ) -> None:
+        for candidate_url in candidate_urls:
+            normalized_url = self._normalize_assignment_page_url(candidate_url)
+            if (
+                not normalized_url
+                or normalized_url in queued_urls
+                or normalized_url in visited_urls
+            ):
+                continue
+            queue.append(normalized_url)
+            queued_urls.add(normalized_url)
 
     def _fetch_assignment_page(self, page_url: str) -> BeautifulSoup | None:
         try:
@@ -131,12 +285,13 @@ class BlackboardAssignmentAPI:
 
         detail_url = self._resolve_assignment_detail_url(page_url, row)
         assignment_id = self._extract_assignment_id(detail_url)
+        detail = self.get_assignment_details(detail_url) if detail_url else None
         attachments = self._collect_row_assignment_attachments(
             page_url, row, detail_url
         )
         attachments = self._merge_attachment_lists(
             attachments,
-            self._extract_assignment_attachments(detail_url, page_url, assignment_id),
+            detail.attachments if detail is not None else [],
         )
 
         due_date = extract_date_text_safe(
@@ -161,6 +316,8 @@ class BlackboardAssignmentAPI:
             status=status,
             summary=summary,
             page_url=page_url,
+            description=detail.description if detail is not None else None,
+            description_html=detail.description_html if detail is not None else None,
             attachments=attachments,
             seen_keys=seen_keys,
         )
@@ -173,7 +330,7 @@ class BlackboardAssignmentAPI:
         seen_keys: set[str],
     ) -> list[AssignmentDTO]:
         assignments: list[AssignmentDTO] = []
-        for container in soup.find_all(["li", "div", "tr"]):
+        for container in self._collect_assignment_candidate_containers(soup):
             assignment = self._build_assignment_from_container(
                 course_id,
                 page_url,
@@ -183,6 +340,35 @@ class BlackboardAssignmentAPI:
             if assignment is not None:
                 assignments.append(assignment)
         return assignments
+
+    def _collect_assignment_candidate_containers(
+        self, soup: BeautifulSoup
+    ) -> list[Tag]:
+        candidate_containers: list[Tag] = []
+        seen_ids: set[int] = set()
+
+        for selector in (
+            "li[id^='contentListItem:']",
+            "div.sortable_item_row.row",
+            "tr[id^='contentListItem:']",
+        ):
+            for node in soup.select(selector):
+                marker = id(node)
+                if marker in seen_ids:
+                    continue
+                seen_ids.add(marker)
+                candidate_containers.append(node)
+
+        if candidate_containers:
+            return candidate_containers
+
+        for container in soup.find_all(["li", "div", "tr"]):
+            marker = id(container)
+            if marker in seen_ids:
+                continue
+            seen_ids.add(marker)
+            candidate_containers.append(container)
+        return candidate_containers
 
     def _build_assignment_from_container(
         self,
@@ -195,24 +381,50 @@ class BlackboardAssignmentAPI:
         if not text or is_navigation_noise(text):
             return None
 
+        container_id = str(container.get("id") or "").strip()
+        has_assignment_structure = bool(
+            container.select_one(
+                ".details, .vtbegenerated, .contextItemDetailsHeaders, .cell.gradable"
+            )
+        )
+        if not has_assignment_structure and not container_id.startswith(
+            "contentListItem:"
+        ):
+            return None
+
         lower_text = text.lower()
         if not any(token in lower_text for token in self._ASSIGNMENT_FALLBACK_KEYWORDS):
             return None
 
-        link = container.find("a", href=True)
-        if not isinstance(link, Tag):
+        title = self._extract_assignment_container_title(container, text)
+        if not title:
             return None
 
-        title = normalize_assignment_title(link.get_text(strip=True) or text[:100])
-        detail_url = self.context.absolute_url(
-            page_url, str(link.get("href") or "").strip()
-        )
+        detail_url = self._resolve_assignment_container_detail_url(page_url, container)
         if not detail_url:
             return None
 
         assignment_id = self._extract_assignment_id(detail_url)
-        attachments = self._extract_assignment_attachments(
-            detail_url, page_url, assignment_id
+        (
+            inline_description,
+            inline_description_html,
+            inline_attachments,
+        ) = self._extract_assignment_container_inline_details(
+            page_url,
+            container,
+            detail_url,
+        )
+        detail = self.get_assignment_details(detail_url)
+        description, description_html = _prefer_fallback_when_primary_is_title_shell(
+            title=title,
+            primary_text=detail.description if detail is not None else None,
+            primary_html=detail.description_html if detail is not None else None,
+            fallback_text=inline_description,
+            fallback_html=inline_description_html,
+        )
+        attachments = self._merge_attachment_lists(
+            inline_attachments,
+            detail.attachments if detail is not None else [],
         )
         return self._build_assignment_dto(
             course_id=course_id,
@@ -223,9 +435,76 @@ class BlackboardAssignmentAPI:
             status=extract_status_text(text),
             summary=text[:240],
             page_url=page_url,
+            description=description,
+            description_html=description_html,
             attachments=attachments,
             seen_keys=seen_keys,
         )
+
+    def _extract_assignment_container_inline_details(
+        self,
+        page_url: str,
+        container: Tag,
+        detail_url: str,
+    ) -> tuple[str | None, str | None, list[AssignmentAttachmentDTO]]:
+        details_scope = container.select_one(".details")
+        scope = details_scope if isinstance(details_scope, Tag) else container
+        description_node = scope.select_one(
+            ".vtbegenerated, .description, #description"
+        )
+        description = (
+            description_node.get_text(" ", strip=True)
+            if isinstance(description_node, Tag)
+            else ""
+        )
+        description_html = (
+            _extract_node_inner_html(description_node)
+            if isinstance(description_node, Tag)
+            else ""
+        )
+        attachments = self._collect_row_assignment_attachments(
+            page_url,
+            scope,
+            detail_url,
+        )
+        return (
+            _first_non_empty_text(description),
+            _first_non_empty_text(description_html),
+            attachments,
+        )
+
+    def _extract_assignment_container_title(
+        self, container: Tag, fallback_text: str
+    ) -> str:
+        title_node = container.find("h3")
+        if isinstance(title_node, Tag):
+            title = normalize_assignment_title(title_node.get_text(" ", strip=True))
+            if title:
+                return title
+
+        link = container.select_one(".item a[href]") or container.find("a", href=True)
+        if isinstance(link, Tag):
+            title = normalize_assignment_title(
+                link.get_text(strip=True) or fallback_text[:100]
+            )
+            if title:
+                return title
+        return normalize_assignment_title(fallback_text[:100])
+
+    def _resolve_assignment_container_detail_url(
+        self, page_url: str, container: Tag
+    ) -> str:
+        title_link = container.select_one(".item a[href], h3 a[href]")
+        if isinstance(title_link, Tag):
+            detail_url = self.context.absolute_url(
+                page_url,
+                str(title_link.get("href") or "").strip(),
+            )
+            if detail_url:
+                return detail_url
+
+        container_id = str(container.get("id") or "").strip()
+        return f"{page_url}#{container_id}" if container_id else page_url
 
     def _build_assignment_dto(
         self,
@@ -238,6 +517,8 @@ class BlackboardAssignmentAPI:
         status: str,
         summary: str,
         page_url: str,
+        description: str | None,
+        description_html: str | None,
         attachments: list[AssignmentAttachmentDTO],
         seen_keys: set[str],
     ) -> AssignmentDTO | None:
@@ -274,6 +555,8 @@ class BlackboardAssignmentAPI:
             due_date_parsed=parse_datetime_safe(due_date),
             status=status,
             url=detail_url,
+            description=description or None,
+            description_html=description_html or None,
             summary=summary,
             source_page=page_url,
             attachments=attachments,
@@ -316,9 +599,10 @@ class BlackboardAssignmentAPI:
             )
             if not att_href or att_href == detail_url:
                 continue
+            lowered_href = att_href.lower()
             if any(
-                token in att_href.lower()
-                for token in ("/bbcswebdav/", "download", "attachment", "file")
+                token in lowered_href
+                for token in ("/bbcswebdav/", "xid=", "attachment=true")
             ):
                 raw_attachments.append(
                     {
@@ -360,9 +644,11 @@ class BlackboardAssignmentAPI:
 
         row_scope = self._find_assignment_detail_row(soup, fragment)
         scope = row_scope or soup
-        title, due_date, status, description = self._extract_assignment_detail_fields(
-            soup,
-            row_scope,
+        title, due_date, status, description, description_html = (
+            self._extract_assignment_detail_fields(
+                soup,
+                row_scope,
+            )
         )
         attachments = self._extract_detail_scope_attachments(base_url, scope)
 
@@ -370,7 +656,8 @@ class BlackboardAssignmentAPI:
             assignment_id=self._extract_assignment_id(assignment_url),
             course_id=self.context.extract_course_id(assignment_url) or None,
             title=title,
-            description=description[:600],
+            description=description,
+            description_html=description_html or None,
             due_date=due_date,
             due_date_parsed=parse_datetime_safe(due_date),
             status=status,
@@ -397,6 +684,7 @@ class BlackboardAssignmentAPI:
             course_id=self.context.extract_course_id(assignment_url) or None,
             title="",
             description="",
+            description_html=None,
             due_date="",
             status="",
             url=assignment_url,
@@ -423,7 +711,7 @@ class BlackboardAssignmentAPI:
         self,
         soup: BeautifulSoup,
         row_scope: Tag | None,
-    ) -> tuple[str, str, str, str]:
+    ) -> tuple[str, str, str, str, str | None]:
         if row_scope is not None:
             return self._extract_assignment_detail_fields_from_row(row_scope)
         return self._extract_assignment_detail_fields_from_page(soup)
@@ -431,33 +719,50 @@ class BlackboardAssignmentAPI:
     def _extract_assignment_detail_fields_from_row(
         self,
         row_scope: Tag,
-    ) -> tuple[str, str, str, str]:
+    ) -> tuple[str, str, str, str, str | None]:
         gradable_text = self._get_cell_text(row_scope, ".cell.gradable")
         activity_text = self._get_cell_text(row_scope, ".cell.activity")
         status_text = self._get_cell_text(row_scope, ".cell.status")
+        description_node = row_scope.select_one(
+            ".vtbegenerated, .description, #description"
+        )
+        description_text = (
+            description_node.get_text(" ", strip=True)
+            if isinstance(description_node, Tag)
+            else row_scope.get_text(" ", strip=True)
+        )
+        description_html = (
+            _extract_node_inner_html(description_node)
+            if isinstance(description_node, Tag)
+            else None
+        )
         return (
             normalize_assignment_title(gradable_text),
             extract_date_text_safe(f"{gradable_text} {activity_text}"),
             extract_status_text(f"{status_text} {activity_text}"),
-            row_scope.get_text(" ", strip=True),
+            description_text,
+            description_html or None,
         )
 
     def _extract_assignment_detail_fields_from_page(
         self,
         soup: BeautifulSoup,
-    ) -> tuple[str, str, str, str]:
+    ) -> tuple[str, str, str, str, str | None]:
         title_node = soup.find(["h1", "h2"]) or soup.find("title")
         title = title_node.get_text(" ", strip=True) if title_node else ""
-        description = self._extract_assignment_page_description(soup)
+        description, description_html = self._extract_assignment_page_description(soup)
         full_text = soup.get_text(" ", strip=True)
         return (
             title,
             extract_date_text_safe(full_text),
             extract_status_text(full_text),
             description,
+            description_html or None,
         )
 
-    def _extract_assignment_page_description(self, soup: BeautifulSoup) -> str:
+    def _extract_assignment_page_description(
+        self, soup: BeautifulSoup
+    ) -> tuple[str, str]:
         for selector in (
             ".vtbegenerated",
             ".description",
@@ -468,10 +773,12 @@ class BlackboardAssignmentAPI:
             if node:
                 description = node.get_text(" ", strip=True)
                 if description:
-                    return description
+                    return description, _extract_node_inner_html(node)
 
         body = soup.find("body")
-        return body.get_text(" ", strip=True)[:500] if body else ""
+        if not isinstance(body, Tag):
+            return "", ""
+        return body.get_text(" ", strip=True)[:500], _extract_node_inner_html(body)
 
     def _extract_detail_scope_attachments(
         self,
@@ -488,9 +795,10 @@ class BlackboardAssignmentAPI:
             )
             if not href or href in seen_attachment_urls:
                 continue
+            lowered_href = href.lower()
             if any(
-                token in href.lower()
-                for token in ("/bbcswebdav/", "download", "attachment", "file")
+                token in lowered_href
+                for token in ("/bbcswebdav/", "xid=", "attachment=true")
             ):
                 attachments.append(
                     AssignmentAttachmentDTO(

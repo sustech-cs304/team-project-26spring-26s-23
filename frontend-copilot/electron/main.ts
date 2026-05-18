@@ -29,6 +29,11 @@ import { createHostedRuntimePaths, ensureHostedRuntimeDirectories, type HostedRu
 import { isHostedBackendFailure, type HostedBackendFailure } from './runtime/runtime-diagnostics'
 import { createInitialHostedBackendState, type HostedBackendState } from './runtime/runtime-state'
 import type { DesktopNotificationRequest } from './desktop-notification'
+import {
+  DESKTOP_WINDOW_STATE_CHANGED_CHANNEL,
+  createDefaultDesktopWindowState,
+  type DesktopWindowState,
+} from './window-controls'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -85,6 +90,9 @@ const mainProcessServices = createMainProcessServices({
   prepareRuntimePaths: prepareApplicationRuntimePaths,
   userDataPath: app.getPath('userData'),
   ensureHostedBackendService,
+  getMainWindow() {
+    return win
+  },
   appendMainRuntimeLog(level, message, context) {
     return mainRuntimeLogger.appendMainRuntimeLog(level, message, context)
   },
@@ -118,6 +126,43 @@ function createWindow(): void {
     flushPendingRendererRuntimeConsoleEntries: mainRuntimeLogger.flushPendingRendererRuntimeConsoleEntries,
     logStartupTrace: mainRuntimeLogger.logStartupTrace,
   })
+  registerDesktopWindowStateEvents(win)
+}
+
+async function loadDesktopWindowState(): Promise<DesktopWindowState> {
+  return readDesktopWindowState(win)
+}
+
+async function minimizeDesktopWindow(): Promise<void> {
+  if (win === null || win.isDestroyed()) {
+    return
+  }
+
+  win.minimize()
+}
+
+async function toggleMaximizeDesktopWindow(): Promise<DesktopWindowState> {
+  if (win === null || win.isDestroyed()) {
+    return createDefaultDesktopWindowState()
+  }
+
+  if (win.isMaximized()) {
+    win.unmaximize()
+  } else {
+    win.maximize()
+  }
+
+  const nextState = readDesktopWindowState(win)
+  publishDesktopWindowStateUpdate(win)
+  return nextState
+}
+
+async function closeDesktopWindow(): Promise<void> {
+  if (win === null || win.isDestroyed()) {
+    return
+  }
+
+  win.close()
 }
 
 async function notifyBootstrapWindowReady(): Promise<void> {
@@ -445,6 +490,33 @@ function getHostedRuntimePaths(): HostedRuntimePaths {
   return runtimePaths
 }
 
+function registerDesktopWindowStateEvents(targetWindow: BrowserWindow): void {
+  targetWindow.on('maximize', () => publishDesktopWindowStateUpdate(targetWindow))
+  targetWindow.on('unmaximize', () => publishDesktopWindowStateUpdate(targetWindow))
+  targetWindow.on('restore', () => publishDesktopWindowStateUpdate(targetWindow))
+  targetWindow.on('enter-full-screen', () => publishDesktopWindowStateUpdate(targetWindow))
+  targetWindow.on('leave-full-screen', () => publishDesktopWindowStateUpdate(targetWindow))
+}
+
+function publishDesktopWindowStateUpdate(targetWindow: BrowserWindow | null = win): void {
+  if (targetWindow === null || targetWindow.isDestroyed()) {
+    return
+  }
+
+  targetWindow.webContents.send(DESKTOP_WINDOW_STATE_CHANGED_CHANNEL, readDesktopWindowState(targetWindow))
+}
+
+function readDesktopWindowState(targetWindow: BrowserWindow | null): DesktopWindowState {
+  if (targetWindow === null || targetWindow.isDestroyed()) {
+    return createDefaultDesktopWindowState()
+  }
+
+  return {
+    isMaximized: targetWindow.isMaximized(),
+    isFullScreen: targetWindow.isFullScreen(),
+  }
+}
+
 function publishConfigCenterPublicSnapshotUpdate(snapshot: ConfigCenterPublicSnapshot): void {
   for (const browserWindow of BrowserWindow.getAllWindows()) {
     if (browserWindow.isDestroyed()) {
@@ -643,6 +715,10 @@ void app.whenReady()
       loadCopilotRuntime,
       retryCopilotRuntime,
       notifyDesktopNotification,
+      loadDesktopWindowState,
+      minimizeDesktopWindow,
+      toggleMaximizeDesktopWindow,
+      closeDesktopWindow,
       notifyBootstrapWindowReady,
     })
     void startHostedBackend()

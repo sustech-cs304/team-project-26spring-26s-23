@@ -6,6 +6,11 @@ import {
   resolveCopilotToolPresentation,
 } from './tool-presentation'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_MCP_SERVER = 'mcp-server'
+const LABEL_STDIO_STUB_SERVER = 'stdio stub server'
+
+
 describe('resolveCopilotToolPresentation', () => {
   it('returns localized override copy and search keywords for known tools', () => {
     const tool: CopilotToolPresentationSource = {
@@ -63,21 +68,21 @@ describe('resolveCopilotToolPresentation', () => {
       description: null,
       serverId: 'mcp-stdio-stub',
       remoteToolName: 'search-campus',
-      mcpServerName: 'stdio stub server',
+      mcpServerName: LABEL_STDIO_STUB_SERVER,
       group: {
         id: 'mcp.server.mcp-stdio-stub',
-        label: 'stdio stub server',
-        labelZh: 'stdio stub server',
-        labelEn: 'stdio stub server',
+        label: LABEL_STDIO_STUB_SERVER,
+        labelZh: LABEL_STDIO_STUB_SERVER,
+        labelEn: LABEL_STDIO_STUB_SERVER,
         order: 100,
-        sourceKind: 'mcp-server',
+        sourceKind: LABEL_MCP_SERVER,
       },
     } as CopilotToolPresentationSource
 
     const presentation = resolveCopilotToolPresentation(tool)
 
     expect(presentation.name).toBe('stdio stub server / Search Campus')
-    expect(resolveCopilotToolPlatformGroup(tool).title).toBe('stdio stub server')
+    expect(resolveCopilotToolPlatformGroup(tool).title).toBe(LABEL_STDIO_STUB_SERVER)
   })
 })
 
@@ -168,13 +173,13 @@ describe('resolveCopilotToolPlatformGroup', () => {
       key: 'mcp:campus-fs',
       title: 'Campus FS',
       order: 100,
-      sourceKind: 'mcp-server',
+      sourceKind: LABEL_MCP_SERVER,
     })
     expect(resolveCopilotToolPlatformGroup(providerTool)).toMatchObject({
       key: 'mcp:sustech-api',
       title: 'SUSTech API',
       order: 100,
-      sourceKind: 'mcp-server',
+      sourceKind: LABEL_MCP_SERVER,
     })
   })
 
@@ -192,7 +197,7 @@ describe('resolveCopilotToolPlatformGroup', () => {
       key: 'mcp:sustech-fs',
       title: 'SUSTech FS',
       order: 100,
-      sourceKind: 'mcp-server',
+      sourceKind: LABEL_MCP_SERVER,
     })
     expect(platformGroup.searchKeywords).toContain('mcp')
     expect(platformGroup.searchKeywords).toContain('SUSTech FS')

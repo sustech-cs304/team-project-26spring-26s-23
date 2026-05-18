@@ -121,10 +121,11 @@ def _assert_allowed_fields(
     allowed_fields: set[str],
     field_name: str,
 ) -> None:
-    unexpected_fields = sorted(str(key) for key in value if key not in allowed_fields)
+    unexpected_fields = sorted(set(value.keys()) - allowed_fields)
     if unexpected_fields:
-        formatted = ", ".join(unexpected_fields)
-        raise ValueError(f"{field_name} contains unsupported field(s): {formatted}.")
+        raise ValueError(
+            f"{field_name} has unexpected fields: {', '.join(unexpected_fields)}"
+        )
 
 
 def _validation_error_to_message(exc: ValidationError) -> str:
@@ -165,10 +166,9 @@ def _normalize_optional_text_field_value(
     field_name: str,
     field_context: str,
 ) -> str | None:
-    return _normalize_optional_text(
-        value,
-        field_name=f"{field_context} field '{field_name}'",
-    )
+    if value is None:
+        return None
+    return _normalize_optional_text(value, field_name=f"{field_context} field '{field_name}'")
 
 
 def _normalize_optional_mapping_field_value(
@@ -179,11 +179,9 @@ def _normalize_optional_mapping_field_value(
 ) -> dict[str, Any] | None:
     if value is None:
         return None
-    if not isinstance(value, Mapping):
-        raise ValueError(
-            f"{field_context} field '{field_name}' must be an object when provided."
-        )
-    return _normalize_mapping(value)
+    return _normalize_mapping(
+        _require_mapping(value, field_name=f"{field_context} field '{field_name}'")
+    )
 
 
 def _require_mapping_field_value(
@@ -210,14 +208,27 @@ def _require_boolean_field_value(
     return value
 
 
+def _normalize_optional_boolean_field_value(
+    value: Any,
+    *,
+    field_name: str,
+    field_context: str,
+) -> bool | None:
+    if value is None:
+        return None
+    return _require_boolean_field_value(
+        value,
+        field_name=field_name,
+        field_context=field_context,
+    )
+
+
 def _normalize_bridge_model_dict(
     value: BaseModel,
     *,
-    exclude_none: bool,
+    exclude_none: bool = True,
 ) -> dict[str, Any]:
-    return _normalize_mapping(
-        value.model_dump(by_alias=True, exclude_none=exclude_none)
-    )
+    return value.model_dump(by_alias=True, exclude_none=exclude_none)
 
 
 def _artifact_descriptor_to_dict(

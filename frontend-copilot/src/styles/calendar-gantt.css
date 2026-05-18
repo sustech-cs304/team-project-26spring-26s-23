@@ -1,0 +1,407 @@
+@import '../../node_modules/frappe-gantt/dist/frappe-gantt.css';
+
+/* ──────────── workspace content shell ──────────── */
+
+.calendar-workspace-content {
+  gap: 1.5rem;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ──────────── gantt card ──────────── */
+
+.calendar-gantt-card,
+.kanban-tracker,
+.calendar-debug-panel {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.calendar-gantt-card {
+  flex: 0 0 auto;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 6px;
+  background: var(--surface-subtle, var(--vscode-editorWidget-background));
+  overflow: hidden;
+
+  --g-bar-color: var(--accent-color, var(--vscode-textLink-foreground));
+  --g-bar-border: transparent;
+  --g-progress-color: color-mix(in srgb, var(--accent-color, var(--vscode-testing-iconPassed)) 78%, transparent);
+  --g-handle-color: var(--accent-color, var(--vscode-focusBorder));
+  --g-header-background: transparent;
+  --g-row-color: transparent;
+  --g-row-border-color: var(--border-color, var(--vscode-widget-border));
+  --g-border-color: var(--border-color, var(--vscode-widget-border));
+  --g-text-muted: var(--text-muted);
+  --g-text-dark: var(--text-primary);
+  --g-text-light: var(--text-primary, var(--vscode-button-foreground));
+  --g-actions-background: var(--interactive-hover-bg);
+  --g-tick-color: color-mix(in srgb, var(--border-color, var(--vscode-widget-border)) 40%, transparent);
+  --g-tick-color-thick: color-mix(in srgb, var(--border-color, var(--vscode-widget-border)) 68%, transparent);
+  --g-today-highlight: var(--accent-color, var(--vscode-textLink-foreground));
+  --g-popup-actions: var(--surface-subtle);
+  --g-weekend-highlight-color: color-mix(in srgb, var(--surface-subtle, var(--vscode-editorWidget-background)) 48%, transparent);
+  --g-arrow-color: var(--text-muted);
+}
+
+.calendar-gantt-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.calendar-gantt-card__eyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.calendar-gantt-card__title {
+  margin: 0.12rem 0 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.calendar-gantt-card__meta {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.calendar-gantt-card__notice {
+  margin: 0;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  border: 1px solid color-mix(in srgb, var(--vscode-list-warningForeground, #cca700) 38%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--vscode-list-warningForeground, #cca700) 8%, transparent);
+}
+
+.calendar-gantt-card__chart {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.calendar-gantt-card__empty,
+.calendar-gantt-card__fallback {
+  flex: 1 1 auto;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--vscode-widget-border, var(--border-color));
+  border-radius: 5px;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  background: var(--vscode-editor-background, var(--surface-bg));
+}
+
+.calendar-gantt-card__fallback {
+  flex-direction: column;
+  gap: 0.3rem;
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+/* ──────────── gantt container overrides ──────────── */
+
+.calendar-gantt-card .gantt-container {
+  height: 100%;
+  min-height: 240px;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.calendar-gantt-card .gantt-container .popup-wrapper {
+  border: 1px solid var(--vscode-widget-border, var(--border-color));
+  border-radius: 6px;
+  background: var(--vscode-editorHoverWidget-background, var(--panel-solid-bg));
+  box-shadow: 0 6px 28px -6px rgba(0, 0, 0, 0.32);
+  color: var(--text-primary);
+}
+
+/* ──────────── gantt source‑specific bar colors ──────────── */
+
+.calendar-gantt-card .bar-wrapper.calendar-gantt-source--bb .bar {
+  fill: var(--vscode-charts-blue, #3794ff);
+}
+
+.calendar-gantt-card .bar-wrapper.calendar-gantt-source--course .bar {
+  fill: var(--vscode-charts-purple, #b180d7);
+}
+
+.calendar-gantt-card .bar-wrapper.calendar-gantt-source--custom .bar {
+  fill: var(--vscode-charts-orange, #d18616);
+}
+
+.calendar-gantt-card .gantt-container .bar-label {
+  fill: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ──────────── popup ──────────── */
+
+.calendar-gantt-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.24rem;
+  min-width: 172px;
+}
+
+.calendar-gantt-popup__title {
+  color: var(--text-primary);
+}
+
+.calendar-gantt-popup__description,
+.calendar-gantt-popup__detail {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+/* ──────────── kanban tracker ──────────── */
+
+.kanban-tracker {
+  flex: 0 0 auto;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--surface-subtle));
+  overflow: hidden;
+}
+
+.kanban-tracker__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.kanban-tracker__eyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.kanban-tracker__title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.kanban-tracker__columns {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 0.85rem;
+  overflow-x: auto;
+}
+
+/* ──────────── kanban column ──────────── */
+
+.kanban-column {
+  flex: 1 1 0;
+  min-width: 196px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border-radius: 5px;
+  background: var(--vscode-editor-background, var(--surface-bg));
+}
+
+.kanban-column__head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--vscode-widget-border, var(--border-color));
+}
+
+.kanban-column__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.kanban-column__dot--warn { background: var(--vscode-list-warningForeground, #cca700); }
+.kanban-column__dot--active { background: var(--vscode-textLink-foreground, #3794ff); }
+.kanban-column__dot--done { background: var(--vscode-testing-iconPassed, #73c991); }
+
+.kanban-column__label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.kanban-column__count {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.kanban-column__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  overflow-y: auto;
+}
+
+.kanban-column__empty {
+  margin: 0;
+  padding: 0.5rem 0;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.kanban-column__add-btn {
+  padding: 0.32rem 0.5rem;
+  border: 1px dashed var(--vscode-widget-border, var(--border-color));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-textLink-foreground, var(--accent-color));
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: center;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.kanban-column__add-btn:hover {
+  border-color: var(--vscode-textLink-foreground, var(--accent-color));
+  background: color-mix(in srgb, var(--vscode-textLink-foreground, #3794ff) 8%, transparent);
+}
+
+/* ──────────── kanban card ──────────── */
+
+.kanban-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background, var(--surface-subtle));
+  transition: background 140ms ease;
+}
+
+.kanban-card:hover {
+  background: var(--vscode-list-hoverBackground, var(--interactive-hover-bg));
+}
+
+.kanban-card--done {
+  opacity: 0.62;
+}
+
+.kanban-card__body {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.kanban-card__source-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-top: 0.28rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.kanban-card__source-dot--bb { background: var(--vscode-charts-blue, #3794ff); }
+.kanban-card__source-dot--course { background: var(--vscode-charts-purple, #b180d7); }
+.kanban-card__source-dot--custom { background: var(--vscode-charts-orange, #d18616); }
+
+.kanban-card__title {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.kanban-card__title--done {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: line-through;
+  line-height: 1.35;
+}
+
+.kanban-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 1.2rem;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+/* ──────────── debug panel ──────────── */
+
+.calendar-debug-panel {
+  margin-top: auto;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--vscode-widget-border, var(--border-color));
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.calendar-debug-panel__summary {
+  cursor: pointer;
+  font-size: 0.84em;
+  font-weight: 600;
+}
+
+.calendar-debug-panel__body {
+  max-height: 140px;
+  margin-top: 0.45rem;
+  overflow-y: auto;
+  font-size: 0.82em;
+}
+
+.calendar-debug-panel__body ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.calendar-debug-panel__body li {
+  margin-bottom: 0.22rem;
+}
+
+/* ──────────── responsive ──────────── */
+
+@media (max-width: 900px) {
+  .calendar-workspace-content {
+    overflow: auto;
+  }
+
+  .calendar-gantt-card {
+    min-height: 380px;
+  }
+
+  .kanban-tracker__columns {
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .kanban-column {
+    min-height: 160px;
+  }
+}

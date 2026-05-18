@@ -1,3 +1,4 @@
+import type { BrowserWindow } from 'electron'
 import type { ElectronSettingsWorkspaceService } from '../../settings-workspace/main-process'
 import type { ElectronMcpRegistryService } from '../../mcp-registry/main-process'
 import {
@@ -18,6 +19,7 @@ export interface ElectronDesktopCapabilityBridgeService {
 export interface CreateElectronDesktopCapabilityBridgeServiceOptions extends CreateDesktopCapabilityBridgeServiceOptions {
   getSettingsWorkspaceService?: () => ElectronSettingsWorkspaceService
   getMcpRegistryService?: () => ElectronMcpRegistryService
+  getMainWindow?: () => BrowserWindow | null
 }
 
 export function createElectronDesktopCapabilityBridgeService(

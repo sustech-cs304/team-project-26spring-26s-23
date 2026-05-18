@@ -5,6 +5,7 @@ import {
   BOOTSTRAP_CONNECTING_MESSAGE,
   BOOTSTRAP_PREPARING_MESSAGE,
 } from '../components/BootstrapScreen'
+import { DesktopChrome } from '../components/DesktopChrome'
 import type { CopilotBootstrapState } from '../features/copilot/types'
 import { CopilotAppRootBoundary } from './bootstrap-boundary'
 import { logCopilotRootStartupTrace } from './startup-tracing'
@@ -45,39 +46,45 @@ export function CopilotAppRootShell() {
 
   if (configState.status === 'loading' || configState.status === 'starting') {
     return (
-      <BootstrapScreen
-        message={configState.status === 'starting'
-          ? BOOTSTRAP_CONNECTING_MESSAGE
-          : BOOTSTRAP_PREPARING_MESSAGE}
-      />
+      <DesktopChrome>
+        <BootstrapScreen
+          message={configState.status === 'starting'
+            ? BOOTSTRAP_CONNECTING_MESSAGE
+            : BOOTSTRAP_PREPARING_MESSAGE}
+        />
+      </DesktopChrome>
     )
   }
 
   if (configState.status === 'error') {
     return (
-      <BootstrapScreen
-        title="运行态装配失败"
-        description="当前无法完成根层配置/运行态装配。启动壳仍然保持可见，并由根层统一持有重试动作。"
-        tone="error"
-        details={<pre className="startup-shell__pre">{configState.error}</pre>}
-        actions={[
-          {
-            label: retrying ? '正在重试…' : '重试读取运行态',
-            onClick: handleRetryConfig,
-            disabled: retrying,
-          },
-        ]}
-      />
+      <DesktopChrome>
+        <BootstrapScreen
+          title="服务连接失败"
+          description="无法连接到后端服务，请检查服务是否正常运行并重试。"
+          tone="error"
+          details={<pre className="startup-shell__pre">{configState.error}</pre>}
+          actions={[
+            {
+              label: retrying ? '正在重试…' : '重试连接',
+              onClick: handleRetryConfig,
+              disabled: retrying,
+            },
+          ]}
+        />
+      </DesktopChrome>
     )
   }
 
   return (
-    <CopilotAppRootBoundary
-      bootstrap={bootstrap}
-      configStatus={configState.status}
-      retrying={retrying}
-      onRetryConfig={handleRetryConfig}
-    />
+    <DesktopChrome>
+      <CopilotAppRootBoundary
+        bootstrap={bootstrap}
+        configStatus={configState.status}
+        retrying={retrying}
+        onRetryConfig={handleRetryConfig}
+      />
+    </DesktopChrome>
   )
 }
 

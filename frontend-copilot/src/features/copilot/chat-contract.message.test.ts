@@ -17,9 +17,19 @@ import {
   sessionId,
 } from './thread-run-contract.test-support'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_HTTP_127 = 'http://127.0.0.1:8765/'
+const LABEL_RUN_ASSISTANT = 'run-1:assistant'
+const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
+
+
 const RUNTIME_CONNECTIVITY_ERROR_MESSAGE = '无法连接到本地运行时，可能由后端异常、CORS 或网络拒绝导致，请查看运行时控制台日志。'
 
+// 包含 5 个紧密相关的异步集成测试，拆分会导致语义分组不自然
+/* eslint-disable-next-line max-lines-per-function */
 describe('dispatchCopilotMessage', () => {
+  // 单个集成测试，覆盖完整的 run/start → run/stream 传输路径，包含 20+ 断言验证请求体和响应
+  /* eslint-disable-next-line max-lines-per-function */
   it('posts run/start then run/stream with structured thinking payload as the main transport path', async () => {
     const runEvents: RuntimeRunEvent[] = [
       {
@@ -28,7 +38,7 @@ describe('dispatchCopilotMessage', () => {
         sessionId: 'session-1',
         sequence: 1,
         payload: {
-          assistantMessageId: 'run-1:assistant',
+          assistantMessageId: LABEL_RUN_ASSISTANT,
         },
       },
       {
@@ -37,7 +47,7 @@ describe('dispatchCopilotMessage', () => {
         sessionId: 'session-1',
         sequence: 2,
         payload: {
-          assistantMessageId: 'run-1:assistant',
+          assistantMessageId: LABEL_RUN_ASSISTANT,
           delta: '这是总结结果。',
         },
       },
@@ -46,11 +56,11 @@ describe('dispatchCopilotMessage', () => {
         sessionId: 'session-1',
         sequence: 3,
         payload: {
-          assistantMessageId: 'run-1:assistant',
+          assistantMessageId: LABEL_RUN_ASSISTANT,
           assistantText: '这是总结结果。',
           resolvedModelId: 'qwen-plus',
           resolvedModelRoute: createRuntimeModelRoute(),
-          resolvedToolIds: ['tool.remote-search'],
+          resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
           requestOptions: {
             trace: true,
           },
@@ -69,7 +79,7 @@ describe('dispatchCopilotMessage', () => {
           terminalAt: null,
           cancelRequested: false,
         },
-        assistantMessageId: 'run-1:assistant',
+        assistantMessageId: LABEL_RUN_ASSISTANT,
       }), {
         headers: {
           'content-type': 'application/json',
@@ -91,7 +101,7 @@ describe('dispatchCopilotMessage', () => {
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
       thinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
-      enabledTools: ['tool.remote-search'],
+      enabledTools: [LABEL_TOOL_REMOTE_SEARCH],
       debugModeEnabled: true,
       requestOptions: {
         trace: true,
@@ -110,9 +120,9 @@ describe('dispatchCopilotMessage', () => {
         runId: 'run-1',
         threadId: 'session-1',
       }),
-      assistantMessageId: 'run-1:assistant',
+      assistantMessageId: LABEL_RUN_ASSISTANT,
     }))
-    expect(fetchFn).toHaveBeenNthCalledWith(1, 'http://127.0.0.1:8765/', {
+    expect(fetchFn).toHaveBeenNthCalledWith(1, LABEL_HTTP_127, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -143,7 +153,7 @@ describe('dispatchCopilotMessage', () => {
                 labelZh: '自动',
               },
             },
-            enabledTools: ['tool.remote-search'],
+            enabledTools: [LABEL_TOOL_REMOTE_SEARCH],
             debugModeEnabled: true,
             requestOptions: {
               trace: true,
@@ -153,7 +163,7 @@ describe('dispatchCopilotMessage', () => {
       }),
       signal: undefined,
     })
-    expect(fetchFn).toHaveBeenNthCalledWith(2, 'http://127.0.0.1:8765/', {
+    expect(fetchFn).toHaveBeenNthCalledWith(2, LABEL_HTTP_127, {
       method: 'POST',
       headers: {
         Accept: 'text/event-stream',
@@ -194,7 +204,7 @@ describe('dispatchCopilotMessage', () => {
         message: createUserMessage(),
         modelRoute: createRuntimeModelRoute(),
         thinkingSelection: null,
-        enabledTools: ['tool.remote-search'],
+        enabledTools: [LABEL_TOOL_REMOTE_SEARCH],
         requestOptions: {},
         fetchFn,
       })) {
@@ -222,7 +232,7 @@ describe('dispatchCopilotMessage', () => {
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
       thinkingSelection: null,
-      enabledTools: ['tool.remote-search'],
+      enabledTools: [LABEL_TOOL_REMOTE_SEARCH],
       requestOptions: {},
       fetchFn,
     }))).rejects.toMatchObject({
@@ -252,7 +262,7 @@ describe('dispatchCopilotMessage', () => {
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
       thinkingSelection: null,
-      enabledTools: ['tool.remote-search'],
+      enabledTools: [LABEL_TOOL_REMOTE_SEARCH],
       requestOptions: {},
       fetchFn,
     }))).rejects.toMatchObject({
@@ -299,10 +309,10 @@ describe('dispatchCopilotMessage', () => {
     })
 
     expect(rawFetchFn).toHaveBeenCalledTimes(2)
-    expect(rawFetchFn).toHaveBeenNthCalledWith(1, 'http://127.0.0.1:8765/', expect.objectContaining({
+    expect(rawFetchFn).toHaveBeenNthCalledWith(1, LABEL_HTTP_127, expect.objectContaining({
       signal: abortController.signal,
     }))
-    expect(rawFetchFn).toHaveBeenNthCalledWith(2, 'http://127.0.0.1:8765/', expect.objectContaining({
+    expect(rawFetchFn).toHaveBeenNthCalledWith(2, LABEL_HTTP_127, expect.objectContaining({
       signal: abortController.signal,
     }))
   })
