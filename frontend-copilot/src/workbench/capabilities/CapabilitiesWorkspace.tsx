@@ -271,6 +271,7 @@ export function CapabilitiesWorkspace() {
             {renderSectionPanel('skills', (
               <SkillsPanel
                 skills={skillRegistry.skills}
+                statusMessage={skillRegistry.statusMessage}
                 importValidationErrors={skillRegistry.importValidationErrors}
                 onToggleEnabled={skillRegistry.toggleSkillEnabled}
                 onDelete={skillRegistry.deleteSkill}
