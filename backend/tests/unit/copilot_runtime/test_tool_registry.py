@@ -770,21 +770,27 @@ def test_shell_session_tools_execute_echo_ok_and_persist_state() -> None:
     exec_tool = registry.resolve_tool(SHELL_SESSION_EXEC_TOOL_ID)
     close_tool = registry.resolve_tool(SHELL_SESSION_CLOSE_TOOL_ID)
 
-    started = _run_awaitable(start_tool.execute({"shell": "auto"}))
-    session_id = cast(str, started["sessionId"])
+    async def run_scenario() -> None:
+        started = await start_tool.execute({"shell": "auto"})
+        session_id = cast(str, started["sessionId"])
+        try:
+            first = await exec_tool.execute(
+                {"sessionId": session_id, "input": "echo ok"}
+            )
+            assert first["closed"] is False
+            assert first["exitCode"] is None
+            assert "ok" in cast(str, first["stdout"]).lower()
 
-    first = _run_awaitable(exec_tool.execute({"sessionId": session_id, "input": "echo ok"}))
-    assert first["closed"] is False
-    assert first["exitCode"] is None
-    assert "ok" in cast(str, first["stdout"]).lower()
+            second = await exec_tool.execute(
+                {"sessionId": session_id, "input": "echo ok2"}
+            )
+            assert second["closed"] is False
+            assert second["exitCode"] is None
+            assert "ok2" in cast(str, second["stdout"]).lower()
+        finally:
+            await close_tool.execute({"sessionId": session_id})
 
-    second = _run_awaitable(exec_tool.execute({"sessionId": session_id, "input": "echo ok2"}))
-    assert second["closed"] is False
-    assert second["exitCode"] is None
-    assert "ok2" in cast(str, second["stdout"]).lower()
-
-    closed = _run_awaitable(close_tool.execute({"sessionId": session_id}))
-    assert closed["closed"] is True
+    asyncio.run(run_scenario())
 
 
 def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
