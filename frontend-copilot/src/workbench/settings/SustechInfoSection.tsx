@@ -6,15 +6,15 @@ export interface SustechInfoSectionDomain {
   displayedSustechEmail: string
   casPasswordDraft: string
   casPasswordFeedback: string | null
-  blackboardAutoDownloadEnabled: boolean
-  blackboardDownloadLimitMb: string
+  blackboardCurrentTermOnly: boolean
+  blackboardParallelSyncWorkers: string
   onStudentIdChange: (value: string) => void
   onSustechEmailChange: (value: string) => void
   onSustechEmailFocusChange: (focused: boolean) => void
   onCasPasswordDraftChange: (value: string) => void
   onPersistCasPasswordDraft: () => void | Promise<void>
-  onBlackboardAutoDownloadEnabledChange: (value: boolean) => void
-  onBlackboardDownloadLimitMbChange: (value: string) => void
+  onBlackboardCurrentTermOnlyChange: (value: boolean) => void
+  onBlackboardParallelSyncWorkersChange: (value: string) => void
 }
 
 interface SustechInfoSectionProps {
@@ -28,23 +28,29 @@ export function SustechInfoSection({ sustech, language }: SustechInfoSectionProp
     displayedSustechEmail,
     casPasswordDraft,
     casPasswordFeedback,
-    blackboardAutoDownloadEnabled,
-    blackboardDownloadLimitMb,
+    blackboardCurrentTermOnly,
+    blackboardParallelSyncWorkers,
     onStudentIdChange,
     onSustechEmailChange,
     onSustechEmailFocusChange,
     onCasPasswordDraftChange,
     onPersistCasPasswordDraft,
-    onBlackboardAutoDownloadEnabledChange,
-    onBlackboardDownloadLimitMbChange,
+    onBlackboardCurrentTermOnlyChange,
+    onBlackboardParallelSyncWorkersChange,
   } = sustech
 
-  const handleBlackboardDownloadLimitChange = (value: string) => {
+  const handleBlackboardParallelSyncWorkersChange = (value: string) => {
     if (!/^\d*$/.test(value)) {
       return
     }
 
-    onBlackboardDownloadLimitMbChange(value === '' ? '' : String(Number.parseInt(value, 10) || 0))
+    if (value === '') {
+      onBlackboardParallelSyncWorkersChange('')
+      return
+    }
+
+    const normalized = Math.min(6, Math.max(1, Number.parseInt(value, 10) || 1))
+    onBlackboardParallelSyncWorkersChange(String(normalized))
   }
 
   const copy = getSustechInfoCopy(language)
@@ -116,17 +122,18 @@ export function SustechInfoSection({ sustech, language }: SustechInfoSectionProp
 
           <div className="settings-stack">
             <ToggleSwitch
-              label={copy.autoDownloadLabel}
-              checked={blackboardAutoDownloadEnabled}
-              onChange={onBlackboardAutoDownloadEnabledChange}
+              label={copy.currentTermOnlyLabel}
+              description={copy.currentTermOnlyDescription}
+              checked={blackboardCurrentTermOnly}
+              onChange={onBlackboardCurrentTermOnlyChange}
             />
             <TextField
-              label={copy.downloadLimitLabel}
-              value={blackboardDownloadLimitMb}
-              onChange={handleBlackboardDownloadLimitChange}
-              placeholder="0"
+              label={copy.parallelSyncWorkersLabel}
+              value={blackboardParallelSyncWorkers}
+              onChange={handleBlackboardParallelSyncWorkersChange}
+              placeholder="1"
             />
-            <p className="form-field__description">{copy.downloadLimitDescription}</p>
+            <p className="form-field__description">{copy.parallelSyncWorkersDescription}</p>
           </div>
         </section>
 

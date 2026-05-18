@@ -33,6 +33,75 @@ interface UseSettingsWorkspaceProviderModelEditorResult {
   clearModelEditorError: () => void
 }
 
+function commitActiveProviderModels(params: {
+  activeProviderId: string
+  nextModels: ProviderModelProfile[]
+  previousModelId?: string | null
+  nextModelId?: string | null
+  setProviderProfiles: Dispatch<SetStateAction<ProviderProfile[]>>
+  setPrimaryAssistantModel: Dispatch<SetStateAction<string>>
+  setFastAssistantModel: Dispatch<SetStateAction<string>>
+}) {
+  const { activeProviderId, nextModels, setProviderProfiles, setPrimaryAssistantModel, setFastAssistantModel } = params
+  const previousModelId = params.previousModelId ?? null
+  const nextModelId = params.nextModelId ?? null
+
+  setProviderProfiles((previous) =>
+    previous.map((profile) => {
+      if (profile.id !== activeProviderId) {
+        return profile
+      }
+
+      return {
+        ...profile,
+        availableModels: nextModels,
+        fastModel: syncTrackedModelValue(profile.fastModel, previousModelId, nextModelId),
+        fallbackModel: syncTrackedModelValue(profile.fallbackModel, previousModelId, nextModelId),
+      }
+    }),
+  )
+
+  setPrimaryAssistantModel((current) => syncTrackedModelSelectionValue(
+    current,
+    activeProviderId,
+    previousModelId,
+    nextModelId,
+  ))
+  setFastAssistantModel((current) => syncTrackedModelSelectionValue(
+    current,
+    activeProviderId,
+    previousModelId,
+    nextModelId,
+  ))
+}
+
+function buildSavedModelProfile(
+  modelEditorState: ModelEditorState,
+  activeProvider: ProviderProfile,
+): ProviderModelProfile {
+  const nextModelId = modelEditorState.modelId.trim()
+
+  if (modelEditorState.thinkingCapability?.supported === true) {
+    initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
+  }
+
+  return {
+    id: modelEditorState.isNew ? createModelProfileId(activeProvider.id, nextModelId) : modelEditorState.id,
+    modelId: nextModelId,
+    displayName: modelEditorState.displayName.trim() || formatModelDisplayName(nextModelId),
+    groupName: modelEditorState.groupName.trim() || formatModelGroupName(nextModelId, activeProvider.name),
+    capabilities: modelEditorState.capabilities.length > 0 ? modelEditorState.capabilities : ['reasoning'],
+    thinkingCapability: modelEditorState.thinkingCapability?.supported === true
+      ? initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
+      : modelEditorState.thinkingCapability,
+    supportsStreaming: modelEditorState.supportsStreaming,
+    currency: modelEditorState.currency,
+    inputPrice: modelEditorState.inputPrice,
+    outputPrice: modelEditorState.outputPrice,
+  }
+}
+
+/* eslint-disable-next-line max-lines-per-function */
 export function useSettingsWorkspaceProviderModelEditor({
   activeProviderId,
   activeProvider,
@@ -47,42 +116,6 @@ export function useSettingsWorkspaceProviderModelEditor({
     setModelEditorState(null)
     setModelEditorError(null)
   }, [activeProviderId])
-
-  const commitActiveProviderModels = (
-    nextModels: ProviderModelProfile[],
-    options?: { previousModelId?: string | null; nextModelId?: string | null },
-  ) => {
-    const previousModelId = options?.previousModelId ?? null
-    const nextModelId = options?.nextModelId ?? null
-
-    setProviderProfiles((previous) =>
-      previous.map((profile) => {
-        if (profile.id !== activeProviderId) {
-          return profile
-        }
-
-        return {
-          ...profile,
-          availableModels: nextModels,
-          fastModel: syncTrackedModelValue(profile.fastModel, previousModelId, nextModelId),
-          fallbackModel: syncTrackedModelValue(profile.fallbackModel, previousModelId, nextModelId),
-        }
-      }),
-    )
-
-    setPrimaryAssistantModel((current) => syncTrackedModelSelectionValue(
-      current,
-      activeProviderId,
-      previousModelId,
-      nextModelId,
-    ))
-    setFastAssistantModel((current) => syncTrackedModelSelectionValue(
-      current,
-      activeProviderId,
-      previousModelId,
-      nextModelId,
-    ))
-  }
 
   const handleOpenCreateModelEditor = () => {
     if (!activeProvider) {
@@ -121,9 +154,14 @@ export function useSettingsWorkspaceProviderModelEditor({
     const previousModelId = activeProvider.availableModels[index]?.modelId ?? null
     const nextModels = activeProvider.availableModels.filter((_, modelIndex) => modelIndex !== index)
 
-    commitActiveProviderModels(nextModels, {
+    commitActiveProviderModels({
+      activeProviderId,
+      nextModels,
       previousModelId,
       nextModelId: nextModels[0]?.modelId ?? null,
+      setProviderProfiles,
+      setPrimaryAssistantModel,
+      setFastAssistantModel,
     })
     setModelEditorState(null)
   }
@@ -153,34 +191,31 @@ export function useSettingsWorkspaceProviderModelEditor({
       return
     }
 
-    if (modelEditorState.thinkingCapability?.supported === true) {
-      initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
-    }
-
-    const nextModel: ProviderModelProfile = {
-      id: modelEditorState.isNew ? createModelProfileId(activeProvider.id, nextModelId) : modelEditorState.id,
-      modelId: nextModelId,
-      displayName: modelEditorState.displayName.trim() || formatModelDisplayName(nextModelId),
-      groupName: modelEditorState.groupName.trim() || formatModelGroupName(nextModelId, activeProvider.name),
-      capabilities: modelEditorState.capabilities.length > 0 ? modelEditorState.capabilities : ['reasoning'],
-      thinkingCapability: modelEditorState.thinkingCapability?.supported === true
-        ? initializeSupportedThinkingCapabilityDeclaration(modelEditorState.thinkingCapability)
-        : modelEditorState.thinkingCapability,
-      supportsStreaming: modelEditorState.supportsStreaming,
-      currency: modelEditorState.currency,
-      inputPrice: modelEditorState.inputPrice,
-      outputPrice: modelEditorState.outputPrice,
-    }
+    const nextModel = buildSavedModelProfile(modelEditorState, activeProvider)
 
     if (modelEditorState.isNew) {
-      commitActiveProviderModels([...activeProvider.availableModels, nextModel])
+      commitActiveProviderModels({
+        activeProviderId,
+        nextModels: [...activeProvider.availableModels, nextModel],
+        setProviderProfiles,
+        setPrimaryAssistantModel,
+        setFastAssistantModel,
+      })
     } else {
       const previousModelId = activeProvider.availableModels[modelEditorState.index]?.modelId ?? null
       const nextModels = activeProvider.availableModels.map((model, modelIndex) => {
         return modelIndex === modelEditorState.index ? nextModel : model
       })
 
-      commitActiveProviderModels(nextModels, { previousModelId, nextModelId })
+      commitActiveProviderModels({
+        activeProviderId,
+        nextModels,
+        previousModelId,
+        nextModelId,
+        setProviderProfiles,
+        setPrimaryAssistantModel,
+        setFastAssistantModel,
+      })
     }
 
     setModelEditorState(null)

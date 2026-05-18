@@ -394,12 +394,12 @@ def test_build_default_runtime_dependencies_capabilities_use_bridge_policy_as_si
         tool_permission_policy=RuntimeToolPermissionPolicy(
             schemaVersion=1,
             defaultMode="allow",
-            toolModes={"tool.file-convert": "deny"},
+            toolModes={"tool.fs.read": "deny"},
         ),
     ).to_dict()
 
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" not in tool_ids
+    assert "tool.fs.read" not in tool_ids
     assert "tool.weather-current" in tool_ids
     assert payload["recommendedTools"] == []
 

@@ -177,6 +177,104 @@ class EventSink(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class HostBrowserPage:
+    """Host-owned browser page state returned by browser control operations."""
+
+    tab_id: str
+    current_url: str
+    title: str | None = None
+    window_visible: bool | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "tab_id",
+            self.tab_id.strip(),
+        )
+        if self.tab_id == "":
+            raise ValueError("tab_id must be a non-empty string.")
+        if not isinstance(self.current_url, str):
+            raise ValueError("current_url must be a string.")
+        object.__setattr__(self, "title", _normalize_optional_text(self.title))
+        if self.window_visible is not None and not isinstance(self.window_visible, bool):
+            raise ValueError("window_visible must be a boolean when provided.")
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "tabId": self.tab_id,
+            "currentUrl": self.current_url,
+        }
+        if self.title is not None:
+            payload["title"] = self.title
+        if self.window_visible is not None:
+            payload["windowVisible"] = self.window_visible
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class HostBrowserScreenshot:
+    """Browser screenshot result returned by the host bridge."""
+
+    page: HostBrowserPage
+    artifact: HostArtifact
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = self.page.to_dict()
+        payload.update(self.artifact.to_dict())
+        return payload
+
+
+class BrowserController(Protocol):
+    """Control a host browser surface owned by the desktop runtime."""
+
+    async def open_page(
+        self,
+        *,
+        url: str,
+        show_window: bool = False,
+        new_tab: bool = False,
+        selector: str | None = None,
+        format: str | None = None,
+    ) -> HostBrowserPage:
+        raise NotImplementedError
+
+    async def capture_screenshot(
+        self,
+        *,
+        name: str | None = None,
+    ) -> HostBrowserScreenshot:
+        raise NotImplementedError
+
+    async def list_tabs(self) -> list[HostBrowserPage]:
+        raise NotImplementedError
+
+    async def close_tab(self, *, tab_id: str | None = None) -> HostBrowserPage:
+        raise NotImplementedError
+
+    async def switch_tab(self, *, tab_id: str) -> HostBrowserPage:
+        raise NotImplementedError
+
+    async def execute_script(
+        self,
+        *,
+        script: str,
+        tab_id: str | None = None,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def reset(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def capture_snapshot(
+        self,
+        *,
+        tab_id: str | None = None,
+        selector: str | None = None,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+
+@dataclass(frozen=True, slots=True)
 class ToolHostCapabilities:
     """Bound host capability handles available to a tool invocation."""
 
@@ -186,6 +284,7 @@ class ToolHostCapabilities:
     state_store: StateStore | None = None
     secret_provider: SecretProvider | None = None
     event_sink: EventSink | None = None
+    browser_controller: BrowserController | None = None
 
     def available_capability_names(self) -> tuple[str, ...]:
         available: list[str] = []
@@ -201,6 +300,8 @@ class ToolHostCapabilities:
             available.append("secret_provider")
         if self.event_sink is not None:
             available.append("event_sink")
+        if self.browser_controller is not None:
+            available.append("browser_controller")
         return tuple(available)
 
     def require_capability(self, capability: str) -> object:
@@ -228,6 +329,10 @@ class ToolHostCapabilities:
             if self.event_sink is None:
                 raise MissingHostCapabilityError(capability)
             return self.event_sink
+        if capability == "browser_controller":
+            if self.browser_controller is None:
+                raise MissingHostCapabilityError(capability)
+            return self.browser_controller
         raise ValueError(f"Unknown host capability '{capability}'.")
 
     def assert_satisfies(
@@ -242,9 +347,12 @@ class ToolHostCapabilities:
 
 __all__ = [
     "ArtifactStore",
+    "BrowserController",
     "DatabaseResolver",
     "EventSink",
     "HostArtifact",
+    "HostBrowserPage",
+    "HostBrowserScreenshot",
     "HostEvent",
     "SecretProvider",
     "StateStore",

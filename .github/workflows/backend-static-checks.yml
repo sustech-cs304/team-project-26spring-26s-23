@@ -39,8 +39,7 @@ jobs:
             backend/app/integrations/sustech/blackboard \
             backend/app/integrations/sustech/teaching_information_system \
             backend/app/copilot_runtime \
-            backend/app/desktop_runtime \
-            backend/app/tools
+            backend/app/desktop_runtime
 
   business-domain-pytest:
     name: Business domain pytest
@@ -88,12 +87,11 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --project backend --extra dev --extra test --frozen
 
-      - name: Run runtime, desktop, tools, and CI-safe integration smoke pytest
+      - name: Run runtime, desktop, and CI-safe integration smoke pytest
         run: |
           uv run --project backend python -m pytest -c backend/pyproject.toml -m "not live and not e2e" \
             backend/tests/unit/copilot_runtime \
             backend/tests/unit/desktop_runtime \
-            backend/tests/unit/tools \
             backend/tests/integration/test_copilot_runtime_http.py
 
   command-run-cross-platform:

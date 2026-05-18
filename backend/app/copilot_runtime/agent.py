@@ -89,6 +89,9 @@ from .agent_tool_lifecycle import (
     tool_lifecycle_event_to_execution_event,
 )
 
+from app.tooling.prompts import PromptContext, get_tool_description
+from app.tooling.prompts.system import SHARED_CONVENTIONS, TOOL_SELECTION_GUIDE
+
 DEFAULT_AGENT_NAME = "default"
 DEFAULT_AGENT_SYSTEM_PROMPT = (
     "You are the SUSTech Copilot backend assistant. "
@@ -160,6 +163,7 @@ class _PydanticAIAgentRunDeps:
     default_root: str
     tool_permission_resolver: RuntimeToolPermissionResolver
     approval_coordinator: RuntimeToolApprovalCoordinator
+    resolved_model_route: dict[str, Any] | None = None
     run_id: str | None = None
     debug_enabled: bool = False
     skill_runtime_index: SkillRuntimeIndex | None = None
@@ -684,6 +688,7 @@ class PydanticAIAgentExecutor:
         deps = self._build_runtime_deps(
             enabled_tools=enabled_tool_ids,
             emit_tool_event=emit_tool_event,
+            resolved_model_route=model_route,
             run_id=run_id,
             debug_enabled=debug_enabled,
             tool_permission_resolver=tool_permission_resolver,
@@ -733,6 +738,7 @@ class PydanticAIAgentExecutor:
         *,
         enabled_tools: Sequence[str],
         emit_tool_event: ToolLifecycleSink,
+        resolved_model_route: ResolvedRuntimeModelRoute | None = None,
         run_id: str | None = None,
         debug_enabled: bool = False,
         tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
@@ -747,6 +753,11 @@ class PydanticAIAgentExecutor:
             tool_permission_resolver=tool_permission_resolver
             or RuntimeToolPermissionResolver(),
             approval_coordinator=self._approval_coordinator,
+            resolved_model_route=(
+                None
+                if resolved_model_route is None
+                else resolved_model_route.to_resolved_route_dict()
+            ),
             run_id=run_id,
             debug_enabled=debug_enabled,
             skill_runtime_index=skill_runtime_index,
@@ -784,11 +795,15 @@ class PydanticAIAgentExecutor:
                 continue
             if tool_id == WEATHER_CURRENT_TOOL_ID:
                 continue
+            description = (
+                get_tool_description(tool_id)
+                or executable_tool.descriptor.description
+            )
             tools.append(
                 self._build_contract_agent_tool(
                     tool_id=tool_id,
                     function_name=executable_tool.function_name,
-                    description=executable_tool.descriptor.description,
+                    description=description,
                     parameters_json_schema=executable_tool.parameters_json_schema,
                 )
             )
@@ -823,9 +838,17 @@ class PydanticAIAgentExecutor:
         return tool
 
     def _compose_system_prompt(self, skill_system_prompt: str | None) -> str:
-        if skill_system_prompt is None or skill_system_prompt.strip() == "":
-            return DEFAULT_AGENT_SYSTEM_PROMPT
-        return f"{DEFAULT_AGENT_SYSTEM_PROMPT}\n\n{skill_system_prompt.strip()}"
+        context = PromptContext(
+            current_month_year=datetime.now(UTC).strftime("%Y年%m月"),
+        )
+        parts = [
+            DEFAULT_AGENT_SYSTEM_PROMPT,
+            context.inject(TOOL_SELECTION_GUIDE),
+            context.inject(SHARED_CONVENTIONS),
+        ]
+        if skill_system_prompt and skill_system_prompt.strip():
+            parts.append(skill_system_prompt.strip())
+        return "\n\n".join(parts)
 
     def _build_stream_model(self, model_route: ResolvedRuntimeModelRoute) -> Any:
         try:
@@ -1161,20 +1184,22 @@ class PydanticAIAgentExecutor:
         display_name: str,
         enabled_tool_ids: Sequence[str],
     ) -> RuntimeToolExecutionContext:
+        metadata: dict[str, Any] = {
+            "displayName": display_name,
+            "enabledToolIds": list(enabled_tool_ids),
+            "fileSystemState": self._build_bound_tool_file_system_state(ctx),
+            "skillRuntime": self._build_bound_tool_skill_runtime_state(ctx, tool_id),
+        }
+        resolved_model_route = getattr(ctx.deps, "resolved_model_route", None)
+        if isinstance(resolved_model_route, Mapping):
+            metadata["resolvedModelRoute"] = dict(resolved_model_route)
         return RuntimeToolExecutionContext(
             tool_call_id=tool_call_id,
             run_id=ctx.deps.run_id,
             actor="agent",
             requested_at=datetime.now(UTC),
             trace={"toolCallId": tool_call_id, "toolId": tool_id},
-            metadata={
-                "displayName": display_name,
-                "enabledToolIds": list(enabled_tool_ids),
-                "fileSystemState": self._build_bound_tool_file_system_state(ctx),
-                "skillRuntime": self._build_bound_tool_skill_runtime_state(
-                    ctx, tool_id
-                ),
-            },
+            metadata=metadata,
         )
 
     def _build_bound_tool_file_system_state(

@@ -142,8 +142,8 @@
 .copilot-panel__history-message-list-skeleton {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem 1rem 1rem;
+  gap: 1.55rem;
+  padding: clamp(0.9rem, 1.4vw, 1.35rem) clamp(1rem, 3vw, 2.8rem) 1rem;
   flex: 1 1 auto;
   overflow: hidden;
   mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0) 100%);
@@ -152,18 +152,20 @@
 
 .copilot-panel__history-message-skeleton {
   display: flex;
-  width: 100%;
+  width: min(100%, 68rem);
+  align-self: center;
 }
 
 .copilot-panel__history-message-skeleton--user {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .copilot-panel__history-message-skeleton--user .copilot-panel__history-skeleton-bubble {
-  background: var(--surface-muted);
-  border-radius: 12px 12px 2px 12px;
-  padding: 0.85rem 1rem;
-  max-width: 80%;
+  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 64%, transparent);
+  border-radius: 13px;
+  padding: 0.72rem 0.9rem;
+  max-width: min(100%, 46rem);
   min-width: 120px;
 }
 
@@ -178,7 +180,7 @@
 .copilot-panel__history-message-skeleton--assistant .copilot-panel__history-skeleton-bubble {
   background: transparent;
   padding: 0;
-  max-width: 85%;
+  max-width: min(100%, 58rem);
   min-width: 200px;
 }
 
@@ -350,6 +352,77 @@
   to {
     background-position: -100% 0;
   }
+}
+
+/* ── Content enter animation ── */
+@keyframes copilot-panel-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes copilot-panel-fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.copilot-panel__enter {
+  animation: copilot-panel-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.copilot-panel__exit {
+  animation: copilot-panel-fade-out 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  pointer-events: none;
+}
+
+.copilot-panel__enter--delay-1 {
+  animation-delay: 50ms;
+}
+
+.copilot-panel__enter--delay-2 {
+  animation-delay: 100ms;
+}
+
+/* ── CrossFade transition wrapper ── */
+.cross-fade {
+  min-height: 0;
+}
+
+.cross-fade__stage {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cross-fade__stage--entering {
+  animation: copilot-panel-fade-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.cross-fade__stage--exiting {
+  animation: copilot-panel-fade-out 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* ── Chat workspace transition wrapper ── */
+.copilot-chat-workspace__content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 900px) {

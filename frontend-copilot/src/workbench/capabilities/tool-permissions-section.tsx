@@ -1,6 +1,7 @@
 /** Tool-permission policy helpers for CapabilitiesWorkspace. */
 
 import type {
+  LegacyToolPermissionMode,
   SettingsWorkspaceToolPermissionPolicyState,
   ToolPermissionPolicyMode,
   ToolPermissionPolicySource,
@@ -133,7 +134,7 @@ function collectPersistedOrphanPolicies(
   }))
 }
 
-export function mapDefaultModeToLegacyMode(mode: ToolPermissionPolicyMode): string {
+export function mapDefaultModeToLegacyMode(mode: ToolPermissionPolicyMode): LegacyToolPermissionMode {
   switch (mode) {
     case 'allow':
       return 'trusted'

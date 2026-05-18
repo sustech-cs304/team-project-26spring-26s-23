@@ -8,6 +8,9 @@ import {
   listProviderCatalogEntriesByStatus,
 } from './provider-catalog'
 
+const OPENAI_RESPONSE = 'openai-response'
+const RUNTIME_STATUS_LEGACY_UNSUPPORTED = 'legacy-unsupported'
+
 describe('provider catalog', () => {
   it('loads a shared catalog revision with first-batch enabled providers', () => {
     const catalog = getProviderCatalog()
@@ -44,11 +47,11 @@ describe('provider catalog', () => {
       adapterId: 'openrouter',
     })
 
-    expect(getProviderCatalogEntry('openai-response')).toMatchObject({
-      providerId: 'openai-response',
-      runtimeStatus: 'legacy-unsupported',
-      endpointType: 'openai-response',
-      adapterId: 'openai-response',
+    expect(getProviderCatalogEntry(OPENAI_RESPONSE)).toMatchObject({
+      providerId: OPENAI_RESPONSE,
+      runtimeStatus: RUNTIME_STATUS_LEGACY_UNSUPPORTED,
+      endpointType: OPENAI_RESPONSE,
+      adapterId: OPENAI_RESPONSE,
     })
   })
 
@@ -85,7 +88,7 @@ describe('provider catalog', () => {
       { value: 'gemini', label: 'Gemini' },
       { value: 'ollama', label: 'Ollama' },
       { value: 'openrouter', label: 'OpenRouter', hint: '仅数据层兼容' },
-      { value: 'openai-response', label: 'OpenAI-Response', hint: '历史兼容 / 当前未启用' },
+      { value: OPENAI_RESPONSE, label: 'OpenAI-Response', hint: '历史兼容 / 当前未启用' },
     ]))
   })
 })

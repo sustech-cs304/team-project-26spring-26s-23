@@ -107,7 +107,7 @@ def test_extract_capabilities_get_request_reads_optional_tool_permission_policy(
                 "toolPermissionPolicy": {
                     "schemaVersion": 1,
                     "defaultMode": "allow",
-                    "toolModes": {"tool.file-convert": "deny"},
+                    "toolModes": {"tool.fs.read": "deny"},
                 },
             },
         }
@@ -118,7 +118,7 @@ def test_extract_capabilities_get_request_reads_optional_tool_permission_policy(
     assert request.tool_permission_policy.to_dict() == {
         "schemaVersion": 1,
         "defaultMode": "allow",
-        "toolModes": {"tool.file-convert": "deny"},
+        "toolModes": {"tool.fs.read": "deny"},
         "toolTimeoutSeconds": {},
         "toolTimeoutActions": {},
     }
@@ -223,7 +223,7 @@ def test_extract_run_start_request_reads_thread_message_and_policy_fields() -> N
             "labelZh": "自动",
         },
     }
-    assert request.policy.enabledTools == ("tool.file-convert",)
+    assert request.policy.enabledTools == ("tool.fs.read",)
     assert request.policy.toolPermissionPolicy is None
     assert request.policy.debugModeEnabled is True
     assert request.policy.requestOptions == {"temperature": 0.2}
@@ -393,7 +393,7 @@ def test_extract_run_start_request_reads_tool_permission_policy() -> None:
         "schemaVersion": 1,
         "defaultMode": "ask",
         "toolModes": {
-            "tool.file-convert": "allow",
+            "tool.fs.read": "allow",
         },
     }
 
@@ -413,7 +413,7 @@ def test_extract_run_start_request_reads_tool_permission_policy() -> None:
         "schemaVersion": 1,
         "defaultMode": "ask",
         "toolModes": {
-            "tool.file-convert": "allow",
+            "tool.fs.read": "allow",
         },
         "toolTimeoutSeconds": {},
         "toolTimeoutActions": {},
@@ -427,13 +427,13 @@ def test_extract_run_start_request_reads_delay_tool_permission_policy_timeout_fi
         "schemaVersion": 1,
         "defaultMode": "ask",
         "toolModes": {
-            "tool.file-convert": "delay",
+            "tool.fs.read": "delay",
         },
         "toolTimeoutSeconds": {
-            "tool.file-convert": 27,
+            "tool.fs.read": 27,
         },
         "toolTimeoutActions": {
-            "tool.file-convert": "deny",
+            "tool.fs.read": "deny",
         },
     }
 
@@ -453,13 +453,13 @@ def test_extract_run_start_request_reads_delay_tool_permission_policy_timeout_fi
         "schemaVersion": 1,
         "defaultMode": "ask",
         "toolModes": {
-            "tool.file-convert": "delay",
+            "tool.fs.read": "delay",
         },
         "toolTimeoutSeconds": {
-            "tool.file-convert": 27,
+            "tool.fs.read": 27,
         },
         "toolTimeoutActions": {
-            "tool.file-convert": "deny",
+            "tool.fs.read": "deny",
         },
     }
 
@@ -470,9 +470,9 @@ def test_extract_run_start_request_rejects_invalid_tool_timeout_seconds() -> Non
     policy["toolPermissionPolicy"] = {
         "schemaVersion": 1,
         "defaultMode": "ask",
-        "toolModes": {"tool.file-convert": "delay"},
-        "toolTimeoutSeconds": {"tool.file-convert": 0},
-        "toolTimeoutActions": {"tool.file-convert": "deny"},
+        "toolModes": {"tool.fs.read": "delay"},
+        "toolTimeoutSeconds": {"tool.fs.read": 0},
+        "toolTimeoutActions": {"tool.fs.read": "deny"},
     }
 
     with pytest.raises(RuntimeProtocolError) as exc_info:
@@ -487,7 +487,7 @@ def test_extract_run_start_request_rejects_invalid_tool_timeout_seconds() -> Non
             }
         )
 
-    assert exc_info.value.error.error.details == {"field": "policy.toolPermissionPolicy.toolTimeoutSeconds.tool.file-convert"}
+    assert exc_info.value.error.error.details == {"field": "policy.toolPermissionPolicy.toolTimeoutSeconds.tool.fs.read"}
 
 
 @pytest.mark.parametrize(
@@ -500,9 +500,9 @@ def test_extract_run_start_request_rejects_non_numeric_tool_timeout_seconds_stri
     policy["toolPermissionPolicy"] = {
         "schemaVersion": 1,
         "defaultMode": "ask",
-        "toolModes": {"tool.file-convert": "delay"},
-        "toolTimeoutSeconds": {"tool.file-convert": timeout_value},
-        "toolTimeoutActions": {"tool.file-convert": "deny"},
+        "toolModes": {"tool.fs.read": "delay"},
+        "toolTimeoutSeconds": {"tool.fs.read": timeout_value},
+        "toolTimeoutActions": {"tool.fs.read": "deny"},
     }
 
     with pytest.raises(RuntimeProtocolError) as exc_info:
@@ -517,7 +517,7 @@ def test_extract_run_start_request_rejects_non_numeric_tool_timeout_seconds_stri
             }
         )
 
-    assert exc_info.value.error.error.details == {"field": "policy.toolPermissionPolicy.toolTimeoutSeconds.tool.file-convert"}
+    assert exc_info.value.error.error.details == {"field": "policy.toolPermissionPolicy.toolTimeoutSeconds.tool.fs.read"}
 
 
 def test_extract_run_start_request_rejects_invalid_tool_timeout_action() -> None:
@@ -526,9 +526,9 @@ def test_extract_run_start_request_rejects_invalid_tool_timeout_action() -> None
     policy["toolPermissionPolicy"] = {
         "schemaVersion": 1,
         "defaultMode": "ask",
-        "toolModes": {"tool.file-convert": "delay"},
-        "toolTimeoutSeconds": {"tool.file-convert": 27},
-        "toolTimeoutActions": {"tool.file-convert": "later"},
+        "toolModes": {"tool.fs.read": "delay"},
+        "toolTimeoutSeconds": {"tool.fs.read": 27},
+        "toolTimeoutActions": {"tool.fs.read": "later"},
     }
 
     with pytest.raises(RuntimeProtocolError) as exc_info:
@@ -543,7 +543,7 @@ def test_extract_run_start_request_rejects_invalid_tool_timeout_action() -> None
             }
         )
 
-    assert exc_info.value.error.error.details == {"field": "policy.toolPermissionPolicy.toolTimeoutActions.tool.file-convert"}
+    assert exc_info.value.error.error.details == {"field": "policy.toolPermissionPolicy.toolTimeoutActions.tool.fs.read"}
 
 
 
@@ -710,7 +710,7 @@ def _build_policy_payload() -> dict[str, object]:
                 "labelZh": "自动",
             },
         },
-        "enabledTools": ["tool.file-convert"],
+        "enabledTools": ["tool.fs.read"],
         "debugModeEnabled": True,
         "requestOptions": {"temperature": 0.2},
     }

@@ -127,7 +127,7 @@ describe('assistant-session-helpers', () => {
     const renamedState = renameAssistantSessionShell(initialState, 'session-2', '  Blackboard 草稿  ')
 
     expect(resolveAssistantSessionTitle(renamedState.sessions[0]!)).toBe('Blackboard 草稿')
-    expect(resolveAssistantSessionTitle(renamedState.sessions[1]!)).toBe('通用智能体')
+    expect(resolveAssistantSessionTitle(renamedState.sessions[1]!)).toBe('新话题')
     expect(renamedState.activeSessionId).toBe('session-1')
   })
 

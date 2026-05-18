@@ -1,4 +1,6 @@
 import type { AssistantSessionShell } from '../../workbench/types'
+import { createEmptyComposerAttachmentsState } from './attachments/state'
+import type { CopilotComposerAttachmentsState } from './attachments/types'
 import {
   createComposerDraftFromSession,
   type CopilotChatComposerDraft,
@@ -12,6 +14,7 @@ import type { CopilotRunState } from './types'
 export interface CopilotThreadRuntimeControllerState {
   sessionId: string
   composerDraft: CopilotChatComposerDraft
+  composerAttachments: CopilotComposerAttachmentsState
   conversation: CopilotMessageListItem[]
   runState: CopilotRunState
   sendError: CopilotTransientErrorState | null
@@ -31,6 +34,7 @@ export function createCopilotThreadRuntimeControllerState(
   return {
     sessionId: sessionShell?.sessionId ?? '',
     composerDraft: createComposerDraftFromSession(sessionShell),
+    composerAttachments: createEmptyComposerAttachmentsState(),
     conversation: [],
     runState: createIdleCopilotRunState(),
     sendError: null,

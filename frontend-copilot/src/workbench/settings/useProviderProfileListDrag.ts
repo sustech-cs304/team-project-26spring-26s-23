@@ -10,75 +10,61 @@ interface UseProviderProfileListDragArgs {
   onReorderProviders: (providerId: string, nextIndex: number) => void
 }
 
-export function useProviderProfileListDrag({
-  providerProfiles,
-  filteredProviderProfiles,
-  onReorderProviders,
-}: UseProviderProfileListDragArgs) {
-  const [providerDragState, setProviderDragState] = useState<ProviderDragState | null>(null)
-  const providerListRef = useRef<HTMLUListElement | null>(null)
-  const providerDragGhostRef = useRef<HTMLDivElement | null>(null)
-  const providerDragStateRef = useRef<ProviderDragState | null>(null)
-  const pendingProviderPointerRef = useRef<{
-    providerId: string
-    startX: number
-    startY: number
-    pointerOffsetX: number
-    pointerOffsetY: number
-  } | null>(null)
-  const providerPointerCleanupRef = useRef<(() => void) | null>(null)
-  const providerDragGhostFrameRef = useRef<number | null>(null)
-  const suppressProviderClickRef = useRef(false)
+interface PendingProviderPointer {
+  providerId: string
+  startX: number
+  startY: number
+  pointerOffsetX: number
+  pointerOffsetY: number
+}
 
-  const draggingProvider = useMemo(
-    () => providerDragState === null
-      ? null
-      : providerProfiles.find((profile) => profile.id === providerDragState.draggingProviderId) ?? null,
-    [providerDragState, providerProfiles],
-  )
-  const draggedProviderId = providerDragState?.draggingProviderId ?? null
-  const renderedProviderProfiles = useMemo(
-    () => draggedProviderId === null
-      ? filteredProviderProfiles
-      : filteredProviderProfiles.filter((profile) => profile.id !== draggedProviderId),
-    [draggedProviderId, filteredProviderProfiles],
-  )
-  const providerDragPreviewIndex = providerDragState === null
-    ? null
-    : Math.max(0, Math.min(providerDragState.previewIndex, renderedProviderProfiles.length))
+interface ScheduleGhostPositionParams {
+  ghostRef: React.RefObject<HTMLDivElement | null>
+  frameRef: React.MutableRefObject<number | null>
+  pointerX: number
+  pointerY: number
+  offsetX: number
+  offsetY: number
+}
 
-  useEffect(() => {
-    providerDragStateRef.current = providerDragState
-  }, [providerDragState])
-
-  useEffect(() => {
-    return () => {
-      providerPointerCleanupRef.current?.()
-      if (providerDragGhostFrameRef.current !== null) {
-        cancelAnimationFrame(providerDragGhostFrameRef.current)
-      }
-    }
-  }, [])
-
-  const scheduleProviderDragGhostPosition = (
-    pointerX: number,
-    pointerY: number,
-    pointerOffsetX: number,
-    pointerOffsetY: number,
-  ) => {
-    if (providerDragGhostFrameRef.current !== null) {
-      cancelAnimationFrame(providerDragGhostFrameRef.current)
-    }
-
-    providerDragGhostFrameRef.current = requestAnimationFrame(() => {
-      if (providerDragGhostRef.current !== null) {
-        providerDragGhostRef.current.style.transform = `translate3d(${pointerX - pointerOffsetX}px, ${pointerY - pointerOffsetY}px, 0)`
-      }
-      providerDragGhostFrameRef.current = null
-    })
+function scheduleProviderDragGhostPosition(params: ScheduleGhostPositionParams) {
+  const { ghostRef, frameRef, pointerX, pointerY, offsetX, offsetY } = params
+  if (frameRef.current !== null) {
+    cancelAnimationFrame(frameRef.current)
   }
 
-  const handleProviderPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, providerId: string) => {
+  frameRef.current = requestAnimationFrame(() => {
+    if (ghostRef.current !== null) {
+      ghostRef.current.style.transform = `translate3d(${pointerX - offsetX}px, ${pointerY - offsetY}px, 0)`
+    }
+    frameRef.current = null
+  })
+}
+
+function createProviderPointerDownHandler(params: {
+  providerListRef: React.RefObject<HTMLUListElement | null>
+  providerDragGhostRef: React.RefObject<HTMLDivElement | null>
+  providerDragGhostFrameRef: React.MutableRefObject<number | null>
+  providerDragStateRef: React.MutableRefObject<ProviderDragState | null>
+  pendingProviderPointerRef: React.MutableRefObject<PendingProviderPointer | null>
+  providerPointerCleanupRef: React.MutableRefObject<(() => void) | null>
+  suppressProviderClickRef: React.MutableRefObject<boolean>
+  setProviderDragState: React.Dispatch<React.SetStateAction<ProviderDragState | null>>
+  onReorderProviders: (providerId: string, nextIndex: number) => void
+}) {
+  const {
+    providerListRef,
+    providerDragGhostRef,
+    providerDragGhostFrameRef,
+    providerDragStateRef,
+    pendingProviderPointerRef,
+    providerPointerCleanupRef,
+    suppressProviderClickRef,
+    setProviderDragState,
+    onReorderProviders,
+  } = params
+
+  return function handleProviderPointerDown(event: ReactPointerEvent<HTMLButtonElement>, providerId: string) {
     if (event.button !== 0) {
       return
     }
@@ -118,12 +104,14 @@ export function useProviderProfileListDrag({
 
       suppressProviderClickRef.current = true
       document.body.style.userSelect = 'none'
-      scheduleProviderDragGhostPosition(
-        moveEvent.clientX,
-        moveEvent.clientY,
-        pending.pointerOffsetX,
-        pending.pointerOffsetY,
-      )
+      scheduleProviderDragGhostPosition({
+        ghostRef: providerDragGhostRef,
+        frameRef: providerDragGhostFrameRef,
+        pointerX: moveEvent.clientX,
+        pointerY: moveEvent.clientY,
+        offsetX: pending.pointerOffsetX,
+        offsetY: pending.pointerOffsetY,
+      })
 
       const listElement = providerListRef.current
       const nextPreviewIndex = listElement === null
@@ -154,6 +142,68 @@ export function useProviderProfileListDrag({
     window.addEventListener('pointerup', handlePointerUp)
     window.addEventListener('pointercancel', handlePointerUp)
   }
+}
+
+export function useProviderProfileListDrag({
+  providerProfiles,
+  filteredProviderProfiles,
+  onReorderProviders,
+}: UseProviderProfileListDragArgs) {
+  const [providerDragState, setProviderDragState] = useState<ProviderDragState | null>(null)
+  const providerListRef = useRef<HTMLUListElement | null>(null)
+  const providerDragGhostRef = useRef<HTMLDivElement | null>(null)
+  const providerDragStateRef = useRef<ProviderDragState | null>(null)
+  const pendingProviderPointerRef = useRef<PendingProviderPointer | null>(null)
+  const providerPointerCleanupRef = useRef<(() => void) | null>(null)
+  const providerDragGhostFrameRef = useRef<number | null>(null)
+  const suppressProviderClickRef = useRef(false)
+
+  const draggingProvider = useMemo(
+    () => providerDragState === null
+      ? null
+      : providerProfiles.find((profile) => profile.id === providerDragState.draggingProviderId) ?? null,
+    [providerDragState, providerProfiles],
+  )
+  const draggedProviderId = providerDragState?.draggingProviderId ?? null
+  const renderedProviderProfiles = useMemo(
+    () => draggedProviderId === null
+      ? filteredProviderProfiles
+      : filteredProviderProfiles.filter((profile) => profile.id !== draggedProviderId),
+    [draggedProviderId, filteredProviderProfiles],
+  )
+  const providerDragPreviewIndex = providerDragState === null
+    ? null
+    : Math.max(0, Math.min(providerDragState.previewIndex, renderedProviderProfiles.length))
+
+  useEffect(() => {
+    providerDragStateRef.current = providerDragState
+  }, [providerDragState])
+
+  useEffect(() => {
+    const cleanupRef = providerPointerCleanupRef
+    const ghostFrameRef = providerDragGhostFrameRef
+    return () => {
+      cleanupRef.current?.()
+      if (ghostFrameRef.current !== null) {
+        cancelAnimationFrame(ghostFrameRef.current)
+      }
+    }
+  }, [])
+
+  const handleProviderPointerDown = useMemo(
+    () => createProviderPointerDownHandler({
+      providerListRef,
+      providerDragGhostRef,
+      providerDragGhostFrameRef,
+      providerDragStateRef,
+      pendingProviderPointerRef,
+      providerPointerCleanupRef,
+      suppressProviderClickRef,
+      setProviderDragState,
+      onReorderProviders,
+    }),
+    [onReorderProviders],
+  )
 
   return {
     draggingProvider,

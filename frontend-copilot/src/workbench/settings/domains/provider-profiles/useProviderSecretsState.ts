@@ -29,6 +29,73 @@ interface UseSettingsWorkspaceProviderSecretsResult {
   removeProviderSecret: (providerId: string) => Promise<boolean>
 }
 
+function syncProviderApiKeyState(params: {
+  providerId: string
+  apiKey: string
+  setProviderProfiles: Dispatch<SetStateAction<ProviderProfile[]>>
+  setProviderSecretDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  setProviderSecretSavedValues: Dispatch<SetStateAction<Record<string, string>>>
+}) {
+  const { providerId, apiKey, setProviderProfiles, setProviderSecretDrafts, setProviderSecretSavedValues } = params
+
+  setProviderProfiles((previous) =>
+    previous.map((profile) => {
+      return profile.id === providerId ? { ...profile, hasApiKey: apiKey !== '' } : profile
+    }),
+  )
+  setProviderSecretDrafts((previous) => ({
+    ...previous,
+    [providerId]: apiKey,
+  }))
+  setProviderSecretSavedValues((previous) => ({
+    ...previous,
+    [providerId]: apiKey,
+  }))
+}
+
+async function persistProviderApiKeyDraft(params: {
+  providerId: string
+  activeDraft: string
+  savedValue: string
+  feedbackCopy: ReturnType<typeof getProviderSecretsFeedbackCopy>
+  setApiKeyFeedback: Dispatch<SetStateAction<string | null>>
+  syncState: (providerId: string, apiKey: string) => void
+}) {
+  const { providerId, activeDraft, savedValue, feedbackCopy, setApiKeyFeedback, syncState } = params
+  const normalizedDraft = activeDraft.trim()
+
+  if (normalizedDraft === savedValue) {
+    return
+  }
+
+  if (!normalizedDraft) {
+    const result = await clearSettingsWorkspaceProfileApiKey({ profileId: providerId })
+
+    if (!result.ok) {
+      setApiKeyFeedback(feedbackCopy.clearFailed)
+      return
+    }
+
+    syncState(result.profileId, result.state.apiKey)
+    setApiKeyFeedback(feedbackCopy.cleared)
+    return
+  }
+
+  const result = await saveSettingsWorkspaceProfileApiKey({
+    profileId: providerId,
+    apiKey: normalizedDraft,
+  })
+
+  if (!result.ok) {
+    setApiKeyFeedback(feedbackCopy.saveFailed)
+    return
+  }
+
+  syncState(result.profileId, result.state.apiKey)
+  setApiKeyFeedback(feedbackCopy.saved)
+}
+
+/* eslint-disable-next-line max-lines-per-function */
 export function useSettingsWorkspaceProviderSecrets({
   language,
   activeProviderId,
@@ -68,20 +135,14 @@ export function useSettingsWorkspaceProviderSecrets({
 
   const activeProviderApiKeyDraft = activeProvider ? (providerSecretDrafts[activeProvider.id] ?? '') : ''
 
-  const syncProviderApiKeyState = (providerId: string, apiKey: string) => {
-    setProviderProfiles((previous) =>
-      previous.map((profile) => {
-        return profile.id === providerId ? { ...profile, hasApiKey: apiKey !== '' } : profile
-      }),
-    )
-    setProviderSecretDrafts((previous) => ({
-      ...previous,
-      [providerId]: apiKey,
-    }))
-    setProviderSecretSavedValues((previous) => ({
-      ...previous,
-      [providerId]: apiKey,
-    }))
+  const syncState = (providerId: string, apiKey: string) => {
+    syncProviderApiKeyState({
+      providerId,
+      apiKey,
+      setProviderProfiles,
+      setProviderSecretDrafts,
+      setProviderSecretSavedValues,
+    })
   }
 
   const handleProviderApiKeyDraftChange = (providerId: string, value: string) => {
@@ -98,38 +159,14 @@ export function useSettingsWorkspaceProviderSecrets({
       return
     }
 
-    const normalizedDraft = activeDraft.trim()
-    const savedValue = providerSecretSavedValues[providerId] ?? ''
-
-    if (normalizedDraft === savedValue) {
-      return
-    }
-
-    if (!normalizedDraft) {
-      const result = await clearSettingsWorkspaceProfileApiKey({ profileId: providerId })
-
-      if (!result.ok) {
-        setApiKeyFeedback(feedbackCopy.clearFailed)
-        return
-      }
-
-      syncProviderApiKeyState(result.profileId, result.state.apiKey)
-      setApiKeyFeedback(feedbackCopy.cleared)
-      return
-    }
-
-    const result = await saveSettingsWorkspaceProfileApiKey({
-      profileId: providerId,
-      apiKey: normalizedDraft,
+    await persistProviderApiKeyDraft({
+      providerId,
+      activeDraft,
+      savedValue: providerSecretSavedValues[providerId] ?? '',
+      feedbackCopy,
+      setApiKeyFeedback,
+      syncState,
     })
-
-    if (!result.ok) {
-      setApiKeyFeedback(feedbackCopy.saveFailed)
-      return
-    }
-
-    syncProviderApiKeyState(result.profileId, result.state.apiKey)
-    setApiKeyFeedback(feedbackCopy.saved)
   }
 
   const handleToggleApiKeyVisibility = () => {
@@ -177,7 +214,7 @@ export function useSettingsWorkspaceProviderSecrets({
       return false
     }
 
-    syncProviderApiKeyState(result.profileId, result.state.apiKey)
+    syncState(result.profileId, result.state.apiKey)
     return true
   }
 

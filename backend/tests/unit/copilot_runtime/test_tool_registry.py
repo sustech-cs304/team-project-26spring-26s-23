@@ -5,7 +5,7 @@ import random
 import sys
 from collections.abc import Awaitable
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, cast
 
 import pytest
 
@@ -19,9 +19,8 @@ from app.copilot_runtime.tool_registry import (
     COMMAND_RUN_TOOL_DISPLAY_NAME,
     COMMAND_RUN_TOOL_ID,
     DEFAULT_WEATHER_LOCATION,
-    FILE_CONVERT_TOOL_DESCRIPTION,
-    FILE_CONVERT_TOOL_DISPLAY_NAME,
-    FILE_CONVERT_TOOL_ID,
+    FILE_TOOL_READ_DESCRIPTION,
+    FILE_TOOL_READ_DISPLAY_NAME,
     REQUEST_USER_FORM_TOOL_DESCRIPTION,
     REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
     REQUEST_USER_FORM_TOOL_ID,
@@ -58,10 +57,15 @@ from app.tooling.file_tools import (
 )
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
+from app.tooling.browser_tools import get_browser_tool_contracts
 
 CONTRACT_TOOL_IDS = tuple(
     contract.metadata.tool_id
-    for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
+    for contract in (
+        *get_blackboard_tool_contracts(),
+        *get_tis_tool_contracts(),
+        *get_browser_tool_contracts(),
+    )
 )
 
 _T = TypeVar("_T")
@@ -105,7 +109,6 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         FILE_TOOL_GREP_ID,
         "tool.fs.notebook_edit",
         FILE_TOOL_SWITCH_ROOT_ID,
-        FILE_CONVERT_TOOL_ID,
         WEATHER_CURRENT_TOOL_ID,
         COMMAND_RUN_TOOL_ID,
         REQUEST_USER_FORM_TOOL_ID,
@@ -203,17 +206,17 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
             "sourceKind": "builtin",
         },
     }
-    assert catalog_by_id[FILE_CONVERT_TOOL_ID] == {
-        "toolId": FILE_CONVERT_TOOL_ID,
+    assert catalog_by_id['tool.fs.read'] == {
+        "toolId": "tool.fs.read",
         "kind": "builtin",
         "availability": "available",
-        "displayName": "文件转换",
-        "description": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
-        "prompt": "在分析前使用此工具将 DOCX、PDF 或 PPTX 文件转换为纯文本。",
-        "displayNameZh": "文件转换",
-        "displayNameEn": FILE_CONVERT_TOOL_DISPLAY_NAME,
-        "descriptionZh": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
-        "descriptionEn": FILE_CONVERT_TOOL_DESCRIPTION,
+        "displayName": "文件读取",
+        "description": "按行分页读取工作区内 UTF-8 文本文件。",
+        "prompt": "使用此工具先读取工作区文本文件，再继续分析或修改。",
+        "displayNameZh": "文件读取",
+        "displayNameEn": FILE_TOOL_READ_DISPLAY_NAME,
+        "descriptionZh": "按行分页读取工作区内 UTF-8 文本文件。",
+        "descriptionEn": FILE_TOOL_READ_DESCRIPTION,
         "group": {
             "id": "builtin-core",
             "label": "内置基础工具",
@@ -363,9 +366,9 @@ def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metada
     assert en_catalog[FILE_TOOL_GLOB_ID]["displayName"] == FILE_TOOL_GLOB_DISPLAY_NAME
     assert zh_catalog[FILE_TOOL_GREP_ID]["displayName"] == "文件搜索"
     assert en_catalog[FILE_TOOL_GREP_ID]["displayName"] == FILE_TOOL_GREP_DISPLAY_NAME
-    assert zh_catalog[FILE_CONVERT_TOOL_ID]["displayName"] == "文件转换"
-    assert en_catalog[FILE_CONVERT_TOOL_ID]["displayName"] == FILE_CONVERT_TOOL_DISPLAY_NAME
-    assert zh_catalog[FILE_CONVERT_TOOL_ID]["prompt"] != en_catalog[FILE_CONVERT_TOOL_ID]["prompt"]
+    assert zh_catalog['tool.fs.read']["displayName"] == "文件读取"
+    assert en_catalog['tool.fs.read']["displayName"] == FILE_TOOL_READ_DISPLAY_NAME
+    assert zh_catalog['tool.fs.read']["prompt"] != en_catalog['tool.fs.read']["prompt"]
     contract_tool_id = CONTRACT_TOOL_IDS[0]
     assert zh_catalog[contract_tool_id]["displayName"] != en_catalog[contract_tool_id]["displayName"]
     assert zh_catalog[contract_tool_id]["displayNameZh"] == zh_catalog[contract_tool_id]["displayName"]

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, TypedDict, cast
 
+import httpx
 import pytest
 from pydantic_ai._run_context import RunContext
 from pydantic_ai.messages import (
@@ -36,12 +38,16 @@ from app.copilot_runtime.agent import (
 )
 from app.copilot_runtime.skill_snapshot_provider import create_skill_snapshot_provider
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
+from app.copilot_runtime.model_routes import (
+    ResolvedRuntimeModelRoute,
+    RuntimeModelRoute,
+    RuntimeModelRouteRef,
+)
 from app.copilot_runtime.tool_approval_coordinator import (
     RuntimeToolApprovalCoordinator,
     ToolApprovalNotFoundError,
 )
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
-from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute
 from app.copilot_runtime.mcp_snapshot_provider import McpCapabilitySnapshot
 from app.copilot_runtime.mcp_tool_executor import build_mcp_executable_tools
 from app.copilot_runtime.mcp_snapshot_provider import McpSnapshotProvider
@@ -52,6 +58,7 @@ from app.copilot_runtime.tool_registry import (
     WEATHER_CURRENT_TOOL_ID,
     build_default_tool_registry,
 )
+from app.desktop_runtime.host_model_route_bridge import HostModelRouteBridgeClient
 from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
 from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
 
@@ -129,12 +136,72 @@ def test_default_agent_system_prompt_prefers_structured_forms_and_blocks_uploads
 
     prompt = executor._compose_system_prompt(None)
 
-    assert prompt == DEFAULT_AGENT_SYSTEM_PROMPT
+    assert DEFAULT_AGENT_SYSTEM_PROMPT in prompt
     assert "prefer the request_user_form tool" in prompt
     assert "including for a single well-defined field" in prompt
     assert "wait for the user's next message to continue" in prompt
     assert "Do not use forms to request file uploads" in prompt
     assert "secrets, passwords, or tokens" in prompt
+
+
+def test_system_prompt_includes_tool_selection_guides() -> None:
+    executor = PydanticAIAgentExecutor()
+
+    prompt = executor._compose_system_prompt(None)
+
+    assert "Tool Selection Guide" in prompt
+    assert "File Operation Tool Selection" in prompt
+    assert "Blackboard Data Tools" in prompt
+    assert "TIS" in prompt
+    assert "General Rules" in prompt
+
+
+def test_system_prompt_includes_shared_conventions() -> None:
+    executor = PydanticAIAgentExecutor()
+
+    prompt = executor._compose_system_prompt(None)
+
+    assert "Read before modify" in prompt
+    assert "Shell command avoidance" in prompt
+    assert "Parallel execution" in prompt
+    assert "Sync-first" in prompt
+    assert "Credentials" in prompt
+
+
+def test_system_prompt_includes_parallel_execution_guidance() -> None:
+    executor = PydanticAIAgentExecutor()
+
+    prompt = executor._compose_system_prompt(None)
+
+    assert "parallel tool calls" in prompt.lower()
+    assert "independent" in prompt.lower()
+    assert "three tool.fs.read calls in ONE message" in prompt
+    assert "tool.fs.glob + tool.fs.grep in ONE message" in prompt
+
+
+def test_system_prompt_injects_current_month_year() -> None:
+    executor = PydanticAIAgentExecutor()
+
+    prompt = executor._compose_system_prompt(None)
+
+    assert "年" in prompt
+    assert "月" in prompt
+
+
+def test_system_prompt_with_skill_appends_after_guides() -> None:
+    executor = PydanticAIAgentExecutor()
+    skill_prompt = "## Available Skills\n- test-skill: does things"
+
+    prompt = executor._compose_system_prompt(skill_prompt)
+
+    assert "Tool Selection Guide" in prompt
+    assert "Shared File Operation Conventions" in prompt
+    assert "Available Skills" in prompt
+    assert "test-skill" in prompt
+    # Guides must come before skill prompt
+    tool_guide_pos = prompt.index("Tool Selection Guide")
+    skill_pos = prompt.index("Available Skills")
+    assert tool_guide_pos < skill_pos
 
 
 
@@ -1752,6 +1819,78 @@ def test_build_contract_agent_tools_limits_registered_tools_to_enabled_set() -> 
     assert filtered_tool_names == ("tool_fs_glob",)
 
 
+def test_contract_agent_tool_descriptions_use_structured_prompts_not_short_constants() -> None:
+    """Regression: _build_contract_agent_tools MUST use ToolPrompt.render()
+    (get_tool_description) so that detailed usage_guide, parameter_guide, and
+    constraints reach the LLM, not just the 70-character registry constants."""
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+
+    built = executor._build_contract_agent_tools(
+        enabled_tools=("tool.fs.read", "tool.fs.edit", "tool.fs.glob", "tool.fs.grep",
+                       "tool.fs.notebook_edit", "tool.fs.switch_root")
+    )
+    tools_by_name = {tool.name: tool for tool in built}
+
+    # Every file tool MUST carry a structured prompt longer than a one-liner
+    for tool_name, tool_id, min_sections in [
+        ("tool_fs_read", "tool.fs.read", ("Usage", "Parameters", "Constraints")),
+        ("tool_fs_edit", "tool.fs.edit", ("Usage", "Parameters", "Constraints")),
+        ("tool_fs_glob", "tool.fs.glob", ("Usage", "Parameters", "Constraints")),
+        ("tool_fs_grep", "tool.fs.grep", ("Usage", "Parameters", "Constraints")),
+        ("tool_fs_notebook_edit", "tool.fs.notebook_edit", ("Usage", "Parameters", "Constraints")),
+        ("tool_fs_switch_root", "tool.fs.switch_root", ("Usage", "Parameters", "Constraints")),
+    ]:
+        desc = tools_by_name[tool_name].description or ""
+        assert len(desc) > 300, (
+            f"{tool_id} description too short ({len(desc)} chars) — "
+            f"structured prompt not flowing"
+        )
+        for section in min_sections:
+            assert section in desc, (
+                f"{tool_id} missing section {section!r}"
+            )
+
+
+def test_contract_agent_tool_falls_back_to_descriptor_for_unprompted_tools() -> None:
+    """Tools without a prompt registry entry still get their descriptor.description."""
+    executor = PydanticAIAgentExecutor(model="test-model")
+    # weather tool, request-user-form, skill-activate, skill-read-resource
+    # are NOT in the prompt registry — they must fallback gracefully.
+    built = executor._build_contract_agent_tools(
+        enabled_tools=(
+            "tool.request-user-form",
+            "tool.skill-activate",
+            "tool.skill-read-resource",
+        )
+    )
+    tools_by_name = {tool.name: tool for tool in built}
+    for tool_name, expected_min_len in [
+        ("request_user_form", 100),
+        ("skill_activate", 50),
+        ("skill_read_resource", 50),
+    ]:
+        desc = tools_by_name[tool_name].description or ""
+        assert len(desc) >= expected_min_len, (
+            f"{tool_name} description too short: {len(desc)}"
+        )
+
+
+def test_contract_agent_tool_descriptions_vary_across_tools() -> None:
+    """Sanity check: every tool gets its OWN structured prompt, not a shared copy."""
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    built = executor._build_contract_agent_tools(
+        enabled_tools=("tool.fs.read", "tool.fs.edit", "tool.fs.glob", "tool.fs.grep")
+    )
+    descriptions = {tool.name: tool.description for tool in built if tool.description}
+    # Each tool should have distinct content
+    unique_prefixes = {desc[:80] for desc in descriptions.values()}
+    assert len(unique_prefixes) == len(descriptions), (
+        f"Expected {len(descriptions)} distinct descriptions, "
+        f"got {len(unique_prefixes)} unique prefixes"
+    )
+
 
 def test_execute_bound_tool_file_tool_no_longer_requires_model_route_summary() -> None:
     registry = build_default_tool_registry()
@@ -1815,6 +1954,270 @@ def test_executor_inherits_default_workspace_root_from_tool_registry(tmp_path: P
     expected_workspace_root = workspace_root.resolve(strict=False).as_posix()
     assert deps.workspace_root == expected_workspace_root
     assert deps.default_root == expected_workspace_root
+
+
+
+def test_build_bound_tool_execution_context_preserves_model_route_capability_hints() -> None:
+    registry = build_default_tool_registry()
+    executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
+    resolved_model_route = ResolvedRuntimeModelRoute(
+        provider_profile_id="provider-1",
+        provider="openai",
+        provider_id="openai",
+        adapter_id="openai",
+        runtime_status="enabled",
+        catalog_revision="2026-04-06-provider-catalog-v1",
+        endpoint_family="openai",
+        endpoint_type="openai-compatible",
+        base_url="https://api.example.com/v1",
+        model_id="gpt-4.1",
+        auth_kind="api-key",
+        api_key="resolved-secret",
+        capability_hints={"vision": True, "tools": True},
+    )
+    deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=lambda _event: None,
+        tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+        resolved_model_route=resolved_model_route,
+        run_id="run-vision-context",
+    )
+
+    execution_context = executor._build_bound_tool_execution_context(
+        _build_tool_run_context(tool_call_id="tool.fs.read:call-1", deps=deps),
+        tool_id="tool.fs.read",
+        tool_call_id="tool.fs.read:call-1",
+        display_name="Read File",
+        enabled_tool_ids=("tool.fs.read",),
+    )
+
+    assert execution_context.metadata["resolvedModelRoute"] == {
+        "routeRef": {
+            "routeKind": "provider-model",
+            "profileId": "provider-1",
+            "modelId": "gpt-4.1",
+        },
+        "providerProfileId": "provider-1",
+        "provider": "openai",
+        "providerId": "openai",
+        "adapterId": "openai",
+        "runtimeStatus": "enabled",
+        "catalogRevision": "2026-04-06-provider-catalog-v1",
+        "endpointFamily": "openai",
+        "endpointType": "openai-compatible",
+        "baseUrl": "https://api.example.com/v1",
+        "modelId": "gpt-4.1",
+        "authKind": "api-key",
+        "capabilityHints": {"vision": True, "tools": True},
+    }
+
+
+
+def test_execute_bound_tool_read_image_requires_vision_context(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    (workspace_root / "pixel.png").write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jk2QAAAAASUVORK5CYII="
+        )
+    )
+    registry = build_default_tool_registry(workspace_root=workspace_root)
+    executor = PydanticAIAgentExecutor(
+        model="test-model",
+        tool_registry=registry,
+        workspace_root=workspace_root,
+        default_root=workspace_root,
+    )
+    emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
+    deps_without_vision = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=emitted_tool_events.append,
+        tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+        run_id="run-read-no-vision",
+    )
+
+    no_vision_result = asyncio.run(
+        executor._execute_bound_tool(
+            _build_tool_run_context(
+                tool_call_id="tool.fs.read:call-1",
+                deps=deps_without_vision,
+            ),
+            tool_id="tool.fs.read",
+            arguments={"path": "pixel.png"},
+        )
+    )
+
+    resolved_model_route = ResolvedRuntimeModelRoute(
+        provider_profile_id="provider-1",
+        provider="openai",
+        provider_id="openai",
+        adapter_id="openai",
+        runtime_status="enabled",
+        catalog_revision="2026-04-06-provider-catalog-v1",
+        endpoint_family="openai",
+        endpoint_type="openai-compatible",
+        base_url="https://api.example.com/v1",
+        model_id="gpt-4.1",
+        auth_kind="api-key",
+        api_key="resolved-secret",
+        capability_hints={"vision": True},
+    )
+    deps_with_vision = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=emitted_tool_events.append,
+        tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+        resolved_model_route=resolved_model_route,
+        run_id="run-read-with-vision",
+    )
+
+    vision_result = asyncio.run(
+        executor._execute_bound_tool(
+            _build_tool_run_context(
+                tool_call_id="tool.fs.read:call-2",
+                deps=deps_with_vision,
+            ),
+            tool_id="tool.fs.read",
+            arguments={"path": "pixel.png"},
+        )
+    )
+
+    assert no_vision_result["status"] == "error"
+    assert no_vision_result["error"]["code"] == "execution_failed"
+    assert no_vision_result["output"]["error"]["code"] == "vision_required"
+    assert no_vision_result["output"]["error"]["details"]["visionEnabled"] is False
+    assert vision_result["status"] == "success"
+    assert vision_result["output"]["data"]["kind"] == "image"
+
+
+
+@pytest.mark.parametrize(
+    ("resolved_route_capability_hints", "expected_status", "expected_vision_enabled"),
+    [
+        (None, "error", False),
+        ({"vision": True, "tools": True}, "success", True),
+    ],
+)
+def test_execute_bound_tool_read_image_traces_vision_from_host_bridge_payload(
+    tmp_path: Path,
+    resolved_route_capability_hints: dict[str, bool] | None,
+    expected_status: str,
+    expected_vision_enabled: bool,
+) -> None:
+    provider_profile_id = "provider-openrouter"
+    provider_id = "openrouter"
+    model_id = "qwen-vl-max"
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    (workspace_root / "pixel.png").write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jk2QAAAAASUVORK5CYII="
+        )
+    )
+    registry = build_default_tool_registry(workspace_root=workspace_root)
+    executor = PydanticAIAgentExecutor(
+        model="test-model",
+        tool_registry=registry,
+        workspace_root=workspace_root,
+        default_root=workspace_root,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        resolved_route: dict[str, Any] = {
+            "routeRef": {
+                "routeKind": "provider-model",
+                "profileId": provider_profile_id,
+                "modelId": model_id,
+            },
+            "providerProfileId": provider_profile_id,
+            "provider": provider_id,
+            "providerId": provider_id,
+            "adapterId": provider_id,
+            "runtimeStatus": "enabled",
+            "catalogRevision": "2026-04-06-provider-catalog-v1",
+            "endpointFamily": "openai",
+            "endpointType": "openai-compatible",
+            "baseUrl": "https://api.example.com/v1",
+            "modelId": model_id,
+            "authKind": "api-key",
+        }
+        if resolved_route_capability_hints is not None:
+            resolved_route["capabilityHints"] = dict(resolved_route_capability_hints)
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "resolvedRoute": resolved_route,
+                "privateAuth": {
+                    "authKind": "api-key",
+                    "authPayload": {"apiKey": "resolved-secret"},
+                    "apiKey": "resolved-secret",
+                },
+            },
+            request=request,
+        )
+
+    resolved_model_route = asyncio.run(
+        HostModelRouteBridgeClient(
+            bridge_url="http://127.0.0.1:45678/host/private/provider-routes/resolve",
+            bridge_token="bridge-token-123",
+            transport=httpx.MockTransport(handler),
+        ).resolve(
+            RuntimeModelRoute(
+                provider_profile_id=provider_profile_id,
+                route_ref=RuntimeModelRouteRef(
+                    route_kind="provider-model",
+                    profile_id=provider_profile_id,
+                    model_id=model_id,
+                ),
+                catalog_revision="2026-04-06-provider-catalog-v1",
+            )
+        )
+    )
+
+    assert resolved_model_route.capability_hints == (
+        {} if resolved_route_capability_hints is None else resolved_route_capability_hints
+    )
+
+    deps = executor._build_runtime_deps(
+        enabled_tools=("tool.fs.read",),
+        emit_tool_event=lambda _event: None,
+        tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+        resolved_model_route=resolved_model_route,
+        run_id="run-host-bridge-vision",
+    )
+    execution_context = executor._build_bound_tool_execution_context(
+        _build_tool_run_context(tool_call_id="tool.fs.read:call-bridge", deps=deps),
+        tool_id="tool.fs.read",
+        tool_call_id="tool.fs.read:call-bridge",
+        display_name="Read File",
+        enabled_tool_ids=("tool.fs.read",),
+    )
+    execution_route = execution_context.metadata["resolvedModelRoute"]
+
+    assert ("capabilityHints" in execution_route) is (
+        resolved_route_capability_hints is not None
+    )
+
+    result = asyncio.run(
+        executor._execute_bound_tool(
+            _build_tool_run_context(
+                tool_call_id="tool.fs.read:call-bridge",
+                deps=deps,
+            ),
+            tool_id="tool.fs.read",
+            arguments={"path": "pixel.png"},
+        )
+    )
+
+    assert result["status"] == expected_status
+    if expected_status == "success":
+        assert execution_route["capabilityHints"] == resolved_route_capability_hints
+        assert result["output"]["data"]["kind"] == "image"
+    else:
+        assert execution_route.get("capabilityHints") is None
+        assert result["error"]["code"] == "execution_failed"
+        assert result["output"]["error"]["code"] == "vision_required"
+        assert result["output"]["error"]["details"]["visionEnabled"] is expected_vision_enabled
 
 
 
@@ -2122,4 +2525,5 @@ def _build_resolved_route(*, model_id: str = "gpt-4.1") -> ResolvedRuntimeModelR
         base_url="https://example.com/v1",
         model_id=model_id,
         api_key="test-api-key",
+        capability_hints={"vision": True},
     )

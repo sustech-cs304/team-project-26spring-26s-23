@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 
 export type BootstrapScreenTone = 'info' | 'warning' | 'error'
-export const BOOTSTRAP_PREPARING_MESSAGE = '正在准备桌面界面…'
-export const BOOTSTRAP_CONNECTING_MESSAGE = '正在连接本地服务…'
+export const BOOTSTRAP_PREPARING_MESSAGE = '正在加载应用…'
+export const BOOTSTRAP_CONNECTING_MESSAGE = '正在连接服务…'
 
 export type BootstrapScreenLoadingMessage =
   | typeof BOOTSTRAP_PREPARING_MESSAGE

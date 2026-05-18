@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { shouldWriteRuntimeConsoleEntryToTerminal, writeRuntimeConsoleEntryToTerminal } from './runtime-console-terminal'
 import type { RuntimeConsoleEntry } from './renderer-ipc-contract'
 
+const SOURCE_ELECTRON = 'electron-main'
+
 describe('runtime console terminal output', () => {
   it('keeps only warning and error runtime console entries on the terminal path', () => {
     const targetConsole = {
@@ -13,12 +15,12 @@ describe('runtime console terminal output', () => {
     }
 
     const infoEntry: RuntimeConsoleEntry = {
-      source: 'electron-main',
+      source: SOURCE_ELECTRON,
       level: 'info',
       message: '[desktop-runtime] Hosted backend is ready.',
     }
     const debugEntry: RuntimeConsoleEntry = {
-      source: 'electron-main',
+      source: SOURCE_ELECTRON,
       level: 'debug',
       message: '[startup] app:ready',
       context: {
@@ -26,13 +28,13 @@ describe('runtime console terminal output', () => {
       },
     }
     const warnEntry: RuntimeConsoleEntry = {
-      source: 'electron-main',
+      source: SOURCE_ELECTRON,
       level: 'warn',
       message: '[desktop-runtime] Ignoring invalid hosted runtime command-line arguments.',
       timestamp: '2026-03-28T09:40:52.123Z',
     }
     const errorEntry: RuntimeConsoleEntry = {
-      source: 'electron-main',
+      source: SOURCE_ELECTRON,
       level: 'error',
       message: '[desktop-runtime] Hosted backend startup failed.',
       context: {
@@ -75,7 +77,7 @@ describe('runtime console terminal output', () => {
     }
 
     expect(writeRuntimeConsoleEntryToTerminal({
-      source: 'electron-main',
+      source: SOURCE_ELECTRON,
       level: 'warn',
       message: 'renderer-console',
       timestamp: '2026-03-28T09:40:54.789Z',

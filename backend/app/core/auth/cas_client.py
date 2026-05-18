@@ -1,9 +1,8 @@
-"""Compat-only shim for the shared SUSTech CAS client.
+"""Legacy backward-compatibility shim.
 
-New code must import from ``app.shared_integrations.sustech_auth.cas_client``.
-Do not add business logic to this module.
+Re-exports CASClient from the canonical shared_integrations package.
+All new code should import from ``app.shared_integrations.sustech_auth.cas_client``
+directly.
 """
 
-from app.shared_integrations.sustech_auth.cas_client import CASClient, CASLogger
-
-__all__ = ["CASClient", "CASLogger"]
+from app.shared_integrations.sustech_auth.cas_client import CASClient, CASLogger  # noqa: F401

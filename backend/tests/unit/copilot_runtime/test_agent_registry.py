@@ -39,7 +39,7 @@ def test_default_agent_registry_builds_info_directory_and_diagnostics_views() ->
         {
             "agentId": "default",
             "status": "active",
-            "recommendedTools": ["tool.file-convert"],
+            "recommendedTools": ["tool.fs.read"],
             "displayName": "Default",
             "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
             "iconKey": None,
@@ -65,7 +65,7 @@ def test_default_agent_registry_builds_info_directory_and_diagnostics_views() ->
                 "default": True,
                 "status": "active",
                 "toolsetName": "default",
-                "recommendedTools": ["tool.file-convert"],
+                "recommendedTools": ["tool.fs.read"],
                 "iconKey": None,
                 "hasExecutorFactory": False,
             }
@@ -80,14 +80,14 @@ def test_agent_descriptor_builds_minimal_directory_and_bound_agent_views() -> No
         description="默认通用智能体。",
         default=True,
         toolset_name="default",
-        recommended_tools=("tool.file-convert",),
+        recommended_tools=("tool.fs.read",),
         icon_key="sparkles",
     )
 
     assert descriptor.build_directory_view() == {
         "agentId": "general",
         "status": "active",
-        "recommendedTools": ["tool.file-convert"],
+        "recommendedTools": ["tool.fs.read"],
         "displayName": "通用助手",
         "description": "默认通用智能体。",
         "iconKey": "sparkles",

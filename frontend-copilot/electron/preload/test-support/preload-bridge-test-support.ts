@@ -5,6 +5,7 @@ import type { SettingsWorkspaceEditableState } from '../../settings-workspace/st
 
 const preloadMocks = vi.hoisted(() => ({
   exposeInMainWorld: vi.fn(),
+  getPathForFile: vi.fn(),
   invoke: vi.fn(),
   on: vi.fn(),
   off: vi.fn(),
@@ -19,6 +20,9 @@ vi.mock('electron', () => ({
     on: preloadMocks.on,
     off: preloadMocks.off,
   },
+  webUtils: {
+    getPathForFile: preloadMocks.getPathForFile,
+  },
 }))
 
 beforeEach(() => {
@@ -32,6 +36,7 @@ export async function loadPreloadModule(): Promise<void> {
 
 export function resetPreloadBridgeMocks(): void {
   preloadMocks.exposeInMainWorld.mockReset()
+  preloadMocks.getPathForFile.mockReset()
   preloadMocks.invoke.mockReset()
   preloadMocks.on.mockReset()
   preloadMocks.off.mockReset()
@@ -55,11 +60,15 @@ export function getInvokeMock() {
   return preloadMocks.invoke
 }
 
+export function getPathForFileMock() {
+  return preloadMocks.getPathForFile
+}
+
 export function getOffMock() {
   return preloadMocks.off
 }
 
-export function getRegisteredOnListener<TListener extends (...args: any[]) => unknown>(channel: string): TListener {
+export function getRegisteredOnListener<TListener extends (...args: unknown[]) => unknown>(channel: string): TListener {
   const onCall = preloadMocks.on.mock.calls.find(([candidateChannel]) => candidateChannel === channel)
 
   if (onCall === undefined || typeof onCall[1] !== 'function') {
@@ -99,8 +108,11 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     sustech: {
       studentId: '',
       email: '',
-      blackboardAutoDownloadEnabled: false,
-      blackboardDownloadLimitMb: '0',
+      blackboardCurrentTermOnly: false,
+      blackboardParallelSyncWorkers: '1',
+      blackboardSyncInterval: 'off' as const,
+      blackboardLastAutoSyncAt: null,
+      blackboardNextAutoSyncAt: null,
     },
     providerProfiles: [],
     defaultModelRouting: {
@@ -111,32 +123,17 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     },
     general: {
       language: 'zh-CN',
-      proxyMode: 'system',
       assistantNotificationsEnabled: false,
-      backupEnabled: true,
-    },
-    data: {
-      dataPath: 'D:/workspace/copilot-data',
-      backupCycle: 'daily',
-      launchSyncEnabled: true,
     },
     mcp: {
       mcpAutoDiscoveryEnabled: true,
       toolPermissionMode: 'manual',
       toolPermissionPolicy: {
         version: 1,
+        migrationSourceMode: 'manual',
         defaultMode: 'ask',
         toolPermissions: {},
       },
-    },
-    search: {
-      searchEngine: 'google',
-      searchResultCount: '8',
-      compressionMode: 'summary',
-    },
-    memory: {
-      memoryStrategy: 'session-longterm',
-      memoryCleanupEnabled: true,
     },
     api: {
       apiReconnectMode: 'exponential',
@@ -145,8 +142,6 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     },
     docs: {
       docsFormat: 'markdown',
-      outputDirectory: 'D:/workspace/exports',
-      autoFileNameEnabled: true,
     },
     externalSource: {
       wakeupShareLink: '',

@@ -1,4 +1,4 @@
-export const DESKTOP_CAPABILITY_NAMES = ['secret', 'workspace', 'database', 'artifact', 'state', 'event', 'mcp'] as const
+export const DESKTOP_CAPABILITY_NAMES = ['secret', 'workspace', 'database', 'artifact', 'state', 'event', 'mcp', 'browser'] as const
 export type DesktopCapabilityName = (typeof DESKTOP_CAPABILITY_NAMES)[number]
 
 export const DESKTOP_CAPABILITY_OPERATIONS = [
@@ -14,6 +14,14 @@ export const DESKTOP_CAPABILITY_OPERATIONS = [
   'delete_value',
   'emit_event',
   'call_tool',
+  'open',
+  'screenshot',
+  'list_tabs',
+  'close_tab',
+  'switch_tab',
+  'execute',
+  'reset',
+  'snapshot',
 ] as const
 export type DesktopCapabilityOperation = (typeof DESKTOP_CAPABILITY_OPERATIONS)[number]
 
@@ -45,6 +53,7 @@ export const DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: Record<
   state: ['get_value', 'put_value', 'delete_value'],
   event: ['emit_event'],
   mcp: ['call_tool'],
+  browser: ['open', 'screenshot', 'list_tabs', 'close_tab', 'switch_tab', 'execute', 'reset', 'snapshot'],
 }
 
 export interface DesktopCapabilityBridgeRequest {
@@ -153,99 +162,217 @@ function normalizeDesktopCapabilityBridgePayload(
     throw new Error(`Operation '${operation}' is not supported for capability '${capability}'.`)
   }
 
+  return normalizeDesktopCapabilityOperationPayload(capability, operation, payload)
+}
+
+function normalizeDesktopCapabilityOperationPayload(
+  capability: DesktopCapabilityName,
+  operation: DesktopCapabilityOperation,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
   switch (operation) {
     case 'get_secret':
     case 'has_secret':
-      assertNoUnexpectedKeys(payload, ['secretName'], 'secret payload')
-      return {
-        secretName: requireNonEmptyString(payload.secretName, 'secretName'),
-      }
-    case 'resolve_path': {
-      const payloadLabel = capability === 'database' ? 'database payload' : 'workspace payload'
-      assertNoUnexpectedKeys(payload, ['relativePath'], payloadLabel)
-      const relativePath = payload.relativePath
-      return relativePath === undefined
-        ? {}
-        : { relativePath: requireNonEmptyString(relativePath, 'relativePath') }
-    }
+      return normalizeSecretPayload(payload)
+    case 'resolve_path':
+      return normalizeResolvePathPayload(capability, payload)
     case 'ensure_directory':
-      assertNoUnexpectedKeys(payload, ['relativePath'], 'workspace payload')
-      return {
-        relativePath: requireNonEmptyString(payload.relativePath, 'relativePath'),
-      }
-    case 'save_text': {
-      assertNoUnexpectedKeys(payload, ['name', 'text', 'contentType', 'metadata'], 'artifact payload')
-      const normalized: Record<string, unknown> = {
-        name: requireNonEmptyString(payload.name, 'name'),
-        text: requireString(payload.text, 'text'),
-      }
-      if (payload.contentType !== undefined) {
-        normalized.contentType = requireNonEmptyString(payload.contentType, 'contentType')
-      }
-      if (payload.metadata !== undefined) {
-        normalized.metadata = requireRecord(payload.metadata, 'metadata')
-      }
-      return normalized
-    }
-    case 'save_bytes': {
-      assertNoUnexpectedKeys(payload, ['name', 'contentBase64', 'contentType', 'metadata'], 'artifact payload')
-      const normalized: Record<string, unknown> = {
-        name: requireNonEmptyString(payload.name, 'name'),
-        contentBase64: requireNonEmptyString(payload.contentBase64, 'contentBase64'),
-      }
-      if (payload.contentType !== undefined) {
-        normalized.contentType = requireNonEmptyString(payload.contentType, 'contentType')
-      }
-      if (payload.metadata !== undefined) {
-        normalized.metadata = requireRecord(payload.metadata, 'metadata')
-      }
-      return normalized
-    }
+      return normalizeEnsureDirectoryPayload(payload)
+    case 'save_text':
+      return normalizeSaveTextPayload(payload)
+    case 'save_bytes':
+      return normalizeSaveBytesPayload(payload)
     case 'describe_artifact':
-      assertNoUnexpectedKeys(payload, ['artifactId'], 'artifact payload')
-      return {
-        artifactId: requireNonEmptyString(payload.artifactId, 'artifactId'),
-      }
+      return normalizeDescribeArtifactPayload(payload)
     case 'get_value':
     case 'delete_value':
-      assertNoUnexpectedKeys(payload, ['scope', 'key'], 'state payload')
-      return {
-        scope: requireStringEnum(payload.scope, DESKTOP_CAPABILITY_STATE_SCOPES, 'scope'),
-        key: requireNonEmptyString(payload.key, 'key'),
-      }
+      return normalizeStateGetDeletePayload(payload)
     case 'put_value':
-      assertNoUnexpectedKeys(payload, ['scope', 'key', 'value'], 'state payload')
-      return {
-        scope: requireStringEnum(payload.scope, DESKTOP_CAPABILITY_STATE_SCOPES, 'scope'),
-        key: requireNonEmptyString(payload.key, 'key'),
-        value: requireRecord(payload.value, 'value'),
-      }
-    case 'emit_event': {
-      assertNoUnexpectedKeys(payload, ['eventType', 'message', 'data'], 'event payload')
+      return normalizeStatePutPayload(payload)
+    case 'emit_event':
+      return normalizeEmitEventPayload(payload)
+    case 'call_tool':
+      return normalizeCallToolPayload(payload)
+    case 'open': {
+      assertNoUnexpectedKeys(payload, ['url', 'showWindow', 'newTab', 'selector', 'format'], 'browser payload')
       const normalized: Record<string, unknown> = {
-        eventType: requireNonEmptyString(payload.eventType, 'eventType'),
+        url: requireNonEmptyString(payload.url, 'url'),
       }
-      if (payload.message !== undefined) {
-        normalized.message = requireNonEmptyString(payload.message, 'message')
+      if (payload.showWindow !== undefined) {
+        normalized.showWindow = requireBoolean(payload.showWindow, 'showWindow')
       }
-      if (payload.data !== undefined) {
-        normalized.data = requireRecord(payload.data, 'data')
+      if (payload.newTab !== undefined) {
+        normalized.newTab = requireBoolean(payload.newTab, 'newTab')
+      }
+      if (payload.selector !== undefined) {
+        normalized.selector = requireNonEmptyString(payload.selector, 'selector')
+      }
+      if (payload.format !== undefined) {
+        normalized.format = requireNonEmptyString(payload.format, 'format')
       }
       return normalized
     }
-    case 'call_tool': {
-      assertNoUnexpectedKeys(payload, ['serverId', 'remoteToolName', 'arguments', 'snapshotRevision'], 'mcp payload')
-      const normalized: Record<string, unknown> = {
-        serverId: requireNonEmptyString(payload.serverId, 'serverId'),
-        remoteToolName: requireNonEmptyString(payload.remoteToolName, 'remoteToolName'),
-        arguments: requireRecord(payload.arguments, 'arguments'),
+    case 'screenshot': {
+      assertNoUnexpectedKeys(payload, ['name'], 'browser payload')
+      const normalized: Record<string, unknown> = {}
+      if (payload.name !== undefined) {
+        normalized.name = requireNonEmptyString(payload.name, 'name')
       }
-      if (payload.snapshotRevision !== undefined && payload.snapshotRevision !== null) {
-        normalized.snapshotRevision = requireNonNegativeInteger(payload.snapshotRevision, 'snapshotRevision')
+      return normalized
+    }
+    case 'list_tabs': {
+      assertNoUnexpectedKeys(payload, [], 'browser payload')
+      return {}
+    }
+    case 'close_tab': {
+      assertNoUnexpectedKeys(payload, ['tabId'], 'browser payload')
+      const normalized: Record<string, unknown> = {}
+      if (payload.tabId !== undefined) {
+        normalized.tabId = requireNonEmptyString(payload.tabId, 'tabId')
+      }
+      return normalized
+    }
+    case 'switch_tab': {
+      assertNoUnexpectedKeys(payload, ['tabId'], 'browser payload')
+      return {
+        tabId: requireNonEmptyString(payload.tabId, 'tabId'),
+      }
+    }
+    case 'execute': {
+      assertNoUnexpectedKeys(payload, ['script', 'tabId'], 'browser payload')
+      const normalized: Record<string, unknown> = {
+        script: requireNonEmptyString(payload.script, 'script'),
+      }
+      if (payload.tabId !== undefined) {
+        normalized.tabId = requireNonEmptyString(payload.tabId, 'tabId')
+      }
+      return normalized
+    }
+    case 'reset': {
+      assertNoUnexpectedKeys(payload, [], 'browser payload')
+      return {}
+    }
+    case 'snapshot': {
+      assertNoUnexpectedKeys(payload, ['selector', 'tabId'], 'browser payload')
+      const normalized: Record<string, unknown> = {}
+      if (payload.selector !== undefined) {
+        normalized.selector = requireNonEmptyString(payload.selector, 'selector')
+      }
+      if (payload.tabId !== undefined) {
+        normalized.tabId = requireNonEmptyString(payload.tabId, 'tabId')
       }
       return normalized
     }
   }
+
+  throw new Error(`Operation '${operation}' is not supported for capability '${capability}'.`)
+}
+
+function normalizeSecretPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  assertNoUnexpectedKeys(payload, ['secretName'], 'secret payload')
+  return {
+    secretName: requireNonEmptyString(payload.secretName, 'secretName'),
+  }
+}
+
+function normalizeResolvePathPayload(
+  capability: DesktopCapabilityName,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const payloadLabel = capability === 'database' ? 'database payload' : 'workspace payload'
+  assertNoUnexpectedKeys(payload, ['relativePath'], payloadLabel)
+  const relativePath = payload.relativePath
+  return relativePath === undefined
+    ? {}
+    : { relativePath: requireNonEmptyString(relativePath, 'relativePath') }
+}
+
+function normalizeEnsureDirectoryPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  assertNoUnexpectedKeys(payload, ['relativePath'], 'workspace payload')
+  return {
+    relativePath: requireNonEmptyString(payload.relativePath, 'relativePath'),
+  }
+}
+
+function normalizeSaveTextPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  assertNoUnexpectedKeys(payload, ['name', 'text', 'contentType', 'metadata'], 'artifact payload')
+  const normalized: Record<string, unknown> = {
+    name: requireNonEmptyString(payload.name, 'name'),
+    text: requireString(payload.text, 'text'),
+  }
+  if (payload.contentType !== undefined) {
+    normalized.contentType = requireNonEmptyString(payload.contentType, 'contentType')
+  }
+  if (payload.metadata !== undefined) {
+    normalized.metadata = requireRecord(payload.metadata, 'metadata')
+  }
+  return normalized
+}
+
+function normalizeSaveBytesPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  assertNoUnexpectedKeys(payload, ['name', 'contentBase64', 'contentType', 'metadata'], 'artifact payload')
+  const normalized: Record<string, unknown> = {
+    name: requireNonEmptyString(payload.name, 'name'),
+    contentBase64: requireNonEmptyString(payload.contentBase64, 'contentBase64'),
+  }
+  if (payload.contentType !== undefined) {
+    normalized.contentType = requireNonEmptyString(payload.contentType, 'contentType')
+  }
+  if (payload.metadata !== undefined) {
+    normalized.metadata = requireRecord(payload.metadata, 'metadata')
+  }
+  return normalized
+}
+
+function normalizeDescribeArtifactPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  assertNoUnexpectedKeys(payload, ['artifactId'], 'artifact payload')
+  return {
+    artifactId: requireNonEmptyString(payload.artifactId, 'artifactId'),
+  }
+}
+
+function normalizeStateGetDeletePayload(payload: Record<string, unknown>): Record<string, unknown> {
+  assertNoUnexpectedKeys(payload, ['scope', 'key'], 'state payload')
+  return {
+    scope: requireStringEnum(payload.scope, DESKTOP_CAPABILITY_STATE_SCOPES, 'scope'),
+    key: requireNonEmptyString(payload.key, 'key'),
+  }
+}
+
+function normalizeStatePutPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  assertNoUnexpectedKeys(payload, ['scope', 'key', 'value'], 'state payload')
+  return {
+    scope: requireStringEnum(payload.scope, DESKTOP_CAPABILITY_STATE_SCOPES, 'scope'),
+    key: requireNonEmptyString(payload.key, 'key'),
+    value: requireRecord(payload.value, 'value'),
+  }
+}
+
+function normalizeEmitEventPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  assertNoUnexpectedKeys(payload, ['eventType', 'message', 'data'], 'event payload')
+  const normalized: Record<string, unknown> = {
+    eventType: requireNonEmptyString(payload.eventType, 'eventType'),
+  }
+  if (payload.message !== undefined) {
+    normalized.message = requireNonEmptyString(payload.message, 'message')
+  }
+  if (payload.data !== undefined) {
+    normalized.data = requireRecord(payload.data, 'data')
+  }
+  return normalized
+}
+
+function normalizeCallToolPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  assertNoUnexpectedKeys(payload, ['serverId', 'remoteToolName', 'arguments', 'snapshotRevision'], 'mcp payload')
+  const normalized: Record<string, unknown> = {
+    serverId: requireNonEmptyString(payload.serverId, 'serverId'),
+    remoteToolName: requireNonEmptyString(payload.remoteToolName, 'remoteToolName'),
+    arguments: requireRecord(payload.arguments, 'arguments'),
+  }
+  if (payload.snapshotRevision !== undefined && payload.snapshotRevision !== null) {
+    normalized.snapshotRevision = requireNonNegativeInteger(payload.snapshotRevision, 'snapshotRevision')
+  }
+  return normalized
 }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -276,6 +403,14 @@ function requireNonEmptyString(value: unknown, label: string): string {
 function requireNonNegativeInteger(value: unknown, label: string): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative integer.`)
+  }
+
+  return value
+}
+
+function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(`${label} must be a boolean.`)
   }
 
   return value

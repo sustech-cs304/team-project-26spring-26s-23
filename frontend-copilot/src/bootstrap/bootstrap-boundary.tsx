@@ -30,17 +30,17 @@ export function CopilotAppRootBoundary({
       resetKeys={[configStatus]}
       fallback={({ error, reset }) => (
         <BootstrapScreen
-          title="工作台壳层加载失败"
-          description="根装配层已完成状态决策，但工作台外壳模块懒加载或渲染失败。当前显示根级失败兜底，避免再次出现无解释白屏。"
+          title="界面加载失败"
+          description="应用界面渲染时出现错误，请尝试重试加载。"
           tone="error"
           details={<pre className="startup-shell__pre">{formatErrorMessage(error)}</pre>}
           actions={[
             {
-              label: '重试加载工作台',
+              label: '重试加载',
               onClick: reset,
             },
             {
-              label: retrying ? '正在重试运行态…' : '重新读取运行态',
+              label: retrying ? '正在重试连接…' : '重新连接服务',
               onClick: onRetryConfig,
               disabled: retrying,
               emphasis: 'secondary',
@@ -49,11 +49,7 @@ export function CopilotAppRootBoundary({
         />
       )}
     >
-      <Suspense
-        fallback={
-          <BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />
-        }
-      >
+      <Suspense fallback={<BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />}>
         <LazyApp bootstrap={bootstrap} />
       </Suspense>
     </RecoverableErrorBoundary>

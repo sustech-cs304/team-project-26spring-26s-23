@@ -167,7 +167,7 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
     reports = assess_default_contract_mcp_readiness()
 
     assert MCP_SUPPORTED_INPUT_SCHEMA_FORMATS == ("json-schema",)
-    assert len(reports) == 9
+    assert len(reports) == 17
     by_tool_id = {report.tool_id: report for report in reports}
     assert set(by_tool_id) == {
         "blackboard.course_catalog.search",
@@ -175,6 +175,14 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
         "blackboard.snapshot.sync",
         "blackboard.course_resources.sync",
         "blackboard.sql.query",
+        "browser.close_tab",
+        "browser.execute",
+        "browser.list_tabs",
+        "browser.open",
+        "browser.reset",
+        "browser.screenshot",
+        "browser.snapshot",
+        "browser.switch_tab",
         "tis.personal_grades.fetch",
         "tis.credit_gpa.fetch",
         "tis.selected_courses.fetch",
@@ -300,16 +308,14 @@ def test_legacy_sustech_root_packages_are_not_valid_import_targets() -> None:
     blackboard_spec = importlib.util.find_spec("app.blackboard")
     tis_spec = importlib.util.find_spec("app.teaching_information_system")
 
-    assert blackboard_spec is not None
-    assert tis_spec is not None
-    assert blackboard_spec.origin is None
-    assert tis_spec.origin is None
+    assert blackboard_spec is None or blackboard_spec.origin is None
+    assert tis_spec is None or tis_spec.origin is None
 
-    blackboard = importlib.import_module("app.blackboard")
-    tis = importlib.import_module("app.teaching_information_system")
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.blackboard")
 
-    assert not hasattr(blackboard, "get_blackboard_tool_contracts")
-    assert not hasattr(tis, "get_tis_tool_contracts")
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.teaching_information_system")
 
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("app.blackboard.facade")

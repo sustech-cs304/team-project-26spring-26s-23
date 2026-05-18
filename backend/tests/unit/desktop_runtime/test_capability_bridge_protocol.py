@@ -31,6 +31,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "state",
         "event",
         "mcp",
+        "browser",
     )
     assert DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY == {
         "secret": ("get_secret", "has_secret"),
@@ -40,6 +41,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "state": ("get_value", "put_value", "delete_value"),
         "event": ("emit_event",),
         "mcp": ("call_tool",),
+        "browser": ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "reset", "snapshot"),
     }
     assert get_desktop_capability_operations("secret") == ("get_secret", "has_secret")
     assert get_desktop_capability_operations("workspace") == (
@@ -59,6 +61,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
     )
     assert get_desktop_capability_operations("event") == ("emit_event",)
     assert get_desktop_capability_operations("mcp") == ("call_tool",)
+    assert get_desktop_capability_operations("browser") == ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "reset", "snapshot")
     assert {
         operation
         for operations in DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY.values()
@@ -193,7 +196,7 @@ def test_capability_bridge_models_parse_wire_aliases_and_flat_error_shape() -> N
     }
 
     with pytest.raises(
-        ValueError, match=r"response contains unsupported field\(s\): extra"
+        ValueError, match=r"response has unexpected fields: extra"
     ):
         DesktopCapabilityBridgeResponse.model_validate(
             {
@@ -337,7 +340,7 @@ def test_payload_and_result_validation_enforce_operation_routing_and_invariants(
         )
 
     with pytest.raises(
-        ValueError, match=r"payload contains unsupported field\(s\): channel"
+        ValueError, match=r"payload has unexpected fields: channel"
     ):
         validate_desktop_capability_bridge_payload(
             capability="event",
@@ -347,6 +350,32 @@ def test_payload_and_result_validation_enforce_operation_routing_and_invariants(
                 "channel": "frontend-sse",
             },
         )
+
+    assert validate_desktop_capability_bridge_result(
+        capability="browser",
+        operation="screenshot",
+        result={
+            "tabId": "browser-tab-1",
+            "currentUrl": "https://example.com/",
+            "title": "Example Domain",
+            "windowVisible": False,
+            "artifactId": "artifact-browser-screenshot",
+            "uri": "artifact://desktop/browser-screenshot.png",
+            "name": "browser-screenshot.png",
+            "contentType": "image/png",
+            "metadata": {"source": "browser.screenshot"},
+        },
+    ) == {
+        "tabId": "browser-tab-1",
+        "currentUrl": "https://example.com/",
+        "title": "Example Domain",
+        "windowVisible": False,
+        "artifactId": "artifact-browser-screenshot",
+        "uri": "artifact://desktop/browser-screenshot.png",
+        "name": "browser-screenshot.png",
+        "contentType": "image/png",
+        "metadata": {"source": "browser.screenshot"},
+    }
 
 
 def test_state_get_value_result_rejects_non_null_value_when_not_found() -> None:
@@ -409,8 +438,8 @@ def test_bridge_error_model_and_response_invariants() -> None:
     )
     failure_response = DesktopCapabilityBridgeResponse.failure(
         request_id="request-2",
-        error=timeout_error,
-    )
+            error=timeout_error,
+        )
 
     assert timeout_error.to_dict() == {
         "code": "timeout",
@@ -454,3 +483,33 @@ def test_bridge_error_model_and_response_invariants() -> None:
             result={},
             error=timeout_error,
         )
+
+
+def test_browser_page_result_serializes_content_when_present() -> None:
+    result = validate_desktop_capability_bridge_result(
+        capability="browser",
+        operation="open",
+        result={
+            "tabId": "tab-1",
+            "currentUrl": "https://example.com",
+            "title": "Example",
+            "content": "Extracted text content",
+        },
+    )
+    assert result["tabId"] == "tab-1"
+    assert result["currentUrl"] == "https://example.com"
+    assert result["content"] == "Extracted text content"
+
+
+def test_browser_page_result_omits_content_when_absent() -> None:
+    result = validate_desktop_capability_bridge_result(
+        capability="browser",
+        operation="open",
+        result={
+            "tabId": "tab-1",
+            "currentUrl": "https://example.com",
+        },
+    )
+    assert "content" not in result
+    assert result["tabId"] == "tab-1"
+    assert result["currentUrl"] == "https://example.com"

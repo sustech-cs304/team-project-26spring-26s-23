@@ -119,30 +119,7 @@ export class PythonRuntimeManager {
   private stderrSink: RuntimeTextFileSink | null = null
 
   constructor(options: PythonRuntimeManagerOptions) {
-    const processEnv = options.processEnv ?? process.env
-    const envOverrides = resolveHostedRuntimeEnvironmentOverrides(processEnv)
-
-    this.options = {
-      ...options,
-      processEnv,
-      host: options.host ?? envOverrides.host ?? DEFAULT_RUNTIME_HOST,
-      appMode: options.appMode ?? DEFAULT_RUNTIME_APP_MODE,
-      environment: options.environment
-        ?? envOverrides.environment
-        ?? (options.isPackaged ? 'production' : 'development'),
-      startupTimeoutMs: options.startupTimeoutMs
-        ?? envOverrides.startupTimeoutMs
-        ?? DEFAULT_STARTUP_TIMEOUT_MS,
-      shutdownTimeoutMs: options.shutdownTimeoutMs
-        ?? envOverrides.shutdownTimeoutMs
-        ?? DEFAULT_SHUTDOWN_TIMEOUT_MS,
-      healthcheckIntervalMs: options.healthcheckIntervalMs
-        ?? envOverrides.healthcheckIntervalMs
-        ?? DEFAULT_HEALTHCHECK_INTERVAL_MS,
-      healthcheckRequestTimeoutMs: options.healthcheckRequestTimeoutMs
-        ?? envOverrides.healthcheckRequestTimeoutMs
-        ?? DEFAULT_HEALTHCHECK_REQUEST_TIMEOUT_MS,
-    }
+    this.options = resolvePythonRuntimeManagerOptions(options)
     this.runtimePaths = options.runtimePaths ?? createHostedRuntimePaths(options.userDataPath)
   }
 
@@ -538,6 +515,34 @@ export class PythonRuntimeManager {
 
 export function createPythonRuntimeManager(options: PythonRuntimeManagerOptions): PythonRuntimeManager {
   return new PythonRuntimeManager(options)
+}
+
+function resolvePythonRuntimeManagerOptions(
+  options: PythonRuntimeManagerOptions,
+): ResolvedPythonRuntimeManagerOptions {
+  const processEnv = options.processEnv ?? process.env
+  const envOverrides = resolveHostedRuntimeEnvironmentOverrides(processEnv)
+  const defaultEnvironment = options.isPackaged ? 'production' : 'development'
+
+  return {
+    ...options,
+    processEnv,
+    host: options.host ?? envOverrides.host ?? DEFAULT_RUNTIME_HOST,
+    appMode: options.appMode ?? DEFAULT_RUNTIME_APP_MODE,
+    environment: options.environment ?? envOverrides.environment ?? defaultEnvironment,
+    startupTimeoutMs: options.startupTimeoutMs
+      ?? envOverrides.startupTimeoutMs
+      ?? DEFAULT_STARTUP_TIMEOUT_MS,
+    shutdownTimeoutMs: options.shutdownTimeoutMs
+      ?? envOverrides.shutdownTimeoutMs
+      ?? DEFAULT_SHUTDOWN_TIMEOUT_MS,
+    healthcheckIntervalMs: options.healthcheckIntervalMs
+      ?? envOverrides.healthcheckIntervalMs
+      ?? DEFAULT_HEALTHCHECK_INTERVAL_MS,
+    healthcheckRequestTimeoutMs: options.healthcheckRequestTimeoutMs
+      ?? envOverrides.healthcheckRequestTimeoutMs
+      ?? DEFAULT_HEALTHCHECK_REQUEST_TIMEOUT_MS,
+  }
 }
 
 function cloneHostedBackendState(state: HostedBackendState): HostedBackendState {

@@ -64,8 +64,11 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     sustech: {
       studentId: '',
       email: '',
-      blackboardAutoDownloadEnabled: false,
-      blackboardDownloadLimitMb: '0',
+      blackboardCurrentTermOnly: false,
+      blackboardParallelSyncWorkers: '1',
+      blackboardSyncInterval: 'off' as const,
+      blackboardLastAutoSyncAt: null,
+      blackboardNextAutoSyncAt: null,
     },
     providerProfiles: [],
     defaultModelRouting: {
@@ -76,32 +79,17 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     },
     general: {
       language: 'zh-CN',
-      proxyMode: 'system',
       assistantNotificationsEnabled: false,
-      backupEnabled: true,
-    },
-    data: {
-      dataPath: 'D:/workspace/copilot-data',
-      backupCycle: 'daily',
-      launchSyncEnabled: true,
     },
     mcp: {
       mcpAutoDiscoveryEnabled: true,
       toolPermissionMode: 'manual',
       toolPermissionPolicy: {
         version: 1,
+        migrationSourceMode: 'manual',
         defaultMode: 'ask',
         toolPermissions: {},
       },
-    },
-    search: {
-      searchEngine: 'google',
-      searchResultCount: '8',
-      compressionMode: 'summary',
-    },
-    memory: {
-      memoryStrategy: 'session-longterm',
-      memoryCleanupEnabled: true,
     },
     api: {
       apiReconnectMode: 'exponential',
@@ -110,8 +98,6 @@ export function createSettingsWorkspaceStateFixture(): SettingsWorkspaceEditable
     },
     docs: {
       docsFormat: 'markdown',
-      outputDirectory: 'D:/workspace/exports',
-      autoFileNameEnabled: true,
     },
     externalSource: {
       wakeupShareLink: '',

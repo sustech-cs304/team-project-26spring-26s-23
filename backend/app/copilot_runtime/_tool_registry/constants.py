@@ -24,13 +24,6 @@ DEFAULT_TOOL_KIND = "builtin"
 DEFAULT_TOOL_AVAILABILITY = "available"
 DEFAULT_TOOL_CATALOG_LANGUAGE = "zh-CN"
 
-FILE_CONVERT_TOOL_ID = "tool.file-convert"
-FILE_CONVERT_TOOL_DISPLAY_NAME = "File Convert"
-FILE_CONVERT_TOOL_DESCRIPTION = "Convert DOCX, PDF, and PPTX files into text."
-FILE_CONVERT_TOOL_PROMPT = (
-    "Use this tool to convert DOCX, PDF, or PPTX files into plain text before analysis."
-)
-
 WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
 WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
 WEATHER_CURRENT_TOOL_DESCRIPTION = (
@@ -63,6 +56,64 @@ REQUEST_USER_FORM_TOOL_PROMPT = (
     "The submitted form will arrive as the user's next message so the conversation can continue. "
     "Write a short user-facing title and description that explain why the information is needed, use natural-language labels and concrete placeholders, mark only truly required fields as required, use select for choices from a fixed list, use checkbox only for a single boolean confirmation without options, and use text or textarea for open explanations. "
     "Do not request file uploads, secrets, passwords, or tokens, and do not expose protocol details such as form ids, field counts, JSON, or field type internals to the user."
+)
+
+BROWSER_OPEN_TOOL_ID = "browser.open"
+BROWSER_OPEN_TOOL_DISPLAY_NAME = "Browser Open"
+BROWSER_OPEN_TOOL_DESCRIPTION = "Open a URL in the desktop runtime browser window."
+BROWSER_OPEN_TOOL_PROMPT = (
+    "Use this tool to open a URL in the desktop runtime browser window and inspect the resulting page."
+)
+
+BROWSER_SCREENSHOT_TOOL_ID = "browser.screenshot"
+BROWSER_SCREENSHOT_TOOL_DISPLAY_NAME = "Browser Screenshot"
+BROWSER_SCREENSHOT_TOOL_DESCRIPTION = "Capture a screenshot from the desktop runtime browser window."
+BROWSER_SCREENSHOT_TOOL_PROMPT = (
+    "Use this tool to capture the current browser page as an artifact when visual inspection is needed."
+)
+
+BROWSER_LIST_TABS_TOOL_ID = "browser.list_tabs"
+BROWSER_LIST_TABS_TOOL_DISPLAY_NAME = "Browser List Tabs"
+BROWSER_LIST_TABS_TOOL_DESCRIPTION = "List all open browser tabs with their IDs, URLs, and titles."
+BROWSER_LIST_TABS_TOOL_PROMPT = (
+    "Use this tool to list all open browser tabs and inspect their state before switching or closing."
+)
+
+BROWSER_CLOSE_TAB_TOOL_ID = "browser.close_tab"
+BROWSER_CLOSE_TAB_TOOL_DISPLAY_NAME = "Browser Close Tab"
+BROWSER_CLOSE_TAB_TOOL_DESCRIPTION = "Close a browser tab by its ID. If no tabId is provided, closes the active tab."
+BROWSER_CLOSE_TAB_TOOL_PROMPT = (
+    "Use this tool to close a specific browser tab when it is no longer needed."
+)
+
+BROWSER_SWITCH_TAB_TOOL_ID = "browser.switch_tab"
+BROWSER_SWITCH_TAB_TOOL_DISPLAY_NAME = "Browser Switch Tab"
+BROWSER_SWITCH_TAB_TOOL_DESCRIPTION = "Switch to a specific browser tab by its ID, making it the active tab."
+BROWSER_SWITCH_TAB_TOOL_PROMPT = (
+    "Use this tool to switch the active browser tab before capturing a screenshot or inspecting its content."
+)
+
+BROWSER_EXECUTE_TOOL_ID = "browser.execute"
+BROWSER_EXECUTE_TOOL_DISPLAY_NAME = "Browser Execute"
+BROWSER_EXECUTE_TOOL_DESCRIPTION = "Execute JavaScript in the current browser page. Use for clicking elements, filling forms, extracting data, or performing DOM interactions."
+BROWSER_EXECUTE_TOOL_PROMPT = (
+    "Use this tool to execute JavaScript in the current browser page for interactions like clicking, filling forms, or extracting structured data. "
+    "Prefer using browser.snapshot first to understand the page structure and find interactive element references."
+)
+
+BROWSER_RESET_TOOL_ID = "browser.reset"
+BROWSER_RESET_TOOL_DISPLAY_NAME = "Browser Reset"
+BROWSER_RESET_TOOL_DESCRIPTION = "Close all open browser windows and clear the browser state."
+BROWSER_RESET_TOOL_PROMPT = (
+    "Use this tool to clean up all open browser tabs and reset the browser state after completing a web interaction session."
+)
+
+BROWSER_SNAPSHOT_TOOL_ID = "browser.snapshot"
+BROWSER_SNAPSHOT_TOOL_DISPLAY_NAME = "Browser Snapshot"
+BROWSER_SNAPSHOT_TOOL_DESCRIPTION = "Capture an accessibility snapshot of the current browser page. Returns a compact text representation with interactive elements annotated by reference IDs (e.g. [ref=@1])."
+BROWSER_SNAPSHOT_TOOL_PROMPT = (
+    "Use this tool to get a compact accessibility snapshot of the current browser page before interacting with it. "
+    "Interactive elements are annotated with ref IDs (e.g. [ref=@1, @2]) that can be targeted via browser.execute."
 )
 
 SKILL_ACTIVATE_TOOL_ID = "tool.skill-activate"
@@ -119,11 +170,6 @@ FILE_TOOL_SWITCH_ROOT_PROMPT = "Use this tool to validate a directory as the nex
 
 BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
     "zh-CN": {
-        FILE_CONVERT_TOOL_ID: {
-            "displayName": "文件转换",
-            "description": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
-            "prompt": "在分析前使用此工具将 DOCX、PDF 或 PPTX 文件转换为纯文本。",
-        },
         FILE_TOOL_READ_ID: {
             "displayName": "文件读取",
             "description": "按行分页读取工作区内 UTF-8 文本文件。",
@@ -174,6 +220,46 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
             "prompt": "当下一步依赖用户补充结构化信息，且表单比自然语言追问更清晰时，主动使用此工具。单字段表单也可以；多个相关字段更应合并为一个表单。表单提交后会作为用户下一条消息继续对话。标题和描述应面向用户并解释为何需要这些信息；字段标签使用自然语言，placeholder 给出具体示例，只把真正阻塞继续执行的字段标为必填；固定列表选项使用 select，checkbox 只用于单个布尔确认且不得携带 options，开放说明用 text 或 textarea。不要请求文件上传，也不要请求 secret、password、token 等敏感凭据；不要向用户暴露 form id、字段数量、JSON 或协议细节。",
         },
+        BROWSER_OPEN_TOOL_ID: {
+            "displayName": "浏览器打开",
+            "description": "在桌面运行时的浏览器窗口中打开一个 URL。",
+            "prompt": "使用此工具在桌面运行时的浏览器窗口中打开指定 URL，并检查页面结果。",
+        },
+        BROWSER_SCREENSHOT_TOOL_ID: {
+            "displayName": "浏览器截图",
+            "description": "从桌面运行时浏览器窗口捕获截图。",
+            "prompt": "当需要视觉检查时，使用此工具捕获当前浏览器页面为工件。",
+        },
+        BROWSER_LIST_TABS_TOOL_ID: {
+            "displayName": "列出浏览器标签页",
+            "description": "列出所有打开的浏览器标签页及其 ID、URL 和标题。",
+            "prompt": "使用此工具列出所有打开的浏览器标签页，以便在切换或关闭前检查当前状态。",
+        },
+        BROWSER_CLOSE_TAB_TOOL_ID: {
+            "displayName": "关闭浏览器标签页",
+            "description": "按标签页 ID 关闭指定浏览器标签页；不指定 ID 时关闭当前活动标签页。",
+            "prompt": "使用此工具关闭不再需要的浏览器标签页。",
+        },
+        BROWSER_SWITCH_TAB_TOOL_ID: {
+            "displayName": "切换浏览器标签页",
+            "description": "切换到指定 ID 的浏览器标签页，使其成为活动标签页。",
+            "prompt": "使用此工具切换活动浏览器标签页，再截图或检查其内容。",
+        },
+        BROWSER_EXECUTE_TOOL_ID: {
+            "displayName": "执行浏览器脚本",
+            "description": "在当前浏览器页面中执行 JavaScript，可用于点击、填表、提取数据或 DOM 交互。",
+            "prompt": "使用此工具在当前浏览器页面中执行 JavaScript 交互。建议先用 browser.snapshot 了解页面结构和交互元素引用。",
+        },
+        BROWSER_RESET_TOOL_ID: {
+            "displayName": "重置浏览器",
+            "description": "关闭所有打开的浏览器窗口并清除浏览器状态。",
+            "prompt": "使用此工具在完成网页交互会话后清理所有浏览器标签页及状态。",
+        },
+        BROWSER_SNAPSHOT_TOOL_ID: {
+            "displayName": "浏览器页面快照",
+            "description": "获取当前浏览器页面的可访问性快照，返回紧凑文本表示，交互元素带有编号引用标记（如 [ref=@1]）。",
+            "prompt": "使用此工具在与页面交互前获取紧凑的页面可访问性快照。交互元素以 ref 编号标记（如 [ref=@1, @2]），可用于 browser.execute 精确操控。",
+        },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": "Skill 激活",
             "description": "读取已启用 Skill 的 SKILL.md 入口说明和资源摘要。",
@@ -186,11 +272,6 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
         },
     },
     "en-US": {
-        FILE_CONVERT_TOOL_ID: {
-            "displayName": FILE_CONVERT_TOOL_DISPLAY_NAME,
-            "description": FILE_CONVERT_TOOL_DESCRIPTION,
-            "prompt": FILE_CONVERT_TOOL_PROMPT,
-        },
         FILE_TOOL_READ_ID: {
             "displayName": FILE_TOOL_READ_DISPLAY_NAME,
             "description": FILE_TOOL_READ_DESCRIPTION,
@@ -240,6 +321,46 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "displayName": REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
             "description": REQUEST_USER_FORM_TOOL_DESCRIPTION,
             "prompt": REQUEST_USER_FORM_TOOL_PROMPT,
+        },
+        BROWSER_OPEN_TOOL_ID: {
+            "displayName": BROWSER_OPEN_TOOL_DISPLAY_NAME,
+            "description": BROWSER_OPEN_TOOL_DESCRIPTION,
+            "prompt": BROWSER_OPEN_TOOL_PROMPT,
+        },
+        BROWSER_SCREENSHOT_TOOL_ID: {
+            "displayName": BROWSER_SCREENSHOT_TOOL_DISPLAY_NAME,
+            "description": BROWSER_SCREENSHOT_TOOL_DESCRIPTION,
+            "prompt": BROWSER_SCREENSHOT_TOOL_PROMPT,
+        },
+        BROWSER_LIST_TABS_TOOL_ID: {
+            "displayName": BROWSER_LIST_TABS_TOOL_DISPLAY_NAME,
+            "description": BROWSER_LIST_TABS_TOOL_DESCRIPTION,
+            "prompt": BROWSER_LIST_TABS_TOOL_PROMPT,
+        },
+        BROWSER_CLOSE_TAB_TOOL_ID: {
+            "displayName": BROWSER_CLOSE_TAB_TOOL_DISPLAY_NAME,
+            "description": BROWSER_CLOSE_TAB_TOOL_DESCRIPTION,
+            "prompt": BROWSER_CLOSE_TAB_TOOL_PROMPT,
+        },
+        BROWSER_SWITCH_TAB_TOOL_ID: {
+            "displayName": BROWSER_SWITCH_TAB_TOOL_DISPLAY_NAME,
+            "description": BROWSER_SWITCH_TAB_TOOL_DESCRIPTION,
+            "prompt": BROWSER_SWITCH_TAB_TOOL_PROMPT,
+        },
+        BROWSER_EXECUTE_TOOL_ID: {
+            "displayName": BROWSER_EXECUTE_TOOL_DISPLAY_NAME,
+            "description": BROWSER_EXECUTE_TOOL_DESCRIPTION,
+            "prompt": BROWSER_EXECUTE_TOOL_PROMPT,
+        },
+        BROWSER_RESET_TOOL_ID: {
+            "displayName": BROWSER_RESET_TOOL_DISPLAY_NAME,
+            "description": BROWSER_RESET_TOOL_DESCRIPTION,
+            "prompt": BROWSER_RESET_TOOL_PROMPT,
+        },
+        BROWSER_SNAPSHOT_TOOL_ID: {
+            "displayName": BROWSER_SNAPSHOT_TOOL_DISPLAY_NAME,
+            "description": BROWSER_SNAPSHOT_TOOL_DESCRIPTION,
+            "prompt": BROWSER_SNAPSHOT_TOOL_PROMPT,
         },
         SKILL_ACTIVATE_TOOL_ID: {
             "displayName": SKILL_ACTIVATE_TOOL_DISPLAY_NAME,

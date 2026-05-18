@@ -305,7 +305,7 @@ def test_resolve_tool_approval_calls_coordinator_and_builds_response() -> None:
         approval_coordinator.create_request(
             run_id="run-approve",
             tool_call_id="call-approve",
-            tool_id="tool.file-convert",
+            tool_id="tool.fs.read",
             mode="ask",
         )
 
@@ -325,7 +325,7 @@ def test_resolve_tool_approval_calls_coordinator_and_builds_response() -> None:
     assert payload["status"] == "approved"
     assert payload["source"] == "manual"
     assert payload["details"] == {
-        "toolId": "tool.file-convert",
+        "toolId": "tool.fs.read",
         "mode": "ask",
     }
     assert payload["resolvedAt"]
@@ -731,13 +731,13 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
     assert capabilities.sessionId == thread.thread_id
     assert capabilities.boundAgent.agentId == "default"
     assert capabilities.toolSelectionMode == "recommendation-only"
-    assert capabilities.recommendedTools == ("tool.file-convert",)
+    assert capabilities.recommendedTools == ("tool.fs.read",)
     assert capabilities.capabilitiesVersion == "capabilities:agents-v1:tools-v1"
     tool_ids = {tool.toolId for tool in capabilities.tools}
-    assert "tool.file-convert" in tool_ids
+    assert "tool.fs.read" in tool_ids
     assert any(
-        tool.toolId == "tool.file-convert"
-        and tool.displayName in {"File Convert", "文件转换"}
+        tool.toolId == "tool.fs.read"
+        and tool.displayName in {"File Read", "文件读取"}
         for tool in capabilities.tools
     )
 

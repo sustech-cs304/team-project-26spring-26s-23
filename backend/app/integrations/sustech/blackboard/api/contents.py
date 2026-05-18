@@ -211,6 +211,15 @@ class BlackboardContentAPI:
             if soup is None:
                 continue
 
+            self._collect_inline_content_item_resources(
+                soup,
+                page_url,
+                course_id=course_id,
+                parent_resource_id=parent_resource_id,
+                resources=resources,
+                seen_download_urls=seen_download_urls,
+            )
+
             links = list(soup.find_all("a", href=True))
             self._collect_page_file_resources(
                 links,
@@ -245,6 +254,105 @@ class BlackboardContentAPI:
             return None
 
         return BeautifulSoup(response.text, "html.parser")
+
+    def _collect_inline_content_item_resources(
+        self,
+        soup: BeautifulSoup,
+        page_url: str,
+        *,
+        course_id: str,
+        parent_resource_id: str | None,
+        resources: list[ResourceDTO],
+        seen_download_urls: set[str],
+    ) -> None:
+        """解析 listContent 页内的内容块容器及其附件。"""
+        for content_item in soup.select(
+            "#content_listContainer > li[id^='contentListItem:']"
+        ):
+            if not isinstance(content_item, Tag):
+                continue
+
+            item_parent_id = parent_resource_id
+            folder = self._extract_inline_content_item_folder(
+                content_item,
+                page_url,
+                course_id=course_id,
+                parent_resource_id=parent_resource_id,
+            )
+            if folder is not None and self._is_collectable_resource(folder):
+                folder_url = str(folder.url or "").strip()
+                folder_id = str(folder.resource_id or "").strip()
+                folder_already_collected = bool(folder_id) and any(
+                    str(item.resource_id or "").strip() == folder_id
+                    for item in resources
+                )
+                if (
+                    folder_url
+                    and folder_url not in seen_download_urls
+                    and not folder_already_collected
+                ):
+                    seen_download_urls.add(folder_url)
+                    resources.append(folder)
+                if folder_id:
+                    item_parent_id = folder_id
+
+            attachment_links = [
+                link
+                for link in content_item.select("ul.attachments a[href]")
+                if isinstance(link, Tag)
+            ]
+            if not attachment_links:
+                continue
+
+            self._collect_page_file_resources(
+                attachment_links,
+                page_url,
+                course_id=course_id,
+                parent_resource_id=item_parent_id,
+                resources=resources,
+                seen_download_urls=seen_download_urls,
+            )
+
+    def _extract_inline_content_item_folder(
+        self,
+        content_item: Tag,
+        page_url: str,
+        *,
+        course_id: str,
+        parent_resource_id: str | None,
+    ) -> ResourceDTO | None:
+        """将 listContent 页面内的内容块解析为逻辑 folder。"""
+        attachment_links = content_item.select("ul.attachments a[href]")
+        if not attachment_links:
+            return None
+
+        raw_item_id = str(content_item.get("id") or "").strip()
+        if not raw_item_id.startswith("contentListItem:"):
+            return None
+
+        title_tag = content_item.select_one("div.item h3")
+        name = clean_field(
+            title_tag.get_text(" ", strip=True) if isinstance(title_tag, Tag) else "",
+            max_length=180,
+        )
+        if not name or is_navigation_noise(name):
+            return None
+
+        content_id = raw_item_id.split(":", 1)[1].strip()
+        normalized_page_url = urlparse(page_url)._replace(fragment="").geturl()
+        container_url = f"{normalized_page_url}#{raw_item_id}"
+
+        return ResourceDTO(
+            resource_id=content_id
+            or stable_resource_id(course_id, name, container_url),
+            course_id=course_id,
+            title=name,
+            url=container_url,
+            type="folder",
+            size="",
+            source_page=page_url,
+            parent_id=parent_resource_id,
+        )
 
     def _collect_page_file_resources(
         self,
@@ -283,6 +391,7 @@ class BlackboardContentAPI:
             {
                 "name": resource.title,
                 "download_url": resource.url,
+                "type": resource.type,
             },
             logger=self.context.logger.child("api.scrape_support.resources")
             if self.context.logger is not None
@@ -313,6 +422,9 @@ class BlackboardContentAPI:
             if container is None:
                 continue
 
+            if not self._is_collectable_resource(container):
+                continue
+
             child_url = str(container.url or "").strip()
             child_resource_id = str(container.resource_id or "").strip()
             if not child_url or not child_resource_id:
@@ -322,7 +434,17 @@ class BlackboardContentAPI:
                 seen_download_urls.add(child_url)
                 resources.append(container)
 
-            if child_url in visited or child_url in queued_urls:
+            if child_url in visited:
+                continue
+
+            if child_url in queued_urls:
+                for index, (queued_url, queued_parent_id) in enumerate(queue):
+                    if queued_url != child_url:
+                        continue
+                    if queued_parent_id:
+                        break
+                    queue[index] = (queued_url, child_resource_id)
+                    break
                 continue
 
             queue.append((child_url, child_resource_id))
@@ -334,8 +456,19 @@ class BlackboardContentAPI:
         for resource in resources:
             old_id = str(resource.resource_id or "").strip()
             download_url = str(resource.url or "").strip()
-            ids = self.context.extract_ids(download_url)
-            real_id = ids.get("xid") or ids.get("rid") or ids.get("content_id")
+            real_id: str | None = None
+
+            if str(resource.type or "").strip().lower() == "folder":
+                parsed = urlparse(download_url)
+                fragment_match = re.search(
+                    r"contentListItem:(_\d+_\d+)", str(parsed.fragment)
+                )
+                if fragment_match:
+                    real_id = fragment_match.group(1)
+
+            if not real_id:
+                ids = self.context.extract_ids(download_url)
+                real_id = ids.get("xid") or ids.get("rid") or ids.get("content_id")
             if not real_id:
                 continue
 

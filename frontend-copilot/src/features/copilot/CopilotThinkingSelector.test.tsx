@@ -32,689 +32,718 @@ import type {
   RuntimeThinkingLevel,
 } from './thread-run-contract'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_COMPAT_DISCRETE_LEVELS = 'compat-discrete-levels-v1'
+const LABEL_COMPAT_OFF_AUTO = 'compat-off-auto-v1'
+const SELECTOR_CHAT_THINKING_BUDGET = 'chat-thinking-budget-input'
+const SELECTOR_CHAT_THINKING_EDITOR = 'chat-thinking-editor-discrete'
+const SELECTOR_CHAT_THINKING_EDITOR_2 = 'chat-thinking-editor-budget'
+const SELECTOR_CHAT_THINKING_TRIGGER = 'chat-thinking-trigger'
+
+
 declare global {
   // eslint-disable-next-line no-var
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
 }
 
+// 顶层集成测试 describe，包含 6+ 子 describe，覆盖 thinking selector 全场景，无法安全拆分
+/* eslint-disable-next-line max-lines-per-function */
 describe('Copilot thinking selector', () => {
-  it('uses backend canonical capability instead of local model declaration as chat control truth', async () => {
-    const backendBudgetCapability = createBudgetCapability()
-    const getThinkingCapability = vi.fn(async (input: {
-      sessionId: string
-      thinkingCapabilityOverride?: Record<string, unknown> | null
-    }) => ({
-      ok: true as const,
-      sessionId: input.sessionId,
-      capability: backendBudgetCapability,
-    }))
-    const loadWorkspaceState = createLoadWorkspaceState([
-      createProviderProfile({
-        id: 'provider-truth',
-        name: 'Truth Provider',
-        availableModels: [
-          {
-            id: 'provider-truth:truth-model',
-            modelId: 'truth-model',
-            displayName: 'Truth Model',
-            groupName: 'Truth',
-            capabilities: ['reasoning', 'tools'] as ModelCapability[],
-            thinkingCapability: {
-              supported: true,
-              series: 'compat-discrete-levels-v1',
-              input: {
-                kind: 'discrete',
-                levels: ['low', 'medium', 'high'],
+  describe('backend canonical capability', () => {
+    it('uses backend canonical capability instead of local model declaration as chat control truth', async () => {
+      const backendBudgetCapability = createBudgetCapability()
+      const getThinkingCapability = vi.fn(async (input: {
+        sessionId: string
+        thinkingCapabilityOverride?: Record<string, unknown> | null
+      }) => ({
+        ok: true as const,
+        sessionId: input.sessionId,
+        capability: backendBudgetCapability,
+      }))
+      const loadWorkspaceState = createLoadWorkspaceState([
+        createProviderProfile({
+          id: 'provider-truth',
+          name: 'Truth Provider',
+          availableModels: [
+            {
+              id: 'provider-truth:truth-model',
+              modelId: 'truth-model',
+              displayName: 'Truth Model',
+              groupName: 'Truth',
+              capabilities: ['reasoning', 'tools'] as ModelCapability[],
+              thinkingCapability: {
+                supported: true,
+                series: LABEL_COMPAT_DISCRETE_LEVELS,
+                input: {
+                  kind: 'discrete',
+                  levels: ['low', 'medium', 'high'],
+                },
+                defaultSelection: {
+                  mode: 'preset',
+                  level: 'low',
+                },
               },
-              defaultSelection: {
-                mode: 'preset',
-                level: 'low',
-              },
+              supportsStreaming: true,
+              currency: 'usd',
+              inputPrice: '1',
+              outputPrice: '2',
             },
-            supportsStreaming: true,
-            currency: 'usd',
-            inputPrice: '1',
-            outputPrice: '2',
-          },
-        ],
-      }),
-    ], 'truth-model')
+          ],
+        }),
+      ], 'truth-model')
 
-    const rendered = renderThinkingPanel({
-      getThinkingCapability,
-      loadWorkspaceState,
-      sessionModelPreference: 'truth-model',
+      const rendered = renderThinkingPanel({
+        getThinkingCapability,
+        loadWorkspaceState,
+        sessionModelPreference: 'truth-model',
+      })
+
+      await flushUi()
+      await flushUi()
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+
+      expect(getThinkingCapability).toHaveBeenCalledWith(expect.objectContaining({
+        thinkingCapabilityOverride: expect.objectContaining({
+          supported: true,
+          series: LABEL_COMPAT_DISCRETE_LEVELS,
+          template: expect.objectContaining({
+            editorType: 'discrete',
+            defaultValue: {
+              valueType: 'code',
+              code: 'low',
+              labelZh: '低',
+            },
+          }),
+        }),
+      }))
+      expect(rendered.getByTestId(SELECTOR_CHAT_THINKING_EDITOR_2)).not.toBeNull()
+      expect(rendered.queryByTestId(SELECTOR_CHAT_THINKING_EDITOR)).toBeNull()
+
+      rendered.unmount()
     })
+  })
 
-    await flushUi()
-    await flushUi()
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-
-    expect(getThinkingCapability).toHaveBeenCalledWith(expect.objectContaining({
-      thinkingCapabilityOverride: expect.objectContaining({
-        supported: true,
-        series: 'compat-discrete-levels-v1',
-        template: expect.objectContaining({
-          editorType: 'discrete',
-          defaultValue: {
-            valueType: 'code',
-            code: 'low',
-            labelZh: '低',
+  describe('runtime capability verification', () => {
+    it('relies on runtime capability results instead of frontend built-in rules for chat thinking availability', async () => {
+      const getThinkingCapability = vi.fn(async (input: {
+        runtimeUrl: string
+        sessionId: string
+        modelRoute: {
+          routeRef?: {
+            modelId: string
+          } | null
+        }
+      }) => ({
+        ok: true as const,
+        sessionId: input.sessionId,
+        capability: createRuntimeThinkingCapability({
+          status: 'unknown-without-override',
+          source: 'unknown',
+          supported: false,
+          supportedLevels: [],
+          defaultLevel: null,
+          reasonCode: 'route_not_verified',
+          providerHint: 'runtime-truth-only',
+          overrideLevels: [],
+        }),
+      }))
+      const loadWorkspaceState = vi.fn(async () => ({
+        ok: true as const,
+        source: 'stored' as const,
+        state: createPersistedWorkspaceState({
+          providerProfiles: [
+            createProviderProfile({
+              id: 'provider-runtime-truth',
+              name: 'Runtime Truth Provider',
+              endpoint: 'https://api.z.ai/api/paas/v4',
+              primaryModelId: 'glm-5-turbo',
+              availableModels: [
+                {
+                  id: 'provider-runtime-truth:glm-5-turbo',
+                  modelId: 'glm-5-turbo',
+                  displayName: 'GLM 5 Turbo',
+                  groupName: 'RuntimeTruth',
+                  capabilities: ['reasoning', 'tools'],
+                  supportsStreaming: true,
+                  currency: 'usd',
+                  inputPrice: '1',
+                  outputPrice: '2',
+                },
+              ],
+            }),
+          ],
+          defaultModelRouting: {
+            primaryAssistantModel: 'glm-5-turbo',
           },
         }),
-      }),
-    }))
-    expect(rendered.getByTestId('chat-thinking-editor-budget')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-thinking-editor-discrete')).toBeNull()
+      }))
 
-    rendered.unmount()
-  })
+      const rendered = renderWithRoot(
+        <CopilotChatPanel
+          state={createReadyState()}
+          retrying={false}
+          retry={() => undefined}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={createSessionShell()}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          loadWorkspaceState={loadWorkspaceState}
+          getThinkingCapability={getThinkingCapability}
+        />,
+      )
 
-  it('relies on runtime capability results instead of frontend built-in rules for chat thinking availability', async () => {
-    const getThinkingCapability = vi.fn(async (input: {
-      runtimeUrl: string
-      sessionId: string
-      modelRoute: {
-        routeRef?: {
-          modelId: string
-        } | null
-      }
-    }) => ({
-      ok: true as const,
-      sessionId: input.sessionId,
-      capability: createRuntimeThinkingCapability({
-        status: 'unknown-without-override',
-        source: 'unknown',
-        supported: false,
-        supportedLevels: [],
-        defaultLevel: null,
-        reasonCode: 'route_not_verified',
-        providerHint: 'runtime-truth-only',
-        overrideLevels: [],
-      }),
-    }))
-    const loadWorkspaceState = vi.fn(async () => ({
-      ok: true as const,
-      source: 'stored' as const,
-      state: createPersistedWorkspaceState({
-        providerProfiles: [
-          createProviderProfile({
-            id: 'provider-runtime-truth',
-            name: 'Runtime Truth Provider',
-            endpoint: 'https://api.z.ai/api/paas/v4',
-            primaryModelId: 'glm-5-turbo',
-            availableModels: [
-              {
-                id: 'provider-runtime-truth:glm-5-turbo',
-                modelId: 'glm-5-turbo',
-                displayName: 'GLM 5 Turbo',
-                groupName: 'RuntimeTruth',
-                capabilities: ['reasoning', 'tools'],
-                supportsStreaming: true,
-                currency: 'usd',
-                inputPrice: '1',
-                outputPrice: '2',
-              },
-            ],
-          }),
-        ],
-        defaultModelRouting: {
-          primaryAssistantModel: 'glm-5-turbo',
-        },
-      }),
-    }))
+      await flushUi()
+      await flushUi()
 
-    const rendered = renderWithRoot(
-      <CopilotChatPanel
-        state={createReadyState()}
-        retrying={false}
-        retry={() => undefined}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell()}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        loadWorkspaceState={loadWorkspaceState}
-        getThinkingCapability={getThinkingCapability}
-      />,
-    )
+      const thinkingTrigger = rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER) as HTMLButtonElement
+      expect(getThinkingCapability).toHaveBeenCalledTimes(1)
+      expect(thinkingTrigger.title).toBe('当前模型暂不支持思考设置')
+      expect(thinkingTrigger.getAttribute('aria-label')).toBe('当前模型暂不支持思考设置')
+      expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
 
-    await flushUi()
-    await flushUi()
+      await clickElement(thinkingTrigger)
+      expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
 
-    const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
-    expect(getThinkingCapability).toHaveBeenCalledTimes(1)
-    expect(thinkingTrigger.title).toBe('当前模型暂不支持思考设置')
-    expect(thinkingTrigger.getAttribute('aria-label')).toBe('当前模型暂不支持思考设置')
-    expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
-
-    await clickElement(thinkingTrigger)
-    expect(rendered.queryByTestId('chat-thinking-panel')).toBeNull()
-
-    rendered.unmount()
-  })
-
-  it('renders fixed capability as a locked control instead of normal discrete buttons', async () => {
-    const getThinkingCapability = createThinkingCapabilityGetter({
-      'fixed-model': createPresetCapability({
-        series: 'compat-fixed-reasoning-v1',
-        kind: 'fixed',
-        levels: ['auto'],
-        defaultLevel: 'auto',
-      }),
+      rendered.unmount()
     })
-    const loadWorkspaceState = createLoadWorkspaceState([
-      createProviderProfile({
-        id: 'provider-fixed',
-        name: 'Fixed Provider',
-        availableModels: [
-          createReasoningModel({
-            id: 'provider-fixed:fixed-model',
-            modelId: 'fixed-model',
-            displayName: 'Fixed Model',
-          }),
-        ],
-      }),
-    ], 'fixed-model')
+  })
 
-    const rendered = renderThinkingPanel({
-      getThinkingCapability,
-      loadWorkspaceState,
-      sessionModelPreference: 'fixed-model',
+  // 包含 3 个 thinking control 渲染测试，需共享复杂 capability 配置
+  /* eslint-disable-next-line max-lines-per-function */
+  describe('control type rendering', () => {
+    it('renders fixed capability as a locked control instead of normal discrete buttons', async () => {
+      const getThinkingCapability = createThinkingCapabilityGetter({
+        'fixed-model': createPresetCapability({
+          series: 'compat-fixed-reasoning-v1',
+          kind: 'fixed',
+          levels: ['auto'],
+          defaultLevel: 'auto',
+        }),
+      })
+      const loadWorkspaceState = createLoadWorkspaceState([
+        createProviderProfile({
+          id: 'provider-fixed',
+          name: 'Fixed Provider',
+          availableModels: [
+            createReasoningModel({
+              id: 'provider-fixed:fixed-model',
+              modelId: 'fixed-model',
+              displayName: 'Fixed Model',
+            }),
+          ],
+        }),
+      ], 'fixed-model')
+
+      const rendered = renderThinkingPanel({
+        getThinkingCapability,
+        loadWorkspaceState,
+        sessionModelPreference: 'fixed-model',
+      })
+
+      await flushUi()
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+
+      expect(rendered.getByTestId('chat-thinking-editor-fixed')).not.toBeNull()
+      expect(rendered.getByTestId('chat-thinking-fixed-lock').textContent).toContain('锁定')
+      expect(rendered.queryByTestId(SELECTOR_CHAT_THINKING_EDITOR)).toBeNull()
+
+      rendered.unmount()
     })
 
-    await flushUi()
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
+    it('renders binary, off-auto, discrete and budget controls from backend control spec', async () => {
+      const getThinkingCapability = createThinkingCapabilityGetter({
+        'binary-model': createPresetCapability({
+          series: 'compat-binary-toggle-v1',
+          kind: 'binary',
+          levels: ['off', 'high'],
+          defaultLevel: 'high',
+        }),
+        'off-auto-model': createPresetCapability({
+          series: LABEL_COMPAT_OFF_AUTO,
+          kind: 'off-auto',
+          levels: ['off', 'auto'],
+          defaultLevel: 'auto',
+        }),
+        'discrete-model': createPresetCapability({
+          series: LABEL_COMPAT_DISCRETE_LEVELS,
+          kind: 'discrete',
+          levels: ['off', 'auto', 'medium', 'high'],
+          defaultLevel: 'medium',
+        }),
+        'budget-model': createBudgetCapability(),
+      })
+      const providerId = 'provider-kinds'
+      const loadWorkspaceState = createLoadWorkspaceState([
+        createProviderProfile({
+          id: providerId,
+          name: 'Kinds Provider',
+          availableModels: [
+            createReasoningModel({
+              id: `${providerId}:binary-model`,
+              modelId: 'binary-model',
+              displayName: 'Binary Model',
+            }),
+            createReasoningModel({
+              id: `${providerId}:off-auto-model`,
+              modelId: 'off-auto-model',
+              displayName: 'Off Auto Model',
+            }),
+            createReasoningModel({
+              id: `${providerId}:discrete-model`,
+              modelId: 'discrete-model',
+              displayName: 'Discrete Model',
+            }),
+            createReasoningModel({
+              id: `${providerId}:budget-model`,
+              modelId: 'budget-model',
+              displayName: 'Budget Model',
+            }),
+          ],
+        }),
+      ], 'binary-model')
 
-    expect(rendered.getByTestId('chat-thinking-editor-fixed')).not.toBeNull()
-    expect(rendered.getByTestId('chat-thinking-fixed-lock').textContent).toContain('锁定')
-    expect(rendered.queryByTestId('chat-thinking-editor-discrete')).toBeNull()
+      const rendered = renderThinkingPanel({
+        getThinkingCapability,
+        loadWorkspaceState,
+        sessionModelPreference: 'binary-model',
+      })
 
-    rendered.unmount()
+      await flushUi()
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+      expect(rendered.getByTestId(SELECTOR_CHAT_THINKING_EDITOR)).not.toBeNull()
+      expect(rendered.getByTestId('chat-thinking-option-off').textContent).toContain('无')
+      expect(rendered.getByTestId('chat-thinking-option-high').textContent).toContain('高')
+
+      await selectModel(rendered, providerId, `${providerId}:off-auto-model`)
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+      expect(rendered.getByTestId(SELECTOR_CHAT_THINKING_EDITOR)).not.toBeNull()
+      expect(rendered.getByTestId('chat-thinking-option-auto').textContent).toContain('自动')
+
+      await selectModel(rendered, providerId, `${providerId}:discrete-model`)
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+      expect(rendered.getByTestId(SELECTOR_CHAT_THINKING_EDITOR)).not.toBeNull()
+      expect(rendered.getByTestId('chat-thinking-option-medium').textContent).toContain('中')
+      expect(rendered.getByTestId('chat-thinking-option-high').textContent).toContain('高')
+
+      await selectModel(rendered, providerId, `${providerId}:budget-model`)
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+      expect(rendered.getByTestId(SELECTOR_CHAT_THINKING_EDITOR_2)).not.toBeNull()
+      expect(rendered.getByTestId(SELECTOR_CHAT_THINKING_BUDGET)).not.toBeNull()
+
+      rendered.unmount()
+    })
+
+    it('hides the budget button when the capability does not expose exact budget selection', async () => {
+      const getThinkingCapability = createThinkingCapabilityGetter({
+        'dynamic-only-model': createBudgetCapability({
+          controlSpec: createRuntimeThinkingControlSpec({
+            kind: 'budget',
+            selectionKind: 'budget',
+            presetOptions: [createRuntimeCanonicalThinkingSelection({ value: 'off' })],
+            budget: null,
+          }),
+          allowedValues: [
+            { valueType: 'budget', mode: 'off', budgetTokens: null, labelZh: '关闭' },
+            { valueType: 'budget', mode: 'dynamic', budgetTokens: null, labelZh: '动态' },
+          ],
+          defaultValue: {
+            valueType: 'budget',
+            mode: 'dynamic',
+            budgetTokens: null,
+            labelZh: '动态',
+          },
+        }),
+      })
+      const providerId = 'provider-no-exact-budget'
+      const loadWorkspaceState = createLoadWorkspaceState([
+        createProviderProfile({
+          id: providerId,
+          name: 'No Exact Budget Provider',
+          availableModels: [
+            createReasoningModel({
+              id: `${providerId}:dynamic-only-model`,
+              modelId: 'dynamic-only-model',
+              displayName: 'Dynamic Only Model',
+            }),
+          ],
+        }),
+      ], 'dynamic-only-model')
+
+      const rendered = renderThinkingPanel({
+        getThinkingCapability,
+        loadWorkspaceState,
+        sessionModelPreference: 'dynamic-only-model',
+      })
+
+      await flushUi()
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+
+      expect(rendered.getByTestId(SELECTOR_CHAT_THINKING_EDITOR_2)).not.toBeNull()
+      expect(rendered.queryByTestId('chat-thinking-budget-mode-budget')).toBeNull()
+      expect(rendered.queryByTestId(SELECTOR_CHAT_THINKING_BUDGET)).toBeNull()
+
+      rendered.unmount()
+    })
   })
 
-  it('renders binary, off-auto, discrete and budget controls from backend control spec', async () => {
-    const getThinkingCapability = createThinkingCapabilityGetter({
-      'binary-model': createPresetCapability({
-        series: 'compat-binary-toggle-v1',
-        kind: 'binary',
-        levels: ['off', 'high'],
-        defaultLevel: 'high',
-      }),
-      'off-auto-model': createPresetCapability({
-        series: 'compat-off-auto-v1',
+  // 包含 2 个 override/memory 相关测试，覆盖 capability 覆盖与模型记忆
+  /* eslint-disable-next-line max-lines-per-function */
+  describe('override and memory', () => {
+    it('shows a lightweight override source badge for unknown plus override capability', async () => {
+      const overrideCapability = createPresetCapability({
+        status: 'unknown-with-override',
+        source: 'override',
+        series: LABEL_COMPAT_OFF_AUTO,
         kind: 'off-auto',
         levels: ['off', 'auto'],
         defaultLevel: 'auto',
-      }),
-      'discrete-model': createPresetCapability({
-        series: 'compat-discrete-levels-v1',
-        kind: 'discrete',
-        levels: ['off', 'auto', 'medium', 'high'],
-        defaultLevel: 'medium',
-      }),
-      'budget-model': createBudgetCapability(),
-    })
-    const providerId = 'provider-kinds'
-    const loadWorkspaceState = createLoadWorkspaceState([
-      createProviderProfile({
-        id: providerId,
-        name: 'Kinds Provider',
-        availableModels: [
-          createReasoningModel({
-            id: `${providerId}:binary-model`,
-            modelId: 'binary-model',
-            displayName: 'Binary Model',
-          }),
-          createReasoningModel({
-            id: `${providerId}:off-auto-model`,
-            modelId: 'off-auto-model',
-            displayName: 'Off Auto Model',
-          }),
-          createReasoningModel({
-            id: `${providerId}:discrete-model`,
-            modelId: 'discrete-model',
-            displayName: 'Discrete Model',
-          }),
-          createReasoningModel({
-            id: `${providerId}:budget-model`,
-            modelId: 'budget-model',
-            displayName: 'Budget Model',
-          }),
-        ],
-      }),
-    ], 'binary-model')
-
-    const rendered = renderThinkingPanel({
-      getThinkingCapability,
-      loadWorkspaceState,
-      sessionModelPreference: 'binary-model',
-    })
-
-    await flushUi()
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
-    expect(rendered.getByTestId('chat-thinking-option-off').textContent).toContain('无')
-    expect(rendered.getByTestId('chat-thinking-option-high').textContent).toContain('高')
-
-    await selectModel(rendered, providerId, `${providerId}:off-auto-model`)
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
-    expect(rendered.getByTestId('chat-thinking-option-auto').textContent).toContain('自动')
-
-    await selectModel(rendered, providerId, `${providerId}:discrete-model`)
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
-    expect(rendered.getByTestId('chat-thinking-option-medium').textContent).toContain('中')
-    expect(rendered.getByTestId('chat-thinking-option-high').textContent).toContain('高')
-
-    await selectModel(rendered, providerId, `${providerId}:budget-model`)
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-editor-budget')).not.toBeNull()
-    expect(rendered.getByTestId('chat-thinking-budget-input')).not.toBeNull()
-
-    rendered.unmount()
-  })
-
-  it('hides the budget button when the capability does not expose exact budget selection', async () => {
-    const getThinkingCapability = createThinkingCapabilityGetter({
-      'dynamic-only-model': createBudgetCapability({
-        controlSpec: createRuntimeThinkingControlSpec({
-          kind: 'budget',
-          selectionKind: 'budget',
-          presetOptions: [createRuntimeCanonicalThinkingSelection({ value: 'off' })],
-          budget: null,
-        }),
-        allowedValues: [
-          { valueType: 'budget', mode: 'off', budgetTokens: null, labelZh: '关闭' },
-          { valueType: 'budget', mode: 'dynamic', budgetTokens: null, labelZh: '动态' },
-        ],
-        defaultValue: {
-          valueType: 'budget',
-          mode: 'dynamic',
-          budgetTokens: null,
-          labelZh: '动态',
+        overrideLevels: ['off', 'auto'],
+        provenance: {
+          routeStatus: 'unknown',
+          override: {
+            present: true,
+            applied: true,
+            source: 'settings-model',
+            format: 'series-input',
+          },
         },
-      }),
-    })
-    const providerId = 'provider-no-exact-budget'
-    const loadWorkspaceState = createLoadWorkspaceState([
-      createProviderProfile({
-        id: providerId,
-        name: 'No Exact Budget Provider',
-        availableModels: [
-          createReasoningModel({
-            id: `${providerId}:dynamic-only-model`,
-            modelId: 'dynamic-only-model',
-            displayName: 'Dynamic Only Model',
-          }),
-        ],
-      }),
-    ], 'dynamic-only-model')
-
-    const rendered = renderThinkingPanel({
-      getThinkingCapability,
-      loadWorkspaceState,
-      sessionModelPreference: 'dynamic-only-model',
-    })
-
-    await flushUi()
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-
-    expect(rendered.getByTestId('chat-thinking-editor-budget')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-thinking-budget-mode-budget')).toBeNull()
-    expect(rendered.queryByTestId('chat-thinking-budget-input')).toBeNull()
-
-    rendered.unmount()
-  })
-
-  it('shows a lightweight override source badge for unknown plus override capability', async () => {
-    const overrideCapability = createPresetCapability({
-      status: 'unknown-with-override',
-      source: 'override',
-      series: 'compat-off-auto-v1',
-      kind: 'off-auto',
-      levels: ['off', 'auto'],
-      defaultLevel: 'auto',
-      overrideLevels: ['off', 'auto'],
-      provenance: {
-        routeStatus: 'unknown',
-        override: {
-          present: true,
-          applied: true,
-          source: 'settings-model',
-          format: 'series-input',
-        },
-      },
-    })
-    const getThinkingCapability = vi.fn(async (input: {
-      sessionId: string
-      thinkingCapabilityOverride?: Record<string, unknown> | null
-    }) => ({
-      ok: true as const,
-      sessionId: input.sessionId,
-      capability: overrideCapability,
-    }))
-    const loadWorkspaceState = createLoadWorkspaceState([
-      createProviderProfile({
-        id: 'provider-override',
-        name: 'Override Provider',
-        availableModels: [
-          {
-            ...createReasoningModel({
-              id: 'provider-override:unknown-route-model',
-              modelId: 'unknown-route-model',
-              displayName: 'Unknown Route Model',
-            }),
-            thinkingCapability: {
-              supported: true,
-              series: 'compat-off-auto-v1',
-              input: {
-                kind: 'off-auto',
-              },
-              defaultSelection: {
-                mode: 'preset',
-                level: 'auto',
+      })
+      const getThinkingCapability = vi.fn(async (input: {
+        sessionId: string
+        thinkingCapabilityOverride?: Record<string, unknown> | null
+      }) => ({
+        ok: true as const,
+        sessionId: input.sessionId,
+        capability: overrideCapability,
+      }))
+      const loadWorkspaceState = createLoadWorkspaceState([
+        createProviderProfile({
+          id: 'provider-override',
+          name: 'Override Provider',
+          availableModels: [
+            {
+              ...createReasoningModel({
+                id: 'provider-override:unknown-route-model',
+                modelId: 'unknown-route-model',
+                displayName: 'Unknown Route Model',
+              }),
+              thinkingCapability: {
+                supported: true,
+                series: LABEL_COMPAT_OFF_AUTO,
+                input: {
+                  kind: 'off-auto',
+                },
+                defaultSelection: {
+                  mode: 'preset',
+                  level: 'auto',
+                },
               },
             },
-          },
-        ],
-      }),
-    ], 'unknown-route-model')
+          ],
+        }),
+      ], 'unknown-route-model')
 
-    const rendered = renderThinkingPanel({
-      getThinkingCapability,
-      loadWorkspaceState,
-      sessionModelPreference: 'unknown-route-model',
+      const rendered = renderThinkingPanel({
+        getThinkingCapability,
+        loadWorkspaceState,
+        sessionModelPreference: 'unknown-route-model',
+      })
+
+      await flushUi()
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+
+      expect(rendered.queryByTestId('chat-thinking-override-hint')).toBeNull()
+      expect(getThinkingCapability).toHaveBeenCalledWith(expect.objectContaining({
+        thinkingCapabilityOverride: expect.objectContaining({
+          supported: true,
+          series: LABEL_COMPAT_OFF_AUTO,
+          template: expect.objectContaining({
+            editorType: 'discrete',
+            defaultValue: {
+              valueType: 'code',
+              code: 'minimal',
+              labelZh: '极简',
+            },
+          }),
+        }),
+      }))
+
+      rendered.unmount()
     })
 
-    await flushUi()
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-
-    expect(rendered.queryByTestId('chat-thinking-override-hint')).toBeNull()
-    expect(getThinkingCapability).toHaveBeenCalledWith(expect.objectContaining({
-      thinkingCapabilityOverride: expect.objectContaining({
-        supported: true,
-        series: 'compat-off-auto-v1',
-        template: expect.objectContaining({
-          editorType: 'discrete',
-          defaultValue: {
-            valueType: 'code',
-            code: 'minimal',
-            labelZh: '极简',
-          },
+    it('remembers structured selections per model and does not apply budget memory to a discrete model', async () => {
+      const providerId = 'provider-memory'
+      const getThinkingCapability = createThinkingCapabilityGetter({
+        'budget-memory-model': createBudgetCapability({
+          defaultSelection: createRuntimeCanonicalThinkingSelection({ kind: 'budget', budgetTokens: 4096 }),
         }),
-      }),
-    }))
+        'discrete-memory-model': createPresetCapability({
+          series: LABEL_COMPAT_DISCRETE_LEVELS,
+          kind: 'discrete',
+          levels: ['off', 'auto', 'medium'],
+          defaultLevel: 'auto',
+        }),
+      })
+      const loadWorkspaceState = createLoadWorkspaceState([
+        createProviderProfile({
+          id: providerId,
+          name: 'Memory Provider',
+          availableModels: [
+            createReasoningModel({
+              id: `${providerId}:budget-memory-model`,
+              modelId: 'budget-memory-model',
+              displayName: 'Budget Memory Model',
+            }),
+            createReasoningModel({
+              id: `${providerId}:discrete-memory-model`,
+              modelId: 'discrete-memory-model',
+              displayName: 'Discrete Memory Model',
+            }),
+          ],
+        }),
+      ], 'budget-memory-model')
 
-    rendered.unmount()
+      const rendered = renderThinkingPanel({
+        getThinkingCapability,
+        loadWorkspaceState,
+        sessionModelPreference: 'budget-memory-model',
+      })
+
+      await flushUi()
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+      await setRangeValue(
+        rendered.getByTestId(SELECTOR_CHAT_THINKING_BUDGET) as HTMLInputElement,
+        getThinkingBudgetProgressFromTokens(32768),
+      )
+      expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('32K')
+
+      await selectModel(rendered, providerId, `${providerId}:discrete-memory-model`)
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+      expect(rendered.getByTestId(SELECTOR_CHAT_THINKING_EDITOR)).not.toBeNull()
+      expect(rendered.getByTestId('chat-thinking-option-auto').className).toContain('thinking-pill--selected')
+
+      await selectModel(rendered, providerId, `${providerId}:budget-memory-model`)
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+      expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('32K')
+
+      rendered.unmount()
+    })
   })
 
-  it('remembers structured selections per model and does not apply budget memory to a discrete model', async () => {
-    const providerId = 'provider-memory'
-    const getThinkingCapability = createThinkingCapabilityGetter({
-      'budget-memory-model': createBudgetCapability({
-        defaultSelection: createRuntimeCanonicalThinkingSelection({ kind: 'budget', budgetTokens: 4096 }),
-      }),
-      'discrete-memory-model': createPresetCapability({
-        series: 'compat-discrete-levels-v1',
+  // 包含 2 个 send/run metadata 测试，需完整的 send 集成流程
+  /* eslint-disable-next-line max-lines-per-function */
+  describe('send and run metadata', () => {
+    it('sends structured budget selection without reviving compat thinkingLevelIntent payloads', async () => {
+      const sendMessage = vi.fn(async function* (
+        input: CopilotMessageDispatchInput,
+      ): AsyncGenerator<RuntimeRunEvent> {
+        void input
+        yield* []
+      })
+      const getThinkingCapability = createThinkingCapabilityGetter({
+        'budget-send-model': createBudgetCapability(),
+      })
+      const loadWorkspaceState = createLoadWorkspaceState([
+        createProviderProfile({
+          id: 'provider-send',
+          name: 'Send Provider',
+          availableModels: [
+            createReasoningModel({
+              id: 'provider-send:budget-send-model',
+              modelId: 'budget-send-model',
+              displayName: 'Budget Send Model',
+            }),
+          ],
+        }),
+      ], 'budget-send-model')
+
+      const rendered = renderThinkingPanel({
+        getThinkingCapability,
+        loadWorkspaceState,
+        sendMessage,
+        sessionModelPreference: 'budget-send-model',
+      })
+
+      await flushUi()
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+      await setRangeValue(
+        rendered.getByTestId(SELECTOR_CHAT_THINKING_BUDGET) as HTMLInputElement,
+        getThinkingBudgetProgressFromTokens(32768),
+      )
+      await setFormControlValue(rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement, '发送预算型推理')
+      await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+      expect(sendMessage).toHaveBeenCalledTimes(1)
+      expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
+        thinkingSelection: {
+          series: 'compat-budget-tokens-v1',
+          mode: 'budget',
+          level: null,
+          budgetTokens: 32768,
+        },
+        message: {
+          content: '发送预算型推理',
+        },
+      })
+      expect(sendMessage.mock.calls[0]?.[0]).not.toHaveProperty('thinkingLevelIntent')
+
+      rendered.unmount()
+    })
+
+    it('prefers the active run metadata snapshot as the current capability truth for the selected route', async () => {
+      const queriedCapability = createPresetCapability({
+        series: LABEL_COMPAT_DISCRETE_LEVELS,
         kind: 'discrete',
         levels: ['off', 'auto', 'medium'],
         defaultLevel: 'auto',
-      }),
-    })
-    const loadWorkspaceState = createLoadWorkspaceState([
-      createProviderProfile({
-        id: providerId,
-        name: 'Memory Provider',
-        availableModels: [
-          createReasoningModel({
-            id: `${providerId}:budget-memory-model`,
-            modelId: 'budget-memory-model',
-            displayName: 'Budget Memory Model',
-          }),
-          createReasoningModel({
-            id: `${providerId}:discrete-memory-model`,
-            modelId: 'discrete-memory-model',
-            displayName: 'Discrete Memory Model',
-          }),
-        ],
-      }),
-    ], 'budget-memory-model')
-
-    const rendered = renderThinkingPanel({
-      getThinkingCapability,
-      loadWorkspaceState,
-      sessionModelPreference: 'budget-memory-model',
-    })
-
-    await flushUi()
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    await setRangeValue(
-      rendered.getByTestId('chat-thinking-budget-input') as HTMLInputElement,
-      getThinkingBudgetProgressFromTokens(32768),
-    )
-    expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('32K')
-
-    await selectModel(rendered, providerId, `${providerId}:discrete-memory-model`)
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
-    expect(rendered.getByTestId('chat-thinking-option-auto').className).toContain('thinking-pill--selected')
-
-    await selectModel(rendered, providerId, `${providerId}:budget-memory-model`)
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('32K')
-
-    rendered.unmount()
-  })
-
-  it('sends structured budget selection without reviving compat thinkingLevelIntent payloads', async () => {
-    const sendMessage = vi.fn(async function* (
-      input: CopilotMessageDispatchInput,
-    ): AsyncGenerator<RuntimeRunEvent> {
-      void input
-      yield* []
-    })
-    const getThinkingCapability = createThinkingCapabilityGetter({
-      'budget-send-model': createBudgetCapability(),
-    })
-    const loadWorkspaceState = createLoadWorkspaceState([
-      createProviderProfile({
-        id: 'provider-send',
-        name: 'Send Provider',
-        availableModels: [
-          createReasoningModel({
-            id: 'provider-send:budget-send-model',
-            modelId: 'budget-send-model',
-            displayName: 'Budget Send Model',
-          }),
-        ],
-      }),
-    ], 'budget-send-model')
-
-    const rendered = renderThinkingPanel({
-      getThinkingCapability,
-      loadWorkspaceState,
-      sendMessage,
-      sessionModelPreference: 'budget-send-model',
-    })
-
-    await flushUi()
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    await setRangeValue(
-      rendered.getByTestId('chat-thinking-budget-input') as HTMLInputElement,
-      getThinkingBudgetProgressFromTokens(32768),
-    )
-    await setFormControlValue(rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement, '发送预算型推理')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
-
-    expect(sendMessage).toHaveBeenCalledTimes(1)
-    expect(sendMessage.mock.calls[0]?.[0]).toMatchObject({
-      thinkingSelection: {
+      })
+      const runSnapshotCapability = createBudgetCapability({
+        defaultSelection: createRuntimeCanonicalThinkingSelection({ kind: 'budget', budgetTokens: 8192 }),
+      })
+      const runSnapshotSelection = createRuntimeThinkingSelection({
         series: 'compat-budget-tokens-v1',
         mode: 'budget',
         level: null,
-        budgetTokens: 32768,
-      },
-      message: {
-        content: '发送预算型推理',
-      },
-    })
-    expect(sendMessage.mock.calls[0]?.[0]).not.toHaveProperty('thinkingLevelIntent')
+        budgetTokens: 8192,
+      })
+      const getThinkingCapability = createThinkingCapabilityGetter({
+        'run-metadata-model': queriedCapability,
+      })
+      const sendMessage = vi.fn(async function* (
+        input: CopilotMessageDispatchInput,
+      ): AsyncGenerator<RuntimeRunEvent> {
+        input.onRunStart?.(createRuntimeRunStartResponse({
+          run: {
+            threadId: input.sessionId,
+            thinkingCapabilitySnapshot: runSnapshotCapability,
+            requestedThinkingSelection: runSnapshotSelection,
+            appliedThinkingSelection: runSnapshotSelection,
+            requestedThinkingLevel: null,
+            appliedThinkingLevel: null,
+          },
+        }))
 
-    rendered.unmount()
+        yield {
+          type: 'run_started',
+          runId: 'run-metadata-1',
+          sessionId: input.sessionId,
+          sequence: 1,
+          payload: {
+            assistantMessageId: 'run-metadata-1:assistant',
+          },
+        }
+        yield createRuntimeRunCompletedEvent({
+          runId: 'run-metadata-1',
+          sessionId: input.sessionId,
+        })
+      })
+      const loadWorkspaceState = createLoadWorkspaceState([
+        createProviderProfile({
+          id: 'provider-run-metadata',
+          name: 'Run Metadata Provider',
+          availableModels: [
+            createReasoningModel({
+              id: 'provider-run-metadata:run-metadata-model',
+              modelId: 'run-metadata-model',
+              displayName: 'Run Metadata Model',
+            }),
+          ],
+        }),
+      ], 'run-metadata-model')
+
+      const rendered = renderThinkingPanel({
+        getThinkingCapability,
+        loadWorkspaceState,
+        sendMessage,
+        sessionModelPreference: 'run-metadata-model',
+      })
+
+      await flushUi()
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+      expect(rendered.getByTestId(SELECTOR_CHAT_THINKING_EDITOR)).not.toBeNull()
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+
+      await setFormControlValue(rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement, 'run metadata capability')
+      await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+      await flushUi()
+      await flushUi()
+
+      await clickElement(rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER))
+      expect(rendered.getByTestId(SELECTOR_CHAT_THINKING_EDITOR_2)).not.toBeNull()
+      expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('8K')
+
+      rendered.unmount()
+    })
   })
 
-  it('prefers the active run metadata snapshot as the current capability truth for the selected route', async () => {
-    const queriedCapability = createPresetCapability({
-      series: 'compat-discrete-levels-v1',
-      kind: 'discrete',
-      levels: ['off', 'auto', 'medium'],
-      defaultLevel: 'auto',
-    })
-    const runSnapshotCapability = createBudgetCapability({
-      defaultSelection: createRuntimeCanonicalThinkingSelection({ kind: 'budget', budgetTokens: 8192 }),
-    })
-    const runSnapshotSelection = createRuntimeThinkingSelection({
-      series: 'compat-budget-tokens-v1',
-      mode: 'budget',
-      level: null,
-      budgetTokens: 8192,
-    })
-    const getThinkingCapability = createThinkingCapabilityGetter({
-      'run-metadata-model': queriedCapability,
-    })
-    const sendMessage = vi.fn(async function* (
-      input: CopilotMessageDispatchInput,
-    ): AsyncGenerator<RuntimeRunEvent> {
-      input.onRunStart?.(createRuntimeRunStartResponse({
-        run: {
-          threadId: input.sessionId,
-          thinkingCapabilitySnapshot: runSnapshotCapability,
-          requestedThinkingSelection: runSnapshotSelection,
-          appliedThinkingSelection: runSnapshotSelection,
-          requestedThinkingLevel: null,
-          appliedThinkingLevel: null,
-        },
+  describe('provider error handling', () => {
+    it('surfaces provider runtime status from thinking capability query errors in the trigger tooltip', async () => {
+      const getThinkingCapability = vi.fn(async () => {
+        throw new (await import('./chat-contract')).RuntimeRequestError('adapter_missing: provider adapter not registered', {
+          code: 'adapter_missing',
+          status: 409,
+          details: {
+            providerId: 'openai',
+            adapterId: 'openai',
+          },
+        })
+      })
+      const loadWorkspaceState = vi.fn(async () => ({
+        ok: true as const,
+        source: 'stored' as const,
+        state: createPersistedWorkspaceState({
+          providerProfiles: [
+            createProviderProfile({
+              id: 'provider-openai',
+              providerId: 'openai',
+              protocol: 'openai',
+              name: 'OpenAI',
+              primaryModelId: 'gpt-4.1',
+              availableModels: [
+                {
+                  id: 'provider-openai:gpt-4.1',
+                  modelId: 'gpt-4.1',
+                  displayName: 'GPT 4.1',
+                  groupName: 'OpenAI',
+                  capabilities: ['reasoning', 'tools'],
+                  supportsStreaming: true,
+                  currency: 'usd',
+                  inputPrice: '1',
+                  outputPrice: '2',
+                },
+              ],
+            }),
+          ],
+          defaultModelRouting: {
+            primaryAssistantModel: 'gpt-4.1',
+          },
+        }),
       }))
 
-      yield {
-        type: 'run_started',
-        runId: 'run-metadata-1',
-        sessionId: input.sessionId,
-        sequence: 1,
-        payload: {
-          assistantMessageId: 'run-metadata-1:assistant',
-        },
-      }
-      yield createRuntimeRunCompletedEvent({
-        runId: 'run-metadata-1',
-        sessionId: input.sessionId,
-      })
+      const rendered = renderWithRoot(
+        <CopilotChatPanel
+          state={createReadyState()}
+          retrying={false}
+          retry={() => undefined}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={createSessionShell()}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          loadWorkspaceState={loadWorkspaceState}
+          getThinkingCapability={getThinkingCapability}
+        />,
+      )
+
+      await flushUi()
+
+      const thinkingTrigger = rendered.getByTestId(SELECTOR_CHAT_THINKING_TRIGGER) as HTMLButtonElement
+      expect(thinkingTrigger.title).toContain('当前无法调整思考设置')
+      expect(thinkingTrigger.disabled).toBe(false)
+
+      rendered.unmount()
     })
-    const loadWorkspaceState = createLoadWorkspaceState([
-      createProviderProfile({
-        id: 'provider-run-metadata',
-        name: 'Run Metadata Provider',
-        availableModels: [
-          createReasoningModel({
-            id: 'provider-run-metadata:run-metadata-model',
-            modelId: 'run-metadata-model',
-            displayName: 'Run Metadata Model',
-          }),
-        ],
-      }),
-    ], 'run-metadata-model')
-
-    const rendered = renderThinkingPanel({
-      getThinkingCapability,
-      loadWorkspaceState,
-      sendMessage,
-      sessionModelPreference: 'run-metadata-model',
-    })
-
-    await flushUi()
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-editor-discrete')).not.toBeNull()
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-
-    await setFormControlValue(rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement, 'run metadata capability')
-    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
-    await flushUi()
-    await flushUi()
-
-    await clickElement(rendered.getByTestId('chat-thinking-trigger'))
-    expect(rendered.getByTestId('chat-thinking-editor-budget')).not.toBeNull()
-    expect(rendered.getByTestId('chat-thinking-budget-value').textContent).toContain('8K')
-
-    rendered.unmount()
-  })
-
-  it('surfaces provider runtime status from thinking capability query errors in the trigger tooltip', async () => {
-    const getThinkingCapability = vi.fn(async () => {
-      throw new (await import('./chat-contract')).RuntimeRequestError('adapter_missing: provider adapter not registered', {
-        code: 'adapter_missing',
-        status: 409,
-        details: {
-          providerId: 'openai',
-          adapterId: 'openai',
-        },
-      })
-    })
-    const loadWorkspaceState = vi.fn(async () => ({
-      ok: true as const,
-      source: 'stored' as const,
-      state: createPersistedWorkspaceState({
-        providerProfiles: [
-          createProviderProfile({
-            id: 'provider-openai',
-            providerId: 'openai',
-            protocol: 'openai',
-            name: 'OpenAI',
-            primaryModelId: 'gpt-4.1',
-            availableModels: [
-              {
-                id: 'provider-openai:gpt-4.1',
-                modelId: 'gpt-4.1',
-                displayName: 'GPT 4.1',
-                groupName: 'OpenAI',
-                capabilities: ['reasoning', 'tools'],
-                supportsStreaming: true,
-                currency: 'usd',
-                inputPrice: '1',
-                outputPrice: '2',
-              },
-            ],
-          }),
-        ],
-        defaultModelRouting: {
-          primaryAssistantModel: 'gpt-4.1',
-        },
-      }),
-    }))
-
-    const rendered = renderWithRoot(
-      <CopilotChatPanel
-        state={createReadyState()}
-        retrying={false}
-        retry={() => undefined}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={createSessionShell()}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        loadWorkspaceState={loadWorkspaceState}
-        getThinkingCapability={getThinkingCapability}
-      />,
-    )
-
-    await flushUi()
-
-    const thinkingTrigger = rendered.getByTestId('chat-thinking-trigger') as HTMLButtonElement
-    expect(thinkingTrigger.title).toContain('当前无法调整思考设置')
-    expect(thinkingTrigger.disabled).toBe(false)
-
-    rendered.unmount()
   })
 })
 

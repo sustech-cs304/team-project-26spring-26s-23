@@ -62,6 +62,13 @@ import {
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL } from '../bootstrap-window'
 import {
+  DESKTOP_WINDOW_CLOSE_CHANNEL,
+  DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+  DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+  DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+  type DesktopWindowState,
+} from '../window-controls'
+import {
   MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
   MANAGED_RUNTIME_LOAD_CHANNEL,
   type ManagedRuntimeLoadResponse,
@@ -109,6 +116,58 @@ import {
   type ToolCatalogLoadRequest,
   type ToolCatalogLoadResult,
 } from '../tool-catalog/ipc'
+import {
+  ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
+  ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+  ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+  ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+  type CleanupTemporaryAttachmentFilesRequest,
+  type CleanupTemporaryAttachmentFilesResult,
+  type ReadAttachmentPreviewRequest,
+  type ReadAttachmentPreviewResult,
+  type ReadClipboardAttachmentDataResult,
+  type WriteAttachmentTempFileRequest,
+  type WriteAttachmentTempFileResult,
+} from '../attachment-service/ipc'
+import {
+  FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+  FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+  FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
+  FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+  FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
+  FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
+  FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_RENAME_ENTRY_CHANNEL,
+  FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+  FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
+  FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
+  type CopyEntriesRequest,
+  type CopyTextToClipboardRequest,
+  type CreateDirectoryRequest,
+  type DeleteEntriesRequest,
+  type FileOperationResult,
+  type ListDirectoryRequest,
+  type ListDirectoryResult,
+  type LoadLastRootDirectoryResult,
+  type MoveEntriesRequest,
+  type OpenEntryWithSystemRequest,
+  type ProbeDirectoryRequest,
+  type ProbeDirectoryResult,
+  type RenameEntryRequest,
+  type RevealEntryInFolderRequest,
+  type SaveLastRootDirectoryRequest,
+  type SelectRootDirectoryRequest,
+  type SelectDirectoryResult,
+  type TrashEntriesRequest,
+  type UnwatchDirectoriesRequest,
+  type WatchDirectoriesRequest,
+} from '../file-manager/ipc'
 import type { RendererIpcHandlers } from './RendererIpcHandlers'
 
 export type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
@@ -149,8 +208,33 @@ const RENDERER_IPC_CHANNELS = [
   TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
+  ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
+  ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+  ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+  ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
   BOOTSTRAP_WINDOW_READY_CHANNEL,
+  DESKTOP_WINDOW_STATE_LOAD_CHANNEL,
+  DESKTOP_WINDOW_MINIMIZE_CHANNEL,
+  DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+  DESKTOP_WINDOW_CLOSE_CHANNEL,
+  FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+  FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
+  FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+  FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
+  FILE_MANAGER_RENAME_ENTRY_CHANNEL,
+  FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
+  FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
+  FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
+  FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
+  FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
+  FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+  FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
 ] as const
 
 export function registerRendererIpcHandlers(
@@ -161,6 +245,18 @@ export function registerRendererIpcHandlers(
     ipcMain.removeHandler(channel)
   }
 
+  registerConfigAndSettingsHandlers(ipcMain, handlers)
+  registerManagedRuntimeHandlers(ipcMain, handlers)
+  registerMcpRegistryHandlers(ipcMain, handlers)
+  registerSkillRegistryHandlers(ipcMain, handlers)
+  registerCopilotHistoryHandlers(ipcMain, handlers)
+  registerToolAndRuntimeHandlers(ipcMain, handlers)
+  registerAttachmentManagerHandlers(ipcMain, handlers)
+  registerDesktopNotificationAndWindowHandlers(ipcMain, handlers)
+  registerFileManagerHandlers(ipcMain, handlers)
+}
+
+function registerConfigAndSettingsHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(CONFIG_CENTER_PUBLIC_SNAPSHOT_LOAD_CHANNEL, async (): Promise<ConfigCenterPublicSnapshotLoadResult> => {
     return await handlers.loadConfigCenterPublicSnapshot()
   })
@@ -233,7 +329,9 @@ export function registerRendererIpcHandlers(
       return await handlers.clearSettingsWorkspaceSustechCasSecret()
     },
   )
+}
 
+function registerManagedRuntimeHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(
     MANAGED_RUNTIME_LOAD_CHANNEL,
     async (): Promise<ManagedRuntimeLoadResponse> => {
@@ -247,7 +345,9 @@ export function registerRendererIpcHandlers(
       return await handlers.installOrRepairManagedRuntime(reason)
     },
   )
+}
 
+function registerMcpRegistryHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(
     MCP_REGISTRY_LOAD_CHANNEL,
     async (_event, request?: McpRegistryLoadRequest): Promise<McpRegistryLoadResult> => {
@@ -289,7 +389,9 @@ export function registerRendererIpcHandlers(
       return await handlers.refreshMcpCatalog(request)
     },
   )
+}
 
+function registerSkillRegistryHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(
     SKILL_REGISTRY_LOAD_CHANNEL,
     async (_event, request?: SkillRegistryLoadRequest): Promise<SkillRegistryLoadResult> => {
@@ -331,7 +433,9 @@ export function registerRendererIpcHandlers(
       return await handlers.refreshSkills(request)
     },
   )
+}
 
+function registerCopilotHistoryHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(COPILOT_HISTORY_LIST_THREADS_CHANNEL, async (): Promise<CopilotHistoryListThreadsResult> => {
     return await handlers.listCopilotHistoryThreads()
   })
@@ -398,7 +502,9 @@ export function registerRendererIpcHandlers(
       return await handlers.restoreCopilotHistoryDatabase(request)
     },
   )
+}
 
+function registerToolAndRuntimeHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(TOOL_CATALOG_LOAD_CHANNEL, async (_event, request?: ToolCatalogLoadRequest): Promise<ToolCatalogLoadResult> => {
     return await handlers.loadToolCatalog(request)
   })
@@ -410,7 +516,39 @@ export function registerRendererIpcHandlers(
   ipcMain.handle(COPILOT_RUNTIME_RETRY_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
     return await handlers.retryCopilotRuntime()
   })
+}
 
+function registerAttachmentManagerHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
+  ipcMain.handle(ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL, async (): Promise<ReadClipboardAttachmentDataResult> => {
+    return await handlers.readClipboardAttachmentData()
+  })
+
+  ipcMain.handle(
+    ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
+    async (_event, request: WriteAttachmentTempFileRequest): Promise<WriteAttachmentTempFileResult> => {
+      return await handlers.writeAttachmentTempFile(request)
+    },
+  )
+
+  ipcMain.handle(
+    ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
+    async (_event, request: ReadAttachmentPreviewRequest): Promise<ReadAttachmentPreviewResult> => {
+      return await handlers.readAttachmentPreview(request)
+    },
+  )
+
+  ipcMain.handle(
+    ATTACHMENT_MANAGER_CLEANUP_TEMP_FILES_CHANNEL,
+    async (
+      _event,
+      request: CleanupTemporaryAttachmentFilesRequest,
+    ): Promise<CleanupTemporaryAttachmentFilesResult> => {
+      return await handlers.cleanupAttachmentTempFiles(request)
+    },
+  )
+}
+
+function registerDesktopNotificationAndWindowHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(DESKTOP_NOTIFICATION_SHOW_CHANNEL, async (_event, request: DesktopNotificationRequest): Promise<void> => {
     await handlers.notifyDesktopNotification(request)
   })
@@ -418,4 +556,134 @@ export function registerRendererIpcHandlers(
   ipcMain.handle(BOOTSTRAP_WINDOW_READY_CHANNEL, async (): Promise<void> => {
     await handlers.notifyBootstrapWindowReady()
   })
+
+  ipcMain.handle(DESKTOP_WINDOW_STATE_LOAD_CHANNEL, async (): Promise<DesktopWindowState> => {
+    return await handlers.loadDesktopWindowState()
+  })
+
+  ipcMain.handle(DESKTOP_WINDOW_MINIMIZE_CHANNEL, async (): Promise<void> => {
+    await handlers.minimizeDesktopWindow()
+  })
+
+  ipcMain.handle(DESKTOP_WINDOW_TOGGLE_MAXIMIZE_CHANNEL, async (): Promise<DesktopWindowState> => {
+    return await handlers.toggleMaximizeDesktopWindow()
+  })
+
+  ipcMain.handle(DESKTOP_WINDOW_CLOSE_CHANNEL, async (): Promise<void> => {
+    await handlers.closeDesktopWindow()
+  })
+}
+
+function registerFileManagerHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
+  ipcMain.handle(FILE_MANAGER_SELECT_ROOT_DIRECTORY_CHANNEL, async (_event, request?: SelectRootDirectoryRequest): Promise<SelectDirectoryResult> => {
+    return request === undefined
+      ? await handlers.selectRootDirectory()
+      : await handlers.selectRootDirectory(request)
+  })
+
+  ipcMain.handle(
+    FILE_MANAGER_LIST_DIRECTORY_CHANNEL,
+    async (_event, request: ListDirectoryRequest): Promise<ListDirectoryResult> => {
+      return await handlers.listDirectory(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_PROBE_DIRECTORY_CHANNEL,
+    async (_event, request: ProbeDirectoryRequest): Promise<ProbeDirectoryResult> => {
+      return await handlers.probeDirectory(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_CREATE_DIRECTORY_CHANNEL,
+    async (_event, request: CreateDirectoryRequest): Promise<FileOperationResult> => {
+      return await handlers.createDirectory(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_COPY_ENTRIES_CHANNEL,
+    async (_event, request: CopyEntriesRequest): Promise<FileOperationResult> => {
+      return await handlers.copyEntries(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_MOVE_ENTRIES_CHANNEL,
+    async (_event, request: MoveEntriesRequest): Promise<FileOperationResult> => {
+      return await handlers.moveEntries(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_RENAME_ENTRY_CHANNEL,
+    async (_event, request: RenameEntryRequest): Promise<FileOperationResult> => {
+      return await handlers.renameEntry(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_TRASH_ENTRIES_CHANNEL,
+    async (_event, request: TrashEntriesRequest): Promise<FileOperationResult> => {
+      return await handlers.trashEntries(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_DELETE_ENTRIES_PERMANENTLY_CHANNEL,
+    async (_event, request: DeleteEntriesRequest): Promise<FileOperationResult> => {
+      return await handlers.deleteEntriesPermanently(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_WATCH_DIRECTORIES_CHANNEL,
+    async (_event, request: WatchDirectoriesRequest): Promise<FileOperationResult> => {
+      return await handlers.watchDirectories(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_UNWATCH_DIRECTORIES_CHANNEL,
+    async (_event, request: UnwatchDirectoriesRequest): Promise<FileOperationResult> => {
+      return await handlers.unwatchDirectories(request)
+    },
+  )
+
+  ipcMain.handle(FILE_MANAGER_LOAD_LAST_ROOT_DIRECTORY_CHANNEL, async (): Promise<LoadLastRootDirectoryResult> => {
+    return await handlers.loadLastRootDirectory()
+  })
+
+  ipcMain.handle(
+    FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
+    async (_event, request: SaveLastRootDirectoryRequest): Promise<FileOperationResult> => {
+      return await handlers.saveLastRootDirectory(request)
+    },
+  )
+
+  ipcMain.handle(FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL, async (): Promise<FileOperationResult> => {
+    return await handlers.clearLastRootDirectory()
+  })
+
+  ipcMain.handle(
+    FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
+    async (_event, request: OpenEntryWithSystemRequest): Promise<FileOperationResult> => {
+      return await handlers.openEntryWithSystem(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
+    async (_event, request: RevealEntryInFolderRequest): Promise<FileOperationResult> => {
+      return await handlers.revealEntryInFolder(request)
+    },
+  )
+
+  ipcMain.handle(
+    FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+    async (_event, request: CopyTextToClipboardRequest): Promise<FileOperationResult> => {
+      return await handlers.copyTextToClipboard(request)
+    },
+  )
 }
