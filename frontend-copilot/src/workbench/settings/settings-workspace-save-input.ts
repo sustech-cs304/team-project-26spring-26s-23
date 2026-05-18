@@ -47,6 +47,7 @@ export function createSettingsWorkspaceStateSaveInput(
     mcp: {
       mcpAutoDiscoveryEnabled: state.mcpAutoDiscoveryEnabled,
       toolPermissionMode: state.toolPermissionMode,
+      toolPermissionPolicy: state.toolPermissionPolicy,
     },
     search: {
       searchEngine: state.searchEngine,

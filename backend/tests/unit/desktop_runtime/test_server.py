@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -10,17 +10,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
 from pydantic_ai.models.test import TestModel
 
-_ELECTRON_TEST_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) CanDue/1.0.0 Electron/35.1.4 Safari/537.36"
-)
-_BROWSER_TEST_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
-)
-
 from app.copilot_runtime import PydanticAIAgentExecutor
-from app.copilot_runtime.session_store import InMemorySessionStore
 from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
     CAPABILITIES_GET_METHOD,
@@ -32,15 +22,20 @@ from app.copilot_runtime.contracts import (
     THREAD_GET_METHOD,
 )
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
-from app.copilot_runtime.model_routes import ResolvedRuntimeModelRoute, RuntimeModelRoute
-from app.copilot_runtime.provider_adapter_registry import build_default_provider_adapter_registry
-from app.copilot_runtime.tool_registry import (
-    CAMPUS_INFO_SEARCH_TOOL_ID,
-    FILE_CONVERT_TOOL_ID,
+from app.copilot_runtime.model_routes import (
+    ResolvedRuntimeModelRoute,
+    RuntimeModelRoute,
 )
-from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
-from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
-
+from app.copilot_runtime.provider_adapter_registry import (
+    build_default_provider_adapter_registry,
+)
+from app.copilot_runtime.session_store import InMemorySessionStore
+from app.copilot_runtime.tool_registry import (
+    FILE_CONVERT_TOOL_ID,
+    REQUEST_USER_FORM_TOOL_ID,
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_ID,
+)
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
 from app.desktop_runtime.config import (
     DEFAULT_HOST,
@@ -55,10 +50,31 @@ from app.desktop_runtime.config import (
 )
 from app.desktop_runtime.security import apply_cors_headers
 from app.desktop_runtime.server import BACKEND_DIR, create_app
+from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
+from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
+from app.tooling.file_tools.runtime_bindings import (
+    FILE_TOOL_READ_FUNCTION_NAME,
+    FILE_TOOL_READ_ID,
+)
+
+_ELECTRON_TEST_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) CanDue/1.0.0 Electron/35.1.4 Safari/537.36"
+)
+_BROWSER_TEST_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+)
 
 
 class _ImmediateEventStream:
-    def __init__(self, *, output: str, resolved_model_id: str, events: list[RuntimeExecutionEvent]) -> None:
+    def __init__(
+        self,
+        *,
+        output: str,
+        resolved_model_id: str,
+        events: list[RuntimeExecutionEvent],
+    ) -> None:
         self.resolved_model_id = resolved_model_id
         self._output = output
         self._events = list(events)
@@ -120,7 +136,9 @@ class _StreamingExecutor:
 
 
 class _ResolvedRouteResolver:
-    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute:
+    async def resolve(
+        self, model_route: RuntimeModelRoute
+    ) -> ResolvedRuntimeModelRoute:
         return ResolvedRuntimeModelRoute(
             provider_profile_id=model_route.provider_profile_id,
             provider="openai",
@@ -132,7 +150,32 @@ class _ResolvedRouteResolver:
         )
 
 
-def _build_text_execution_events(*, run_id: str, text: str) -> list[RuntimeExecutionEvent]:
+class _ContractToolCallingTestModel(TestModel):
+    def __init__(
+        self,
+        *,
+        tool_args_by_name: dict[str, dict[str, Any]],
+        custom_output_text: str,
+    ) -> None:
+        super().__init__(
+            call_tools=list(tool_args_by_name),
+            custom_output_text=custom_output_text,
+            seed=0,
+        )
+        self._tool_args_by_name = {
+            name: dict(arguments) for name, arguments in tool_args_by_name.items()
+        }
+
+    def gen_tool_args(self, tool_def) -> Any:
+        configured_arguments = self._tool_args_by_name.get(tool_def.name)
+        if configured_arguments is not None:
+            return dict(configured_arguments)
+        return super().gen_tool_args(tool_def)
+
+
+def _build_text_execution_events(
+    *, run_id: str, text: str
+) -> list[RuntimeExecutionEvent]:
     return [
         RuntimeExecutionEvent(
             type="assistant_segment_delta",
@@ -152,7 +195,9 @@ SUPPORTED_METHODS = [
     RUN_STREAM_METHOD,
     RUN_CANCEL_METHOD,
     CAPABILITIES_GET_METHOD,
+    "tools/catalog/get",
     THINKING_CAPABILITY_GET_METHOD,
+    "tool-approval/resolve",
 ]
 
 
@@ -161,8 +206,9 @@ def test_create_app_returns_fastapi_instance(tmp_path: Path) -> None:
     assert isinstance(app, FastAPI)
 
 
-
-def test_create_app_mounts_runtime_dependencies_from_composition(tmp_path: Path) -> None:
+def test_create_app_mounts_runtime_dependencies_from_composition(
+    tmp_path: Path,
+) -> None:
     app = _create_test_app(tmp_path)
 
     with TestClient(app):
@@ -174,13 +220,17 @@ def test_create_app_mounts_runtime_dependencies_from_composition(tmp_path: Path)
         assert dependencies.agent_executor is app.state.copilot_runtime_agent_executor
         assert dependencies.runtime_bridge is app.state.copilot_runtime_bridge
         assert dependencies.scaffold is app.state.copilot_runtime_scaffold
-        assert dependencies.host_capabilities_factory is app.state.copilot_runtime_host_capabilities_factory
+        assert (
+            dependencies.host_capabilities_factory
+            is app.state.copilot_runtime_host_capabilities_factory
+        )
         assert dependencies.agent_registry.get_default().name == "default"
         assert dependencies.tool_registry.get_default().name == "default"
 
 
-
-def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: Path) -> None:
+def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(
+    tmp_path: Path,
+) -> None:
     app = _create_test_app(tmp_path)
 
     with TestClient(app) as client:
@@ -221,38 +271,49 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(tmp_path: 
         contract.metadata.tool_id
         for contract in (*get_blackboard_tool_contracts(), *get_tis_tool_contracts())
     ]
-    assert toolset_summary["toolCount"] == 3 + len(expected_contract_tool_ids)
-    assert len(toolset_summary["tools"]) == 3 + len(expected_contract_tool_ids)
-    assert toolset_summary["tools"][0] == {
-        "toolId": FILE_CONVERT_TOOL_ID,
-        "kind": "builtin",
-        "availability": "available",
-        "displayName": "File Convert",
-        "description": "Convert DOCX, PDF, and PPTX files into text.",
-    }
-    assert toolset_summary["tools"][1] == {
-        "toolId": "tool.weather-current",
-        "kind": "builtin",
-        "availability": "available",
-        "displayName": "Current Weather",
-        "description": "Return a placeholder current-weather result for a requested location.",
-    }
-    assert [
-        tool["toolId"]
-        for tool in toolset_summary["tools"][2 : 2 + len(expected_contract_tool_ids)]
-    ] == expected_contract_tool_ids
+    expected_builtin_tool_ids = [
+        "tool.fs.read",
+        "tool.fs.write",
+        "tool.fs.edit",
+        "tool.fs.glob",
+        "tool.fs.grep",
+        "tool.fs.notebook_edit",
+        "tool.fs.switch_root",
+        FILE_CONVERT_TOOL_ID,
+        "tool.weather-current",
+        REQUEST_USER_FORM_TOOL_ID,
+        SKILL_ACTIVATE_TOOL_ID,
+        SKILL_READ_RESOURCE_TOOL_ID,
+    ]
+    expected_tool_ids = [*expected_builtin_tool_ids, *expected_contract_tool_ids]
+    assert toolset_summary["toolCount"] == len(expected_tool_ids)
+    assert len(toolset_summary["tools"]) == len(expected_tool_ids)
+    assert toolset_summary["tools"][0]["toolId"] == "tool.fs.read"
+    assert toolset_summary["tools"][0]["kind"] == "builtin"
+    assert toolset_summary["tools"][0]["availability"] == "available"
+    assert toolset_summary["tools"][0]["displayName"] == "File Read"
+    assert "Read UTF-8 text files" in toolset_summary["tools"][0]["description"]
+    assert toolset_summary["tools"][0]["prompt"]
+    assert toolset_summary["tools"][0]["presentation"]["displayNameEn"] == "File Read"
+    assert toolset_summary["tools"][1]["toolId"] == "tool.fs.write"
+    assert toolset_summary["tools"][1]["kind"] == "builtin"
+    assert toolset_summary["tools"][1]["availability"] == "available"
+    assert toolset_summary["tools"][1]["displayName"] == "File Write"
+    assert (
+        "Create or overwrite UTF-8 text files"
+        in toolset_summary["tools"][1]["description"]
+    )
+    assert toolset_summary["tools"][1]["prompt"]
+    assert toolset_summary["tools"][1]["presentation"]["displayNameEn"] == "File Write"
+    assert [tool["toolId"] for tool in toolset_summary["tools"]] == expected_tool_ids
+    assert all(
+        tool["kind"] == "builtin"
+        for tool in toolset_summary["tools"][: len(expected_builtin_tool_ids)]
+    )
     assert all(
         tool["kind"] == "contract"
-        for tool in toolset_summary["tools"][2 : 2 + len(expected_contract_tool_ids)]
+        for tool in toolset_summary["tools"][len(expected_builtin_tool_ids) :]
     )
-    assert toolset_summary["tools"][-1] == {
-        "toolId": CAMPUS_INFO_SEARCH_TOOL_ID,
-        "kind": "builtin",
-        "availability": "available",
-        "displayName": "Campus Info Search",
-        "description": "Search indexed campus official documents and return cited snippets.",
-    }
-
 
 
 def test_create_app_ignores_retired_startup_model_environment_variables(
@@ -277,7 +338,6 @@ def test_create_app_ignores_retired_startup_model_environment_variables(
     assert payload["capabilities"]["model_configured"] is False
 
 
-
 def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> None:
     app = _create_test_app(tmp_path)
 
@@ -287,7 +347,10 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
         thread_payload = thread_response.json()
         capabilities_response = client.post(
             "/",
-            json={"method": "capabilities/get", "body": {"sessionId": thread_payload["threadId"]}},
+            json={
+                "method": "capabilities/get",
+                "body": {"sessionId": thread_payload["threadId"]},
+            },
         )
         run_start_response = client.post(
             "/",
@@ -338,9 +401,14 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     _assert_supported_methods(diagnostics_payload["capabilities"]["supported_methods"])
     assert capabilities_payload["sessionId"] == thread_payload["threadId"]
     assert capabilities_payload["boundAgent"]["agentId"] == "default"
-    assert capabilities_payload["tools"][0]["toolId"] == FILE_CONVERT_TOOL_ID
+    capability_tool_ids = [tool["toolId"] for tool in capabilities_payload["tools"]]
+    assert capability_tool_ids[0] == "tool.fs.read"
+    assert FILE_CONVERT_TOOL_ID in capability_tool_ids
     assert run_stream_response.headers["content-type"].startswith("text/event-stream")
-    assert preflight_response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert (
+        preflight_response.headers["access-control-allow-origin"]
+        == "http://localhost:5173"
+    )
     assert "POST" in preflight_response.headers["access-control-allow-methods"]
     assert [event["type"] for event in run_events] == [
         "run_started",
@@ -359,9 +427,13 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert build_payload == version_payload
     assert diagnostics_payload["runtime"]["ready"] is True
     assert diagnostics_payload["configuration"]["host"] == DEFAULT_HOST
-    assert diagnostics_payload["configuration"]["paths"]["config_dir"].endswith("config")
+    assert diagnostics_payload["configuration"]["paths"]["config_dir"].endswith(
+        "config"
+    )
     assert diagnostics_payload["configuration"]["paths"]["logs_dir"].endswith("logs")
-    assert diagnostics_payload["configuration"]["paths"]["database_dir"].endswith("database")
+    assert diagnostics_payload["configuration"]["paths"]["database_dir"].endswith(
+        "database"
+    )
     assert diagnostics_payload["configuration"]["paths"]["state_dir"].endswith("state")
     assert diagnostics_payload["capabilities"]["domain_routes_registered"] is False
     assert diagnostics_payload["capabilities"]["chat_runtime_registered"] is True
@@ -369,20 +441,114 @@ def test_minimal_contract_endpoints_return_expected_payloads(tmp_path: Path) -> 
     assert diagnostics_payload["capabilities"]["chat_runtime_path"] == "/"
     assert diagnostics_payload["capabilities"]["available_agents"] == ["default"]
     assert diagnostics_payload["capabilities"]["default_agent"] == "default"
-    assert diagnostics_payload["capabilities"]["chat_runtime_stage"] == "phase3-run-bridge"
+    assert (
+        diagnostics_payload["capabilities"]["chat_runtime_stage"] == "phase3-run-bridge"
+    )
     assert diagnostics_payload["capabilities"]["session_store_type"] == "sqlite"
-    assert diagnostics_payload["capabilities"]["current_stage_supports_agents_list"] is True
-    assert diagnostics_payload["capabilities"]["current_stage_supports_thread_create"] is True
-    assert diagnostics_payload["capabilities"]["current_stage_supports_thread_get"] is True
-    assert diagnostics_payload["capabilities"]["current_stage_supports_run_start"] is True
-    assert diagnostics_payload["capabilities"]["current_stage_supports_run_stream"] is True
-    assert diagnostics_payload["capabilities"]["current_stage_supports_run_cancel"] is True
-    assert diagnostics_payload["capabilities"]["current_stage_supports_capabilities_get"] is True
+    assert (
+        diagnostics_payload["capabilities"]["current_stage_supports_agents_list"]
+        is True
+    )
+    assert (
+        diagnostics_payload["capabilities"]["current_stage_supports_thread_create"]
+        is True
+    )
+    assert (
+        diagnostics_payload["capabilities"]["current_stage_supports_thread_get"] is True
+    )
+    assert (
+        diagnostics_payload["capabilities"]["current_stage_supports_run_start"] is True
+    )
+    assert (
+        diagnostics_payload["capabilities"]["current_stage_supports_run_stream"] is True
+    )
+    assert (
+        diagnostics_payload["capabilities"]["current_stage_supports_run_cancel"] is True
+    )
+    assert (
+        diagnostics_payload["capabilities"]["current_stage_supports_capabilities_get"]
+        is True
+    )
     assert diagnostics_payload["capabilities"]["model_configured"] is True
     assert diagnostics_payload["capabilities"]["model_environment_keys"] == []
     assert "/" in diagnostics_payload["capabilities"]["contract_paths"]
     assert diagnostics_payload["auth"]["token_configured"] is False
     assert Path(diagnostics_payload["runtime"]["working_directory"]).exists()
+
+
+def test_run_stream_delay_tool_permission_policy_emits_waiting_approval_before_timeout_failure(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "sample.txt").write_text("desktop runtime sample", encoding="utf-8")
+    executor = PydanticAIAgentExecutor(
+        model=_ContractToolCallingTestModel(
+            tool_args_by_name={
+                FILE_TOOL_READ_FUNCTION_NAME: {"path": "sample.txt"},
+            },
+            custom_output_text="Desktop runtime delayed tool answer.",
+        ),
+        workspace_root=tmp_path,
+    )
+    app = create_app(
+        _build_config(tmp_path),
+        agent_executor=executor,
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    with TestClient(app) as client:
+        thread_response = client.post("/", json=_build_thread_create_request())
+        thread_id = thread_response.json()["threadId"]
+        run_start_response = client.post(
+            "/",
+            json=_build_run_start_request(
+                thread_id=thread_id,
+                enabled_tools=[FILE_TOOL_READ_ID],
+                tool_permission_policy={
+                    "schemaVersion": 1,
+                    "defaultMode": "allow",
+                    "toolModes": {FILE_TOOL_READ_ID: "delay"},
+                    "toolTimeoutSeconds": {FILE_TOOL_READ_ID: 1},
+                    "toolTimeoutActions": {FILE_TOOL_READ_ID: "deny"},
+                },
+            ),
+        )
+        run_id = run_start_response.json()["run"]["runId"]
+        run_stream_response = client.post(
+            "/",
+            json=_build_run_stream_request(run_id=run_id),
+        )
+
+    assert thread_response.status_code == 200
+    assert run_start_response.status_code == 200
+    assert run_stream_response.status_code == 200
+
+    events = _parse_sse_events(run_stream_response.text)
+    tool_events = [
+        event
+        for event in events
+        if event["type"] == "tool_event"
+        and event["payload"].get("toolId") == FILE_TOOL_READ_ID
+    ]
+
+    assert [event["payload"]["phase"] for event in tool_events] == [
+        "started",
+        "waiting_approval",
+        "failed",
+    ]
+    assert tool_events[1]["payload"]["approval"] == {
+        "mode": "delay",
+        "timeoutAt": tool_events[1]["payload"]["approval"]["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "deny",
+    }
+    assert isinstance(tool_events[1]["payload"]["approval"]["timeoutAt"], str)
+    assert tool_events[2]["payload"]["errorSummary"] == (
+        "Tool approval timed out and was automatically rejected."
+    )
+    assert events[-1]["type"] == "run_completed"
+    assert (
+        events[-1]["payload"]["assistantText"] == "Desktop runtime delayed tool answer."
+    )
 
 
 @pytest.mark.parametrize(
@@ -404,7 +570,6 @@ def test_cors_preflight_allows_loopback_origins(tmp_path: Path, origin: str) -> 
     assert "POST" in response.headers["access-control-allow-methods"]
 
 
-
 def test_apply_cors_headers_preserves_existing_vary_header_order() -> None:
     response = Response()
     response.headers["Vary"] = "Accept-Encoding, Origin, Accept-Encoding"
@@ -419,7 +584,6 @@ def test_apply_cors_headers_preserves_existing_vary_header_order() -> None:
     assert response.headers["vary"] == (
         "Accept-Encoding, Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
     )
-
 
 
 def test_cors_preflight_allows_packaged_electron_null_origin(tmp_path: Path) -> None:
@@ -438,13 +602,20 @@ def test_cors_preflight_allows_packaged_electron_null_origin(tmp_path: Path) -> 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "null"
     assert "POST" in response.headers["access-control-allow-methods"]
-    assert response.headers["access-control-allow-headers"] == "content-type, x-local-token"
+    assert (
+        response.headers["access-control-allow-headers"]
+        == "content-type, x-local-token"
+    )
     assert response.headers["access-control-max-age"] == "600"
-    assert response.headers["vary"] == "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    assert (
+        response.headers["vary"]
+        == "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    )
 
 
-
-def test_cors_simple_request_allows_packaged_electron_null_origin(tmp_path: Path) -> None:
+def test_cors_simple_request_allows_packaged_electron_null_origin(
+    tmp_path: Path,
+) -> None:
     app = _create_test_app(tmp_path)
 
     with TestClient(app, client=("127.0.0.1", 50000)) as client:
@@ -461,8 +632,9 @@ def test_cors_simple_request_allows_packaged_electron_null_origin(tmp_path: Path
     assert response.headers["access-control-allow-origin"] == "null"
 
 
-
-def test_cors_preflight_rejects_packaged_electron_null_origin_from_non_loopback_client(tmp_path: Path) -> None:
+def test_cors_preflight_rejects_packaged_electron_null_origin_from_non_loopback_client(
+    tmp_path: Path,
+) -> None:
     app = _create_test_app(tmp_path)
 
     with TestClient(app, client=("203.0.113.10", 50000)) as client:
@@ -478,7 +650,6 @@ def test_cors_preflight_rejects_packaged_electron_null_origin_from_non_loopback_
     assert "access-control-allow-origin" not in response.headers
 
 
-
 def test_runtime_run_start_logs_also_emit_runtime_chain_debug_lines_to_uvicorn_error(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
@@ -491,7 +662,9 @@ def test_runtime_run_start_logs_also_emit_runtime_chain_debug_lines_to_uvicorn_e
             thread_id = thread_response.json()["threadId"]
             response = client.post(
                 "/",
-                json=_build_run_start_request(thread_id=thread_id, debug_mode_enabled=True),
+                json=_build_run_start_request(
+                    thread_id=thread_id, debug_mode_enabled=True
+                ),
                 headers={"Origin": "http://localhost:5173"},
             )
 
@@ -503,7 +676,9 @@ def test_runtime_run_start_logs_also_emit_runtime_chain_debug_lines_to_uvicorn_e
 
     assert thread_response.status_code == 200
     assert response.status_code == 200
-    assert any('"event":"run_start.request_received"' in message for message in chain_logs)
+    assert any(
+        '"event":"run_start.request_received"' in message for message in chain_logs
+    )
     assert any(
         '"event":"run_start.prime_run_metadata.enter"' in message
         and '"phase":"prime_run_metadata"' in message
@@ -517,7 +692,6 @@ def test_runtime_run_start_logs_also_emit_runtime_chain_debug_lines_to_uvicorn_e
         and '"requestId":' in message
         for message in chain_logs
     )
-
 
 
 def test_runtime_run_start_unexpected_failure_preserves_cors_headers(
@@ -578,7 +752,6 @@ def test_runtime_run_start_unexpected_failure_preserves_cors_headers(
     )
 
 
-
 def test_runtime_failure_envelope_logs_request_context_fields(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
@@ -623,7 +796,6 @@ def test_runtime_failure_envelope_logs_request_context_fields(
     assert "exception_message=forced middleware failure" in unexpected_logs[0]
 
 
-
 def test_cors_preflight_rejects_non_electron_null_origin(tmp_path: Path) -> None:
     app = _create_test_app(tmp_path)
 
@@ -638,7 +810,6 @@ def test_cors_preflight_rejects_non_electron_null_origin(tmp_path: Path) -> None
 
     assert response.status_code == 400
     assert "access-control-allow-origin" not in response.headers
-
 
 
 def test_cors_simple_request_rejects_non_electron_null_origin(tmp_path: Path) -> None:
@@ -657,17 +828,22 @@ def test_cors_simple_request_rejects_non_electron_null_origin(tmp_path: Path) ->
     assert "access-control-allow-origin" not in response.headers
 
 
-
 def test_create_app_without_explicit_config_reads_environment_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(ENV_HOST, "127.0.0.1")
     monkeypatch.setenv(ENV_PORT, "9988")
     monkeypatch.setenv(ENV_USER_DATA_DIR, "env-user-data")
-    monkeypatch.setenv(ENV_HOST_CAPABILITY_BRIDGE_URL, "http://127.0.0.1:45678/host/private/capability-bridge")
+    monkeypatch.setenv(
+        ENV_HOST_CAPABILITY_BRIDGE_URL,
+        "http://127.0.0.1:45678/host/private/capability-bridge",
+    )
     monkeypatch.setenv(ENV_HOST_CAPABILITY_BRIDGE_TOKEN, "capability-token-123")
 
-    app = create_app(agent_executor=_build_test_agent_executor(), model_route_resolver=_ResolvedRouteResolver())
+    app = create_app(
+        agent_executor=_build_test_agent_executor(),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
 
     with TestClient(app) as client:
         response = client.get("/health")
@@ -677,9 +853,11 @@ def test_create_app_without_explicit_config_reads_environment_values(
     assert runtime_config.host == "127.0.0.1"
     assert runtime_config.port == 9988
     assert runtime_config.user_data_dir == (BACKEND_DIR / "env-user-data").resolve()
-    assert runtime_config.host_capability_bridge_url == "http://127.0.0.1:45678/host/private/capability-bridge"
+    assert (
+        runtime_config.host_capability_bridge_url
+        == "http://127.0.0.1:45678/host/private/capability-bridge"
+    )
     assert runtime_config.host_capability_bridge_token == "capability-token-123"
-
 
 
 def test_diagnostics_requires_local_token_when_configured(tmp_path: Path) -> None:
@@ -707,7 +885,6 @@ def test_diagnostics_requires_local_token_when_configured(tmp_path: Path) -> Non
     assert authorized_payload["auth"]["header_name"] == LOCAL_TOKEN_HEADER_NAME
 
 
-
 def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scoped_run_still_runs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -717,10 +894,7 @@ def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scope
 
     app = create_app(
         _build_config(tmp_path),
-        agent_executor=_StreamingExecutor(
-            reply="Hello from the desktop runtime test model.",
-            model_configured=False,
-        ),
+        agent_executor=_build_test_agent_executor(model_configured=False),
         model_route_resolver=_ResolvedRouteResolver(),
     )
 
@@ -728,9 +902,13 @@ def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scope
         agents_response = client.post("/", json={"method": "agents/list"})
         thread_response = client.post("/", json=_build_thread_create_request())
         thread_id = thread_response.json()["threadId"]
-        run_start_response = client.post("/", json=_build_run_start_request(thread_id=thread_id))
+        run_start_response = client.post(
+            "/", json=_build_run_start_request(thread_id=thread_id)
+        )
         run_id = run_start_response.json()["run"]["runId"]
-        run_stream_response = client.post("/", json=_build_run_stream_request(run_id=run_id))
+        run_stream_response = client.post(
+            "/", json=_build_run_stream_request(run_id=run_id)
+        )
         diagnostics_response = client.get("/diagnostics")
 
     events = _parse_sse_events(run_stream_response.text)
@@ -745,10 +923,12 @@ def test_create_app_without_model_keeps_diagnostics_unconfigured_but_route_scope
         "text_delta",
         "run_completed",
     ]
-    assert events[-1]["payload"]["assistantText"] == "Hello from the desktop runtime test model."
+    assert (
+        events[-1]["payload"]["assistantText"]
+        == "Hello from the desktop runtime test model."
+    )
     assert diagnostics_response.status_code == 200
     assert diagnostics_response.json()["capabilities"]["model_configured"] is False
-
 
 
 def test_create_app_closes_host_bridge_clients_on_shutdown(tmp_path: Path) -> None:
@@ -777,11 +957,16 @@ def test_create_app_closes_host_bridge_clients_on_shutdown(tmp_path: Path) -> No
     with TestClient(app):
         model_bridge_client = app.state.host_model_route_bridge_client
         model_http_client = model_bridge_client._get_client()
-        capability_http_client = app.state.host_capability_bridge_client._get_sync_client()
+        capability_http_client = (
+            app.state.host_capability_bridge_client._get_sync_client()
+        )
         assert isinstance(model_http_client, httpx.AsyncClient)
         assert isinstance(capability_http_client, httpx.Client)
         assert model_bridge_client._client is model_http_client
-        assert app.state.host_capability_bridge_client._sync_client is capability_http_client
+        assert (
+            app.state.host_capability_bridge_client._sync_client
+            is capability_http_client
+        )
         assert model_http_client.is_closed is False
         assert capability_http_client.is_closed is False
 
@@ -791,7 +976,9 @@ def test_create_app_closes_host_bridge_clients_on_shutdown(tmp_path: Path) -> No
     assert capability_http_client.is_closed is True
 
 
-def test_create_app_shutdown_continues_when_bridge_close_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_app_shutdown_continues_when_bridge_close_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     close_calls: list[str] = []
     shutdown_calls: list[str] = []
     logged_messages: list[str] = []
@@ -821,6 +1008,7 @@ def test_create_app_shutdown_continues_when_bridge_close_fails(tmp_path: Path, m
     )
 
     with TestClient(app):
+
         async def _failing_model_aclose() -> None:
             shutdown_calls.append("model")
             raise RuntimeError("model close failed")
@@ -828,7 +1016,9 @@ def test_create_app_shutdown_continues_when_bridge_close_fails(tmp_path: Path, m
         def _record_shutdown() -> None:
             shutdown_calls.append("lifecycle")
 
-        monkeypatch.setattr(app.state.host_model_route_bridge_client, "aclose", _failing_model_aclose)
+        monkeypatch.setattr(
+            app.state.host_model_route_bridge_client, "aclose", _failing_model_aclose
+        )
         monkeypatch.setattr(app.state.lifecycle_manager, "shutdown", _record_shutdown)
         monkeypatch.setattr(
             "app.desktop_runtime.app_factory._RUNTIME_LOGGER.exception",
@@ -843,14 +1033,12 @@ def test_create_app_shutdown_continues_when_bridge_close_fails(tmp_path: Path, m
     ]
 
 
-
 def _create_test_app(tmp_path: Path) -> FastAPI:
     return create_app(
         _build_config(tmp_path),
         agent_executor=_build_test_agent_executor(),
         model_route_resolver=_ResolvedRouteResolver(),
     )
-
 
 
 def _build_thread_create_request() -> dict[str, Any]:
@@ -862,8 +1050,27 @@ def _build_thread_create_request() -> dict[str, Any]:
     }
 
 
-
-def _build_run_start_request(*, thread_id: str, debug_mode_enabled: bool = False) -> dict[str, Any]:
+def _build_run_start_request(
+    *,
+    thread_id: str,
+    debug_mode_enabled: bool = False,
+    enabled_tools: list[str] | None = None,
+    tool_permission_policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    policy: dict[str, Any] = {
+        "modelRoute": {
+            "routeRef": {
+                "routeKind": "provider-model",
+                "profileId": "provider-1",
+                "modelId": "gpt-4.1",
+            },
+        },
+        "enabledTools": list(enabled_tools or []),
+        "debugModeEnabled": debug_mode_enabled,
+        "requestOptions": {},
+    }
+    if tool_permission_policy is not None:
+        policy["toolPermissionPolicy"] = dict(tool_permission_policy)
     return {
         "method": "run/start",
         "body": {
@@ -873,21 +1080,9 @@ def _build_run_start_request(*, thread_id: str, debug_mode_enabled: bool = False
                 "role": "user",
                 "content": "hello desktop runtime",
             },
-            "policy": {
-                "modelRoute": {
-                    "routeRef": {
-                        "routeKind": "provider-model",
-                        "profileId": "provider-1",
-                        "modelId": "gpt-4.1",
-                    },
-                },
-                "enabledTools": [],
-                "debugModeEnabled": debug_mode_enabled,
-                "requestOptions": {},
-            },
+            "policy": policy,
         },
     }
-
 
 
 def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
@@ -897,7 +1092,6 @@ def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
             "runId": run_id,
         },
     }
-
 
 
 def _build_cors_preflight_headers(
@@ -917,7 +1111,6 @@ def _build_cors_preflight_headers(
     return headers
 
 
-
 def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for chunk in raw_text.strip().split("\n\n"):
@@ -929,15 +1122,24 @@ def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
     return events
 
 
-
 def _assert_supported_methods(supported_methods: list[str]) -> None:
     assert set(supported_methods) == set(SUPPORTED_METHODS)
 
 
-
-def _build_test_agent_executor() -> _StreamingExecutor:
-    return _StreamingExecutor(reply="Hello from the desktop runtime test model.")
-
+def _build_test_agent_executor(
+    *,
+    reply: str = "Hello from the desktop runtime test model.",
+    model_configured: bool = True,
+    model_environment_keys: tuple[str, ...] = (),
+) -> PydanticAIAgentExecutor:
+    return cast(
+        PydanticAIAgentExecutor,
+        _StreamingExecutor(
+            reply=reply,
+            model_configured=model_configured,
+            model_environment_keys=model_environment_keys,
+        ),
+    )
 
 
 def _build_config(
@@ -958,6 +1160,9 @@ def _build_config(
             logs_dir=runtime_root_dir / "logs",
             database_dir=runtime_root_dir / "database",
             state_dir=runtime_root_dir / "state",
+            debug_log_database_file=runtime_root_dir
+            / "database"
+            / "copilot-debug-log.db",
             copilot_settings_file=runtime_root_dir / "config" / "copilot-settings.json",
             host_log_file=runtime_root_dir / "logs" / "electron-host.log",
             backend_stdout_log_file=runtime_root_dir / "logs" / "backend.stdout.log",

@@ -10,7 +10,11 @@ from typing import Any
 from app.integrations.sustech.blackboard.shared.logging import BlackboardLogger
 from urllib.parse import urlparse
 
-from app.integrations.sustech.blackboard.shared import clean_text, extract_date_text, parse_loose_datetime_or_min
+from app.integrations.sustech.blackboard.shared import (
+    clean_text,
+    extract_date_text,
+    parse_loose_datetime_or_min,
+)
 
 
 def clean_field(text: str, max_length: int = 600) -> str:
@@ -78,11 +82,15 @@ def extract_grade_text(text: str) -> str:
     if match:
         return match.group(1)
 
-    match = re.search(r"\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F)\b", text, re.IGNORECASE)
+    match = re.search(
+        r"\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F)\b", text, re.IGNORECASE
+    )
     if match:
         return match.group(1).upper()
 
-    match = re.search(r"(?:得分|成绩|score|grade)\s*[:：]?\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+    match = re.search(
+        r"(?:得分|成绩|score|grade)\s*[:：]?\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE
+    )
     if match:
         return match.group(1)
 
@@ -124,59 +132,49 @@ def normalize_assignment_title(raw: str) -> str:
     return text
 
 
-def is_valid_assignment(
-    assignment: dict[str, Any],
+def _log_filtered_assignment(
+    logger: BlackboardLogger | None,
+    reason: str,
     *,
-    logger: BlackboardLogger | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    if logger is not None:
+        logger.debug(
+            "🗑 过滤作业噪音",
+            payload={"reason": reason, **(payload or {})},
+        )
+
+
+def _assignment_noise_reason(title: str, url: str) -> str | None:
+    lower_title = title.lower()
+    if any(token in title for token in ("失败", "错误")) or "error" in lower_title:
+        return "error_message"
+    if re.fullmatch(r"https?://\S+", title, flags=re.IGNORECASE):
+        return "title_is_url"
+    if any(token in title for token in ("活动标签", "课程(", "课程（")):
+        return "navigation_title"
+    if url.lower().startswith("javascript:"):
+        return "javascript_url"
+    if any(
+        token in lower_title
+        for token in ("course menu", "menu management options", "top frame tabs")
+    ):
+        return "navigation_text"
+    return None
+
+
+def _assignment_has_signal(
+    *,
+    title: str,
+    url: str,
+    due_date: str,
+    status: str,
+    summary: str,
 ) -> bool:
-    """判断是否为有效作业（非噪音数据）。"""
-    title = str(assignment.get("title") or "").strip()
-    url = str(assignment.get("url") or "").strip()
-    due_date = str(assignment.get("due_date") or "").strip()
-    status = str(assignment.get("status") or "").strip()
-    summary = str(assignment.get("summary") or "").strip()
-
-    def _log_filtered(reason: str, *, payload: dict[str, Any] | None = None) -> None:
-        if logger is not None:
-            logger.debug(
-                "🗑 过滤作业噪音",
-                payload={"reason": reason, **(payload or {})},
-            )
-
-    if not title:
-        _log_filtered("empty_title")
-        return False
+    if due_date or extract_grade_text(f"{status} {summary}"):
+        return True
 
     lower_title = title.lower()
-    lower_url = url.lower()
-
-    if any(token in title for token in ("失败", "错误")) or "error" in lower_title:
-        _log_filtered("error_message", payload={"title": title})
-        return False
-
-    if re.fullmatch(r"https?://\S+", title, flags=re.IGNORECASE):
-        _log_filtered("title_is_url", payload={"title": title})
-        return False
-
-    if any(token in title for token in ("活动标签", "课程(", "课程（")):
-        _log_filtered("navigation_title", payload={"title": title})
-        return False
-
-    if lower_url.startswith("javascript:"):
-        _log_filtered("javascript_url", payload={"url": url})
-        return False
-
-    if any(token in lower_title for token in ("course menu", "menu management options", "top frame tabs")):
-        _log_filtered("navigation_text", payload={"title": title})
-        return False
-
-    if due_date:
-        return True
-
-    grade_signal = extract_grade_text(f"{status} {summary}")
-    if grade_signal:
-        return True
-
     assignment_title_tokens = (
         "assignment",
         "homework",
@@ -192,10 +190,44 @@ def is_valid_assignment(
     if any(token in lower_title for token in assignment_title_tokens):
         return True
 
-    if any(token in lower_url for token in ("/webapps/assignment/", "/bb-assignment-", "/bb-mygrades-")):
+    lower_url = url.lower()
+    return any(
+        token in lower_url
+        for token in ("/webapps/assignment/", "/bb-assignment-", "/bb-mygrades-")
+    )
+
+
+def is_valid_assignment(
+    assignment: dict[str, Any],
+    *,
+    logger: BlackboardLogger | None = None,
+) -> bool:
+    """判断是否为有效作业（非噪音数据）。"""
+    title = str(assignment.get("title") or "").strip()
+    if not title:
+        _log_filtered_assignment(logger, "empty_title")
+        return False
+
+    url = str(assignment.get("url") or "").strip()
+    noise_reason = _assignment_noise_reason(title, url)
+    if noise_reason is not None:
+        _log_filtered_assignment(
+            logger, noise_reason, payload={"title": title, "url": url}
+        )
+        return False
+
+    if _assignment_has_signal(
+        title=title,
+        url=url,
+        due_date=str(assignment.get("due_date") or "").strip(),
+        status=str(assignment.get("status") or "").strip(),
+        summary=str(assignment.get("summary") or "").strip(),
+    ):
         return True
 
-    _log_filtered("missing_signal", payload={"title": title, "url": url})
+    _log_filtered_assignment(
+        logger, "missing_signal", payload={"title": title, "url": url}
+    )
     return False
 
 
@@ -261,7 +293,13 @@ def is_valid_resource(
 
     if "/webapps/blackboard/content/" in lower_url and not any(
         token in lower_url
-        for token in ("/bbcswebdav/", "/webapps/assignment/", "download", "xid=", "attachment")
+        for token in (
+            "/bbcswebdav/",
+            "/webapps/assignment/",
+            "download",
+            "xid=",
+            "attachment",
+        )
     ):
         _log_filtered("course_help_page", payload={"download_url": download_url})
         return False
@@ -278,7 +316,9 @@ def is_valid_resource(
             "folder ",
         )
     ):
-        _log_filtered("blackboard_help_doc", payload={"name": name, "download_url": download_url})
+        _log_filtered(
+            "blackboard_help_doc", payload={"name": name, "download_url": download_url}
+        )
         return False
 
     return True
@@ -299,8 +339,12 @@ def extract_course_name_and_listed_grade(raw_text: str) -> tuple[str, str]:
 
 def stable_resource_id(course_id: str, name: str, url: str) -> str:
     """为资源生成稳定 resource_id。"""
-    normalized = "|".join(part.strip() for part in (course_id, url, name) if part and part.strip())
-    digest = hashlib.sha1((normalized or "<empty>").encode("utf-8")).hexdigest()[:20]
+    normalized = "|".join(
+        part.strip() for part in (course_id, url, name) if part and part.strip()
+    )
+    digest = hashlib.sha1(
+        (normalized or "<empty>").encode("utf-8"), usedforsecurity=False
+    ).hexdigest()[:20]
     return f"res_{digest}"
 
 
@@ -323,7 +367,9 @@ def is_course_content_page_url(url: str, course_id: str, *, base_url: str) -> bo
     )
 
 
-def is_sidebar_seed_candidate(title: str, url: str, course_id: str, *, base_url: str) -> bool:
+def is_sidebar_seed_candidate(
+    title: str, url: str, course_id: str, *, base_url: str
+) -> bool:
     """判断侧边栏链接是否应作为内容抓取 seed。"""
     parsed = urlparse(url)
     if parsed.netloc and parsed.netloc != urlparse(base_url).netloc:
@@ -377,4 +423,3 @@ def is_sidebar_seed_candidate(title: str, url: str, course_id: str, *, base_url:
 def extract_date_text_safe(text: str) -> str:
     """与旧 facade 兼容的日期提取包装。"""
     return extract_date_text(text)
-

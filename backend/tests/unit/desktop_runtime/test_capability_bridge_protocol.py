@@ -30,6 +30,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "artifact",
         "state",
         "event",
+        "mcp",
     )
     assert DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY == {
         "secret": ("get_secret", "has_secret"),
@@ -38,9 +39,13 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "artifact": ("save_text", "save_bytes", "describe_artifact"),
         "state": ("get_value", "put_value", "delete_value"),
         "event": ("emit_event",),
+        "mcp": ("call_tool",),
     }
     assert get_desktop_capability_operations("secret") == ("get_secret", "has_secret")
-    assert get_desktop_capability_operations("workspace") == ("resolve_path", "ensure_directory")
+    assert get_desktop_capability_operations("workspace") == (
+        "resolve_path",
+        "ensure_directory",
+    )
     assert get_desktop_capability_operations("database") == ("resolve_path",)
     assert get_desktop_capability_operations("artifact") == (
         "save_text",
@@ -53,19 +58,26 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "delete_value",
     )
     assert get_desktop_capability_operations("event") == ("emit_event",)
+    assert get_desktop_capability_operations("mcp") == ("call_tool",)
     assert {
         operation
         for operations in DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY.values()
         for operation in operations
     } == set(DESKTOP_CAPABILITY_OPERATIONS)
-    assert is_supported_desktop_capability_operation(
-        capability="secret",
-        operation="get_secret",
-    ) is True
-    assert is_supported_desktop_capability_operation(
-        capability="secret",
-        operation="resolve_path",
-    ) is False
+    assert (
+        is_supported_desktop_capability_operation(
+            capability="secret",
+            operation="get_secret",
+        )
+        is True
+    )
+    assert (
+        is_supported_desktop_capability_operation(
+            capability="secret",
+            operation="resolve_path",
+        )
+        is False
+    )
 
 
 def test_capability_bridge_envelopes_serialize_expected_shape() -> None:
@@ -139,6 +151,59 @@ def test_capability_bridge_envelopes_serialize_expected_shape() -> None:
     ]
 
 
+def test_capability_bridge_models_parse_wire_aliases_and_flat_error_shape() -> None:
+    request = DesktopCapabilityBridgeRequest.model_validate(
+        {
+            "requestId": " request-2 ",
+            "capability": " workspace ",
+            "operation": " resolve_path ",
+            "toolId": " tool.snapshot-sync ",
+            "runId": " run-2 ",
+            "toolCallId": " tool-call-2 ",
+            "payload": {"relativePath": " docs/output "},
+        }
+    )
+    failure_response = DesktopCapabilityBridgeResponse.model_validate(
+        {
+            "requestId": " request-2 ",
+            "ok": False,
+            "errorCode": "timeout",
+            "errorMessage": " Host bridge timed out. ",
+            "errorRetryable": True,
+            "details": {"timeoutMs": 5000},
+        }
+    )
+
+    assert request.to_dict() == {
+        "requestId": "request-2",
+        "capability": "workspace",
+        "operation": "resolve_path",
+        "toolId": "tool.snapshot-sync",
+        "runId": "run-2",
+        "toolCallId": "tool-call-2",
+        "payload": {"relativePath": "docs/output"},
+    }
+    assert failure_response.to_dict() == {
+        "requestId": "request-2",
+        "ok": False,
+        "errorCode": "timeout",
+        "errorMessage": "Host bridge timed out.",
+        "errorRetryable": True,
+        "details": {"timeoutMs": 5000},
+    }
+
+    with pytest.raises(
+        ValueError, match=r"response contains unsupported field\(s\): extra"
+    ):
+        DesktopCapabilityBridgeResponse.model_validate(
+            {
+                "requestId": "request-3",
+                "ok": True,
+                "extra": True,
+            }
+        )
+
+
 def test_capability_bridge_schema_accessors_return_defensive_copies() -> None:
     request_schema = get_desktop_capability_bridge_request_payload_schema(
         capability="secret",
@@ -152,17 +217,25 @@ def test_capability_bridge_schema_accessors_return_defensive_copies() -> None:
     request_schema["properties"]["secretName"]["minLength"] = 99
     result_schema["properties"]["artifactId"]["minLength"] = 99
 
-    assert get_desktop_capability_bridge_request_payload_schema(
-        capability="secret",
-        operation="get_secret",
-    )["properties"]["secretName"]["minLength"] == 1
-    assert get_desktop_capability_bridge_result_schema(
-        capability="artifact",
-        operation="describe_artifact",
-    )["properties"]["artifactId"]["minLength"] == 1
+    assert (
+        get_desktop_capability_bridge_request_payload_schema(
+            capability="secret",
+            operation="get_secret",
+        )["properties"]["secretName"]["minLength"]
+        == 1
+    )
+    assert (
+        get_desktop_capability_bridge_result_schema(
+            capability="artifact",
+            operation="describe_artifact",
+        )["properties"]["artifactId"]["minLength"]
+        == 1
+    )
 
 
-def test_payload_and_result_validation_enforce_operation_routing_and_invariants() -> None:
+def test_payload_and_result_validation_enforce_operation_routing_and_invariants() -> (
+    None
+):
     assert validate_desktop_capability_bridge_payload(
         capability="workspace",
         operation="resolve_path",
@@ -183,6 +256,75 @@ def test_payload_and_result_validation_enforce_operation_routing_and_invariants(
         operation="get_value",
         result={"found": False, "value": None},
     ) == {"found": False, "value": None}
+    assert validate_desktop_capability_bridge_payload(
+        capability="mcp",
+        operation="call_tool",
+        payload={
+            "serverId": " mcp-stdio-stub ",
+            "remoteToolName": " search-campus ",
+            "arguments": {"keyword": "library"},
+            "snapshotRevision": 8,
+        },
+    ) == {
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "arguments": {"keyword": "library"},
+        "snapshotRevision": 8,
+    }
+    assert validate_desktop_capability_bridge_result(
+        capability="mcp",
+        operation="call_tool",
+        result={
+            "ok": True,
+            "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+            "serverId": "mcp-stdio-stub",
+            "remoteToolName": "search-campus",
+            "content": [{"type": "text", "text": "search-campus completed"}],
+            "structuredContent": {"echoedArguments": {"keyword": "library"}},
+            "snapshotRevision": 8,
+            "isError": False,
+        },
+    ) == {
+        "ok": True,
+        "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "content": [{"type": "text", "text": "search-campus completed"}],
+        "structuredContent": {"echoedArguments": {"keyword": "library"}},
+        "snapshotRevision": 8,
+        "isError": False,
+    }
+    assert validate_desktop_capability_bridge_result(
+        capability="mcp",
+        operation="call_tool",
+        result={
+            "ok": False,
+            "toolId": "mcp.missing.tool.00000000",
+            "serverId": "mcp-stdio-stub",
+            "remoteToolName": "missing-tool",
+            "snapshotRevision": 8,
+            "error": {
+                "code": "directory_drift",
+                "message": "The requested MCP tool no longer exists in the current snapshot.",
+                "retryable": False,
+                "observedAt": "2026-04-21T12:00:00.000Z",
+                "details": {"snapshotRevision": 8},
+            },
+        },
+    ) == {
+        "ok": False,
+        "toolId": "mcp.missing.tool.00000000",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "missing-tool",
+        "snapshotRevision": 8,
+        "error": {
+            "code": "directory_drift",
+            "message": "The requested MCP tool no longer exists in the current snapshot.",
+            "retryable": False,
+            "observedAt": "2026-04-21T12:00:00.000Z",
+            "details": {"snapshotRevision": 8},
+        },
+    }
 
     with pytest.raises(
         ValueError,
@@ -194,7 +336,9 @@ def test_payload_and_result_validation_enforce_operation_routing_and_invariants(
             payload={},
         )
 
-    with pytest.raises(ValueError, match=r"payload contains unsupported field\(s\): channel"):
+    with pytest.raises(
+        ValueError, match=r"payload contains unsupported field\(s\): channel"
+    ):
         validate_desktop_capability_bridge_payload(
             capability="event",
             operation="emit_event",
@@ -204,6 +348,8 @@ def test_payload_and_result_validation_enforce_operation_routing_and_invariants(
             },
         )
 
+
+def test_state_get_value_result_rejects_non_null_value_when_not_found() -> None:
     with pytest.raises(
         ValueError,
         match="result field 'value' must be null when 'found' is false",
@@ -218,6 +364,20 @@ def test_payload_and_result_validation_enforce_operation_routing_and_invariants(
         )
 
 
+def test_artifact_describe_result_requires_metadata() -> None:
+    with pytest.raises(ValueError, match="Field required"):
+        validate_desktop_capability_bridge_result(
+            capability="artifact",
+            operation="describe_artifact",
+            result={
+                "artifactId": "artifact-1",
+                "name": "diagnostic.json",
+                "contentType": "application/json",
+                "uri": "artifact://diagnostic.json",
+            },
+        )
+
+
 def test_artifact_descriptor_round_trips_with_tool_artifact_reference() -> None:
     descriptor = DesktopCapabilityArtifactDescriptor(
         artifact_id="artifact-1",
@@ -228,7 +388,9 @@ def test_artifact_descriptor_round_trips_with_tool_artifact_reference() -> None:
     )
 
     reference = descriptor.to_tool_artifact_reference()
-    restored = DesktopCapabilityArtifactDescriptor.from_tool_artifact_reference(reference)
+    restored = DesktopCapabilityArtifactDescriptor.from_tool_artifact_reference(
+        reference
+    )
 
     assert isinstance(reference, ToolArtifactReference)
     assert reference.to_dict() == descriptor.to_dict()

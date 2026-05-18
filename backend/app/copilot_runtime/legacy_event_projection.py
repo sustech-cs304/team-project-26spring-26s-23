@@ -131,7 +131,12 @@ class RuntimeRunEventProjector:
                 ),
             )
 
-        if event.type in {"tool_started", "tool_completed", "tool_failed"}:
+        if event.type in {
+            "tool_started",
+            "tool_waiting_approval",
+            "tool_completed",
+            "tool_failed",
+        }:
             return (
                 self.events.build(
                     TOOL_EVENT_EVENT_TYPE,
@@ -152,7 +157,9 @@ class RuntimeRunEventProjector:
             payload["citations"] = citations_obj if isinstance(citations_obj, list) else []
             if self.resolved_model_route is not None:
                 payload["resolvedModelId"] = self.resolved_model_route.model_id
-                payload["resolvedModelRoute"] = self.resolved_model_route.to_public_dict()
+                payload["resolvedModelRoute"] = (
+                    self.resolved_model_route.to_public_dict()
+                )
             return (
                 self.events.build(
                     RUN_COMPLETED_EVENT_TYPE,

@@ -1,25 +1,35 @@
-"""Tool-contract facade for selected Blackboard domain capabilities."""
+"""Tool-contract facade for selected Blackboard domain capabilities.
+
+This module is the stable entry-point for the Blackboard tool facade.
+Domain-specific implementations live in sibling submodules:
+  - course_catalog.py  (course catalog search)
+  - calendar_refresh.py (calendar ICS refresh)
+  - data_sync.py        (snapshot sync)
+  - course_resources.py (course resources sync)
+  - sql_query.py        (SQL query / introspection)
+
+Only shared infrastructure, stable re-exports, and thin orchestration
+remain in this file.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import json
-import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
+from pydantic import Field, field_validator
 
-from app.integrations.sustech.blackboard.data.db_manager import DatabaseManager
-from app.integrations.sustech.blackboard.provider.results import (
-    BlackboardCourseResourcesSyncReport,
-    BlackboardSnapshotSyncReport,
-    CalendarICSSyncResult,
-    CourseCatalogSearchResult,
+from app.integrations.sustech.facade_contract_models import (
+    ResolvedCredentialContract,
+    SustechToolArgumentsModel,
+    SustechToolBoundaryModel,
 )
+from app.integrations.sustech.blackboard.data.db_manager import DatabaseManager
 from app.integrations.sustech.blackboard.provider.use_cases import (
     refresh_calendar_ics_subscription,
     run_blackboard_course_resources_sync,
@@ -30,7 +40,6 @@ from app.tooling import (
     ArtifactStore,
     DatabaseResolver,
     HostCapabilityOperationError,
-    HostCapabilityRequirement,
     HostEvent,
     MissingHostCapabilityError,
     NormalizedToolError,
@@ -43,17 +52,35 @@ from app.tooling import (
     ToolResultEnvelope,
     ToolSchema,
 )
-from app.tooling.contract.errors import build_tool_exception_details, redact_tool_error_value
+from app.tooling.contract.errors import (
+    build_tool_exception_details,
+    redact_tool_error_value,
+)
+
+# ---------------------------------------------------------------------------
+# State namespace constants
+# ---------------------------------------------------------------------------
 
 _STATE_NAMESPACE_CALENDAR_REFRESH = "blackboard.calendar_refresh"
 _STATE_NAMESPACE_SNAPSHOT_SYNC = "blackboard.snapshot_sync"
 _STATE_NAMESPACE_COURSE_RESOURCES_SYNC = "blackboard.course_resources_sync"
-_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"
-_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"
+# Bandit B105 false positive: these are config/secret registry key names, not credentials.
+_DEFAULT_SUSTECH_USERNAME_SECRET_NAME = "sustech.username"  # nosec B105
+_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME = "sustech.casPassword"  # nosec B105
+
+
+# ---------------------------------------------------------------------------
+# Shared exception
+# ---------------------------------------------------------------------------
 
 
 class BlackboardAuthenticationError(RuntimeError):
     """Raised when Blackboard credentials cannot be resolved or authenticated."""
+
+
+# ---------------------------------------------------------------------------
+# Base tool class (shared decorator / lifecycle)
+# ---------------------------------------------------------------------------
 
 
 class _BlackboardFacadeToolBase:
@@ -128,6 +155,11 @@ class _BlackboardFacadeToolBase:
         raise NotImplementedError
 
 
+# ---------------------------------------------------------------------------
+# Shared argument readers / normalizers
+# ---------------------------------------------------------------------------
+
+
 def _normalize_arguments(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     if arguments is None:
         return {}
@@ -161,7 +193,9 @@ def _read_optional_int(arguments: Mapping[str, Any], field_name: str) -> int | N
         raise ValueError(f"{field_name} must be an integer.") from ex
 
 
-def _read_required_string_list(arguments: Mapping[str, Any], field_name: str) -> list[str]:
+def _read_required_string_list(
+    arguments: Mapping[str, Any], field_name: str
+) -> list[str]:
     value = arguments.get(field_name)
     if not isinstance(value, list):
         raise ValueError(f"{field_name} must be an array of non-empty strings.")
@@ -213,7 +247,9 @@ def _read_choice(
     lowered = normalized.lower()
     normalized_choices = tuple(str(item).lower() for item in choices)
     if lowered not in normalized_choices:
-        raise ValueError(f"{field_name} must be one of: {', '.join(normalized_choices)}.")
+        raise ValueError(
+            f"{field_name} must be one of: {', '.join(normalized_choices)}."
+        )
     return lowered
 
 
@@ -233,7 +269,9 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def _schema(*, properties: Mapping[str, Any], required: Sequence[str] = ()) -> ToolSchema:
+def _schema(
+    *, properties: Mapping[str, Any], required: Sequence[str] = ()
+) -> ToolSchema:
     payload: dict[str, Any] = {
         "type": "object",
         "additionalProperties": False,
@@ -244,10 +282,167 @@ def _schema(*, properties: Mapping[str, Any], required: Sequence[str] = ()) -> T
     return ToolSchema(schema=payload)
 
 
+# Shared type aliases
+JsonObject = dict[str, Any]
+JsonArray = list[Any]
+BlackboardFetchMode = Literal["quick", "full"]
+BlackboardCalendarRefreshMode = Literal["auto", "force"]
+
+
+def _normalize_optional_text_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _normalize_required_text_value(value: Any, field_name: str) -> str:
+    normalized = _normalize_optional_text_value(value)
+    if normalized is None:
+        raise ValueError(f"{field_name} must be a non-empty string.")
+    return normalized
+
+
+def _normalize_optional_int_value(value: Any, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer.")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as ex:
+        raise ValueError(f"{field_name} must be an integer.") from ex
+
+
+def _normalize_bool_value(value: Any, field_name: str, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    raise ValueError(f"{field_name} must be a boolean.")
+
+
+def _normalize_choice_value(
+    value: Any,
+    field_name: str,
+    *,
+    choices: Sequence[str],
+    default: str,
+) -> str:
+    normalized = _normalize_optional_text_value(value)
+    if normalized is None:
+        return default
+
+    lowered = normalized.lower()
+    normalized_choices = tuple(str(item).lower() for item in choices)
+    if lowered not in normalized_choices:
+        raise ValueError(
+            f"{field_name} must be one of: {', '.join(normalized_choices)}."
+        )
+    return lowered
+
+
+def _normalize_required_string_list_value(
+    value: Any,
+    field_name: str,
+) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be an array of non-empty strings.")
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        text = str(item or "").strip()
+        if not text:
+            raise ValueError(f"{field_name} must contain only non-empty strings.")
+        if text in seen:
+            continue
+        seen.add(text)
+        normalized.append(text)
+
+    if not normalized:
+        raise ValueError(f"{field_name} must contain at least one non-empty string.")
+    return normalized
+
+
+# ---------------------------------------------------------------------------
+# Shared argument models
+# ---------------------------------------------------------------------------
+
+
+class _BlackboardToolArguments(SustechToolArgumentsModel):
+    username: str | None = None
+    password: str | None = None
+    usernameSecretName: str | None = None
+    passwordSecretName: str | None = None
+    dbRelativePath: str | None = None
+    dbPath: str | None = None
+    stateKey: str | None = None
+    artifactName: str | None = None
+
+    @field_validator(
+        "username",
+        "password",
+        "usernameSecretName",
+        "passwordSecretName",
+        "dbRelativePath",
+        "dbPath",
+        "stateKey",
+        "artifactName",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_text_fields(cls, value: Any) -> str | None:
+        return _normalize_optional_text_value(value)
+
+
+# ---------------------------------------------------------------------------
+# Shared output models
+# ---------------------------------------------------------------------------
+
+
+class _SyncStatsSummary(SustechToolBoundaryModel):
+    inserted: int
+    updated: int
+    deleted: int
+
+
+class _PersistenceStateSummary(SustechToolBoundaryModel):
+    namespace: str
+    key: str
+
+
+class _PersistenceSummary(SustechToolBoundaryModel):
+    state: _PersistenceStateSummary | None = None
+    artifacts: list[JsonObject] = Field(default_factory=list)
+
+    def to_optional_contract_dict(self) -> dict[str, Any] | None:
+        if self.state is None and not self.artifacts:
+            return None
+        exclude: set[str] = set()
+        if self.state is None:
+            exclude.add("state")
+        if not self.artifacts:
+            exclude.add("artifacts")
+        return self.to_contract_dict(exclude=exclude)
+
+
+# ---------------------------------------------------------------------------
+# Error handling
+# ---------------------------------------------------------------------------
+
+
 def _message_or_fallback(error: Exception, fallback: str) -> str:
     message = str(error).strip()
     return message or fallback
-
 
 
 def _error_diagnostic_context(
@@ -264,7 +459,6 @@ def _error_diagnostic_context(
     }
 
 
-
 def _build_error_details(
     *,
     error: Exception,
@@ -277,7 +471,6 @@ def _build_error_details(
         diagnostic_context=diagnostic_context,
         sanitizer=redact_tool_error_value,
     )
-
 
 
 def _normalized_error_with_details(
@@ -298,7 +491,6 @@ def _normalized_error_with_details(
     )
 
 
-
 def _map_exception(
     error: Exception,
     *,
@@ -317,7 +509,11 @@ def _map_exception(
                 code="host_capability_missing",
                 message=error.message,
                 retryable=error.retryable,
-                details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
+                details={
+                    "capability": error.capability,
+                    "hostErrorCode": error.code,
+                    **error.details,
+                },
             )
         elif error.code in {"temporarily_unavailable", "timeout"}:
             normalized = NormalizedToolError(
@@ -338,7 +534,11 @@ def _map_exception(
                 code="execution_failed",
                 message=error.message,
                 retryable=error.retryable,
-                details={"capability": error.capability, "hostErrorCode": error.code, **error.details},
+                details={
+                    "capability": error.capability,
+                    "hostErrorCode": error.code,
+                    **error.details,
+                },
             )
     elif isinstance(error, BlackboardAuthenticationError):
         normalized = NormalizedToolError(
@@ -377,16 +577,22 @@ def _map_exception(
             code = "temporarily_unavailable"
         normalized = NormalizedToolError(
             code=code,
-            message=_message_or_fallback(error, f"Blackboard request failed with {status_code}."),
+            message=_message_or_fallback(
+                error, f"Blackboard request failed with {status_code}."
+            ),
             details={"statusCode": status_code},
         )
     elif isinstance(error, httpx.HTTPError):
         normalized = NormalizedToolError(
             code="temporarily_unavailable",
-            message=_message_or_fallback(error, "Blackboard host is temporarily unavailable."),
+            message=_message_or_fallback(
+                error, "Blackboard host is temporarily unavailable."
+            ),
         )
     elif isinstance(error, RuntimeError) and "CAS 登录失败" in str(error):
-        normalized = NormalizedToolError(code="authentication_required", message=str(error))
+        normalized = NormalizedToolError(
+            code="authentication_required", message=str(error)
+        )
     else:
         normalized = NormalizedToolError(
             code="execution_failed",
@@ -397,6 +603,11 @@ def _map_exception(
         error=error,
         diagnostic_context=diagnostic_context,
     )
+
+
+# ---------------------------------------------------------------------------
+# Event emission
+# ---------------------------------------------------------------------------
 
 
 def _emit_event(
@@ -423,11 +634,9 @@ def _emit_event(
         return
 
 
-class _ResolvedCredentials:
-    def __init__(self, *, username: str, password: str, source: str) -> None:
-        self.username = username
-        self.password = password
-        self.source = source
+# ---------------------------------------------------------------------------
+# Credential resolution
+# ---------------------------------------------------------------------------
 
 
 async def _resolve_credentials(
@@ -436,7 +645,7 @@ async def _resolve_credentials(
     *,
     default_username_secret_name: str | None = None,
     default_password_secret_name: str | None = None,
-) -> _ResolvedCredentials:
+) -> ResolvedCredentialContract:
     username = _read_optional_text(arguments, "username")
     password = _read_optional_text(arguments, "password")
     username_secret_name = _read_optional_text(arguments, "usernameSecretName")
@@ -473,7 +682,9 @@ async def _resolve_credentials(
         source = "host_secrets"
     elif used_sources == {"arguments", "host_secrets"}:
         source = "mixed"
-    return _ResolvedCredentials(username=username, password=password, source=source)
+    return ResolvedCredentialContract(
+        username=username, password=password, source=source
+    )
 
 
 def _normalize_secret(value: Any) -> str | None:
@@ -481,6 +692,11 @@ def _normalize_secret(value: Any) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+# ---------------------------------------------------------------------------
+# Database path resolution
+# ---------------------------------------------------------------------------
 
 
 def _reject_explicit_db_path(arguments: Mapping[str, Any]) -> None:
@@ -512,122 +728,9 @@ def _db_path_source(arguments: Mapping[str, Any]) -> str:
     return "default"
 
 
-def _read_sql_query_result_limit(arguments: Mapping[str, Any]) -> int:
-    raw_limit = _read_optional_int(arguments, "resultLimit")
-    if raw_limit is None:
-        return 50
-    if raw_limit <= 0:
-        raise ValueError("resultLimit must be a positive integer.")
-    return raw_limit
-
-
-def _default_blackboard_sql_query_db_path(host: ToolHostCapabilities) -> Path:
-    database_resolver = cast(
-        DatabaseResolver,
-        host.require_capability("database_resolver"),
-    )
-    return database_resolver.resolve_database_path(
-        relative_path=_default_blackboard_db_relative_path()
-    )
-
-
-def _resolve_sql_query_db_path(
-    arguments: Mapping[str, Any],
-    host: ToolHostCapabilities,
-) -> tuple[Path, str, bool]:
-    _reject_explicit_db_path(arguments)
-    db_relative_path = _read_optional_text(arguments, "dbRelativePath")
-    if db_relative_path is not None:
-        database_resolver = cast(
-            DatabaseResolver,
-            host.require_capability("database_resolver"),
-        )
-        return (
-            database_resolver.resolve_database_path(relative_path=db_relative_path),
-            "database_relative",
-            False,
-        )
-    return _default_blackboard_sql_query_db_path(host), "default", True
-
-
-def _sql_statement_type(sql: str) -> str:
-    stripped = sql.lstrip()
-    if stripped == "":
-        return "UNKNOWN"
-    return stripped.split(maxsplit=1)[0].rstrip(";").upper()
-
-
-def _normalize_sql_value(value: Any) -> Any:
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return _jsonable(value)
-
-
-def _sql_row_to_mapping(columns: Sequence[str], row: Sequence[Any]) -> dict[str, Any]:
-    return {
-        column: _normalize_sql_value(value)
-        for column, value in zip(columns, row)
-    }
-
-
-def _execute_sql_query(
-    *,
-    sql: str,
-    db_path: Path,
-    result_limit: int,
-) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    statement_type = _sql_statement_type(sql)
-    with sqlite3.connect(str(db_path)) as connection:
-        cursor = connection.cursor()
-        cursor.execute(sql)
-        has_result_set = cursor.description is not None
-        if has_result_set:
-            columns = [str(description[0]) for description in cursor.description]
-            rows = cursor.fetchall()
-            full_rows = [_sql_row_to_mapping(columns, row) for row in rows]
-            row_count = len(full_rows)
-            rows_preview = full_rows[:result_limit]
-            execution_summary = {
-                "statementType": statement_type,
-                "previewRowCount": len(rows_preview),
-                "rowCount": row_count,
-                "message": f"SQL query returned {row_count} row(s).",
-            }
-            return (
-                {
-                    "hasResultSet": True,
-                    "columns": columns,
-                    "rowsPreview": rows_preview,
-                    "truncated": row_count > result_limit,
-                    "rowCount": row_count,
-                    "executionSummary": execution_summary,
-                },
-                {
-                    "hasResultSet": True,
-                    "columns": columns,
-                    "rows": full_rows,
-                    "rowCount": row_count,
-                    "executionSummary": execution_summary,
-                },
-            )
-
-        connection.commit()
-        affected_row_count = cursor.rowcount if cursor.rowcount >= 0 else None
-        return (
-            {
-                "hasResultSet": False,
-                "columns": [],
-                "rowsPreview": [],
-                "truncated": False,
-                "rowCount": None,
-                "executionSummary": {
-                    "statementType": statement_type,
-                    "affectedRowCount": affected_row_count,
-                    "message": "SQL statement executed without a result set.",
-                },
-            },
-            None,
-        )
+# ---------------------------------------------------------------------------
+# Shared persistence helpers
+# ---------------------------------------------------------------------------
 
 
 async def _persist_state_if_requested(
@@ -689,68 +792,10 @@ async def _persist_artifact_if_requested(
     )
 
 
-async def _persist_sql_query_artifact_if_requested(
-    *,
-    persist_artifact: bool,
-    context: ToolInvocationContext,
-    host: ToolHostCapabilities,
-    output: Mapping[str, Any],
-    full_result: Mapping[str, Any] | None,
-) -> tuple[dict[str, Any] | None, tuple[ToolArtifactReference, ...]]:
-    if not persist_artifact or full_result is None or not bool(output.get("truncated")):
-        return None, ()
+# ---------------------------------------------------------------------------
+# Shared sync helpers
+# ---------------------------------------------------------------------------
 
-    artifact_store = cast(ArtifactStore, host.require_capability("artifact_store"))
-    artifact = await artifact_store.save_text(
-        name=f"{context.tool_id.replace('.', '-')}-{context.invocation_id}.json",
-        text=json.dumps(dict(full_result), ensure_ascii=False, indent=2, sort_keys=True),
-        content_type="application/json",
-        metadata={
-            "toolId": context.tool_id,
-            "invocationId": context.invocation_id,
-            "rowCount": full_result.get("rowCount"),
-        },
-    )
-    reference = ToolArtifactReference(
-        artifact_id=artifact.artifact_id,
-        name=artifact.name,
-        content_type=artifact.content_type,
-        uri=artifact.uri,
-        metadata=artifact.metadata,
-    )
-    return reference.to_dict(), (reference,)
-
-
-def _course_catalog_output(
-    result: CourseCatalogSearchResult,
-) -> dict[str, Any]:
-    return {
-        "keyword": result.keyword,
-        "field": result.field,
-        "operator": result.operator,
-        "fetchMode": result.fetch_mode,
-        "maxPages": result.max_pages,
-        "limit": result.limit,
-        "total": result.total,
-        "results": _jsonable(result.results),
-        "logSummary": _jsonable(result.log_summary),
-        "logs": _jsonable(result.logs),
-    }
-
-
-
-def _calendar_refresh_output(result: CalendarICSSyncResult) -> dict[str, Any]:
-    return {
-        "feedUrl": result.feed_url,
-        "refreshMode": result.refresh_mode,
-        "dbPath": result.db_path.as_posix(),
-        "stats": _jsonable(result.stats),
-        "activeEventCount": result.active_event_count,
-        "allEventCount": result.all_event_count,
-        "activeEvents": _jsonable(result.active_events),
-        "logSummary": _jsonable(result.log_summary),
-        "logs": _jsonable(result.logs),
-    }
 
 def _compact_sync_stats(stats: Mapping[str, Any]) -> dict[str, int]:
     return {
@@ -758,7 +803,6 @@ def _compact_sync_stats(stats: Mapping[str, Any]) -> dict[str, int]:
         "updated": int(stats.get("updated", 0)),
         "deleted": int(stats.get("deleted", 0)),
     }
-
 
 
 def _compact_sync_stats_by_table(
@@ -770,34 +814,13 @@ def _compact_sync_stats_by_table(
     }
 
 
-
-def _snapshot_sync_output(
-    report: BlackboardSnapshotSyncReport,
-    *,
-    progress_messages: Sequence[str],
-    persistence: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    _ = progress_messages
-    output: dict[str, Any] = {
-        "dbPath": report.db_path.as_posix(),
-        "scrapedCounts": _jsonable(report.snapshot.scraped_counts()),
-        "firstSyncStats": _compact_sync_stats_by_table(report.first_sync_stats),
-        "secondSyncStats": (
-            None
-            if report.second_sync_stats is None
-            else _compact_sync_stats_by_table(report.second_sync_stats)
-        ),
-        "tableCounts": _jsonable(report.table_counts),
-        "expectedActiveCounts": _jsonable(report.expected_active_counts),
-        "integrityOk": report.integrity_ok,
-        "secondSyncHasNoNewRecords": report.second_sync_has_no_new_records(),
-        "secondSyncHasNoDeletedRecords": report.second_sync_has_no_deleted_records(),
-        "logSummary": _jsonable(report.log_summary),
+def _sync_stats_summary_models(
+    stats_by_table: Mapping[str, Mapping[str, Any]],
+) -> dict[str, _SyncStatsSummary]:
+    return {
+        str(table): _SyncStatsSummary(**_compact_sync_stats(stats))
+        for table, stats in stats_by_table.items()
     }
-    if persistence:
-        output["persistence"] = _jsonable(persistence)
-    return output
-
 
 
 def _build_output_persistence_summary(
@@ -805,734 +828,36 @@ def _build_output_persistence_summary(
     state_payload: Mapping[str, Any] | None,
     artifacts: Sequence[ToolArtifactReference],
 ) -> dict[str, Any] | None:
-    summary: dict[str, Any] = {}
+    state_summary: _PersistenceStateSummary | None = None
     if isinstance(state_payload, Mapping):
         state_namespace = state_payload.get("stateNamespace")
         state_key = state_payload.get("stateKey")
         if isinstance(state_namespace, str) and isinstance(state_key, str):
-            summary["state"] = {
-                "namespace": state_namespace,
-                "key": state_key,
-            }
-    if artifacts:
-        summary["artifacts"] = [artifact.to_dict() for artifact in artifacts]
-    return summary or None
-
-
-
-def _snapshot_sync_persisted_output(
-    report: BlackboardSnapshotSyncReport,
-    *,
-    progress_messages: Sequence[str],
-) -> dict[str, Any]:
-    output: dict[str, Any] = {
-        "dbPath": report.db_path.as_posix(),
-        "scrapedCounts": _jsonable(report.snapshot.scraped_counts()),
-        "firstSyncStats": _jsonable(report.first_sync_stats),
-        "secondSyncStats": _jsonable(report.second_sync_stats),
-        "tableCounts": _jsonable(report.table_counts),
-        "expectedActiveCounts": _jsonable(report.expected_active_counts),
-        "integrityOk": report.integrity_ok,
-        "secondSyncHasNoNewRecords": report.second_sync_has_no_new_records(),
-        "secondSyncHasNoDeletedRecords": report.second_sync_has_no_deleted_records(),
-        "logSummary": _jsonable(report.log_summary),
-        "logs": _jsonable(report.logs),
-    }
-    if progress_messages:
-        output["progressMessages"] = list(progress_messages)
-    return output
-
-
-def _course_resources_sync_output(
-    report: BlackboardCourseResourcesSyncReport,
-    *,
-    progress_messages: Sequence[str],
-    persistence: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    _ = progress_messages
-    output: dict[str, Any] = {
-        "dbPath": report.db_path.as_posix(),
-        "requestedCourseIds": list(report.requested_course_ids),
-        "processedCourseIds": list(report.processed_course_ids),
-        "missingCourseIds": list(report.missing_course_ids),
-        "failedCourseIds": list(report.failed_course_ids),
-        "scrapedCounts": _jsonable(report.scraped_counts()),
-        "syncStats": _compact_sync_stats_by_table(report.sync_stats),
-        "tableCounts": _jsonable(report.table_counts),
-        "logSummary": _jsonable(report.log_summary),
-    }
-    if persistence:
-        output["persistence"] = _jsonable(persistence)
-    return output
-
-
-
-def _course_resources_sync_persisted_output(
-    report: BlackboardCourseResourcesSyncReport,
-    *,
-    progress_messages: Sequence[str],
-) -> dict[str, Any]:
-    output: dict[str, Any] = {
-        "dbPath": report.db_path.as_posix(),
-        "requestedCourseIds": list(report.requested_course_ids),
-        "processedCourseIds": list(report.processed_course_ids),
-        "missingCourseIds": list(report.missing_course_ids),
-        "failedCourseIds": list(report.failed_course_ids),
-        "scrapedCounts": _jsonable(report.scraped_counts()),
-        "syncStats": _jsonable(report.sync_stats),
-        "tableCounts": _jsonable(report.table_counts),
-        "resourcePayloadsByCourse": _jsonable(report.resource_payloads_by_course),
-        "logSummary": _jsonable(report.log_summary),
-        "logs": _jsonable(report.logs),
-    }
-    if progress_messages:
-        output["progressMessages"] = list(progress_messages)
-    return output
-
-
-_SQL_QUERY_METADATA = ToolMetadata(
-    tool_id="blackboard.sql.query",
-    display_name="Blackboard SQL Query",
-    description=(
-        "Execute raw SQL directly against the local Blackboard SQLite database for inspection and retrieval. "
-        "Unless explicitly allowed, avoid DDL, DML, PRAGMA, and ATTACH statements."
-    ),
-    input_schema=_schema(
-        properties={
-            "sql": {"type": "string", "minLength": 1},
-            "dbRelativePath": {"type": "string"},
-            "resultLimit": {"type": "integer"},
-            "persistArtifact": {"type": "boolean"},
-        },
-        required=("sql",),
-    ),
-    output_schema=_schema(
-        properties={
-            "sql": {"type": "string"},
-            "database": {"type": "object"},
-            "usedDefaultDatabase": {"type": "boolean"},
-            "hasResultSet": {"type": "boolean"},
-            "columns": {"type": "array"},
-            "rowsPreview": {"type": "array"},
-            "truncated": {"type": "boolean"},
-            "rowCount": {"type": ["integer", "null"]},
-            "executionSummary": {"type": "object"},
-            "artifact": {"type": ["object", "null"]},
-        },
-        required=(
-            "sql",
-            "database",
-            "usedDefaultDatabase",
-            "hasResultSet",
-            "columns",
-            "rowsPreview",
-            "truncated",
-            "rowCount",
-            "executionSummary",
-            "artifact",
-        ),
-    ),
-    capability_requirements=(
-        HostCapabilityRequirement(
-            capability="database_resolver",
-            required=False,
-            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
-        ),
-        HostCapabilityRequirement(
-            capability="artifact_store",
-            required=False,
-            purpose="Persist full SQL query results as host-owned artifacts when inline preview is truncated.",
-        ),
-        HostCapabilityRequirement(
-            capability="event_sink",
-            required=False,
-            purpose="Emit tool lifecycle events to the host.",
-        ),
-    ),
-    tags=("blackboard", "sql", "query"),
-    annotations={"domain": "blackboard", "facade": "tool-contract"},
-    idempotent=False,
-)
-
-
-_COURSE_CATALOG_SEARCH_METADATA = ToolMetadata(
-    tool_id="blackboard.course_catalog.search",
-    display_name="Blackboard Course Catalog Search",
-    description=(
-        "Search Blackboard course catalog entries with Blackboard CAS credentials. "
-        "Use fetchMode=quick for a lighter first-pass search that does not follow show-all, "
-        "or fetchMode=full to keep the more complete behavior; maxPages caps pagination depth."
-    ),
-    input_schema=_schema(
-        properties={
-            "keyword": {"type": "string", "minLength": 1},
-            "field": {"type": "string"},
-            "operator": {"type": "string"},
-            "fetchMode": {
-                "type": "string",
-                "enum": ["quick", "full"],
-                "default": "full",
-                "description": (
-                    "quick searches only the initial result pages without following show-all; "
-                    "full also follows show-all pagination for more complete results."
-                ),
-            },
-            "maxPages": {
-                "type": "integer",
-                "minimum": 1,
-                "default": 30,
-                "description": "Maximum number of result pages to continue fetching before stopping.",
-            },
-            "limit": {"type": "integer"},
-            "username": {"type": "string"},
-            "password": {"type": "string"},
-            "usernameSecretName": {"type": "string"},
-            "passwordSecretName": {"type": "string"},
-        },
-        required=("keyword",),
-    ),
-    output_schema=_schema(
-        properties={
-            "keyword": {"type": "string"},
-            "field": {"type": "string"},
-            "operator": {"type": "string"},
-            "fetchMode": {"type": "string", "enum": ["quick", "full"]},
-            "maxPages": {"type": "integer", "minimum": 1},
-            "limit": {"type": ["integer", "null"]},
-            "total": {"type": "integer"},
-            "results": {"type": "array"},
-            "logSummary": {"type": "object"},
-            "logs": {"type": "array"},
-        },
-        required=(
-            "keyword",
-            "field",
-            "operator",
-            "fetchMode",
-            "maxPages",
-            "total",
-            "results",
-            "logSummary",
-            "logs",
-        ),
-    ),
-    capability_requirements=(
-        HostCapabilityRequirement(
-            capability="secret_provider",
-            required=False,
-            purpose="Resolve Blackboard CAS credentials from host-managed secrets.",
-        ),
-        HostCapabilityRequirement(
-            capability="event_sink",
-            required=False,
-            purpose="Emit tool lifecycle events to the host.",
-        ),
-    ),
-    tags=("blackboard", "catalog", "search"),
-    annotations={"domain": "blackboard", "facade": "tool-contract"},
-    idempotent=True,
-)
-
-
-_CALENDAR_REFRESH_METADATA = ToolMetadata(
-    tool_id="blackboard.calendar.refresh",
-    display_name="Blackboard Calendar Refresh",
-    description=(
-        "Refresh a Blackboard ICS subscription into the existing SQLite store. "
-        "Use refreshMode=auto for conditional requests with cached validators, "
-        "or refreshMode=force to ignore cached validators and re-download the ICS payload."
-    ),
-    input_schema=_schema(
-        properties={
-            "feedUrl": {"type": "string", "minLength": 1},
-            "refreshMode": {
-                "type": "string",
-                "enum": ["auto", "force"],
-                "default": "auto",
-                "description": (
-                    "auto reuses saved ETag/Last-Modified headers for conditional refreshes; "
-                    "force ignores cached validators and fetches the ICS payload again."
-                ),
-            },
-            "dbRelativePath": {"type": "string"},
-            "resetSchema": {"type": "boolean"},
-            "stateKey": {"type": "string"},
-        },
-        required=("feedUrl",),
-    ),
-    output_schema=_schema(
-        properties={
-            "feedUrl": {"type": "string"},
-            "refreshMode": {"type": "string", "enum": ["auto", "force"]},
-            "dbPath": {"type": "string"},
-            "stats": {"type": "object"},
-            "activeEventCount": {"type": "integer"},
-            "allEventCount": {"type": "integer"},
-            "activeEvents": {"type": "array"},
-            "logSummary": {"type": "object"},
-            "logs": {"type": "array"},
-        },
-        required=(
-            "feedUrl",
-            "refreshMode",
-            "dbPath",
-            "stats",
-            "activeEventCount",
-            "allEventCount",
-            "activeEvents",
-            "logSummary",
-            "logs",
-        ),
-    ),
-    capability_requirements=(
-        HostCapabilityRequirement(
-            capability="database_resolver",
-            required=False,
-            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
-        ),
-        HostCapabilityRequirement(
-            capability="state_store",
-            required=False,
-            purpose="Persist calendar refresh summaries into host-managed state.",
-        ),
-        HostCapabilityRequirement(
-            capability="event_sink",
-            required=False,
-            purpose="Emit tool lifecycle events to the host.",
-        ),
-    ),
-    tags=("blackboard", "calendar", "sync"),
-    annotations={"domain": "blackboard", "facade": "tool-contract"},
-    idempotent=False,
-)
-_SNAPSHOT_SYNC_METADATA = ToolMetadata(
-    tool_id="blackboard.snapshot.sync",
-    display_name="Blackboard Snapshot Sync",
-    description="Fetch a Blackboard base snapshot and sync it into the existing SQLite store.",
-    input_schema=_schema(
-        properties={
-            "username": {"type": "string"},
-            "password": {"type": "string"},
-            "usernameSecretName": {"type": "string"},
-            "passwordSecretName": {"type": "string"},
-            "dbRelativePath": {"type": "string"},
-            "resetSchema": {"type": "boolean"},
-            "verifySecondSync": {"type": "boolean"},
-            "stateKey": {"type": "string"},
-            "artifactName": {"type": "string"},
-        },
-    ),
-    output_schema=_schema(
-        properties={
-            "dbPath": {"type": "string"},
-            "scrapedCounts": {"type": "object"},
-            "firstSyncStats": {"type": "object"},
-            "secondSyncStats": {"type": ["object", "null"]},
-            "tableCounts": {"type": "object"},
-            "expectedActiveCounts": {"type": "object"},
-            "integrityOk": {"type": "boolean"},
-            "secondSyncHasNoNewRecords": {"type": "boolean"},
-            "secondSyncHasNoDeletedRecords": {"type": "boolean"},
-            "logSummary": {"type": "object"},
-            "persistence": {"type": ["object", "null"]},
-        },
-        required=(
-            "dbPath",
-            "scrapedCounts",
-            "firstSyncStats",
-            "secondSyncStats",
-            "tableCounts",
-            "expectedActiveCounts",
-            "integrityOk",
-            "secondSyncHasNoNewRecords",
-            "secondSyncHasNoDeletedRecords",
-            "logSummary",
-        ),
-    ),
-    capability_requirements=(
-        HostCapabilityRequirement(
-            capability="secret_provider",
-            required=False,
-            purpose="Resolve Blackboard CAS credentials from host-managed secrets.",
-        ),
-        HostCapabilityRequirement(
-            capability="database_resolver",
-            required=False,
-            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
-        ),
-        HostCapabilityRequirement(
-            capability="state_store",
-            required=False,
-            purpose="Persist snapshot sync summaries into host-managed state.",
-        ),
-        HostCapabilityRequirement(
-            capability="artifact_store",
-            required=False,
-            purpose="Persist snapshot sync summaries as host-owned artifacts.",
-        ),
-        HostCapabilityRequirement(
-            capability="event_sink",
-            required=False,
-            purpose="Emit tool lifecycle events to the host.",
-        ),
-    ),
-    tags=("blackboard", "snapshot", "sync"),
-    annotations={"domain": "blackboard", "facade": "tool-contract"},
-    idempotent=False,
-)
-
-_RESOURCE_SYNC_METADATA = ToolMetadata(
-    tool_id="blackboard.course_resources.sync",
-    display_name="Blackboard Course Resources Sync",
-    description="Sync Blackboard resources for explicit course IDs into the existing SQLite store.",
-    input_schema=_schema(
-        properties={
-            "courseIds": {
-                "type": "array",
-                "items": {"type": "string", "minLength": 1},
-                "minItems": 1,
-                "uniqueItems": True,
-            },
-            "username": {"type": "string"},
-            "password": {"type": "string"},
-            "usernameSecretName": {"type": "string"},
-            "passwordSecretName": {"type": "string"},
-            "dbRelativePath": {"type": "string"},
-            "resetSchema": {"type": "boolean"},
-            "stateKey": {"type": "string"},
-            "artifactName": {"type": "string"},
-        },
-        required=("courseIds",),
-    ),
-    output_schema=_schema(
-        properties={
-            "dbPath": {"type": "string"},
-            "requestedCourseIds": {"type": "array"},
-            "processedCourseIds": {"type": "array"},
-            "missingCourseIds": {"type": "array"},
-            "failedCourseIds": {"type": "array"},
-            "scrapedCounts": {"type": "object"},
-            "syncStats": {"type": "object"},
-            "tableCounts": {"type": "object"},
-            "logSummary": {"type": "object"},
-            "persistence": {"type": ["object", "null"]},
-        },
-        required=(
-            "dbPath",
-            "requestedCourseIds",
-            "processedCourseIds",
-            "missingCourseIds",
-            "failedCourseIds",
-            "scrapedCounts",
-            "syncStats",
-            "tableCounts",
-            "logSummary",
-        ),
-    ),
-    capability_requirements=(
-        HostCapabilityRequirement(
-            capability="secret_provider",
-            required=False,
-            purpose="Resolve Blackboard CAS credentials from host-managed secrets.",
-        ),
-        HostCapabilityRequirement(
-            capability="database_resolver",
-            required=False,
-            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
-        ),
-        HostCapabilityRequirement(
-            capability="state_store",
-            required=False,
-            purpose="Persist course resource sync summaries into host-managed state.",
-        ),
-        HostCapabilityRequirement(
-            capability="artifact_store",
-            required=False,
-            purpose="Persist course resource sync summaries as host-owned artifacts.",
-        ),
-        HostCapabilityRequirement(
-            capability="event_sink",
-            required=False,
-            purpose="Emit tool lifecycle events to the host.",
-        ),
-    ),
-    tags=("blackboard", "course_resources", "sync"),
-    annotations={"domain": "blackboard", "facade": "tool-contract"},
-    idempotent=False,
-)
-
-
-class BlackboardCourseCatalogSearchTool(_BlackboardFacadeToolBase):
-    _metadata = _COURSE_CATALOG_SEARCH_METADATA
-
-    async def _invoke_impl(
-        self,
-        *,
-        arguments: dict[str, Any],
-        context: ToolInvocationContext,
-        host: ToolHostCapabilities,
-    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        _ = context
-        credentials = await _resolve_credentials(arguments, host)
-        keyword = _read_required_text(arguments, "keyword")
-        field = _read_optional_text(arguments, "field") or "CourseName"
-        operator = _read_optional_text(arguments, "operator") or "Contains"
-        fetch_mode = _read_choice(arguments, "fetchMode", choices=("quick", "full"), default="full")
-        raw_max_pages = _read_optional_int(arguments, "maxPages")
-        max_pages = 30 if raw_max_pages is None else raw_max_pages
-        if max_pages <= 0:
-            raise ValueError("maxPages must be a positive integer.")
-        raw_limit = _read_optional_int(arguments, "limit")
-        limit = raw_limit if raw_limit is not None and raw_limit > 0 else None
-        result = await asyncio.to_thread(
-            search_course_catalog_with_credentials,
-            credentials.username,
-            credentials.password,
-            keyword=keyword,
-            field=field,
-            operator=operator,
-            limit=limit,
-            fetch_mode=fetch_mode,
-            max_pages=max_pages,
-        )
-        return (
-            _course_catalog_output(result),
-            (),
-            {"credentialSource": credentials.source},
-        )
-
-
-class BlackboardCalendarRefreshTool(_BlackboardFacadeToolBase):
-    _metadata = _CALENDAR_REFRESH_METADATA
-
-    async def _invoke_impl(
-        self,
-        *,
-        arguments: dict[str, Any],
-        context: ToolInvocationContext,
-        host: ToolHostCapabilities,
-    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        feed_url = _read_required_text(arguments, "feedUrl")
-        refresh_mode = _read_choice(arguments, "refreshMode", choices=("auto", "force"), default="auto")
-        db_path = _resolve_db_path(arguments, host)
-        reset_schema = _read_bool(arguments, "resetSchema", default=False)
-        result = await asyncio.to_thread(
-            refresh_calendar_ics_subscription,
-            feed_url,
-            db_path=db_path,
-            reset_schema=reset_schema,
-            refresh_mode=refresh_mode,
-        )
-        output = _calendar_refresh_output(result)
-        metadata = {
-            "dbPathSource": _db_path_source(arguments),
-        }
-        metadata.update(
-            await _persist_state_if_requested(
-                namespace=_STATE_NAMESPACE_CALENDAR_REFRESH,
-                arguments=arguments,
-                context=context,
-                host=host,
-                output=output,
+            state_summary = _PersistenceStateSummary(
+                namespace=state_namespace,
+                key=state_key,
             )
-        )
-        return output, (), metadata
+    return _PersistenceSummary(
+        state=state_summary,
+        artifacts=[artifact.to_dict() for artifact in artifacts],
+    ).to_optional_contract_dict()
 
 
-class BlackboardSnapshotSyncTool(_BlackboardFacadeToolBase):
-    _metadata = _SNAPSHOT_SYNC_METADATA
-
-    async def _invoke_impl(
-        self,
-        *,
-        arguments: dict[str, Any],
-        context: ToolInvocationContext,
-        host: ToolHostCapabilities,
-    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        credentials = await _resolve_credentials(
-            arguments,
-            host,
-            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
-            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
-        )
-        db_path = _resolve_db_path(arguments, host)
-        reset_schema = _read_bool(arguments, "resetSchema", default=False)
-        verify_second_sync = _read_bool(arguments, "verifySecondSync", default=True)
-        progress_messages: list[str] = []
-        report = await asyncio.to_thread(
-            run_blackboard_snapshot_sync,
-            credentials.username,
-            credentials.password,
-            db_path=db_path,
-            reset_schema=reset_schema,
-            verify_second_sync=verify_second_sync,
-            progress=progress_messages.append,
-        )
-        output = _snapshot_sync_output(report, progress_messages=progress_messages)
-        persist_details = (
-            _read_optional_text(arguments, "stateKey") is not None
-            or _read_optional_text(arguments, "artifactName") is not None
-        )
-        persisted_output = (
-            _snapshot_sync_persisted_output(report, progress_messages=progress_messages)
-            if persist_details
-            else output
-        )
-        metadata = {
-            "credentialSource": credentials.source,
-            "dbPathSource": _db_path_source(arguments),
-        }
-        state_payload = await _persist_state_if_requested(
-            namespace=_STATE_NAMESPACE_SNAPSHOT_SYNC,
-            arguments=arguments,
-            context=context,
-            host=host,
-            output=persisted_output,
-        )
-        metadata.update(state_payload)
-        artifacts = await _persist_artifact_if_requested(
-            arguments=arguments,
-            context=context,
-            host=host,
-            output=persisted_output,
-        )
-        persistence_summary = _build_output_persistence_summary(
-            state_payload=state_payload,
-            artifacts=artifacts,
-        )
-        if persistence_summary is not None:
-            output = _snapshot_sync_output(
-                report,
-                progress_messages=progress_messages,
-                persistence=persistence_summary,
-            )
-        return output, artifacts, metadata
+# ---------------------------------------------------------------------------
+# Re-export use case functions so that callers (including tests) can
+# monkeypatch them through the facade module entry point.
+# ---------------------------------------------------------------------------
 
 
-class BlackboardCourseResourcesSyncTool(_BlackboardFacadeToolBase):
-    _metadata = _RESOURCE_SYNC_METADATA
+# ---------------------------------------------------------------------------
+# Thin orchestration — import sub-domain implementations and re-export
+# ---------------------------------------------------------------------------
 
-    async def _invoke_impl(
-        self,
-        *,
-        arguments: dict[str, Any],
-        context: ToolInvocationContext,
-        host: ToolHostCapabilities,
-    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        credentials = await _resolve_credentials(
-            arguments,
-            host,
-            default_username_secret_name=_DEFAULT_SUSTECH_USERNAME_SECRET_NAME,
-            default_password_secret_name=_DEFAULT_SUSTECH_PASSWORD_SECRET_NAME,
-        )
-        course_ids = _read_required_string_list(arguments, "courseIds")
-        db_path = _resolve_db_path(arguments, host)
-        reset_schema = _read_bool(arguments, "resetSchema", default=False)
-        progress_messages: list[str] = []
-        report = await asyncio.to_thread(
-            run_blackboard_course_resources_sync,
-            credentials.username,
-            credentials.password,
-            course_ids=course_ids,
-            db_path=db_path,
-            reset_schema=reset_schema,
-            progress=progress_messages.append,
-        )
-        output = _course_resources_sync_output(report, progress_messages=progress_messages)
-        persist_details = (
-            _read_optional_text(arguments, "stateKey") is not None
-            or _read_optional_text(arguments, "artifactName") is not None
-        )
-        persisted_output = (
-            _course_resources_sync_persisted_output(report, progress_messages=progress_messages)
-            if persist_details
-            else output
-        )
-        metadata = {
-            "credentialSource": credentials.source,
-            "dbPathSource": _db_path_source(arguments),
-        }
-        state_payload = await _persist_state_if_requested(
-            namespace=_STATE_NAMESPACE_COURSE_RESOURCES_SYNC,
-            arguments=arguments,
-            context=context,
-            host=host,
-            output=persisted_output,
-        )
-        metadata.update(state_payload)
-        artifacts = await _persist_artifact_if_requested(
-            arguments=arguments,
-            context=context,
-            host=host,
-            output=persisted_output,
-        )
-        persistence_summary = _build_output_persistence_summary(
-            state_payload=state_payload,
-            artifacts=artifacts,
-        )
-        if persistence_summary is not None:
-            output = _course_resources_sync_output(
-                report,
-                progress_messages=progress_messages,
-                persistence=persistence_summary,
-            )
-        return output, artifacts, metadata
-
-
-class BlackboardSQLQueryTool(_BlackboardFacadeToolBase):
-    _metadata = _SQL_QUERY_METADATA
-
-    async def _invoke_impl(
-        self,
-        *,
-        arguments: dict[str, Any],
-        context: ToolInvocationContext,
-        host: ToolHostCapabilities,
-    ) -> tuple[dict[str, Any], tuple[ToolArtifactReference, ...], dict[str, Any]]:
-        sql = _read_required_text(arguments, "sql")
-        result_limit = _read_sql_query_result_limit(arguments)
-        persist_artifact = _read_bool(arguments, "persistArtifact", default=False)
-        db_path, db_path_source, used_default_database = _resolve_sql_query_db_path(arguments, host)
-        query_output, full_result = await asyncio.to_thread(
-            _execute_sql_query,
-            sql=sql,
-            db_path=db_path,
-            result_limit=result_limit,
-        )
-        output: dict[str, Any] = {
-            "sql": sql,
-            "database": {
-                "path": db_path.as_posix(),
-                "source": db_path_source,
-            },
-            "usedDefaultDatabase": used_default_database,
-            **query_output,
-            "artifact": None,
-        }
-        artifact_payload: dict[str, Any] | None = None
-        if full_result is not None:
-            artifact_payload = {
-                "sql": sql,
-                "database": {
-                    "path": db_path.as_posix(),
-                    "source": db_path_source,
-                },
-                "usedDefaultDatabase": used_default_database,
-                **full_result,
-            }
-        artifact_output, artifacts = await _persist_sql_query_artifact_if_requested(
-            persist_artifact=persist_artifact,
-            context=context,
-            host=host,
-            output=output,
-            full_result=artifact_payload,
-        )
-        output["artifact"] = artifact_output
-        return output, artifacts, {
-            "dbPathSource": db_path_source,
-            "persistArtifactRequested": persist_artifact,
-        }
-
+from .calendar_refresh import BlackboardCalendarRefreshTool  # noqa: E402
+from .course_catalog import BlackboardCourseCatalogSearchTool  # noqa: E402
+from .course_resources import BlackboardCourseResourcesSyncTool  # noqa: E402
+from .data_sync import BlackboardSnapshotSyncTool  # noqa: E402
+from .sql_query import BlackboardSQLQueryTool  # noqa: E402
 
 BLACKBOARD_FACADE_TOOLS: tuple[ToolContract, ...] = (
     BlackboardCourseCatalogSearchTool(),
@@ -1545,7 +870,6 @@ BLACKBOARD_FACADE_TOOLS: tuple[ToolContract, ...] = (
 
 def get_blackboard_tool_contracts() -> tuple[ToolContract, ...]:
     """Return stable Blackboard tool-contract facades for runtime or transport adapters."""
-
     return BLACKBOARD_FACADE_TOOLS
 
 
@@ -1556,6 +880,9 @@ __all__ = [
     "BlackboardCourseResourcesSyncTool",
     "BlackboardSnapshotSyncTool",
     "BlackboardSQLQueryTool",
+    "refresh_calendar_ics_subscription",
+    "run_blackboard_course_resources_sync",
+    "run_blackboard_snapshot_sync",
+    "search_course_catalog_with_credentials",
     "get_blackboard_tool_contracts",
 ]
-

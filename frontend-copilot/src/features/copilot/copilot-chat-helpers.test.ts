@@ -21,7 +21,9 @@ import {
   parseRequestOptionsText,
   syncComposerDraftThinkingSelection,
   upsertToolStepTurn,
+  buildRuntimeToolPermissionPolicy,
 } from './copilot-chat-helpers'
+import { sanitizeEnabledToolIds } from './tool-picker'
 import { RuntimeRequestError } from './thread-run-contract'
 import {
   createRuntimeCanonicalThinkingSelection,
@@ -61,9 +63,9 @@ describe('copilot chat helpers', () => {
       sessionId: 'session-1',
       boundAgent: 'general',
       capabilitiesVersion: 'cap-v12',
-      allAvailableTools: ['tool.file-convert', 'tool.remote-search'],
-      recommendedTools: ['tool.file-convert'],
-      defaultEnabledTools: ['tool.file-convert'],
+      allAvailableTools: ['tool.fs.read', 'tool.remote-search'],
+      recommendedTools: ['tool.fs.read'],
+      defaultEnabledTools: ['tool.fs.read'],
       defaultEnabledSource: {
         boundAgent: 'general',
         toolSelectionMode: 'recommendation-only',
@@ -122,8 +124,17 @@ describe('copilot chat helpers', () => {
         thinkingSelectionByModelKey: {
           'provider-openai|openai|openai-compatible|https://api.example.com/v1|qwen-plus': thinkingSelection,
         },
-        enabledTools: ['tool.remote-search', 'tool.file-convert', 'tool.remote-search'],
+        enabledTools: ['tool.fs.read', 'tool.remote-search', 'tool.remote-search'],
         requestOptionsText: '{"trace":true}',
+      },
+      toolPermissionPolicy: {
+        version: 1,
+        defaultMode: 'ask',
+        toolPermissions: {
+          'tool.fs.read': { mode: 'allow' },
+          'tool.remote-search': { mode: 'ask' },
+          'tool.hidden': { mode: 'deny' },
+        },
       },
       requestOptions: {
         trace: true,
@@ -157,12 +168,48 @@ describe('copilot chat helpers', () => {
         level: 'auto',
         budgetTokens: null,
       },
-      enabledTools: ['tool.remote-search', 'tool.file-convert'],
+      enabledTools: ['tool.fs.read', 'tool.remote-search'],
+      toolPermissionPolicy: {
+        schemaVersion: 1,
+        defaultMode: 'ask',
+        toolModes: {
+          'tool.fs.read': 'allow',
+        },
+      },
       requestOptions: {
         trace: true,
       },
     })
     expect(input).not.toHaveProperty('thinkingLevelIntent')
+  })
+
+  it('drops denied tools from enabledTools before sending even when stale local selection still includes them', () => {
+    const input = buildRuntimeMessageSendInput({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionShell: createSessionShell(),
+      draft: {
+        ...createEmptyComposerDraft(),
+        messageText: 'deny cleanup',
+        selectedModelId: 'provider-openai:openai/gpt-4.1',
+        selectedModelRoute: createRuntimeModelRoute(),
+        enabledTools: ['tool.fs.read', 'tool.remote-search', 'tool.remote-search'],
+      },
+      toolPermissionPolicy: {
+        version: 1,
+        defaultMode: 'ask',
+        toolPermissions: {
+          'tool.remote-search': { mode: 'deny' },
+        },
+      },
+      requestOptions: {},
+    })
+
+    expect(input.enabledTools).toEqual(['tool.fs.read'])
+    expect(input.toolPermissionPolicy).toEqual({
+      schemaVersion: 1,
+      defaultMode: 'ask',
+      toolModes: {},
+    })
   })
 
   it('keeps budget selections structured without reviving compat intent aliases', () => {
@@ -199,6 +246,51 @@ describe('copilot chat helpers', () => {
 
     expect(input.thinkingSelection).toEqual(budgetSelection)
     expect(input).not.toHaveProperty('thinkingLevelIntent')
+  })
+
+  it('reduces persisted settings policy to request-scoped runtime tool permission policy', () => {
+    expect(buildRuntimeToolPermissionPolicy({
+      enabledTools: ['tool.fs.read', 'tool.remote-search', 'tool.remote-search'],
+      policy: {
+        version: 1,
+        defaultMode: 'ask',
+        toolPermissions: {
+          'tool.fs.read': { mode: 'allow' },
+          'tool.hidden': { mode: 'deny' },
+          'tool.remote-search': { mode: 'delay', timeoutAction: 'approve', timeoutSeconds: 27 },
+        },
+      },
+    })).toEqual({
+      schemaVersion: 1,
+      defaultMode: 'ask',
+      toolModes: {
+          'tool.fs.read': 'allow',
+          'tool.remote-search': 'delay',
+      },
+      toolTimeoutSeconds: {
+        'tool.remote-search': 27,
+      },
+      toolTimeoutActions: {
+        'tool.remote-search': 'approve',
+      },
+    })
+  })
+
+  it('sanitizes denied and unknown tool ids while preserving allowed selectable tools', () => {
+    expect(sanitizeEnabledToolIds({
+      selectedToolIds: ['tool.fs.read', 'tool.remote-search', 'tool.unknown', 'tool.remote-search'],
+      tools: [
+        { toolId: 'tool.fs.read', kind: 'builtin', availability: 'available', displayName: '读取文件', description: '读取文件' },
+        { toolId: 'tool.remote-search', kind: 'builtin', availability: 'available', displayName: '联网搜索', description: '文件格式转换' },
+      ],
+      policy: {
+        version: 1,
+        defaultMode: 'ask',
+        toolPermissions: {
+          'tool.remote-search': { mode: 'deny' },
+        },
+      },
+    })).toEqual(['tool.fs.read'])
   })
 
   it('remembers structured selections per model and normalizes them against the current capability shape', () => {
@@ -321,8 +413,8 @@ describe('copilot chat helpers', () => {
     })
     const startedEvent = createRuntimeToolEvent({
       payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         phase: 'started',
         title: '调用天气工具',
         summary: '正在获取 Shenzhen 的天气。',
@@ -332,8 +424,8 @@ describe('copilot chat helpers', () => {
     const completedEvent = createRuntimeToolEvent({
       sequence: 3,
       payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         phase: 'completed',
         title: '天气工具已返回结果',
         summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
@@ -344,8 +436,8 @@ describe('copilot chat helpers', () => {
     const failedEvent = createRuntimeToolEvent({
       sequence: 4,
       payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         phase: 'failed',
         title: '工具调用失败',
         summary: '工具执行失败。',
@@ -360,7 +452,7 @@ describe('copilot chat helpers', () => {
     expect(withStarted).toHaveLength(2)
     expect(withStarted[0]).toMatchObject({
       kind: 'tool',
-      toolCallId: 'tool.weather-current:call-1',
+      toolCallId: 'tool.remote-search:call-1',
       toolPhase: 'started',
       status: 'streaming',
       content: '正在获取 Shenzhen 的天气。',
@@ -373,7 +465,7 @@ describe('copilot chat helpers', () => {
     expect(withCompleted).toHaveLength(2)
     expect(withCompleted[0]).toMatchObject({
       kind: 'tool',
-      toolCallId: 'tool.weather-current:call-1',
+      toolCallId: 'tool.remote-search:call-1',
       toolPhase: 'completed',
       status: 'completed',
       title: '天气工具已返回结果',
@@ -386,7 +478,7 @@ describe('copilot chat helpers', () => {
     expect(withFailed).toHaveLength(2)
     expect(withFailed[0]).toMatchObject({
       kind: 'tool',
-      toolCallId: 'tool.weather-current:call-1',
+      toolCallId: 'tool.remote-search:call-1',
       toolPhase: 'failed',
       status: 'failed',
       title: '工具调用失败',
@@ -402,8 +494,8 @@ describe('copilot chat helpers', () => {
         title: '调用天气工具',
         content: '正在获取 Shenzhen 的天气。',
         status: 'streaming',
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         toolPhase: 'started',
       },
       {
@@ -412,8 +504,8 @@ describe('copilot chat helpers', () => {
         title: '天气工具已返回结果',
         content: 'Shenzhen：晴 / 24°C / 湿度 60%',
         status: 'completed',
-        toolCallId: 'tool.weather-current:call-2',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-2',
+        toolId: 'tool.remote-search',
         toolPhase: 'completed',
       },
       {
@@ -573,7 +665,7 @@ describe('copilot chat helpers', () => {
         providerProfileId: 'provider-openai',
         modelId: 'openai/gpt-4.1',
       }),
-      resolvedToolIds: ['tool.weather-current'],
+      resolvedToolIds: ['tool.remote-search'],
       requestOptions: {
         trace: true,
       },
@@ -591,7 +683,7 @@ describe('copilot chat helpers', () => {
         supportedMethods: ['run/start'],
       },
       resolvedModelId: 'openai/gpt-4.1',
-      resolvedToolIds: ['tool.weather-current'],
+      resolvedToolIds: ['tool.remote-search'],
       requestOptions: {
         trace: true,
       },

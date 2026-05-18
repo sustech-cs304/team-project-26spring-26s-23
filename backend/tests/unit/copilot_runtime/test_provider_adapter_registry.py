@@ -5,7 +5,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.models.mistral import MistralModel
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.groq import GroqProvider
@@ -22,7 +22,16 @@ from app.copilot_runtime.provider_adapter_registry import (
 
 
 @pytest.mark.parametrize(
-    ("provider_id", "endpoint_type", "adapter_id", "base_url", "auth_kind", "api_key", "expected_model_type", "expected_provider_type"),
+    (
+        "provider_id",
+        "endpoint_type",
+        "adapter_id",
+        "base_url",
+        "auth_kind",
+        "api_key",
+        "expected_model_type",
+        "expected_provider_type",
+    ),
     [
         (
             "openai",
@@ -31,7 +40,7 @@ from app.copilot_runtime.provider_adapter_registry import (
             "https://api.openai.com/v1",
             "api-key",
             "test-openai-key",
-            OpenAIModel,
+            OpenAIChatModel,
             OpenAIProvider,
         ),
         (
@@ -61,7 +70,7 @@ from app.copilot_runtime.provider_adapter_registry import (
             "http://127.0.0.1:11434/v1",
             "none",
             "",
-            OpenAIModel,
+            OpenAIChatModel,
             OllamaProvider,
         ),
         (
@@ -129,7 +138,7 @@ def test_default_provider_adapter_registry_allows_ollama_without_api_key() -> No
         )
     )
 
-    assert isinstance(model, OpenAIModel)
+    assert isinstance(model, OpenAIChatModel)
     provider = getattr(model, "_provider")
     assert isinstance(provider, OllamaProvider)
     assert provider.name == "ollama"
@@ -195,7 +204,9 @@ def test_default_provider_adapter_registry_rejects_unknown_provider() -> None:
     assert exc_info.value.code == "provider_unknown"
 
 
-def test_provider_adapter_registry_reports_missing_registered_adapter_for_enabled_provider() -> None:
+def test_provider_adapter_registry_reports_missing_registered_adapter_for_enabled_provider() -> (
+    None
+):
     registry = RuntimeProviderAdapterRegistry()
 
     with pytest.raises(RuntimeProviderAdapterError) as exc_info:

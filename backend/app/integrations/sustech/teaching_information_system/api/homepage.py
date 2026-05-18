@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from ..shared import _clean_text
-from .constants import _DEFAULT_TIS_BASE_URL, _GRADE_MENU_KEYWORDS, _SCHEDULE_KEYWORDS
+from .constants import _GRADE_MENU_KEYWORDS, _SCHEDULE_KEYWORDS
 from .dto import DEFAULT_TIS_SERVICE_CONFIG, TISHomepageProfile, TISMenuEntry
 from .fetch_helpers import _contains_keyword, _same_host
 
@@ -34,12 +34,22 @@ def analyze_homepage_html(
     )
 
     base_urls = _extract_base_urls(html, page_url=page_url, base_url=base_url)
-    discovered_endpoints = _extract_candidate_endpoints(html, page_url=page_url, base_url=base_url)
+    discovered_endpoints = _extract_candidate_endpoints(
+        html, page_url=page_url, base_url=base_url
+    )
     menu_entries = _extract_menu_entries(soup, page_url=page_url)
     role_codes = _extract_role_codes(html)
 
-    schedule_related = [item for item in discovered_endpoints if _contains_keyword(item, _SCHEDULE_KEYWORDS)]
-    grade_related = [item for item in discovered_endpoints if _contains_keyword(item, _GRADE_MENU_KEYWORDS)]
+    schedule_related = [
+        item
+        for item in discovered_endpoints
+        if _contains_keyword(item, _SCHEDULE_KEYWORDS)
+    ]
+    grade_related = [
+        item
+        for item in discovered_endpoints
+        if _contains_keyword(item, _GRADE_MENU_KEYWORDS)
+    ]
     for item in menu_entries:
         searchable = " ".join(filter(None, [item.text, item.href, item.onclick]))
         if item.href and _contains_keyword(searchable, _GRADE_MENU_KEYWORDS):
@@ -59,8 +69,12 @@ def analyze_homepage_html(
         base_urls=base_urls,
         menu_entries=menu_entries,
         discovered_endpoints=discovered_endpoints,
-        schedule_related_endpoints=_dedupe_preserve_order(grade_or_schedule for grade_or_schedule in schedule_related),
-        grade_related_endpoints=_dedupe_preserve_order(grade_or_schedule for grade_or_schedule in grade_related),
+        schedule_related_endpoints=_dedupe_preserve_order(
+            grade_or_schedule for grade_or_schedule in schedule_related
+        ),
+        grade_related_endpoints=_dedupe_preserve_order(
+            grade_or_schedule for grade_or_schedule in grade_related
+        ),
         role_codes=role_codes,
         prefers_json_api=prefers_json_api,
         raw_signals={
@@ -90,7 +104,15 @@ def _extract_menu_entries(soup: BeautifulSoup, *, page_url: str) -> list[TISMenu
             menu_type = "grade"
         elif _contains_keyword(searchable, _SCHEDULE_KEYWORDS):
             menu_type = "schedule"
-        entries.append(TISMenuEntry(text=text, href=href, onclick=onclick, target=target, menu_type=menu_type))
+        entries.append(
+            TISMenuEntry(
+                text=text,
+                href=href,
+                onclick=onclick,
+                target=target,
+                menu_type=menu_type,
+            )
+        )
     return _dedupe_menu_entries(entries)
 
 
@@ -103,26 +125,38 @@ def _extract_base_urls(html: str, *, page_url: str, base_url: str) -> list[str]:
     for pattern in base_matchers:
         for match in re.finditer(pattern, html or "", flags=re.IGNORECASE):
             value = _clean_text(match.group(1))
-            normalized = _normalize_candidate_url(value, page_url=page_url, base_url=base_url)
+            normalized = _normalize_candidate_url(
+                value, page_url=page_url, base_url=base_url
+            )
             if normalized:
                 candidates.append(normalized)
     return _dedupe_preserve_order(candidates)
 
 
-def _extract_candidate_endpoints(html: str, *, page_url: str, base_url: str) -> list[str]:
+def _extract_candidate_endpoints(
+    html: str, *, page_url: str, base_url: str
+) -> list[str]:
     quoted_url_pattern = r"['\"]((?:https?://|/)[^'\"<>\s]+)['\"]"
     candidates: list[str] = []
     for match in re.finditer(quoted_url_pattern, html or "", flags=re.IGNORECASE):
-        normalized = _normalize_candidate_url(match.group(1), page_url=page_url, base_url=base_url)
+        normalized = _normalize_candidate_url(
+            match.group(1), page_url=page_url, base_url=base_url
+        )
         if normalized:
             candidates.append(normalized)
 
-    endpoint_hint_pattern = r"([A-Za-z0-9_\-/]+\.(?:do|json|action|ajax)(?:\?[^\s'\"]*)?)"
+    endpoint_hint_pattern = (
+        r"([A-Za-z0-9_\-/]+\.(?:do|json|action|ajax)(?:\?[^\s'\"]*)?)"
+    )
     for match in re.finditer(endpoint_hint_pattern, html or "", flags=re.IGNORECASE):
-        normalized = _normalize_candidate_url(match.group(1), page_url=page_url, base_url=base_url)
+        normalized = _normalize_candidate_url(
+            match.group(1), page_url=page_url, base_url=base_url
+        )
         if normalized:
             candidates.append(normalized)
-    return _dedupe_preserve_order(url for url in candidates if _same_host(url, base_url=base_url))
+    return _dedupe_preserve_order(
+        url for url in candidates if _same_host(url, base_url=base_url)
+    )
 
 
 def _extract_role_codes(html: str) -> list[str]:
@@ -140,16 +174,30 @@ def _extract_role_codes(html: str) -> list[str]:
     return _dedupe_preserve_order(role_codes)
 
 
-def _estimate_prefers_json_api(*, discovered_endpoints: Sequence[str], iframe_urls: Sequence[str], html: str) -> bool:
+def _estimate_prefers_json_api(
+    *, discovered_endpoints: Sequence[str], iframe_urls: Sequence[str], html: str
+) -> bool:
     endpoint_score = sum(
-        1 for item in discovered_endpoints if re.search(r"(ajax|api|json|query|list|data|load|get[A-Z_])", item, flags=re.IGNORECASE)
+        1
+        for item in discovered_endpoints
+        if re.search(
+            r"(ajax|api|json|query|list|data|load|get[A-Z_])", item, flags=re.IGNORECASE
+        )
     )
     iframe_score = 1 if iframe_urls else 0
-    html_score = 1 if re.search(r"XMLHttpRequest|fetch\(|axios\.|\$\.ajax", html or "", flags=re.IGNORECASE) else 0
+    html_score = (
+        1
+        if re.search(
+            r"XMLHttpRequest|fetch\(|axios\.|\$\.ajax", html or "", flags=re.IGNORECASE
+        )
+        else 0
+    )
     return endpoint_score + iframe_score + html_score >= 2
 
 
-def _normalize_candidate_url(candidate: str, *, page_url: str, base_url: str) -> str | None:
+def _normalize_candidate_url(
+    candidate: str, *, page_url: str, base_url: str
+) -> str | None:
     text = _clean_text(candidate)
     if not text or text.startswith("javascript:"):
         return None

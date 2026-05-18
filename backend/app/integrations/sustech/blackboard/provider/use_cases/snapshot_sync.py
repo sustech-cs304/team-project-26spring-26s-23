@@ -4,16 +4,25 @@ import hashlib
 import json
 import re
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from app.integrations.sustech.blackboard.api import BlackboardAPIContext
-from app.integrations.sustech.blackboard.api.announcements import BlackboardAnnouncementAPI
+from app.integrations.sustech.blackboard.api.announcements import (
+    BlackboardAnnouncementAPI,
+)
 from app.integrations.sustech.blackboard.api.assignments import BlackboardAssignmentAPI
 from app.integrations.sustech.blackboard.api.contents import BlackboardContentAPI
 from app.integrations.sustech.blackboard.api.course_client import BlackboardCourseAPI
 from app.integrations.sustech.blackboard.api.course_parser import BlackboardCourseParser
-from app.integrations.sustech.blackboard.api.dto import AnnouncementDTO, AssignmentDTO, CourseDTO, GradeDTO, ResourceDTO
+from app.integrations.sustech.blackboard.api.dto import (
+    AnnouncementDTO,
+    AssignmentDTO,
+    CourseDTO,
+    GradeDTO,
+    ResourceDTO,
+)
 from app.integrations.sustech.blackboard.api.grades import BlackboardGradeAPI
 from app.integrations.sustech.blackboard.provider.results import (
     BlackboardCourseResourcesSyncReport,
@@ -23,8 +32,14 @@ from app.integrations.sustech.blackboard.provider.results import (
     ProgressCallback,
 )
 from app.integrations.sustech.blackboard.data import DatabaseManager
-from app.integrations.sustech.blackboard.shared import create_log_session, split_score_text
-from app.integrations.sustech.blackboard.shared.logging import BlackboardLogSession, BlackboardLogger
+from app.integrations.sustech.blackboard.shared import (
+    create_log_session,
+    split_score_text,
+)
+from app.integrations.sustech.blackboard.shared.logging import (
+    BlackboardLogSession,
+    BlackboardLogger,
+)
 from app.shared_integrations.sustech_auth.cas_client import CASClient
 
 BLACKBOARD_LOGIN_SERVICE_URL = "https://bb.sustech.edu.cn/webapps/login/"
@@ -37,14 +52,36 @@ _SYNC_TABLES: tuple[str, ...] = (
 )
 
 
+@dataclass(slots=True)
+class _SnapshotAPIs:
+    course_api: BlackboardCourseAPI
+    assignment_api: BlackboardAssignmentAPI
+    grade_api: BlackboardGradeAPI
+    announcement_api: BlackboardAnnouncementAPI
+
+
+@dataclass(slots=True)
+class _CourseResourceSelection:
+    selected_courses: list[CourseDTO]
+    assignments_by_course: dict[str, list[AssignmentDTO]]
+    resources_by_course: dict[str, list[ResourceDTO]]
+    processed_course_ids: list[str]
+    missing_course_ids: list[str]
+    failed_course_ids: list[str]
+
+
 def _emit(progress: ProgressCallback | None, message: str) -> None:
     if progress is not None:
         progress(message)
 
 
 def _stable_id(prefix: str, *parts: Any) -> str:
-    normalized = "|".join(str(part).strip() for part in parts if part is not None and str(part).strip())
-    digest = hashlib.sha1((normalized or "<empty>").encode("utf-8")).hexdigest()[:20]
+    normalized = "|".join(
+        str(part).strip() for part in parts if part is not None and str(part).strip()
+    )
+    digest = hashlib.sha1(
+        (normalized or "<empty>").encode("utf-8"), usedforsecurity=False
+    ).hexdigest()[:20]
     return f"{prefix}_{digest}"
 
 
@@ -63,7 +100,6 @@ def _merge_stats(target: dict[str, int], delta: dict[str, int]) -> None:
         target[key] += int(delta.get(key, 0))
 
 
-
 def _value(item: Any, *names: str) -> Any:
     if isinstance(item, dict):
         for name in names:
@@ -80,17 +116,14 @@ def _value(item: Any, *names: str) -> Any:
     return None
 
 
-
 def _text_value(item: Any, *names: str) -> str:
     return str(_value(item, *names) or "").strip()
-
 
 
 def _jsonable_item(item: Any) -> Any:
     if hasattr(item, "to_dict"):
         return item.to_dict()
     return item
-
 
 
 def _attachment_payloads(attachments: Any) -> list[dict[str, Any]]:
@@ -116,17 +149,17 @@ def _attachment_payloads(attachments: Any) -> list[dict[str, Any]]:
     return payloads
 
 
+def _normalize_name(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip().lower()
 
-def build_blackboard_sync_payloads(
+
+def _normalize_code(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value or "")).strip().upper()
+
+
+def _build_course_payloads(
     courses: list[Any],
-    assignments_by_course: dict[str, list[Any]],
-    resources_by_course: dict[str, list[Any]],
-    grades_by_course: dict[str, list[Any]],
-    announcements: list[Any],
-    logger: BlackboardLogger | None = None,
-    *,
-    include_assignment_attachments_as_resources: bool = True,
-) -> BlackboardSyncPayloads:
+) -> tuple[list[dict[str, Any]], set[str]]:
     course_payload: list[dict[str, Any]] = []
     valid_course_ids: set[str] = set()
     for course in courses:
@@ -135,6 +168,7 @@ def build_blackboard_sync_payloads(
             continue
 
         valid_course_ids.add(course_id)
+        is_active = _value(course, "is_active")
         course_payload.append(
             {
                 "course_id": course_id,
@@ -145,10 +179,15 @@ def build_blackboard_sync_payloads(
                 "url": _value(course, "url"),
                 "total_grade": _value(course, "total_grade"),
                 "listed_grade": _value(course, "listed_grade"),
-                "is_active": _value(course, "is_active") if _value(course, "is_active") is not None else True,
+                "is_active": is_active if is_active is not None else True,
             }
         )
+    return course_payload, valid_course_ids
 
+
+def _build_assignment_payloads(
+    assignments_by_course: dict[str, list[Any]],
+) -> dict[str, list[dict[str, Any]]]:
     assignment_payloads: dict[str, list[dict[str, Any]]] = {}
     for course_id, items in assignments_by_course.items():
         payload: list[dict[str, Any]] = []
@@ -177,8 +216,13 @@ def build_blackboard_sync_payloads(
                 }
             )
         assignment_payloads[course_id] = payload
+    return assignment_payloads
 
-    valid_assignment_ids_by_course = {
+
+def _collect_assignment_ids_by_course(
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+) -> dict[str, set[str]]:
+    return {
         course_id: {
             str(row.get("assignment_id") or "").strip()
             for row in rows
@@ -187,6 +231,10 @@ def build_blackboard_sync_payloads(
         for course_id, rows in assignment_payloads.items()
     }
 
+
+def _build_resource_payloads(
+    resources_by_course: dict[str, list[Any]],
+) -> dict[str, list[dict[str, Any]]]:
     resource_payloads: dict[str, list[dict[str, Any]]] = {}
     for course_id, items in resources_by_course.items():
         payload: list[dict[str, Any]] = []
@@ -210,53 +258,98 @@ def build_blackboard_sync_payloads(
                 }
             )
         resource_payloads[course_id] = payload
+    return resource_payloads
 
-    if include_assignment_attachments_as_resources:
-        for course_id, assignments in assignment_payloads.items():
-            resource_payloads.setdefault(course_id, [])
-            existing_keys = {
-                (
-                    str(item.get("resource_id") or "").strip(),
-                    str(item.get("url") or "").strip(),
-                )
-                for item in resource_payloads[course_id]
-            }
 
-            for assignment in assignments:
-                attachments = assignment.get("attachments", [])
-                if not isinstance(attachments, list):
+def _merge_assignment_attachment_resources(
+    resource_payloads: dict[str, list[dict[str, Any]]],
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+) -> None:
+    for course_id, assignments in assignment_payloads.items():
+        resource_payloads.setdefault(course_id, [])
+        existing_keys = {
+            (
+                str(item.get("resource_id") or "").strip(),
+                str(item.get("url") or "").strip(),
+            )
+            for item in resource_payloads[course_id]
+        }
+
+        for assignment in assignments:
+            attachments = assignment.get("attachments", [])
+            if not isinstance(attachments, list):
+                continue
+
+            for attachment in attachments:
+                if not isinstance(attachment, dict):
                     continue
 
-                for attachment in attachments:
-                    if not isinstance(attachment, dict):
-                        continue
+                title = str(
+                    attachment.get("title") or attachment.get("name") or ""
+                ).strip()
+                url = str(attachment.get("url") or "").strip()
+                resource_id = str(attachment.get("resource_id") or "").strip()
+                if not resource_id:
+                    resource_id = _stable_id("res", course_id, url, title)
 
-                    title = str(attachment.get("title") or attachment.get("name") or "").strip()
-                    url = str(attachment.get("url") or "").strip()
-                    resource_id = str(attachment.get("resource_id") or "").strip()
-                    if not resource_id:
-                        resource_id = _stable_id("res", course_id, url, title)
+                dedupe_key = (resource_id, url)
+                if dedupe_key in existing_keys:
+                    continue
+                existing_keys.add(dedupe_key)
 
-                    dedupe_key = (resource_id, url)
-                    if dedupe_key in existing_keys:
-                        continue
-                    existing_keys.add(dedupe_key)
+                resource_payloads[course_id].append(
+                    {
+                        "resource_id": resource_id,
+                        "title": title,
+                        "type": attachment.get("type", "file"),
+                        "size": attachment.get("size"),
+                        "url": url or None,
+                        "parent_id": None,
+                        "source_page": assignment.get("source_page"),
+                        "assignment_id": assignment.get("assignment_id"),
+                    }
+                )
 
-                    resource_payloads[course_id].append(
-                        {
-                            "resource_id": resource_id,
-                            "title": title,
-                            "type": attachment.get("type", "file"),
-                            "size": attachment.get("size"),
-                            "url": url or None,
-                            "parent_id": None,
-                            "source_page": assignment.get("source_page"),
-                            "assignment_id": assignment.get("assignment_id"),
-                        }
-                    )
 
+def _build_assignment_title_indexes(
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+) -> dict[str, dict[str, str]]:
+    indexes: dict[str, dict[str, str]] = {}
+    for course_id, assignments in assignment_payloads.items():
+        title_index: dict[str, str] = {}
+        for assignment in assignments:
+            title = str(assignment.get("title") or "")
+            assignment_id = str(assignment.get("assignment_id") or "")
+            if title and assignment_id:
+                title_index.setdefault(title, assignment_id)
+        indexes[course_id] = title_index
+    return indexes
+
+
+def _resolve_grade_assignment_match(
+    course_id: str,
+    item_name: str,
+    item: Any,
+    assignment_title_indexes: dict[str, dict[str, str]],
+) -> tuple[str | None, str]:
+    assignment_id_match = _text_value(item, "assignment_id") or None
+    if assignment_id_match:
+        return assignment_id_match, "grade.assignment_id"
+    return assignment_title_indexes.get(course_id, {}).get(
+        item_name
+    ), "assignment.title"
+
+
+def _build_grade_payloads(
+    grades_by_course: dict[str, list[Any]],
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+    valid_assignment_ids_by_course: dict[str, set[str]],
+    logger: BlackboardLogger | None = None,
+) -> tuple[dict[str, list[dict[str, Any]]], int]:
     invalid_grade_assignment_refs = 0
+    assignment_title_indexes = _build_assignment_title_indexes(assignment_payloads)
     grade_payloads: dict[str, list[dict[str, Any]]] = {}
+
     for course_id, items in grades_by_course.items():
         payload: list[dict[str, Any]] = []
         valid_assignment_ids = valid_assignment_ids_by_course.get(course_id, set())
@@ -267,17 +360,19 @@ def build_blackboard_sync_payloads(
             category = _text_value(item, "category")
             grade_id = _text_value(item, "grade_id")
             if not grade_id:
-                grade_id = _stable_id("grd", course_id, item_name, due_date or graded_date, category)
+                grade_id = _stable_id(
+                    "grd", course_id, item_name, due_date or graded_date, category
+                )
             score, total_score = split_score_text(_value(item, "score"))
 
-            assignment_id_match = _text_value(item, "assignment_id") or None
-            assignment_match_source = "grade.assignment_id" if assignment_id_match else "assignment.title"
-            if not assignment_id_match and course_id in assignment_payloads:
-                for assignment in assignment_payloads[course_id]:
-                    if assignment["title"] == item_name:
-                        assignment_id_match = assignment["assignment_id"]
-                        assignment_match_source = "assignment.title"
-                        break
+            assignment_id_match, assignment_match_source = (
+                _resolve_grade_assignment_match(
+                    course_id,
+                    item_name,
+                    item,
+                    assignment_title_indexes,
+                )
+            )
 
             if assignment_id_match and assignment_id_match not in valid_assignment_ids:
                 invalid_grade_assignment_refs += 1
@@ -313,22 +408,21 @@ def build_blackboard_sync_payloads(
             )
         grade_payloads[course_id] = payload
 
+    return grade_payloads, invalid_grade_assignment_refs
+
+
+def _build_course_match_candidates(
+    courses: list[Any],
+) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     course_name_candidates: dict[str, set[str]] = {}
     course_code_candidates: dict[str, set[str]] = {}
-
-    def _normalize_name(value: Any) -> str:
-        return re.sub(r"\s+", " ", str(value or "")).strip().lower()
-
-    def _normalize_code(value: Any) -> str:
-        return re.sub(r"\s+", "", str(value or "")).strip().upper()
 
     for course in courses:
         course_id = _text_value(course, "course_id", "id")
         if not course_id:
             continue
 
-        course_name = _text_value(course, "name")
-        normalized_name = _normalize_name(course_name)
+        normalized_name = _normalize_name(_text_value(course, "name"))
         if normalized_name:
             course_name_candidates.setdefault(normalized_name, set()).add(course_id)
 
@@ -336,44 +430,73 @@ def build_blackboard_sync_payloads(
         if explicit_code:
             course_code_candidates.setdefault(explicit_code, set()).add(course_id)
 
+    return course_name_candidates, course_code_candidates
+
+
+def _resolve_announcement_course_id(
+    item: Any,
+    course_name_candidates: dict[str, set[str]],
+    course_code_candidates: dict[str, set[str]],
+    valid_course_ids: set[str],
+) -> str | None:
+    course_id = _text_value(item, "course_id") or None
+    if not course_id:
+        normalized_ann_name = _normalize_name(_text_value(item, "course_name"))
+        if normalized_ann_name:
+            exact_matches = course_name_candidates.get(normalized_ann_name, set())
+            if len(exact_matches) == 1:
+                course_id = next(iter(exact_matches))
+            else:
+                fuzzy_matches = {
+                    cid
+                    for name, course_ids in course_name_candidates.items()
+                    if normalized_ann_name in name or name in normalized_ann_name
+                    for cid in course_ids
+                }
+                if len(fuzzy_matches) == 1:
+                    course_id = next(iter(fuzzy_matches))
+
+    if not course_id:
+        course_code = _normalize_code(_value(item, "course_code"))
+        if course_code:
+            code_matches = course_code_candidates.get(course_code, set())
+            if len(code_matches) == 1:
+                course_id = next(iter(code_matches))
+
+    if course_id and course_id not in valid_course_ids:
+        return None
+    return course_id
+
+
+def _build_announcements_payload(
+    announcements: list[Any],
+    courses: list[Any],
+    valid_course_ids: set[str],
+) -> list[dict[str, Any]]:
+    course_name_candidates, course_code_candidates = _build_course_match_candidates(
+        courses
+    )
     announcements_payload: list[dict[str, Any]] = []
+
     for item in announcements:
         title = _text_value(item, "title")
         posted_at_text = _text_value(item, "publish_time", "posted_date")
         url = _text_value(item, "url")
-        course_id = _text_value(item, "course_id") or None
-
-        if not course_id:
-            ann_course_name = _text_value(item, "course_name")
-            normalized_ann_name = _normalize_name(ann_course_name)
-            if normalized_ann_name:
-                exact_matches = course_name_candidates.get(normalized_ann_name, set())
-                if len(exact_matches) == 1:
-                    course_id = next(iter(exact_matches))
-                else:
-                    fuzzy_matches = {
-                        cid
-                        for name, course_ids in course_name_candidates.items()
-                        if normalized_ann_name in name or name in normalized_ann_name
-                        for cid in course_ids
-                    }
-                    if len(fuzzy_matches) == 1:
-                        course_id = next(iter(fuzzy_matches))
-
-        if not course_id:
-            course_code = _normalize_code(_value(item, "course_code"))
-            if course_code:
-                code_matches = course_code_candidates.get(course_code, set())
-                if len(code_matches) == 1:
-                    course_id = next(iter(code_matches))
-
-        if course_id and course_id not in valid_course_ids:
-            course_id = None
+        course_id = _resolve_announcement_course_id(
+            item,
+            course_name_candidates,
+            course_code_candidates,
+            valid_course_ids,
+        )
 
         announcement_id = _text_value(item, "announcement_id")
         if not announcement_id:
-            fallback = json.dumps(_jsonable_item(item), ensure_ascii=False, sort_keys=True, default=str)
-            announcement_id = _stable_id("ann", course_id, title, posted_at_text, url, fallback)
+            fallback = json.dumps(
+                _jsonable_item(item), ensure_ascii=False, sort_keys=True, default=str
+            )
+            announcement_id = _stable_id(
+                "ann", course_id, title, posted_at_text, url, fallback
+            )
 
         announcements_payload.append(
             {
@@ -389,18 +512,72 @@ def build_blackboard_sync_payloads(
             }
         )
 
-    if logger is not None:
-        logger.info(
-            "✅ Blackboard sync payloads 构建完成",
-            payload={
-                "courses": len(course_payload),
-                "assignments": sum(len(rows) for rows in assignment_payloads.values()),
-                "resources": sum(len(rows) for rows in resource_payloads.values()),
-                "grades": sum(len(rows) for rows in grade_payloads.values()),
-                "announcements": len(announcements_payload),
-                "invalid_grade_assignment_refs": invalid_grade_assignment_refs,
-            },
-        )
+    return announcements_payload
+
+
+def _log_sync_payload_summary(
+    course_payload: list[dict[str, Any]],
+    assignment_payloads: dict[str, list[dict[str, Any]]],
+    resource_payloads: dict[str, list[dict[str, Any]]],
+    grade_payloads: dict[str, list[dict[str, Any]]],
+    announcements_payload: list[dict[str, Any]],
+    invalid_grade_assignment_refs: int,
+    logger: BlackboardLogger | None = None,
+) -> None:
+    if logger is None:
+        return
+
+    logger.info(
+        "✅ Blackboard sync payloads 构建完成",
+        payload={
+            "courses": len(course_payload),
+            "assignments": sum(len(rows) for rows in assignment_payloads.values()),
+            "resources": sum(len(rows) for rows in resource_payloads.values()),
+            "grades": sum(len(rows) for rows in grade_payloads.values()),
+            "announcements": len(announcements_payload),
+            "invalid_grade_assignment_refs": invalid_grade_assignment_refs,
+        },
+    )
+
+
+def build_blackboard_sync_payloads(
+    courses: list[Any],
+    assignments_by_course: dict[str, list[Any]],
+    resources_by_course: dict[str, list[Any]],
+    grades_by_course: dict[str, list[Any]],
+    announcements: list[Any],
+    logger: BlackboardLogger | None = None,
+    *,
+    include_assignment_attachments_as_resources: bool = True,
+) -> BlackboardSyncPayloads:
+    course_payload, valid_course_ids = _build_course_payloads(courses)
+    assignment_payloads = _build_assignment_payloads(assignments_by_course)
+    valid_assignment_ids_by_course = _collect_assignment_ids_by_course(
+        assignment_payloads
+    )
+    resource_payloads = _build_resource_payloads(resources_by_course)
+    if include_assignment_attachments_as_resources:
+        _merge_assignment_attachment_resources(resource_payloads, assignment_payloads)
+    grade_payloads, invalid_grade_assignment_refs = _build_grade_payloads(
+        grades_by_course,
+        assignment_payloads,
+        valid_assignment_ids_by_course,
+        logger,
+    )
+    announcements_payload = _build_announcements_payload(
+        announcements,
+        courses,
+        valid_course_ids,
+    )
+    _log_sync_payload_summary(
+        course_payload,
+        assignment_payloads,
+        resource_payloads,
+        grade_payloads,
+        announcements_payload,
+        invalid_grade_assignment_refs,
+        logger,
+    )
 
     return BlackboardSyncPayloads(
         course_payload=course_payload,
@@ -421,7 +598,9 @@ def sync_blackboard_payloads(
     stats = _new_stats()
     stats["courses"] = db_manager.sync_courses(
         payloads.course_payload,
-        logger=None if logger is None else logger.child("provider.use_cases.snapshot_sync.data.courses"),
+        logger=None
+        if logger is None
+        else logger.child("provider.use_cases.snapshot_sync.data.courses"),
     )
 
     for course_id, rows in payloads.assignment_payloads.items():
@@ -431,7 +610,9 @@ def sync_blackboard_payloads(
                 course_id,
                 rows,
                 allow_attachment_resource_upsert=allow_assignment_attachment_resource_upsert,
-                logger=None if logger is None else logger.child(
+                logger=None
+                if logger is None
+                else logger.child(
                     "provider.use_cases.snapshot_sync.data.assignments",
                     course_id=course_id,
                 ),
@@ -444,7 +625,9 @@ def sync_blackboard_payloads(
             db_manager.sync_resources(
                 course_id,
                 rows,
-                logger=None if logger is None else logger.child(
+                logger=None
+                if logger is None
+                else logger.child(
                     "provider.use_cases.snapshot_sync.data.resources",
                     course_id=course_id,
                 ),
@@ -457,7 +640,9 @@ def sync_blackboard_payloads(
             db_manager.sync_grades(
                 course_id,
                 rows,
-                logger=None if logger is None else logger.child(
+                logger=None
+                if logger is None
+                else logger.child(
                     "provider.use_cases.snapshot_sync.data.grades",
                     course_id=course_id,
                 ),
@@ -466,14 +651,18 @@ def sync_blackboard_payloads(
 
     stats["announcements"] = db_manager.sync_announcements(
         payloads.announcements_payload,
-        logger=None if logger is None else logger.child("provider.use_cases.snapshot_sync.data.announcements"),
+        logger=None
+        if logger is None
+        else logger.child("provider.use_cases.snapshot_sync.data.announcements"),
     )
     if logger is not None:
         logger.info("💾 Blackboard 数据落库完成", payload={"stats": stats})
     return stats
 
 
-def calculate_expected_active_counts(payloads: BlackboardSyncPayloads) -> dict[str, int]:
+def calculate_expected_active_counts(
+    payloads: BlackboardSyncPayloads,
+) -> dict[str, int]:
     expected = {
         "courses": len(
             {
@@ -528,7 +717,8 @@ def compare_active_counts(
     expected_active: dict[str, int],
 ) -> bool:
     return all(
-        int(table_counts.get(table, {}).get("active", 0)) == int(expected_active.get(table, 0))
+        int(table_counts.get(table, {}).get("active", 0))
+        == int(expected_active.get(table, 0))
         for table in _SYNC_TABLES
     )
 
@@ -547,6 +737,286 @@ def _normalize_requested_course_ids(course_ids: list[str]) -> list[str]:
     return normalized
 
 
+def _normalize_blackboard_credentials(
+    username: str,
+    password: str,
+    *,
+    logger: BlackboardLogger,
+) -> tuple[str, str]:
+    normalized_username = str(username or "").strip()
+    normalized_password = str(password or "").strip()
+    if normalized_username and normalized_password:
+        return normalized_username, normalized_password
+    logger.error("❌ 缺少 CAS 用户名或密码")
+    raise ValueError("缺少 CAS 用户名或密码")
+
+
+def _login_cas_or_raise(
+    cas_client: CASClient,
+    username: str,
+    password: str,
+    *,
+    logger: BlackboardLogger,
+) -> None:
+    if cas_client.login(username, password, BLACKBOARD_LOGIN_SERVICE_URL):
+        return
+    failure_message = (
+        str(cas_client.last_login_failure_message or "CAS 登录失败").strip()
+        or "CAS 登录失败"
+    )
+    logger.error(
+        "❌ CAS 登录失败",
+        payload={
+            "failure_reason": cas_client.last_login_failure_reason,
+            "failure_message": failure_message,
+        },
+    )
+    raise RuntimeError(failure_message)
+
+
+def _make_blackboard_api_context(
+    log_session: BlackboardLogSession,
+    cas_client: CASClient,
+    *,
+    use_case: str,
+) -> BlackboardAPIContext:
+    api_logger = log_session.make_logger(
+        layer="api",
+        source="api.context.blackboard",
+        context={"use_case": use_case},
+    )
+    return BlackboardAPIContext(client=cas_client.client, logger=api_logger)
+
+
+def _build_snapshot_apis(
+    cas_client: CASClient,
+    context: BlackboardAPIContext,
+) -> _SnapshotAPIs:
+    return _SnapshotAPIs(
+        course_api=BlackboardCourseAPI(
+            cas_client.client, parser=BlackboardCourseParser()
+        ),
+        assignment_api=BlackboardAssignmentAPI(context),
+        grade_api=BlackboardGradeAPI(context),
+        announcement_api=BlackboardAnnouncementAPI(context),
+    )
+
+
+def _fetch_snapshot_courses(
+    course_api: BlackboardCourseAPI,
+    *,
+    logger: BlackboardLogger,
+    progress: ProgressCallback | None,
+) -> list[CourseDTO]:
+    _emit(progress, "抓取 Blackboard 基础实时数据")
+    try:
+        logger.info("▶ 开始抓取课程列表")
+        courses = course_api.get_courses()
+        logger.info("✅ 课程列表抓取成功", payload={"course_count": len(courses)})
+        _emit(progress, f"✅ 课程列表抓取成功：{len(courses)} 门")
+        return courses
+    except Exception as ex:
+        logger.exception("❌ 课程列表抓取失败", ex)
+        _emit(progress, f"❌ 课程列表抓取失败：{ex}")
+        _emit(progress, traceback.format_exc())
+        return []
+
+
+def _build_course_logger(
+    base_logger: BlackboardLogger,
+    *,
+    source: str,
+    course_id: str,
+    course_name: str,
+    course_index: int,
+    total_courses: int,
+) -> BlackboardLogger:
+    return base_logger.child(
+        source,
+        course_id=course_id,
+        course_name=course_name,
+        course_index=course_index,
+        total_courses=total_courses,
+    )
+
+
+def _fetch_snapshot_course_assignments(
+    course_id: str,
+    assignment_api: BlackboardAssignmentAPI,
+    *,
+    course_logger: BlackboardLogger,
+    progress: ProgressCallback | None,
+) -> list[AssignmentDTO]:
+    try:
+        assignments = assignment_api.get_course_assignments(course_id)
+        course_logger.info(
+            "✅ 课程作业抓取完成",
+            payload={"assignment_count": len(assignments)},
+        )
+        _emit(progress, f"  作业: {len(assignments)}")
+        return assignments
+    except Exception as ex:
+        course_logger.exception("❌ 课程作业抓取失败", ex)
+        _emit(progress, f"  作业抓取失败: {ex}")
+        return []
+
+
+def _fetch_snapshot_course_grades(
+    course_id: str,
+    grade_api: BlackboardGradeAPI,
+    *,
+    course_logger: BlackboardLogger,
+    progress: ProgressCallback | None,
+) -> list[GradeDTO]:
+    try:
+        grade_items = grade_api.get_course_grade_dtos(course_id)
+        course_logger.info(
+            "✅ 课程成绩抓取完成", payload={"grade_count": len(grade_items)}
+        )
+        _emit(progress, f"  成绩: {len(grade_items)}")
+        return grade_items
+    except Exception as ex:
+        course_logger.exception("❌ 课程成绩抓取失败", ex)
+        _emit(progress, f"  成绩抓取失败: {ex}")
+        return []
+
+
+def _fetch_snapshot_course_data(
+    courses: list[CourseDTO],
+    assignment_api: BlackboardAssignmentAPI,
+    grade_api: BlackboardGradeAPI,
+    *,
+    logger: BlackboardLogger,
+    progress: ProgressCallback | None,
+) -> tuple[dict[str, list[AssignmentDTO]], dict[str, list[GradeDTO]]]:
+    assignments_by_course: dict[str, list[AssignmentDTO]] = {}
+    grades_by_course: dict[str, list[GradeDTO]] = {}
+    total_courses = len(courses)
+
+    for index, course in enumerate(courses, 1):
+        course_id = str(course.course_id or "").strip()
+        course_name = str(course.name or course_id).strip()
+        if not course_id:
+            continue
+
+        course_logger = _build_course_logger(
+            logger,
+            source="provider.use_cases.snapshot_sync.course",
+            course_id=course_id,
+            course_name=course_name,
+            course_index=index,
+            total_courses=total_courses,
+        )
+        _emit(
+            progress,
+            f"▶ 处理课程 [{index}/{total_courses}]: {course_name} ({course_id})",
+        )
+        course_logger.info("▶ 开始抓取课程基础数据")
+        assignments_by_course[course_id] = _fetch_snapshot_course_assignments(
+            course_id,
+            assignment_api,
+            course_logger=course_logger,
+            progress=progress,
+        )
+        grades_by_course[course_id] = _fetch_snapshot_course_grades(
+            course_id,
+            grade_api,
+            course_logger=course_logger,
+            progress=progress,
+        )
+
+    return assignments_by_course, grades_by_course
+
+
+def _course_loader_payload(courses: list[CourseDTO]) -> list[dict[str, str | None]]:
+    return [{"id": course.course_id, "name": course.name} for course in courses]
+
+
+def _announcement_dedupe_key(
+    announcement: AnnouncementDTO,
+) -> tuple[str, str, str, str]:
+    return (
+        str(announcement.course_id or "").strip(),
+        str(announcement.title or "").strip(),
+        str(announcement.publish_time or "").strip(),
+        str(announcement.url or "").strip(),
+    )
+
+
+def _announcement_sort_key(item: AnnouncementDTO) -> str:
+    if item.publish_time_parsed is None:
+        return ""
+    return item.publish_time_parsed.isoformat()
+
+
+def _fallback_snapshot_announcements(
+    courses: list[CourseDTO],
+    announcement_api: BlackboardAnnouncementAPI,
+) -> list[AnnouncementDTO]:
+    announcements: list[AnnouncementDTO] = []
+    seen_announcement_keys: set[tuple[str, str, str, str]] = set()
+    for course in courses:
+        course_id = str(course.course_id or "").strip()
+        if not course_id:
+            continue
+        for announcement in announcement_api.get_course_announcement_dtos(course_id):
+            dedupe_key = _announcement_dedupe_key(announcement)
+            if dedupe_key in seen_announcement_keys:
+                continue
+            seen_announcement_keys.add(dedupe_key)
+            announcements.append(announcement)
+    announcements.sort(key=_announcement_sort_key, reverse=True)
+    return announcements
+
+
+def _fetch_snapshot_announcements(
+    courses: list[CourseDTO],
+    announcement_api: BlackboardAnnouncementAPI,
+    *,
+    logger: BlackboardLogger,
+    progress: ProgressCallback | None,
+) -> list[AnnouncementDTO]:
+    try:
+        logger.info("▶ 开始抓取汇总公告")
+        announcements = announcement_api.get_all_announcement_dtos(
+            course_loader=lambda: _course_loader_payload(courses)
+        )
+        if not announcements:
+            announcements = _fallback_snapshot_announcements(courses, announcement_api)
+        logger.info(
+            "✅ 汇总公告抓取成功",
+            payload={"announcement_count": len(announcements)},
+        )
+        _emit(progress, f"✅ 汇总公告抓取成功：{len(announcements)} 条")
+        return announcements
+    except Exception as ex:
+        logger.exception("❌ 汇总公告抓取失败", ex)
+        _emit(progress, f"❌ 汇总公告抓取失败：{ex}")
+        return []
+
+
+def _log_snapshot_fetch_summary(
+    logger: BlackboardLogger,
+    courses: list[CourseDTO],
+    assignments_by_course: dict[str, list[AssignmentDTO]],
+    grades_by_course: dict[str, list[GradeDTO]],
+    announcements: list[AnnouncementDTO],
+) -> None:
+    logger.info(
+        "✅ Blackboard 基础 snapshot 抓取完成",
+        payload={
+            "scraped_counts": {
+                "courses": len(courses),
+                "assignments": sum(
+                    len(rows) for rows in assignments_by_course.values()
+                ),
+                "resources": 0,
+                "grades": sum(len(rows) for rows in grades_by_course.values()),
+                "announcements": len(announcements),
+            }
+        },
+    )
+
 
 def fetch_blackboard_snapshot(
     username: str,
@@ -556,143 +1026,56 @@ def fetch_blackboard_snapshot(
     enable_console_logging: bool = False,
     _log_session: BlackboardLogSession | None = None,
 ) -> BlackboardSnapshotFetchResult:
-    normalized_username = str(username or "").strip()
-    normalized_password = str(password or "").strip()
     log_session = _log_session or create_log_session(console=enable_console_logging)
     logger = log_session.make_logger(
         layer="provider",
         source="provider.use_cases.snapshot_sync",
     )
-
-    if not normalized_username or not normalized_password:
-        logger.error("❌ 缺少 CAS 用户名或密码")
-        raise ValueError("缺少 CAS 用户名或密码")
-
-    api_logger = log_session.make_logger(
-        layer="api",
-        source="api.context.blackboard",
-        context={"use_case": "snapshot_sync"},
+    normalized_username, normalized_password = _normalize_blackboard_credentials(
+        username,
+        password,
+        logger=logger,
     )
     cas_client = CASClient(logger=logger.child("provider.use_cases.snapshot_sync.cas"))
     try:
         _emit(progress, "使用 CASClient 认证")
         logger.info("▶ 开始 Blackboard 基础 snapshot 抓取")
-        if not cas_client.login(normalized_username, normalized_password, BLACKBOARD_LOGIN_SERVICE_URL):
-            failure_message = str(cas_client.last_login_failure_message or "CAS 登录失败").strip() or "CAS 登录失败"
-            logger.error(
-                "❌ CAS 登录失败",
-                payload={
-                    "failure_reason": cas_client.last_login_failure_reason,
-                    "failure_message": failure_message,
-                },
-            )
-            raise RuntimeError(failure_message)
-
-        context = BlackboardAPIContext(client=cas_client.client, logger=api_logger)
-        course_api = BlackboardCourseAPI(cas_client.client, parser=BlackboardCourseParser())
-        assignment_api = BlackboardAssignmentAPI(context)
-        grade_api = BlackboardGradeAPI(context)
-        announcement_api = BlackboardAnnouncementAPI(context)
-
-        courses: list[CourseDTO] = []
-        assignments_by_course: dict[str, list[AssignmentDTO]] = {}
-        grades_by_course: dict[str, list[GradeDTO]] = {}
-        announcements: list[AnnouncementDTO] = []
-
-        _emit(progress, "抓取 Blackboard 基础实时数据")
-        try:
-            logger.info("▶ 开始抓取课程列表")
-            courses = course_api.get_courses()
-            logger.info("✅ 课程列表抓取成功", payload={"course_count": len(courses)})
-            _emit(progress, f"✅ 课程列表抓取成功：{len(courses)} 门")
-        except Exception as ex:
-            logger.exception("❌ 课程列表抓取失败", ex)
-            _emit(progress, f"❌ 课程列表抓取失败：{ex}")
-            _emit(progress, traceback.format_exc())
-
-        for index, course in enumerate(courses, 1):
-            course_id = str(course.course_id or "").strip()
-            course_name = str(course.name or course_id).strip()
-            if not course_id:
-                continue
-
-            course_logger = logger.child(
-                "provider.use_cases.snapshot_sync.course",
-                course_id=course_id,
-                course_name=course_name,
-                course_index=index,
-                total_courses=len(courses),
-            )
-            _emit(progress, f"▶ 处理课程 [{index}/{len(courses)}]: {course_name} ({course_id})")
-            course_logger.info("▶ 开始抓取课程基础数据")
-
-            try:
-                assignments = assignment_api.get_course_assignments(course_id)
-                assignments_by_course[course_id] = assignments
-                course_logger.info("✅ 课程作业抓取完成", payload={"assignment_count": len(assignments)})
-                _emit(progress, f"  作业: {len(assignments)}")
-            except Exception as ex:
-                assignments_by_course[course_id] = []
-                course_logger.exception("❌ 课程作业抓取失败", ex)
-                _emit(progress, f"  作业抓取失败: {ex}")
-
-            try:
-                grade_items = grade_api.get_course_grade_dtos(course_id)
-                grades_by_course[course_id] = grade_items
-                course_logger.info("✅ 课程成绩抓取完成", payload={"grade_count": len(grade_items)})
-                _emit(progress, f"  成绩: {len(grade_items)}")
-            except Exception as ex:
-                grades_by_course[course_id] = []
-                course_logger.exception("❌ 课程成绩抓取失败", ex)
-                _emit(progress, f"  成绩抓取失败: {ex}")
-
-        try:
-            logger.info("▶ 开始抓取汇总公告")
-            announcements = announcement_api.get_all_announcement_dtos(
-                course_loader=lambda: [
-                    {"id": course.course_id, "name": course.name}
-                    for course in courses
-                ]
-            )
-            if not announcements:
-                seen_announcement_keys: set[tuple[str, str, str, str]] = set()
-                for course in courses:
-                    course_id = str(course.course_id or "").strip()
-                    if not course_id:
-                        continue
-                    for announcement in announcement_api.get_course_announcement_dtos(course_id):
-                        dedupe_key = (
-                            str(announcement.course_id or "").strip(),
-                            str(announcement.title or "").strip(),
-                            str(announcement.publish_time or "").strip(),
-                            str(announcement.url or "").strip(),
-                        )
-                        if dedupe_key in seen_announcement_keys:
-                            continue
-                        seen_announcement_keys.add(dedupe_key)
-                        announcements.append(announcement)
-                announcements.sort(
-                    key=lambda item: item.publish_time_parsed.isoformat() if item.publish_time_parsed else "",
-                    reverse=True,
-                )
-            logger.info("✅ 汇总公告抓取成功", payload={"announcement_count": len(announcements)})
-            _emit(progress, f"✅ 汇总公告抓取成功：{len(announcements)} 条")
-        except Exception as ex:
-            announcements = []
-            logger.exception("❌ 汇总公告抓取失败", ex)
-            _emit(progress, f"❌ 汇总公告抓取失败：{ex}")
-
-        logger.info(
-            "✅ Blackboard 基础 snapshot 抓取完成",
-            payload={
-                "scraped_counts": {
-                    "courses": len(courses),
-                    "assignments": sum(len(rows) for rows in assignments_by_course.values()),
-                    "resources": 0,
-                    "grades": sum(len(rows) for rows in grades_by_course.values()),
-                    "announcements": len(announcements),
-                }
-            },
+        _login_cas_or_raise(
+            cas_client,
+            normalized_username,
+            normalized_password,
+            logger=logger,
+        )
+        context = _make_blackboard_api_context(
+            log_session,
+            cas_client,
+            use_case="snapshot_sync",
+        )
+        snapshot_apis = _build_snapshot_apis(cas_client, context)
+        courses = _fetch_snapshot_courses(
+            snapshot_apis.course_api,
+            logger=logger,
+            progress=progress,
+        )
+        assignments_by_course, grades_by_course = _fetch_snapshot_course_data(
+            courses,
+            snapshot_apis.assignment_api,
+            snapshot_apis.grade_api,
+            logger=logger,
+            progress=progress,
+        )
+        announcements = _fetch_snapshot_announcements(
+            courses,
+            snapshot_apis.announcement_api,
+            logger=logger,
+            progress=progress,
+        )
+        _log_snapshot_fetch_summary(
+            logger,
+            courses,
+            assignments_by_course,
+            grades_by_course,
+            announcements,
         )
         return BlackboardSnapshotFetchResult(
             courses=courses,
@@ -708,7 +1091,6 @@ def fetch_blackboard_snapshot(
     finally:
         logger.debug("ℹ 关闭 CASClient")
         cas_client.close()
-
 
 
 def run_blackboard_snapshot_sync(
@@ -746,7 +1128,9 @@ def run_blackboard_snapshot_sync(
 
     db_manager = DatabaseManager(db_path, reset_schema=reset_schema)
     _emit(progress, f"▶ 同步数据库: {db_manager.db_path.resolve().as_posix()}")
-    logger.info("▶ 开始同步数据库", payload={"db_path": db_manager.db_path.resolve().as_posix()})
+    logger.info(
+        "▶ 开始同步数据库", payload={"db_path": db_manager.db_path.resolve().as_posix()}
+    )
     first_sync_stats = sync_blackboard_payloads(
         db_manager,
         payloads,
@@ -775,7 +1159,9 @@ def run_blackboard_snapshot_sync(
             allow_assignment_attachment_resource_upsert=False,
             logger=logger.child("provider.use_cases.snapshot_sync.second_sync"),
         )
-        logger.info("💾 第二次同步验证完成", payload={"second_sync_stats": second_sync_stats})
+        logger.info(
+            "💾 第二次同步验证完成", payload={"second_sync_stats": second_sync_stats}
+        )
 
     return BlackboardSnapshotSyncReport(
         db_path=db_manager.db_path.resolve(),
@@ -790,6 +1176,179 @@ def run_blackboard_snapshot_sync(
     )
 
 
+def _fetch_available_course_map(
+    course_api: BlackboardCourseAPI,
+    *,
+    logger: BlackboardLogger,
+) -> dict[str, CourseDTO]:
+    logger.info("▶ 开始抓取课程列表用于资源同步")
+    available_courses = course_api.get_courses()
+    return {
+        str(course.course_id or "").strip(): course
+        for course in available_courses
+        if str(course.course_id or "").strip()
+    }
+
+
+def _fetch_resource_sync_assignments(
+    course_id: str,
+    assignment_api: BlackboardAssignmentAPI,
+    *,
+    course_logger: BlackboardLogger,
+    progress: ProgressCallback | None,
+) -> tuple[list[AssignmentDTO], bool]:
+    try:
+        assignments = assignment_api.get_course_assignments(course_id)
+        course_logger.info(
+            "✅ 课程作业附件源抓取完成",
+            payload={"assignment_count": len(assignments)},
+        )
+        _emit(progress, f"  作业附件源: {len(assignments)}")
+        return assignments, False
+    except Exception as ex:
+        course_logger.exception("❌ 课程作业附件源抓取失败", ex)
+        _emit(progress, f"  作业附件源抓取失败: {ex}")
+        return [], True
+
+
+def _fetch_resource_sync_resources(
+    course_id: str,
+    content_api: BlackboardContentAPI,
+    *,
+    course_logger: BlackboardLogger,
+    progress: ProgressCallback | None,
+) -> tuple[list[ResourceDTO], bool]:
+    try:
+        resources = content_api.get_course_content_dtos(course_id)
+        course_logger.info(
+            "✅ 课程资源抓取完成", payload={"resource_count": len(resources)}
+        )
+        _emit(progress, f"  资源: {len(resources)}")
+        return resources, False
+    except Exception as ex:
+        course_logger.exception("❌ 课程资源抓取失败", ex)
+        _emit(progress, f"  资源抓取失败: {ex}")
+        return [], True
+
+
+def _select_course_resource_sync_targets(
+    requested_course_ids: list[str],
+    available_course_map: dict[str, CourseDTO],
+    assignment_api: BlackboardAssignmentAPI,
+    content_api: BlackboardContentAPI,
+    *,
+    logger: BlackboardLogger,
+    progress: ProgressCallback | None,
+) -> _CourseResourceSelection:
+    selected_courses: list[CourseDTO] = []
+    assignments_by_course: dict[str, list[AssignmentDTO]] = {}
+    resources_by_course: dict[str, list[ResourceDTO]] = {}
+    processed_course_ids: list[str] = []
+    missing_course_ids: list[str] = []
+    failed_course_ids: list[str] = []
+    total_courses = len(requested_course_ids)
+
+    for index, course_id in enumerate(requested_course_ids, 1):
+        course = available_course_map.get(course_id)
+        if course is None:
+            missing_course_ids.append(course_id)
+            logger.warning(
+                "⚠ 请求课程不存在于 Blackboard 课程列表",
+                payload={"course_id": course_id},
+            )
+            _emit(
+                progress,
+                f"⚠ 跳过不存在课程 [{index}/{total_courses}]: {course_id}",
+            )
+            continue
+
+        course_name = str(course.name or course_id).strip()
+        course_logger = _build_course_logger(
+            logger,
+            source="provider.use_cases.course_resources_sync.course",
+            course_id=course_id,
+            course_name=course_name,
+            course_index=index,
+            total_courses=total_courses,
+        )
+        _emit(
+            progress,
+            f"▶ 抓取课程资源 [{index}/{total_courses}]: {course_name} ({course_id})",
+        )
+        assignments, assignment_fetch_failed = _fetch_resource_sync_assignments(
+            course_id,
+            assignment_api,
+            course_logger=course_logger,
+            progress=progress,
+        )
+        resources, resource_fetch_failed = _fetch_resource_sync_resources(
+            course_id,
+            content_api,
+            course_logger=course_logger,
+            progress=progress,
+        )
+        if assignment_fetch_failed or resource_fetch_failed:
+            failed_course_ids.append(course_id)
+            course_logger.warning(
+                "⚠ 课程资源同步前置抓取未完成，已跳过本课程落库",
+                payload={
+                    "assignment_fetch_failed": assignment_fetch_failed,
+                    "resource_fetch_failed": resource_fetch_failed,
+                },
+            )
+            continue
+
+        assignments_by_course[course_id] = assignments
+        resources_by_course[course_id] = resources
+        processed_course_ids.append(course_id)
+        selected_courses.append(course)
+
+    return _CourseResourceSelection(
+        selected_courses=selected_courses,
+        assignments_by_course=assignments_by_course,
+        resources_by_course=resources_by_course,
+        processed_course_ids=processed_course_ids,
+        missing_course_ids=missing_course_ids,
+        failed_course_ids=failed_course_ids,
+    )
+
+
+def _sync_course_resource_courses(
+    db_manager: DatabaseManager,
+    payloads: BlackboardSyncPayloads,
+    *,
+    logger: BlackboardLogger,
+) -> dict[str, int]:
+    if not payloads.course_payload:
+        return {"inserted": 0, "updated": 0, "deleted": 0}
+    return db_manager.sync_courses(
+        payloads.course_payload,
+        allow_soft_delete=False,
+        logger=logger.child("provider.use_cases.course_resources_sync.data.courses"),
+    )
+
+
+def _sync_course_resource_payloads(
+    db_manager: DatabaseManager,
+    payloads: BlackboardSyncPayloads,
+    *,
+    logger: BlackboardLogger,
+) -> dict[str, int]:
+    resource_sync_stats = {"inserted": 0, "updated": 0, "deleted": 0}
+    for course_id, rows in payloads.resource_payloads.items():
+        _merge_stats(
+            resource_sync_stats,
+            db_manager.sync_resources(
+                course_id,
+                rows,
+                logger=logger.child(
+                    "provider.use_cases.course_resources_sync.data.resources",
+                    course_id=course_id,
+                ),
+            ),
+        )
+    return resource_sync_stats
+
 
 def run_blackboard_course_resources_sync(
     username: str,
@@ -801,8 +1360,6 @@ def run_blackboard_course_resources_sync(
     progress: ProgressCallback | None = None,
     enable_console_logging: bool = False,
 ) -> BlackboardCourseResourcesSyncReport:
-    normalized_username = str(username or "").strip()
-    normalized_password = str(password or "").strip()
     normalized_course_ids = _normalize_requested_course_ids(course_ids)
     log_session = create_log_session(console=enable_console_logging)
     logger = log_session.make_logger(
@@ -810,121 +1367,49 @@ def run_blackboard_course_resources_sync(
         source="provider.use_cases.course_resources_sync.run",
         context={"requested_course_count": len(normalized_course_ids)},
     )
-
-    if not normalized_username or not normalized_password:
-        logger.error("❌ 缺少 CAS 用户名或密码")
-        raise ValueError("缺少 CAS 用户名或密码")
-
-    api_logger = log_session.make_logger(
-        layer="api",
-        source="api.context.blackboard",
-        context={"use_case": "course_resources_sync"},
+    normalized_username, normalized_password = _normalize_blackboard_credentials(
+        username,
+        password,
+        logger=logger,
     )
-    cas_client = CASClient(logger=logger.child("provider.use_cases.course_resources_sync.cas"))
+    cas_client = CASClient(
+        logger=logger.child("provider.use_cases.course_resources_sync.cas")
+    )
     try:
         _emit(progress, "使用 CASClient 认证")
         logger.info(
             "▶ 开始 Blackboard 课程资源同步",
             payload={"requested_course_ids": normalized_course_ids},
         )
-        if not cas_client.login(normalized_username, normalized_password, BLACKBOARD_LOGIN_SERVICE_URL):
-            failure_message = str(cas_client.last_login_failure_message or "CAS 登录失败").strip() or "CAS 登录失败"
-            logger.error(
-                "❌ CAS 登录失败",
-                payload={
-                    "failure_reason": cas_client.last_login_failure_reason,
-                    "failure_message": failure_message,
-                },
-            )
-            raise RuntimeError(failure_message)
-
-        context = BlackboardAPIContext(client=cas_client.client, logger=api_logger)
-        course_api = BlackboardCourseAPI(cas_client.client, parser=BlackboardCourseParser())
+        _login_cas_or_raise(
+            cas_client,
+            normalized_username,
+            normalized_password,
+            logger=logger,
+        )
+        context = _make_blackboard_api_context(
+            log_session,
+            cas_client,
+            use_case="course_resources_sync",
+        )
+        course_api = BlackboardCourseAPI(
+            cas_client.client, parser=BlackboardCourseParser()
+        )
         assignment_api = BlackboardAssignmentAPI(context)
         content_api = BlackboardContentAPI(context)
-
-        logger.info("▶ 开始抓取课程列表用于资源同步")
-        available_courses = course_api.get_courses()
-        available_course_map = {
-            str(course.course_id or "").strip(): course
-            for course in available_courses
-            if str(course.course_id or "").strip()
-        }
-
-        selected_courses: list[CourseDTO] = []
-        assignments_by_course: dict[str, list[AssignmentDTO]] = {}
-        resources_by_course: dict[str, list[ResourceDTO]] = {}
-        processed_course_ids: list[str] = []
-        missing_course_ids: list[str] = []
-        failed_course_ids: list[str] = []
-
-        for index, course_id in enumerate(normalized_course_ids, 1):
-            course = available_course_map.get(course_id)
-            if course is None:
-                missing_course_ids.append(course_id)
-                logger.warning(
-                    "⚠ 请求课程不存在于 Blackboard 课程列表",
-                    payload={"course_id": course_id},
-                )
-                _emit(progress, f"⚠ 跳过不存在课程 [{index}/{len(normalized_course_ids)}]: {course_id}")
-                continue
-
-            course_name = str(course.name or course_id).strip()
-            course_logger = logger.child(
-                "provider.use_cases.course_resources_sync.course",
-                course_id=course_id,
-                course_name=course_name,
-                course_index=index,
-                total_courses=len(normalized_course_ids),
-            )
-            _emit(progress, f"▶ 抓取课程资源 [{index}/{len(normalized_course_ids)}]: {course_name} ({course_id})")
-
-            assignment_fetch_failed = False
-            resource_fetch_failed = False
-
-            try:
-                assignments = assignment_api.get_course_assignments(course_id)
-                assignments_by_course[course_id] = assignments
-                course_logger.info(
-                    "✅ 课程作业附件源抓取完成",
-                    payload={"assignment_count": len(assignments)},
-                )
-                _emit(progress, f"  作业附件源: {len(assignments)}")
-            except Exception as ex:
-                assignment_fetch_failed = True
-                course_logger.exception("❌ 课程作业附件源抓取失败", ex)
-                _emit(progress, f"  作业附件源抓取失败: {ex}")
-
-            try:
-                resources = content_api.get_course_content_dtos(course_id)
-                resources_by_course[course_id] = resources
-                course_logger.info("✅ 课程资源抓取完成", payload={"resource_count": len(resources)})
-                _emit(progress, f"  资源: {len(resources)}")
-            except Exception as ex:
-                resource_fetch_failed = True
-                course_logger.exception("❌ 课程资源抓取失败", ex)
-                _emit(progress, f"  资源抓取失败: {ex}")
-
-            if assignment_fetch_failed or resource_fetch_failed:
-                failed_course_ids.append(course_id)
-                assignments_by_course.pop(course_id, None)
-                resources_by_course.pop(course_id, None)
-                course_logger.warning(
-                    "⚠ 课程资源同步前置抓取未完成，已跳过本课程落库",
-                    payload={
-                        "assignment_fetch_failed": assignment_fetch_failed,
-                        "resource_fetch_failed": resource_fetch_failed,
-                    },
-                )
-                continue
-
-            processed_course_ids.append(course_id)
-            selected_courses.append(course)
-
+        available_course_map = _fetch_available_course_map(course_api, logger=logger)
+        selection = _select_course_resource_sync_targets(
+            normalized_course_ids,
+            available_course_map,
+            assignment_api,
+            content_api,
+            logger=logger,
+            progress=progress,
+        )
         payloads = build_blackboard_sync_payloads(
-            selected_courses,
-            assignments_by_course,
-            resources_by_course,
+            selection.selected_courses,
+            selection.assignments_by_course,
+            selection.resources_by_course,
             {},
             [],
             logger=logger.child("provider.use_cases.course_resources_sync.payloads"),
@@ -936,45 +1421,34 @@ def run_blackboard_course_resources_sync(
             "▶ 开始同步课程资源数据库",
             payload={
                 "db_path": db_manager.db_path.resolve().as_posix(),
-                "processed_course_ids": processed_course_ids,
-                "missing_course_ids": missing_course_ids,
-                "failed_course_ids": failed_course_ids,
+                "processed_course_ids": selection.processed_course_ids,
+                "missing_course_ids": selection.missing_course_ids,
+                "failed_course_ids": selection.failed_course_ids,
             },
         )
-
-        course_sync_stats = {"inserted": 0, "updated": 0, "deleted": 0}
-        if payloads.course_payload:
-            course_sync_stats = db_manager.sync_courses(
-                payloads.course_payload,
-                allow_soft_delete=False,
-                logger=logger.child("provider.use_cases.course_resources_sync.data.courses"),
-            )
-
-        resource_sync_stats = {"inserted": 0, "updated": 0, "deleted": 0}
-        for course_id, rows in payloads.resource_payloads.items():
-            _merge_stats(
-                resource_sync_stats,
-                db_manager.sync_resources(
-                    course_id,
-                    rows,
-                    logger=logger.child(
-                        "provider.use_cases.course_resources_sync.data.resources",
-                        course_id=course_id,
-                    ),
-                ),
-            )
-
+        course_sync_stats = _sync_course_resource_courses(
+            db_manager,
+            payloads,
+            logger=logger,
+        )
+        resource_sync_stats = _sync_course_resource_payloads(
+            db_manager,
+            payloads,
+            logger=logger,
+        )
         table_counts = db_manager.get_table_counts()
         logger.info(
             "💾 课程资源同步完成",
             payload={
                 "requested_course_ids": normalized_course_ids,
-                "processed_course_ids": processed_course_ids,
-                "missing_course_ids": missing_course_ids,
-                "failed_course_ids": failed_course_ids,
+                "processed_course_ids": selection.processed_course_ids,
+                "missing_course_ids": selection.missing_course_ids,
+                "failed_course_ids": selection.failed_course_ids,
                 "scraped_counts": {
-                    "courses": len(processed_course_ids),
-                    "resources": sum(len(rows) for rows in payloads.resource_payloads.values()),
+                    "courses": len(selection.processed_course_ids),
+                    "resources": sum(
+                        len(rows) for rows in payloads.resource_payloads.values()
+                    ),
                 },
                 "sync_stats": {
                     "courses": course_sync_stats,
@@ -985,9 +1459,9 @@ def run_blackboard_course_resources_sync(
         return BlackboardCourseResourcesSyncReport(
             db_path=db_manager.db_path.resolve(),
             requested_course_ids=normalized_course_ids,
-            processed_course_ids=processed_course_ids,
-            missing_course_ids=missing_course_ids,
-            failed_course_ids=failed_course_ids,
+            processed_course_ids=selection.processed_course_ids,
+            missing_course_ids=selection.missing_course_ids,
+            failed_course_ids=selection.failed_course_ids,
             resource_payloads_by_course=payloads.resource_payloads,
             sync_stats={
                 "courses": course_sync_stats,
@@ -1002,4 +1476,3 @@ def run_blackboard_course_resources_sync(
     finally:
         logger.debug("ℹ 关闭 CASClient")
         cas_client.close()
-

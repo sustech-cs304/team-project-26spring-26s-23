@@ -15,6 +15,7 @@ SESSION_NOT_FOUND_CODE = "session_not_found"
 AGENT_NOT_FOUND_CODE = "agent_not_found"
 AGENT_MISMATCH_CODE = "agent_mismatch"
 TOOL_NOT_FOUND_CODE = "tool_not_found"
+TOOL_APPROVAL_NOT_FOUND_CODE = "tool_approval_not_found"
 UNSUPPORTED_MESSAGE_SHAPE_CODE = "unsupported_message_shape"
 INVALID_MESSAGE_HISTORY_CODE = "invalid_message_history"
 MODEL_NOT_CONFIGURED_CODE = "model_not_configured"
@@ -38,7 +39,6 @@ class RuntimeErrorResponse(RuntimeContract):
     error: RuntimeErrorDetail
 
 
-
 def build_invalid_request_error(
     *,
     message: str,
@@ -53,7 +53,6 @@ def build_invalid_request_error(
         requested_method=requested_method,
         details=details,
     )
-
 
 
 def build_thread_not_found_error(
@@ -71,7 +70,6 @@ def build_thread_not_found_error(
     )
 
 
-
 def build_run_not_found_error(
     *,
     run_id: str,
@@ -85,7 +83,6 @@ def build_run_not_found_error(
         requested_method=requested_method,
         details={"runId": run_id},
     )
-
 
 
 def build_session_not_found_error(
@@ -103,7 +100,6 @@ def build_session_not_found_error(
     )
 
 
-
 def build_agent_not_found_error(
     *,
     agent_name: str,
@@ -117,7 +113,6 @@ def build_agent_not_found_error(
         requested_method=requested_method,
         details={"agentName": agent_name},
     )
-
 
 
 def build_agent_mismatch_error(
@@ -144,7 +139,6 @@ def build_agent_mismatch_error(
     )
 
 
-
 def build_tool_not_found_error(
     *,
     tool_id: str,
@@ -159,6 +153,21 @@ def build_tool_not_found_error(
         details={"toolId": tool_id},
     )
 
+
+def build_tool_approval_not_found_error(
+    *,
+    run_id: str,
+    tool_call_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> RuntimeErrorResponse:
+    return _build_runtime_error(
+        code=TOOL_APPROVAL_NOT_FOUND_CODE,
+        message=f"No pending tool approval exists for run '{run_id}' and tool call '{tool_call_id}'.",
+        scaffold=scaffold,
+        requested_method=requested_method,
+        details={"runId": run_id, "toolCallId": tool_call_id},
+    )
 
 
 def build_unsupported_message_shape_error(
@@ -177,7 +186,6 @@ def build_unsupported_message_shape_error(
     )
 
 
-
 def build_invalid_message_history_error(
     *,
     message: str,
@@ -194,7 +202,6 @@ def build_invalid_message_history_error(
     )
 
 
-
 def build_model_not_configured_error(
     *,
     message: str,
@@ -208,7 +215,6 @@ def build_model_not_configured_error(
         requested_method=requested_method,
         details={"modelEnvironmentKeys": list(scaffold.model_environment_keys)},
     )
-
 
 
 def build_runtime_operation_error(
@@ -228,7 +234,6 @@ def build_runtime_operation_error(
     )
 
 
-
 def build_agent_execution_failed_error(
     *,
     message: str,
@@ -243,7 +248,6 @@ def build_agent_execution_failed_error(
         requested_method=requested_method,
         details=details,
     )
-
 
 
 def build_internal_server_error(
@@ -261,13 +265,14 @@ def build_internal_server_error(
     )
 
 
-
 def build_method_not_implemented_error(
     *,
     requested_method: str,
     scaffold: RuntimeScaffold,
 ) -> RuntimeErrorResponse:
-    supported_methods = _format_supported_methods_for_message(scaffold.supported_methods)
+    supported_methods = _format_supported_methods_for_message(
+        scaffold.supported_methods
+    )
     return _build_runtime_error(
         code=METHOD_NOT_IMPLEMENTED_CODE,
         message=(
@@ -278,7 +283,6 @@ def build_method_not_implemented_error(
         requested_method=requested_method,
         details={},
     )
-
 
 
 def _format_supported_methods_for_message(supported_methods: tuple[str, ...]) -> str:
@@ -292,7 +296,6 @@ def _format_supported_methods_for_message(supported_methods: tuple[str, ...]) ->
         return f"{supported_methods[0]} and {supported_methods[1]}"
 
     return f"{', '.join(supported_methods[:-1])}, and {supported_methods[-1]}"
-
 
 
 def _build_runtime_error(

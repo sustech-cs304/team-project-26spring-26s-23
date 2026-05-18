@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
 
 import type { DesktopNotificationRequest } from './desktop-notification'
+import type { ManagedRuntimeLoadResponse } from './managed-runtime/ipc'
 
 import type { ConfigCenterPublicPatchResult } from './config-center/public-patch'
 import type { ConfigCenterPublicSnapshotLoadResult } from './config-center/public-snapshot'
@@ -15,11 +16,36 @@ import type {
   CopilotHistoryThreadRenameResult,
 } from './copilot-history'
 import type { CopilotRuntimeLoadResult } from './copilot-runtime'
+import type {
+  McpDeleteServerResult,
+  McpRefreshCatalogResult,
+  McpRegistryLoadResult,
+  McpSaveServerResult,
+  McpSetServerEnabledResult,
+  McpTestConnectionResult,
+} from './mcp-registry/ipc'
+import type {
+  SkillDeleteResult,
+  SkillImportResult,
+  SkillRefreshResult,
+  SkillRegistryLoadResult,
+  SkillSelectAndImportResult,
+  SkillSetEnabledResult,
+} from './skill-registry/ipc'
 import type { RendererIpcHandlers } from './renderer-ipc-registration'
+import type { ToolCatalogLoadResult } from './tool-catalog/ipc'
 import {
   createConfigCenterPublicSnapshotFixture,
   createCopilotRuntimeSnapshotFixture,
+  createManagedRuntimeLoadResultFixture,
+  createMcpDeleteServerSuccessFixture,
+  createMcpRefreshCatalogSuccessFixture,
+  createMcpRegistryLoadResultFixture,
+  createMcpSaveServerSuccessFixture,
+  createMcpSetServerEnabledSuccessFixture,
+  createMcpTestConnectionSuccessFixture,
   createSettingsWorkspaceStateFixture,
+  createSkillRecordFixture,
 } from './renderer-ipc-domain-fixtures.test-support'
 import type {
   SettingsWorkspaceProfileSecretMutationResult,
@@ -100,6 +126,59 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
         hasPassword: false,
         password: '',
       },
+    })),
+    loadManagedRuntime: vi.fn(async (): Promise<ManagedRuntimeLoadResponse> => createManagedRuntimeLoadResultFixture()),
+    installOrRepairManagedRuntime: vi.fn(async (): Promise<ManagedRuntimeLoadResponse> => createManagedRuntimeLoadResultFixture()),
+    loadMcpRegistry: vi.fn(async (): Promise<McpRegistryLoadResult> => createMcpRegistryLoadResultFixture()),
+    saveMcpServer: vi.fn(async (): Promise<McpSaveServerResult> => createMcpSaveServerSuccessFixture()),
+    deleteMcpServer: vi.fn(async (): Promise<McpDeleteServerResult> => createMcpDeleteServerSuccessFixture()),
+    setMcpServerEnabled: vi.fn(async (): Promise<McpSetServerEnabledResult> => createMcpSetServerEnabledSuccessFixture(false)),
+    testMcpConnection: vi.fn(async (): Promise<McpTestConnectionResult> => createMcpTestConnectionSuccessFixture('stdio')),
+    refreshMcpCatalog: vi.fn(async (): Promise<McpRefreshCatalogResult> => createMcpRefreshCatalogSuccessFixture()),
+    loadSkillRegistry: vi.fn(async (): Promise<SkillRegistryLoadResult> => ({
+      ok: true,
+      registryRevision: 3,
+      snapshotRevision: 5,
+      skills: [createSkillRecordFixture()],
+    })),
+    importSkill: vi.fn(async (): Promise<SkillImportResult> => ({
+      ok: true,
+      registryRevision: 4,
+      snapshotRevision: 6,
+      skill: createSkillRecordFixture(),
+      validationErrors: [],
+    })),
+    selectAndImportSkill: vi.fn(async (): Promise<SkillSelectAndImportResult> => ({
+      ok: true,
+      registryRevision: 4,
+      snapshotRevision: 6,
+      skill: createSkillRecordFixture(),
+      validationErrors: [],
+    })),
+    deleteSkill: vi.fn(async (): Promise<SkillDeleteResult> => ({
+      ok: true,
+      registryRevision: 5,
+      snapshotRevision: 7,
+      skillId: createSkillRecordFixture().skillId,
+      deleted: true,
+    })),
+    setSkillEnabled: vi.fn(async (): Promise<SkillSetEnabledResult> => ({
+      ok: true,
+      registryRevision: 6,
+      snapshotRevision: 8,
+      skill: createSkillRecordFixture({ enabled: false }),
+    })),
+    refreshSkills: vi.fn(async (): Promise<SkillRefreshResult> => ({
+      ok: true,
+      registryRevision: 7,
+      snapshotRevision: 9,
+      refreshedSkillIds: [createSkillRecordFixture().skillId],
+      results: [{
+        skillId: createSkillRecordFixture().skillId,
+        status: 'valid',
+        errors: [],
+        warnings: [],
+      }],
     })),
     listCopilotHistoryThreads: vi.fn(async (): Promise<CopilotHistoryListThreadsResult> => ({
       ok: true,
@@ -218,6 +297,19 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
       sourcePath: 'D:/workspace/copilot-data/backups/copilot-chat.backup.db',
       restoredAt: '2026-04-13T14:09:00Z',
     })),
+    loadToolCatalog: vi.fn(async (): Promise<ToolCatalogLoadResult> => ({
+      ok: true,
+      directoryVersion: 'tools-v1',
+      tools: [
+        {
+          toolId: 'functions.read_file',
+          kind: 'builtin',
+          availability: 'available',
+          displayName: '读取文件',
+          description: '读取项目内文件内容，用于理解上下文与定位实现细节。',
+        },
+      ],
+    })),
     loadCopilotRuntime: vi.fn(async (): Promise<CopilotRuntimeLoadResult> => ({
       ok: true,
       snapshot: createCopilotRuntimeSnapshotFixture('ready', 'development'),
@@ -226,7 +318,10 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
       ok: true,
       snapshot: createCopilotRuntimeSnapshotFixture('starting', null),
     })),
-    notifyDesktopNotification: vi.fn(async (_request: DesktopNotificationRequest) => undefined),
+    notifyDesktopNotification: vi.fn(async (request: DesktopNotificationRequest) => {
+      void request
+      return undefined
+    }),
     notifyBootstrapWindowReady: vi.fn(async () => undefined),
   }
 }

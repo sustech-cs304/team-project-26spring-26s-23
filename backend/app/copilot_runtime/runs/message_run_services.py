@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 from .message_run_handlers import build_run_started_event, create_message_run_context
@@ -19,6 +20,7 @@ from .message_run_stream import (
 )
 from ..agent import (
     AgentExecutionError,
+    AwaitingUserInputError,
     ModelNotConfiguredError,
     ProviderAdapterExecutionError,
 )
@@ -31,7 +33,6 @@ from ..contracts import (
 from ..debug_logging import (
     log_runtime_chain_debug,
     preview_text,
-    summarize_exception,
     summarize_runtime_execution_event,
     summarize_runtime_model_route,
     summarize_runtime_reasoning_suppression_basis,
@@ -44,6 +45,7 @@ from ..execution_support import (
     InvalidSessionHistoryError,
     ThreadNotFoundError,
     ToolNotFoundError,
+    build_runtime_user_prompt,
     build_message_history,
     extract_unknown_tool_id,
 )
@@ -60,6 +62,44 @@ from ..run_events import RuntimeRunEvent
 from ..runtime_session_store import RuntimeSessionStore
 from ..session_store import BoundAgentMismatchError
 from ..thinking_adapter import adapt_thinking_selection
+from ..skill_snapshot_provider import (
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_ID,
+    SkillRuntimeIndex,
+    SkillSnapshotProvider,
+    build_skill_index_system_prompt,
+)
+from ..tool_permissions import RuntimeToolPermissionResolver
+
+
+@dataclass(frozen=True)
+class _PreparedStreamExecution:
+    thread: Any
+    tool_permission_resolver: RuntimeToolPermissionResolver
+    resolved_tool_ids: tuple[str, ...]
+    message_history: Any
+    resolved_model_route: Any
+    thinking_adaptation: Any
+    reasoning_suppression_basis_summary: dict[str, Any] | None
+    agent_executor: Any
+    run_metadata: RuntimeRunEvent
+    skill_runtime_index: SkillRuntimeIndex | None = None
+    skill_system_prompt: str | None = None
+    preflight_failure: _FailureEventDetails | None = None
+
+
+@dataclass
+class _ExecutionStreamResult:
+    assistant_text: str | None = None
+    completed: bool = False
+
+
+@dataclass(frozen=True)
+class _FailureEventDetails:
+    code: str
+    message: str
+    details: dict[str, Any]
+    diagnostic_stage: str | None = None
 
 
 class RuntimeMessageRunOrchestrator:
@@ -73,6 +113,7 @@ class RuntimeMessageRunOrchestrator:
         scaffold: RuntimeScaffold,
         model_route_resolver: RuntimeModelRouteResolver,
         provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
+        skill_snapshot_provider: SkillSnapshotProvider | None = None,
     ) -> None:
         self._session_store = session_store
         self._agent_registry = agent_registry
@@ -81,6 +122,7 @@ class RuntimeMessageRunOrchestrator:
         self._provider_adapter_registry = (
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
+        self._skill_snapshot_provider = skill_snapshot_provider
 
     async def stream_events(
         self,
@@ -99,428 +141,43 @@ class RuntimeMessageRunOrchestrator:
         yield run_started
 
         try:
-            thread = self._require_thread(request)
-            agent_descriptor = self._resolve_agent(thread.bound_agent_id)
-            resolved_tool_ids = self._resolve_enabled_tools(
-                agent_id=thread.bound_agent_id,
-                enabled_tools=request.policy.enabledTools,
+            prepared = await self._prepare_stream_execution(
+                context=context, request=request
             )
-            message_history = build_message_history(
-                self._session_store.list_messages(thread.thread_id)
-            )
-            resolved_model_route = await self._model_route_resolver.resolve(request.policy.modelRoute)
-            requested_thinking_selection = request.policy.resolve_thinking_selection()
-            thinking_adaptation = adapt_thinking_selection(
-                selection=requested_thinking_selection,
-                model_route=resolved_model_route,
-                thinking_capability_override=request.policy.thinkingCapabilityOverride,
-                provider_adapter_registry=self._provider_adapter_registry,
-            )
-            capability_series = (
-                thinking_adaptation.capability.series
-                or (
-                    requested_thinking_selection.series
-                    if requested_thinking_selection is not None
-                    else None
-                )
-                or "compat-discrete-selection-v1"
-            )
-            applied_thinking_selection = resolve_applied_thinking_selection(
-                requested_selection=requested_thinking_selection,
-                requested_canonical_selection=thinking_adaptation.requested_selection,
-                applied_canonical_selection=thinking_adaptation.applied_selection,
-                capability_series=capability_series,
-            )
-            selection_result = thinking_adaptation.to_public_dict()
-            selection_result_summary = summarize_runtime_thinking_selection_result(selection_result)
-            reasoning_suppression_basis = build_reasoning_suppression_basis(
-                capability=thinking_adaptation.capability.to_public_dict(),
-                applied_selection=applied_thinking_selection,
-            )
-            reasoning_suppression_basis_summary = summarize_runtime_reasoning_suppression_basis(
-                reasoning_suppression_basis
-            )
-            log_runtime_chain_debug(
-                "thinking.capability_resolved",
-                enabled=context.debug_enabled,
-                runId=context.run_id,
-                threadId=request.thread_id,
-                requestedThinkingSelection=(
-                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
-                ),
-                appliedThinkingSelection=(
-                    None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
-                ),
-                resolvedModelRoute=summarize_runtime_model_route(resolved_model_route),
-                overrideInput=request.policy.thinkingCapabilityOverride,
-                capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
-                selectionResult=selection_result_summary,
-                reasoningSuppressionBasis=reasoning_suppression_basis_summary,
-            )
-            log_runtime_chain_debug(
-                "thinking.request_validated",
-                enabled=context.debug_enabled,
-                runId=context.run_id,
-                threadId=request.thread_id,
-                requestedThinkingSelection=(
-                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
-                ),
-                appliedThinkingSelection=(
-                    None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
-                ),
-                applied=thinking_adaptation.applied,
-                reason=thinking_adaptation.reason,
-                capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
-                selectionResult=selection_result_summary,
-                reasoningSuppressionBasis=reasoning_suppression_basis_summary,
-            )
-            log_runtime_chain_debug(
-                "thinking.provider_mapping_resolved",
-                enabled=context.debug_enabled,
-                runId=context.run_id,
-                threadId=request.thread_id,
-                requestedThinkingSelection=(
-                    None if requested_thinking_selection is None else requested_thinking_selection.to_dict()
-                ),
-                appliedThinkingSelection=(
-                    None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
-                ),
-                providerBuilderKey=thinking_adaptation.provider_builder_key,
-                modelSettings=thinking_adaptation.model_settings,
-                mappingReasonCode=thinking_adaptation.mapping_reason_code,
-                reason=thinking_adaptation.reason,
-                capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
-                selectionResult=selection_result_summary,
-                reasoningSuppressionBasis=reasoning_suppression_basis_summary,
-            )
-            run_metadata = context.projector.build_run_metadata(
-                requested_thinking_selection=None
-                if requested_thinking_selection is None
-                else requested_thinking_selection.to_dict(),
-                applied_thinking_selection=None
-                if applied_thinking_selection is None
-                else applied_thinking_selection.to_dict(),
-                thinking_capability_snapshot=thinking_adaptation.capability.to_public_dict(),
-                thinking_series_decision=selection_result,
-                reasoning_suppression_basis=reasoning_suppression_basis,
-            )
-            log_runtime_chain_debug(
-                "thinking.run_metadata_attached",
-                enabled=context.debug_enabled,
-                runId=context.run_id,
-                threadId=request.thread_id,
-                yieldedEvent=summarize_runtime_run_event(run_metadata),
-            )
-            yield run_metadata
-            if requested_thinking_selection is not None and not thinking_adaptation.applied:
-                fail_fast_code = (
-                    thinking_adaptation.error_code or "thinking_series_not_supported_for_route"
-                )
-                fail_fast_details = {
-                    **thinking_adaptation.diagnostics,
-                    "reason": thinking_adaptation.reason,
-                }
-                log_runtime_chain_debug(
-                    "thinking.fail_fast",
-                    enabled=context.debug_enabled,
-                    runId=context.run_id,
-                    threadId=request.thread_id,
-                    code=fail_fast_code,
-                    requestedThinkingSelection=requested_thinking_selection.to_dict(),
-                    appliedThinkingSelection=(
-                        None if applied_thinking_selection is None else applied_thinking_selection.to_dict()
-                    ),
-                    reason=thinking_adaptation.reason,
-                    capability=summarize_runtime_thinking_capability(thinking_adaptation.capability),
-                    diagnostics=fail_fast_details,
-                    selectionResult=selection_result_summary,
-                    reasoningSuppressionBasis=reasoning_suppression_basis_summary,
-                )
-                for event in build_failed_execution_events(
-                    execution_events=context.execution_events,
-                    code=fail_fast_code,
-                    message=build_thinking_fail_fast_message(
-                        code=fail_fast_code,
-                        requested_selection=requested_thinking_selection,
-                    ),
-                    details=fail_fast_details,
-                    diagnostic_stage="adapt_thinking",
-                ):
-                    for projected in context.projector.project(event):
-                        yield projected
-                return
-            agent_executor = self._build_streaming_executor(agent_descriptor)
-            log_runtime_chain_debug(
-                "orchestrator.execution_prepared",
-                enabled=context.debug_enabled,
-                runId=context.run_id,
-                threadId=request.thread_id,
-                boundAgentId=thread.bound_agent_id,
-                enabledToolIds=list(resolved_tool_ids),
-                modelRoute=summarize_runtime_model_route(resolved_model_route),
-                historyMessageCount=len(message_history),
-                executorType=type(agent_executor).__name__,
-            )
-        except RuntimeModelRouteResolutionError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code=exc.code,
-                message=str(exc),
-                details=exc.details,
-                diagnostic_stage="resolve_model_route",
+        except Exception as exc:  # pragma: no cover - consolidated fallback path
+            async for projected in self._yield_failed_execution_from_exception(
+                context=context,
+                exc=exc,
+                stage="prepare_execution",
             ):
-                for projected in context.projector.project(event):
-                    yield projected
+                yield projected
             return
-        except RuntimeProviderAdapterError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code=exc.code,
-                message=str(exc),
-                details=dict(exc.details),
-                diagnostic_stage="resolve_thinking_capability",
+
+        yield prepared.run_metadata
+        if prepared.preflight_failure is not None:
+            async for projected in self._yield_failed_execution(
+                context=context,
+                failure=prepared.preflight_failure,
             ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except ThreadNotFoundError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="thread_not_found",
-                message=str(exc),
-                details={"threadId": exc.thread_id},
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except BoundAgentMismatchError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="agent_mismatch",
-                message=str(exc),
-                details={
-                    "sessionId": exc.session_id,
-                    "boundAgentId": exc.expected_agent_id,
-                    "requestedAgentId": exc.actual_agent_id,
-                },
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except ToolNotFoundError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="tool_not_found",
-                message=str(exc),
-                details={"toolId": exc.tool_id},
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except AgentNotFoundError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="agent_not_found",
-                message=str(exc),
-                details={"agentName": exc.agent_name},
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except InvalidSessionHistoryError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="invalid_message_history",
-                message=str(exc),
-                details={},
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except ModelNotConfiguredError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="model_not_configured",
-                message=str(exc),
-                details={"modelEnvironmentKeys": list(self._scaffold.model_environment_keys)},
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except AgentExecutionError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="agent_execution_failed",
-                message=str(exc),
-                details={},
-                diagnostic_stage="prepare_execution",
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except Exception as exc:  # pragma: no cover - defensive fallback
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="agent_execution_failed",
-                message=f"Unexpected agent execution failure: {exc}",
-                details={},
-                diagnostic_stage="prepare_execution",
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
+                yield projected
             return
 
         context.projector.configure_completion_context(
-            resolved_model_route=resolved_model_route,
-            resolved_tool_ids=resolved_tool_ids,
+            resolved_model_route=prepared.resolved_model_route,
+            resolved_tool_ids=prepared.resolved_tool_ids,
             request_options=request.policy.requestOptions,
         )
 
-        assistant_text: str
-        try:
-            async with open_execution_stream(
-                agent_executor=agent_executor,
-                run_id=context.run_id,
-                agent_name=thread.bound_agent_id,
-                user_prompt=request.message.content,
-                message_history=message_history,
-                model_route=resolved_model_route,
-                enabled_tools=resolved_tool_ids,
-                debug_enabled=context.debug_enabled,
-                request_options=request.policy.requestOptions,
-                model_settings=thinking_adaptation.model_settings,
-            ) as stream:
-                log_runtime_chain_debug(
-                    "orchestrator.stream_opened",
-                    enabled=context.debug_enabled,
-                    runId=context.run_id,
-                    threadId=request.thread_id,
-                    resolvedModelId=stream.resolved_model_id,
-                )
-                async for event in stream.iter_events():
-                    projected_events = context.projector.project(event)
-                    if (
-                        event.type == "reasoning_segment_delta"
-                        and isinstance(reasoning_suppression_basis_summary, dict)
-                        and reasoning_suppression_basis_summary.get("shouldSuppress") is True
-                    ):
-                        log_runtime_chain_debug(
-                            "thinking.reasoning_suppressed",
-                            enabled=context.debug_enabled,
-                            runId=context.run_id,
-                            threadId=request.thread_id,
-                            suppressionEnabled=True,
-                            suppressionSource=reasoning_suppression_basis_summary.get("source"),
-                            suppressionReasonCode=reasoning_suppression_basis_summary.get("reasonCode"),
-                            reasoningSuppressionBasis=reasoning_suppression_basis_summary,
-                            executionEvent=summarize_runtime_execution_event(event),
-                            projectedEventTypes=[projected.type for projected in projected_events],
-                        )
-                    log_runtime_chain_debug(
-                        "orchestrator.execution_event_projected",
-                        enabled=context.debug_enabled,
-                        runId=context.run_id,
-                        threadId=request.thread_id,
-                        executionEvent=summarize_runtime_execution_event(event),
-                        projectedEventTypes=[projected.type for projected in projected_events],
-                        projectedEvents=[
-                            summarize_runtime_run_event(projected)
-                            for projected in projected_events
-                        ],
-                    )
-                    if len(projected_events) == 0:
-                        continue
-                    await raise_if_client_disconnected(
-                        is_client_disconnected,
-                        run_id=context.run_id,
-                        thread_id=request.thread_id,
-                    )
-                    for projected in projected_events:
-                        log_runtime_chain_debug(
-                            "orchestrator.yield_projected_event",
-                            enabled=context.debug_enabled,
-                            runId=context.run_id,
-                            threadId=request.thread_id,
-                            projectedEvent=summarize_runtime_run_event(projected),
-                        )
-                        yield projected
-                await raise_if_client_disconnected(
-                    is_client_disconnected,
-                    run_id=context.run_id,
-                    thread_id=request.thread_id,
-                )
-                assistant_text = await stream.get_output()
-                log_runtime_chain_debug(
-                    "orchestrator.stream_output",
-                    enabled=context.debug_enabled,
-                    runId=context.run_id,
-                    threadId=request.thread_id,
-                    assistantTextLength=len(assistant_text),
-                    assistantTextPreview=preview_text(assistant_text),
-                )
-                await raise_if_client_disconnected(
-                    is_client_disconnected,
-                    run_id=context.run_id,
-                    thread_id=request.thread_id,
-                )
-        except asyncio.CancelledError:
-            projected_events = context.projector.project(
-                context.execution_events.build_run_cancelled(reason="cancelled")
-            )
-            log_runtime_chain_debug(
-                "orchestrator.terminal",
-                enabled=context.debug_enabled,
-                runId=context.run_id,
-                threadId=request.thread_id,
-                terminalReason="cancelled",
-                projectedEventTypes=[projected.type for projected in projected_events],
-                projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
-            )
-            for projected in projected_events:
-                yield projected
-            return
-        except ModelNotConfiguredError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="model_not_configured",
-                message=str(exc),
-                details={"modelEnvironmentKeys": list(self._scaffold.model_environment_keys)},
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except ProviderAdapterExecutionError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code=exc.code,
-                message=str(exc),
-                details=dict(exc.details),
-                diagnostic_stage="execute_model",
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except AgentExecutionError as exc:
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="agent_execution_failed",
-                message=str(exc),
-                details={},
-                diagnostic_stage="execute_model",
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
-            return
-        except Exception as exc:  # pragma: no cover - defensive fallback
-            for event in build_failed_execution_events(
-                execution_events=context.execution_events,
-                code="agent_execution_failed",
-                message=f"Unexpected agent execution failure: {exc}",
-                details={},
-                diagnostic_stage="execute_model",
-            ):
-                for projected in context.projector.project(event):
-                    yield projected
+        execution_result = _ExecutionStreamResult()
+        async for projected in self._stream_execution_events(
+            context=context,
+            request=request,
+            prepared=prepared,
+            is_client_disconnected=is_client_disconnected,
+            result=execution_result,
+        ):
+            yield projected
+        if not execution_result.completed or execution_result.assistant_text is None:
             return
 
         await raise_if_client_disconnected(
@@ -529,7 +186,9 @@ class RuntimeMessageRunOrchestrator:
             thread_id=request.thread_id,
         )
         projected_events = context.projector.project(
-            context.execution_events.build_run_completed(assistant_text=assistant_text)
+            context.execution_events.build_run_completed(
+                assistant_text=execution_result.assistant_text
+            )
         )
         log_runtime_chain_debug(
             "orchestrator.terminal",
@@ -538,10 +197,645 @@ class RuntimeMessageRunOrchestrator:
             threadId=request.thread_id,
             terminalReason="completed",
             projectedEventTypes=[projected.type for projected in projected_events],
-            projectedEvents=[summarize_runtime_run_event(projected) for projected in projected_events],
+            projectedEvents=[
+                summarize_runtime_run_event(projected) for projected in projected_events
+            ],
         )
         for projected in projected_events:
             yield projected
+
+    async def _prepare_stream_execution(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+    ) -> _PreparedStreamExecution:
+        thread = self._require_thread(request)
+        agent_descriptor = self._resolve_agent(thread.bound_agent_id)
+        tool_permission_resolver = RuntimeToolPermissionResolver.from_policy(
+            request.policy.toolPermissionPolicy
+        )
+        resolved_tool_ids = self._resolve_enabled_tools(
+            agent_id=thread.bound_agent_id,
+            enabled_tools=request.policy.enabledTools,
+            tool_permission_resolver=tool_permission_resolver,
+        )
+        message_history = build_message_history(
+            self._session_store.list_messages(thread.thread_id)
+        )
+        resolved_model_route = await self._model_route_resolver.resolve(
+            request.policy.modelRoute
+        )
+        (
+            thinking_adaptation,
+            run_metadata,
+            reasoning_suppression_basis_summary,
+            preflight_failure,
+        ) = self._resolve_thinking_state(
+            context=context,
+            request=request,
+            resolved_model_route=resolved_model_route,
+        )
+        (
+            skill_runtime_index,
+            skill_system_prompt,
+            skill_tool_ids,
+        ) = self._load_skill_runtime_context(
+            context=context,
+            request=request,
+        )
+        resolved_tool_ids = self._merge_runtime_skill_tools(
+            resolved_tool_ids,
+            skill_tool_ids,
+        )
+        agent_executor = self._build_streaming_executor(agent_descriptor)
+        log_runtime_chain_debug(
+            "orchestrator.execution_prepared",
+            enabled=context.debug_enabled,
+            runId=context.run_id,
+            threadId=request.thread_id,
+            boundAgentId=thread.bound_agent_id,
+            enabledToolIds=list(resolved_tool_ids),
+            modelRoute=summarize_runtime_model_route(resolved_model_route),
+            historyMessageCount=len(message_history),
+            executorType=type(agent_executor).__name__,
+            skillSnapshotRevision=(
+                None
+                if skill_runtime_index is None
+                else skill_runtime_index.snapshot_revision
+            ),
+            skillCount=(
+                0
+                if skill_runtime_index is None
+                else len(skill_runtime_index.skills_by_id)
+            ),
+        )
+        return _PreparedStreamExecution(
+            thread=thread,
+            tool_permission_resolver=tool_permission_resolver,
+            resolved_tool_ids=resolved_tool_ids,
+            message_history=message_history,
+            resolved_model_route=resolved_model_route,
+            thinking_adaptation=thinking_adaptation,
+            reasoning_suppression_basis_summary=reasoning_suppression_basis_summary,
+            agent_executor=agent_executor,
+            run_metadata=run_metadata,
+            skill_runtime_index=skill_runtime_index,
+            skill_system_prompt=skill_system_prompt,
+            preflight_failure=preflight_failure,
+        )
+
+    def _load_skill_runtime_context(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+    ) -> tuple[SkillRuntimeIndex | None, str | None, tuple[str, ...]]:
+        if self._skill_snapshot_provider is None:
+            index = SkillRuntimeIndex.empty(source="missing")
+            skill_system_prompt = build_skill_index_system_prompt(index)
+            self._log_skill_index_state(
+                context=context,
+                request=request,
+                index=index,
+                available=False,
+            )
+            return None, skill_system_prompt, ()
+        index = self._skill_snapshot_provider.load_runtime_index()
+        skill_system_prompt = build_skill_index_system_prompt(index)
+        self._log_skill_index_state(
+            context=context,
+            request=request,
+            index=index,
+            available=index.has_available_skills,
+        )
+        if not index.has_available_skills:
+            return index, skill_system_prompt, ()
+        return (
+            index,
+            skill_system_prompt,
+            (
+                SKILL_ACTIVATE_TOOL_ID,
+                SKILL_READ_RESOURCE_TOOL_ID,
+            ),
+        )
+
+    def _merge_runtime_skill_tools(
+        self,
+        resolved_tool_ids: tuple[str, ...],
+        skill_tool_ids: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        merged = list(resolved_tool_ids)
+        for tool_id in skill_tool_ids:
+            if tool_id not in merged:
+                merged.append(tool_id)
+        return tuple(merged)
+
+    def _log_skill_index_state(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+        index: SkillRuntimeIndex,
+        available: bool,
+    ) -> None:
+        log_runtime_chain_debug(
+            "skill.index_loaded" if available else "skill.index_unavailable",
+            enabled=context.debug_enabled,
+            runId=context.run_id,
+            threadId=request.thread_id,
+            source=index.source,
+            snapshotRevision=index.snapshot_revision,
+            registryRevision=index.registry_revision,
+            skillCount=len(index.skills_by_id),
+        )
+
+    def _resolve_thinking_state(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+        resolved_model_route: Any,
+    ) -> tuple[
+        Any, RuntimeRunEvent, dict[str, Any] | None, _FailureEventDetails | None
+    ]:
+        requested_thinking_selection = request.policy.resolve_thinking_selection()
+        thinking_adaptation = adapt_thinking_selection(
+            selection=requested_thinking_selection,
+            model_route=resolved_model_route,
+            thinking_capability_override=request.policy.thinkingCapabilityOverride,
+            provider_adapter_registry=self._provider_adapter_registry,
+        )
+        capability_series = (
+            thinking_adaptation.capability.series
+            or (
+                requested_thinking_selection.series
+                if requested_thinking_selection is not None
+                else None
+            )
+            or "compat-discrete-selection-v1"
+        )
+        applied_thinking_selection = resolve_applied_thinking_selection(
+            requested_selection=requested_thinking_selection,
+            requested_canonical_selection=thinking_adaptation.requested_selection,
+            applied_canonical_selection=thinking_adaptation.applied_selection,
+            capability_series=capability_series,
+        )
+        selection_result = thinking_adaptation.to_public_dict()
+        selection_result_summary = summarize_runtime_thinking_selection_result(
+            selection_result
+        )
+        reasoning_suppression_basis = build_reasoning_suppression_basis(
+            capability=thinking_adaptation.capability.to_public_dict(),
+            applied_selection=applied_thinking_selection,
+        )
+        reasoning_suppression_basis_summary = (
+            summarize_runtime_reasoning_suppression_basis(reasoning_suppression_basis)
+        )
+        self._log_thinking_resolution(
+            context=context,
+            request=request,
+            resolved_model_route=resolved_model_route,
+            requested_thinking_selection=requested_thinking_selection,
+            applied_thinking_selection=applied_thinking_selection,
+            thinking_adaptation=thinking_adaptation,
+            selection_result_summary=selection_result_summary,
+            reasoning_suppression_basis_summary=reasoning_suppression_basis_summary,
+        )
+        run_metadata = context.projector.build_run_metadata(
+            requested_thinking_selection=None
+            if requested_thinking_selection is None
+            else requested_thinking_selection.to_dict(),
+            applied_thinking_selection=None
+            if applied_thinking_selection is None
+            else applied_thinking_selection.to_dict(),
+            thinking_capability_snapshot=thinking_adaptation.capability.to_public_dict(),
+            thinking_series_decision=selection_result,
+            reasoning_suppression_basis=reasoning_suppression_basis,
+        )
+        log_runtime_chain_debug(
+            "thinking.run_metadata_attached",
+            enabled=context.debug_enabled,
+            runId=context.run_id,
+            threadId=request.thread_id,
+            yieldedEvent=summarize_runtime_run_event(run_metadata),
+        )
+        preflight_failure = self._build_thinking_fail_fast_failure(
+            context=context,
+            request=request,
+            requested_thinking_selection=requested_thinking_selection,
+            applied_thinking_selection=applied_thinking_selection,
+            thinking_adaptation=thinking_adaptation,
+            selection_result_summary=selection_result_summary,
+            reasoning_suppression_basis_summary=reasoning_suppression_basis_summary,
+        )
+        return (
+            thinking_adaptation,
+            run_metadata,
+            reasoning_suppression_basis_summary,
+            preflight_failure,
+        )
+
+    def _log_thinking_resolution(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+        resolved_model_route: Any,
+        requested_thinking_selection: Any,
+        applied_thinking_selection: Any,
+        thinking_adaptation: Any,
+        selection_result_summary: dict[str, Any] | None,
+        reasoning_suppression_basis_summary: dict[str, Any] | None,
+    ) -> None:
+        requested_selection_payload = self._selection_payload(
+            requested_thinking_selection
+        )
+        applied_selection_payload = self._selection_payload(applied_thinking_selection)
+        summarized_capability = summarize_runtime_thinking_capability(
+            thinking_adaptation.capability
+        )
+        common_fields = {
+            "enabled": context.debug_enabled,
+            "runId": context.run_id,
+            "threadId": request.thread_id,
+            "requestedThinkingSelection": requested_selection_payload,
+            "appliedThinkingSelection": applied_selection_payload,
+            "capability": summarized_capability,
+            "selectionResult": selection_result_summary,
+            "reasoningSuppressionBasis": reasoning_suppression_basis_summary,
+        }
+        log_runtime_chain_debug(
+            "thinking.capability_resolved",
+            resolvedModelRoute=summarize_runtime_model_route(resolved_model_route),
+            overrideInput=request.policy.thinkingCapabilityOverride,
+            **common_fields,
+        )
+        log_runtime_chain_debug(
+            "thinking.request_validated",
+            applied=thinking_adaptation.applied,
+            reason=thinking_adaptation.reason,
+            **common_fields,
+        )
+        log_runtime_chain_debug(
+            "thinking.provider_mapping_resolved",
+            providerBuilderKey=thinking_adaptation.provider_builder_key,
+            modelSettings=thinking_adaptation.model_settings,
+            mappingReasonCode=thinking_adaptation.mapping_reason_code,
+            reason=thinking_adaptation.reason,
+            **common_fields,
+        )
+
+    def _build_thinking_fail_fast_failure(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+        requested_thinking_selection: Any,
+        applied_thinking_selection: Any,
+        thinking_adaptation: Any,
+        selection_result_summary: dict[str, Any] | None,
+        reasoning_suppression_basis_summary: dict[str, Any] | None,
+    ) -> _FailureEventDetails | None:
+        if requested_thinking_selection is None or thinking_adaptation.applied:
+            return None
+        fail_fast_code = (
+            thinking_adaptation.error_code or "thinking_series_not_supported_for_route"
+        )
+        fail_fast_details = {
+            **thinking_adaptation.diagnostics,
+            "reason": thinking_adaptation.reason,
+        }
+        log_runtime_chain_debug(
+            "thinking.fail_fast",
+            enabled=context.debug_enabled,
+            runId=context.run_id,
+            threadId=request.thread_id,
+            code=fail_fast_code,
+            requestedThinkingSelection=requested_thinking_selection.to_dict(),
+            appliedThinkingSelection=self._selection_payload(
+                applied_thinking_selection
+            ),
+            reason=thinking_adaptation.reason,
+            capability=summarize_runtime_thinking_capability(
+                thinking_adaptation.capability
+            ),
+            diagnostics=fail_fast_details,
+            selectionResult=selection_result_summary,
+            reasoningSuppressionBasis=reasoning_suppression_basis_summary,
+        )
+        return _FailureEventDetails(
+            code=fail_fast_code,
+            message=build_thinking_fail_fast_message(
+                code=fail_fast_code,
+                requested_selection=requested_thinking_selection,
+            ),
+            details=fail_fast_details,
+            diagnostic_stage="adapt_thinking",
+        )
+
+    async def _stream_execution_events(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+        prepared: _PreparedStreamExecution,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None,
+        result: _ExecutionStreamResult,
+    ) -> AsyncIterator[RuntimeRunEvent]:
+        try:
+            async with open_execution_stream(
+                agent_executor=prepared.agent_executor,
+                run_id=context.run_id,
+                agent_name=prepared.thread.bound_agent_id,
+                user_prompt=build_runtime_user_prompt(request.message),
+                message_history=prepared.message_history,
+                model_route=prepared.resolved_model_route,
+                enabled_tools=prepared.resolved_tool_ids,
+                debug_enabled=context.debug_enabled,
+                request_options=request.policy.requestOptions,
+                model_settings=prepared.thinking_adaptation.model_settings,
+                tool_permission_resolver=prepared.tool_permission_resolver,
+                skill_runtime_index=prepared.skill_runtime_index,
+                skill_system_prompt=prepared.skill_system_prompt,
+            ) as stream:
+                log_runtime_chain_debug(
+                    "orchestrator.stream_opened",
+                    enabled=context.debug_enabled,
+                    runId=context.run_id,
+                    threadId=request.thread_id,
+                    resolvedModelId=stream.resolved_model_id,
+                )
+                async for projected in self._yield_projected_stream_events(
+                    context=context,
+                    request=request,
+                    stream=stream,
+                    reasoning_suppression_basis_summary=(
+                        prepared.reasoning_suppression_basis_summary
+                    ),
+                    is_client_disconnected=is_client_disconnected,
+                ):
+                    yield projected
+                await raise_if_client_disconnected(
+                    is_client_disconnected,
+                    run_id=context.run_id,
+                    thread_id=request.thread_id,
+                )
+                result.assistant_text = await stream.get_output()
+                log_runtime_chain_debug(
+                    "orchestrator.stream_output",
+                    enabled=context.debug_enabled,
+                    runId=context.run_id,
+                    threadId=request.thread_id,
+                    assistantTextLength=len(result.assistant_text),
+                    assistantTextPreview=preview_text(result.assistant_text),
+                )
+                await raise_if_client_disconnected(
+                    is_client_disconnected,
+                    run_id=context.run_id,
+                    thread_id=request.thread_id,
+                )
+                result.completed = True
+        except asyncio.CancelledError:
+            async for projected in self._yield_cancelled_execution(
+                context=context, request=request
+            ):
+                yield projected
+        except Exception as exc:  # pragma: no cover - consolidated fallback path
+            async for projected in self._yield_failed_execution_from_exception(
+                context=context,
+                exc=exc,
+                stage="execute_model",
+            ):
+                yield projected
+
+    async def _yield_projected_stream_events(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+        stream: Any,
+        reasoning_suppression_basis_summary: dict[str, Any] | None,
+        is_client_disconnected: Callable[[], Awaitable[bool]] | None,
+    ) -> AsyncIterator[RuntimeRunEvent]:
+        async for event in stream.iter_events():
+            projected_events = context.projector.project(event)
+            self._log_projected_execution_event(
+                context=context,
+                request=request,
+                event=event,
+                projected_events=projected_events,
+                reasoning_suppression_basis_summary=reasoning_suppression_basis_summary,
+            )
+            if len(projected_events) == 0:
+                continue
+            await raise_if_client_disconnected(
+                is_client_disconnected,
+                run_id=context.run_id,
+                thread_id=request.thread_id,
+            )
+            for projected in projected_events:
+                log_runtime_chain_debug(
+                    "orchestrator.yield_projected_event",
+                    enabled=context.debug_enabled,
+                    runId=context.run_id,
+                    threadId=request.thread_id,
+                    projectedEvent=summarize_runtime_run_event(projected),
+                )
+                yield projected
+
+    def _log_projected_execution_event(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+        event: Any,
+        projected_events: list[RuntimeRunEvent],
+        reasoning_suppression_basis_summary: dict[str, Any] | None,
+    ) -> None:
+        suppression_basis = reasoning_suppression_basis_summary
+        if (
+            self._is_reasoning_suppressed_event(
+                event=event,
+                reasoning_suppression_basis_summary=suppression_basis,
+            )
+            and suppression_basis is not None
+        ):
+            log_runtime_chain_debug(
+                "thinking.reasoning_suppressed",
+                enabled=context.debug_enabled,
+                runId=context.run_id,
+                threadId=request.thread_id,
+                suppressionEnabled=True,
+                suppressionSource=suppression_basis.get("source"),
+                suppressionReasonCode=suppression_basis.get("reasonCode"),
+                reasoningSuppressionBasis=suppression_basis,
+                executionEvent=summarize_runtime_execution_event(event),
+                projectedEventTypes=[projected.type for projected in projected_events],
+            )
+        log_runtime_chain_debug(
+            "orchestrator.execution_event_projected",
+            enabled=context.debug_enabled,
+            runId=context.run_id,
+            threadId=request.thread_id,
+            executionEvent=summarize_runtime_execution_event(event),
+            projectedEventTypes=[projected.type for projected in projected_events],
+            projectedEvents=[
+                summarize_runtime_run_event(projected) for projected in projected_events
+            ],
+        )
+
+    def _is_reasoning_suppressed_event(
+        self,
+        *,
+        event: Any,
+        reasoning_suppression_basis_summary: dict[str, Any] | None,
+    ) -> bool:
+        return (
+            event.type == "reasoning_segment_delta"
+            and isinstance(reasoning_suppression_basis_summary, dict)
+            and reasoning_suppression_basis_summary.get("shouldSuppress") is True
+        )
+
+    async def _yield_cancelled_execution(
+        self,
+        *,
+        context: Any,
+        request: RuntimeRunStartRequest,
+    ) -> AsyncIterator[RuntimeRunEvent]:
+        projected_events = context.projector.project(
+            context.execution_events.build_run_cancelled(reason="cancelled")
+        )
+        log_runtime_chain_debug(
+            "orchestrator.terminal",
+            enabled=context.debug_enabled,
+            runId=context.run_id,
+            threadId=request.thread_id,
+            terminalReason="cancelled",
+            projectedEventTypes=[projected.type for projected in projected_events],
+            projectedEvents=[
+                summarize_runtime_run_event(projected) for projected in projected_events
+            ],
+        )
+        for projected in projected_events:
+            yield projected
+
+    async def _yield_failed_execution_from_exception(
+        self,
+        *,
+        context: Any,
+        exc: Exception,
+        stage: str,
+    ) -> AsyncIterator[RuntimeRunEvent]:
+        failure = self._describe_failure(exc=exc, stage=stage)
+        async for projected in self._yield_failed_execution(
+            context=context,
+            failure=failure,
+        ):
+            yield projected
+
+    async def _yield_failed_execution(
+        self,
+        *,
+        context: Any,
+        failure: _FailureEventDetails,
+    ) -> AsyncIterator[RuntimeRunEvent]:
+        for event in build_failed_execution_events(
+            execution_events=context.execution_events,
+            code=failure.code,
+            message=failure.message,
+            details=failure.details,
+            diagnostic_stage=failure.diagnostic_stage,
+        ):
+            for projected in context.projector.project(event):
+                yield projected
+
+    def _describe_failure(self, *, exc: Exception, stage: str) -> _FailureEventDetails:
+        if isinstance(exc, RuntimeModelRouteResolutionError):
+            return _FailureEventDetails(
+                code=exc.code,
+                message=str(exc),
+                details=exc.details,
+                diagnostic_stage="resolve_model_route",
+            )
+        if isinstance(exc, RuntimeProviderAdapterError):
+            return _FailureEventDetails(
+                code=exc.code,
+                message=str(exc),
+                details=dict(exc.details),
+                diagnostic_stage="resolve_thinking_capability",
+            )
+        if isinstance(exc, ThreadNotFoundError):
+            return _FailureEventDetails(
+                code="thread_not_found",
+                message=str(exc),
+                details={"threadId": exc.thread_id},
+            )
+        if isinstance(exc, BoundAgentMismatchError):
+            return _FailureEventDetails(
+                code="agent_mismatch",
+                message=str(exc),
+                details={
+                    "sessionId": exc.session_id,
+                    "boundAgentId": exc.expected_agent_id,
+                    "requestedAgentId": exc.actual_agent_id,
+                },
+            )
+        if isinstance(exc, ToolNotFoundError):
+            return _FailureEventDetails(
+                code="tool_not_found",
+                message=str(exc),
+                details={"toolId": exc.tool_id},
+            )
+        if isinstance(exc, AgentNotFoundError):
+            return _FailureEventDetails(
+                code="agent_not_found",
+                message=str(exc),
+                details={"agentName": exc.agent_name},
+            )
+        if isinstance(exc, InvalidSessionHistoryError):
+            return _FailureEventDetails(
+                code="invalid_message_history",
+                message=str(exc),
+                details={},
+            )
+        if isinstance(exc, ModelNotConfiguredError):
+            return _FailureEventDetails(
+                code="model_not_configured",
+                message=str(exc),
+                details={
+                    "modelEnvironmentKeys": list(self._scaffold.model_environment_keys)
+                },
+            )
+        if isinstance(exc, ProviderAdapterExecutionError):
+            return _FailureEventDetails(
+                code=exc.code,
+                message=str(exc),
+                details=dict(exc.details),
+                diagnostic_stage="execute_model",
+            )
+        if isinstance(exc, AwaitingUserInputError):
+            return _FailureEventDetails(
+                code=exc.code,
+                message=str(exc),
+                details=dict(exc.details),
+            )
+        if isinstance(exc, AgentExecutionError):
+            return _FailureEventDetails(
+                code="agent_execution_failed",
+                message=str(exc),
+                details={},
+                diagnostic_stage=stage,
+            )
+        return _FailureEventDetails(
+            code="agent_execution_failed",
+            message=f"Unexpected agent execution failure: {exc}",
+            details={},
+            diagnostic_stage=stage,
+        )
+
+    def _selection_payload(self, selection: Any) -> dict[str, Any] | None:
+        return None if selection is None else selection.to_dict()
 
     def _require_thread(self, request: RuntimeRunStartRequest):
         thread = self._session_store.get_thread(request.thread_id)
@@ -579,11 +873,13 @@ class RuntimeMessageRunOrchestrator:
         *,
         agent_id: str,
         enabled_tools: tuple[str, ...],
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> tuple[str, ...]:
         try:
             return self._scaffold.resolve_enabled_tool_ids(
                 agent_id=agent_id,
                 enabled_tools=enabled_tools,
+                tool_permission_resolver=tool_permission_resolver,
             )
         except LookupError as exc:
             raise ToolNotFoundError(extract_unknown_tool_id(exc)) from exc

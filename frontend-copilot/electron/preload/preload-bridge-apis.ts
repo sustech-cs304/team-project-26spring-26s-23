@@ -42,6 +42,34 @@ import {
   type DesktopNotificationApi,
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL, type BootstrapWindowApi } from '../bootstrap-window'
+import {
+  MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+  MANAGED_RUNTIME_LOAD_CHANNEL,
+  type ManagedRuntimeApi,
+} from '../managed-runtime/ipc'
+import {
+  MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+  MCP_REGISTRY_LOAD_CHANNEL,
+  MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+  MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+  MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+  MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+  createMcpRegistrySubscriptionApi,
+  type McpRegistryApi,
+  type McpRegistrySubscriptionApi,
+} from '../mcp-registry/ipc'
+import {
+  SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+  SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_LOAD_CHANNEL,
+  SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
+  SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+  createSkillRegistrySubscriptionApi,
+  type SkillRegistryApi,
+  type SkillRegistrySubscriptionApi,
+} from '../skill-registry/ipc'
+import { TOOL_CATALOG_LOAD_CHANNEL, type ToolCatalogApi } from '../tool-catalog/ipc'
 
 export interface PreloadBridgeApis {
   copilotRuntime: CopilotRuntimeApi
@@ -51,6 +79,12 @@ export interface PreloadBridgeApis {
   configCenterPublicPatch: ConfigCenterPublicPatchApi
   settingsWorkspaceState: SettingsWorkspaceStateApi
   settingsWorkspaceSecrets: SettingsWorkspaceSecretsApi
+  managedRuntime: ManagedRuntimeApi
+  mcpRegistry: McpRegistryApi
+  mcpRegistrySubscription: McpRegistrySubscriptionApi
+  skillRegistry: SkillRegistryApi
+  skillRegistrySubscription: SkillRegistrySubscriptionApi
+  toolCatalog: ToolCatalogApi
   desktopNotification: DesktopNotificationApi
   bootstrapWindow: BootstrapWindowApi
 }
@@ -130,6 +164,61 @@ export function createPreloadBridgeApis(ipcRenderer: IpcRendererLike): PreloadBr
       },
       clearSustechCasPassword() {
         return ipcRenderer.invoke(SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL)
+      },
+    },
+    managedRuntime: {
+      load() {
+        return ipcRenderer.invoke(MANAGED_RUNTIME_LOAD_CHANNEL)
+      },
+      installOrRepair(reason) {
+        return ipcRenderer.invoke(MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL, reason)
+      },
+    },
+    mcpRegistry: {
+      loadRegistry(request) {
+        return ipcRenderer.invoke(MCP_REGISTRY_LOAD_CHANNEL, request)
+      },
+      saveServer(draft) {
+        return ipcRenderer.invoke(MCP_REGISTRY_SAVE_SERVER_CHANNEL, draft)
+      },
+      deleteServer(serverId) {
+        return ipcRenderer.invoke(MCP_REGISTRY_DELETE_SERVER_CHANNEL, serverId)
+      },
+      setServerEnabled(request) {
+        return ipcRenderer.invoke(MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL, request)
+      },
+      testConnection(request) {
+        return ipcRenderer.invoke(MCP_REGISTRY_TEST_CONNECTION_CHANNEL, request)
+      },
+      refreshCatalog(request) {
+        return ipcRenderer.invoke(MCP_REGISTRY_REFRESH_CATALOG_CHANNEL, request)
+      },
+    },
+    mcpRegistrySubscription: createMcpRegistrySubscriptionApi(ipcRenderer),
+    skillRegistry: {
+      loadRegistry(request) {
+        return ipcRenderer.invoke(SKILL_REGISTRY_LOAD_CHANNEL, request)
+      },
+      importSkill(request) {
+        return ipcRenderer.invoke(SKILL_REGISTRY_IMPORT_SKILL_CHANNEL, request)
+      },
+      selectAndImportSkill() {
+        return ipcRenderer.invoke(SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL)
+      },
+      deleteSkill(skillId) {
+        return ipcRenderer.invoke(SKILL_REGISTRY_DELETE_SKILL_CHANNEL, skillId)
+      },
+      setSkillEnabled(request) {
+        return ipcRenderer.invoke(SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL, request)
+      },
+      refreshSkills(request) {
+        return ipcRenderer.invoke(SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL, request)
+      },
+    },
+    skillRegistrySubscription: createSkillRegistrySubscriptionApi(ipcRenderer),
+    toolCatalog: {
+      load(request) {
+        return ipcRenderer.invoke(TOOL_CATALOG_LOAD_CHANNEL, request)
       },
     },
     desktopNotification: {

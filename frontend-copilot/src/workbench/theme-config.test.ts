@@ -168,6 +168,9 @@ function createPublicSnapshot(theme: ThemeMode): ConfigCenterPublicSnapshot {
       backendExposed: {
         model: null,
       },
+      general: {
+        language: 'zh-CN',
+      },
     },
   }
 }

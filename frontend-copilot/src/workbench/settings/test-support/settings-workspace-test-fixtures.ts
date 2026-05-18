@@ -1,5 +1,8 @@
 import type { SettingsWorkspaceSecretsLoadStatusesResult } from '../../../../electron/settings-workspace/ipc'
-import type { SettingsWorkspaceEditableState } from '../../../../electron/settings-workspace/schema'
+import type {
+  SettingsWorkspaceEditableState,
+  SettingsWorkspaceToolPermissionPolicyState,
+} from '../../../../electron/settings-workspace/schema'
 import type { CopilotBootstrapController } from '../../../features/copilot/types'
 import type { ModelRouteRef, ProviderProfile } from '../../types'
 import { createProviderModelProfile } from '../domains/provider-profiles/provider-profiles'
@@ -16,6 +19,7 @@ export interface WorkspaceStateOverrides {
   api?: Partial<SettingsWorkspaceEditableState['api']>
   docs?: Partial<SettingsWorkspaceEditableState['docs']>
   externalSource?: Partial<SettingsWorkspaceEditableState['externalSource']>
+  toolPermissionPolicy?: Partial<SettingsWorkspaceToolPermissionPolicyState>
 }
 
 export function createBootstrapController(): CopilotBootstrapController {
@@ -132,6 +136,11 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
     mcp: {
       mcpAutoDiscoveryEnabled: true,
       toolPermissionMode: 'manual',
+      toolPermissionPolicy: {
+        version: 1,
+        defaultMode: 'ask',
+        toolPermissions: {},
+      },
     },
     search: {
       searchEngine: 'google',
@@ -176,7 +185,18 @@ export function createPersistedWorkspaceState(overrides: WorkspaceStateOverrides
     },
     general: { ...baseState.general, ...overrides.general },
     data: { ...baseState.data, ...overrides.data },
-    mcp: { ...baseState.mcp, ...overrides.mcp },
+    mcp: {
+      ...baseState.mcp,
+      ...overrides.mcp,
+      toolPermissionPolicy: {
+        ...baseState.mcp.toolPermissionPolicy,
+        ...overrides.mcp?.toolPermissionPolicy,
+        toolPermissions: {
+          ...baseState.mcp.toolPermissionPolicy.toolPermissions,
+          ...overrides.mcp?.toolPermissionPolicy?.toolPermissions,
+        },
+      },
+    },
     search: { ...baseState.search, ...overrides.search },
     memory: { ...baseState.memory, ...overrides.memory },
     api: { ...baseState.api, ...overrides.api },

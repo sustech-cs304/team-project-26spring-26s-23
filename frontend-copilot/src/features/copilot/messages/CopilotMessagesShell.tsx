@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ComponentType } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import { useEffect, useMemo, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import rehypeMathjax from 'rehype-mathjax/svg'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
+import type { Components } from 'react-markdown'
 
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import { ModelPickerIcon } from '../components/ModelPicker'
@@ -15,13 +16,19 @@ import {
   type CopilotModelOption,
 } from '../model-picker'
 import {
-  formatCopilotReasoningDurationLabel,
   type CopilotAssistantMessageItem,
   type CopilotAssistantPlaceholderState,
   type CopilotMessageListItem,
-  type CopilotReasoningMessageItem,
-  type CopilotToolMessageItem,
 } from '../run-segment-view-model'
+
+import { InlineFormMessageCard } from './inline-form-message-card'
+import { ToolMessageCard } from './tool-message-card'
+import { ReasoningMessageCard } from './reasoning-message-card'
+import {
+  createRenderedAssistantPlaceholderState,
+  renderAssistantPlaceholder,
+  type RenderedAssistantPlaceholderState,
+} from './assistant-placeholder'
 
 const assistantMarkdownComponents: Components = {
   hr({ className, ...props }) {
@@ -41,17 +48,6 @@ const assistantMarkdownRemarkPlugins = [remarkGfm, remarkMath]
 const assistantMarkdownRehypePlugins = [rehypeMathjax]
 
 const assistantPlaceholderExitMs = 180
-const reasoningTimerRefreshMs = 100
-
-interface JsonViewComponentProps {
-  src: unknown
-  collapsed?: boolean | number
-  displaySize?: boolean | number | 'collapsed' | 'expanded'
-  enableClipboard?: boolean
-  theme?: 'default' | 'a11y' | 'github' | 'vscode' | 'atom' | 'winter-is-coming' | 'vitesse'
-}
-
-type JsonViewComponent = ComponentType<JsonViewComponentProps>
 
 export interface CopilotMessagesShellProps {
   language?: string
@@ -59,17 +55,24 @@ export interface CopilotMessagesShellProps {
   assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
   transientError?: CopilotTransientErrorState | null
+  runtimeUrl?: string | null
+  onSubmitInlineForm?: ((input: {
+    toolCallId: string
+    formId: string
+    summary: string
+    structuredPayload: Record<string, unknown>
+    values: Record<string, string | number | boolean>
+  }) => Promise<void>) | null
+  onResolveToolApproval?: ((input: {
+    runId: string
+    toolCallId: string
+    decision: 'approved' | 'rejected'
+  }) => Promise<void>) | null
   onOpenErrorDetail?: ((errorDetail: CopilotErrorDetailSource, trigger: HTMLButtonElement | null) => void) | null
   emptyState?: {
     title: string
     description: string
   } | null
-}
-
-interface RenderedAssistantPlaceholderState {
-  visible: boolean
-  fading: boolean
-  dismissReason: CopilotAssistantPlaceholderState['dismissReason']
 }
 
 export function CopilotMessagesShell({
@@ -78,6 +81,9 @@ export function CopilotMessagesShell({
   assistantPlaceholder = null,
   models = [],
   transientError = null,
+  runtimeUrl = null,
+  onSubmitInlineForm = null,
+  onResolveToolApproval = null,
   onOpenErrorDetail = null,
   emptyState = null,
 }: CopilotMessagesShellProps) {
@@ -181,9 +187,24 @@ export function CopilotMessagesShell({
                 ].filter((className) => className !== '').join(' ')}
                 data-testid={`chat-message-${turn.kind}-${index}`}
               >
-                {turn.kind === 'tool'
+                {turn.kind === 'inline-form'
                   ? (
-                      <ToolMessageCard turn={turn} index={index} />
+                      <InlineFormMessageCard
+                        turn={turn}
+                        index={index}
+                        onSubmitInlineForm={onSubmitInlineForm}
+                      />
+                    )
+                  : turn.kind === 'tool'
+                  ? (
+                      <ToolMessageCard
+                        turn={turn}
+                        index={index}
+                        runtimeUrl={runtimeUrl}
+                        onResolveToolApproval={onResolveToolApproval}
+                        onOpenErrorDetail={onOpenErrorDetail}
+                        language={language}
+                      />
                     )
                   : turn.kind === 'reasoning'
                     ? (
@@ -421,543 +442,4 @@ function buildDetailRows(): Array<{
   value: string
 }> {
   return []
-}
-
-function ReasoningMessageCard({
-  turn,
-  index,
-  language,
-}: {
-  turn: CopilotReasoningMessageItem
-  index: number
-  language: string
-}) {
-  const copy = getCopilotChatCopy(language)
-  const [expanded, setExpanded] = useState(turn.isCollapsedByDefault !== true)
-  const [observedNow, setObservedNow] = useState(() => turn.observedFinishedAt ?? Date.now())
-  const panelId = `chat-message-reasoning-panel-${turn.id}`
-
-  useEffect(() => {
-    setObservedNow(turn.observedFinishedAt ?? Date.now())
-  }, [turn.observedFinishedAt, turn.observedStartedAt])
-
-  useEffect(() => {
-    if (turn.observedFinishedAt !== null || turn.status !== 'streaming') {
-      return
-    }
-
-    const intervalId = window.setInterval(() => {
-      setObservedNow(Date.now())
-    }, reasoningTimerRefreshMs)
-
-    return () => {
-      window.clearInterval(intervalId)
-    }
-  }, [turn.observedFinishedAt, turn.status])
-
-  const reasoningTitle = formatCopilotReasoningDurationLabel(turn, observedNow)
-
-  return (
-    <div className="copilot-chat__reasoning-card" data-testid={`chat-message-reasoning-card-${index}`}>
-      {expanded
-        ? (
-            <button
-              type="button"
-              className="copilot-chat__reasoning-toggle"
-              aria-controls={panelId}
-              aria-expanded="true"
-              data-expanded="true"
-              data-testid={`chat-message-reasoning-toggle-${index}`}
-              onClick={() => {
-                setExpanded((current) => !current)
-              }}
-            >
-              <span className="copilot-chat__reasoning-toggle-main">
-                <span className="copilot-chat__reasoning-toggle-icon" aria-hidden="true">▾</span>
-                <span className="copilot-chat__message-label">{reasoningTitle}</span>
-              </span>
-              {turn.status === 'streaming' && (
-                <span className="copilot-chat__reasoning-status" data-testid={`chat-message-reasoning-status-${index}`}>
-                  {copy.messages.reasoningGenerating}
-                </span>
-              )}
-            </button>
-          )
-        : (
-            <button
-              type="button"
-              className="copilot-chat__reasoning-toggle"
-              aria-controls={panelId}
-              aria-expanded="false"
-              data-expanded="false"
-              data-testid={`chat-message-reasoning-toggle-${index}`}
-              onClick={() => {
-                setExpanded((current) => !current)
-              }}
-            >
-              <span className="copilot-chat__reasoning-toggle-main">
-                <span className="copilot-chat__reasoning-toggle-icon" aria-hidden="true">▸</span>
-                <span className="copilot-chat__message-label">{reasoningTitle}</span>
-              </span>
-              {turn.status === 'streaming' && (
-                <span className="copilot-chat__reasoning-status" data-testid={`chat-message-reasoning-status-${index}`}>
-                  {copy.messages.reasoningGenerating}
-                </span>
-              )}
-            </button>
-          )}
-      {expanded && (
-        <div className="copilot-chat__reasoning-panel" id={panelId} data-testid={`chat-message-reasoning-panel-${index}`}>
-          {renderMarkdownMessageBody(turn.content)}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ToolMessageCard({
-  turn,
-  index,
-}: {
-  turn: CopilotToolMessageItem
-  index: number
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const [inputExpanded, setInputExpanded] = useState(false)
-  const contentSections = buildToolContentSections(turn)
-  const inputSummary = hasNonEmptyValue(turn.inputSummary) ? turn.inputSummary : null
-  const panelId = `chat-message-tool-panel-${turn.id}`
-  const inputPanelId = `chat-message-tool-input-panel-${turn.id}`
-
-  return (
-    <div className="copilot-chat__tool-card" data-testid={`chat-message-tool-card-${index}`}>
-      {expanded
-        ? (
-            <button
-              type="button"
-              className="copilot-chat__tool-toggle"
-              aria-controls={panelId}
-              aria-expanded="true"
-              data-expanded="true"
-              data-testid={`chat-message-tool-toggle-${index}`}
-              onClick={() => {
-                setExpanded((current) => !current)
-              }}
-            >
-              <span className="copilot-chat__tool-toggle-main">
-                <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▾</span>
-                <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
-              </span>
-              {turn.status === 'streaming' && (
-                <span
-                  className="copilot-chat__tool-spinner"
-                  data-testid={`chat-message-tool-spinner-${index}`}
-                  aria-label="工具调用进行中"
-                />
-              )}
-            </button>
-          )
-        : (
-            <button
-              type="button"
-              className="copilot-chat__tool-toggle"
-              aria-controls={panelId}
-              aria-expanded="false"
-              data-expanded="false"
-              data-testid={`chat-message-tool-toggle-${index}`}
-              onClick={() => {
-                setExpanded((current) => !current)
-              }}
-            >
-              <span className="copilot-chat__tool-toggle-main">
-                <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▸</span>
-                <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
-              </span>
-              {turn.status === 'streaming' && (
-                <span
-                  className="copilot-chat__tool-spinner"
-                  data-testid={`chat-message-tool-spinner-${index}`}
-                  aria-label="工具调用进行中"
-                />
-              )}
-            </button>
-          )}
-      {expanded && (
-        <div className="copilot-chat__tool-panel" id={panelId} data-testid={`chat-message-tool-panel-${index}`}>
-          {contentSections.map((section, sectionIndex) => (
-            <ToolContentSection
-              key={`${turn.id}:${section.label}:${sectionIndex}`}
-              label={section.label}
-              value={section.value}
-              kind={section.kind}
-              testIdPrefix={sectionIndex === 0
-                ? `chat-message-tool-output-${index}`
-                : `chat-message-tool-extra-${index}-${sectionIndex}`}
-            />
-          ))}
-          {inputSummary !== null && (
-            <div className="copilot-chat__tool-nested">
-              {inputExpanded
-                ? (
-                    <button
-                      type="button"
-                      className="copilot-chat__tool-nested-toggle"
-                      aria-controls={inputPanelId}
-                      aria-expanded="true"
-                      data-expanded="true"
-                      data-testid={`chat-message-tool-input-toggle-${index}`}
-                      onClick={() => {
-                        setInputExpanded((current) => !current)
-                      }}
-                    >
-                      <span className="copilot-chat__tool-toggle-main">
-                        <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▾</span>
-                        <span className="copilot-chat__tool-section-label">输入</span>
-                      </span>
-                    </button>
-                  )
-                : (
-                    <button
-                      type="button"
-                      className="copilot-chat__tool-nested-toggle"
-                      aria-controls={inputPanelId}
-                      aria-expanded="false"
-                      data-expanded="false"
-                      data-testid={`chat-message-tool-input-toggle-${index}`}
-                      onClick={() => {
-                        setInputExpanded((current) => !current)
-                      }}
-                    >
-                      <span className="copilot-chat__tool-toggle-main">
-                        <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">▸</span>
-                        <span className="copilot-chat__tool-section-label">输入</span>
-                      </span>
-                    </button>
-                  )}
-              {inputExpanded && (
-                <div
-                  className="copilot-chat__tool-nested-panel"
-                  id={inputPanelId}
-                  data-testid={`chat-message-tool-input-panel-${index}`}
-                >
-                  <ToolStructuredContent
-                    value={inputSummary}
-                    kind="input"
-                    testIdPrefix={`chat-message-tool-input-${index}`}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ToolContentSection({
-  label,
-  value,
-  kind,
-  testIdPrefix,
-}: {
-  label: string
-  value: string
-  kind: 'input' | 'result' | 'error'
-  testIdPrefix: string
-}) {
-  return (
-    <section className={[`copilot-chat__tool-section`, `copilot-chat__tool-section--${kind}`].join(' ')}>
-      <p className="copilot-chat__tool-section-label">{label}</p>
-      <ToolStructuredContent value={value} kind={kind} testIdPrefix={testIdPrefix} />
-    </section>
-  )
-}
-
-function ToolStructuredContent({
-  value,
-  kind,
-  testIdPrefix,
-}: {
-  value: string
-  kind: 'input' | 'result' | 'error'
-  testIdPrefix: string
-}) {
-  const structuredValue = useMemo(() => parseStructuredToolValue(value), [value])
-  const [jsonViewComponent, setJsonViewComponent] = useState<JsonViewComponent | null>(null)
-
-  useEffect(() => {
-    if (structuredValue.kind !== 'json' || typeof document === 'undefined') {
-      return
-    }
-
-    let active = true
-
-    void import('react18-json-view')
-      .then((module) => {
-        if (!active) {
-          return
-        }
-
-        setJsonViewComponent(() => resolveJsonViewComponent(module))
-      })
-      .catch(() => {
-        if (!active) {
-          return
-        }
-
-        setJsonViewComponent(null)
-      })
-
-    return () => {
-      active = false
-    }
-  }, [structuredValue.kind])
-
-  if (structuredValue.kind === 'json') {
-    const JsonViewComponent = jsonViewComponent
-    return (
-      <div
-        className={[
-          'copilot-chat__tool-json-viewer',
-          `copilot-chat__tool-json-viewer--${kind}`,
-        ].join(' ')}
-        data-testid={`${testIdPrefix}-json`}
-        data-json-viewer={JsonViewComponent === null ? 'fallback' : 'react18-json-view'}
-      >
-        {JsonViewComponent === null
-          ? <ToolJsonFallback value={structuredValue.value} />
-          : (
-              <JsonViewComponent
-                src={structuredValue.value}
-                collapsed={false}
-                displaySize="collapsed"
-                enableClipboard={false}
-                theme="vscode"
-              />
-            )}
-      </div>
-    )
-  }
-
-  return (
-    <pre
-      className={[
-        'copilot-chat__tool-plain-text',
-        `copilot-chat__tool-plain-text--${kind}`,
-      ].join(' ')}
-      data-testid={`${testIdPrefix}-text`}
-    >
-      {structuredValue.value}
-    </pre>
-  )
-}
-
-function buildToolContentSections(turn: CopilotToolMessageItem): Array<{
-  label: string
-  value: string
-  kind: 'result' | 'error'
-}> {
-  const sections: Array<{
-    label: string
-    value: string
-    kind: 'result' | 'error'
-  }> = [{
-    label: resolveToolPrimarySectionLabel(turn),
-    value: turn.content,
-    kind: turn.status === 'failed' ? 'error' : 'result',
-  }]
-
-  if (hasDistinctNonEmptyValue(turn.resultSummary, turn.content)) {
-    sections.push({
-      label: '结果摘要',
-      value: turn.resultSummary,
-      kind: 'result',
-    })
-  }
-
-  if (hasDistinctNonEmptyValue(turn.errorSummary, turn.content)) {
-    sections.push({
-      label: '错误',
-      value: turn.errorSummary,
-      kind: 'error',
-    })
-  }
-
-  return sections
-}
-
-function resolveToolPrimarySectionLabel(turn: CopilotToolMessageItem): string {
-  switch (turn.status) {
-    case 'streaming':
-      return '当前状态'
-    case 'failed':
-      return '状态'
-    case 'cancelled':
-      return '当前状态'
-    case 'completed':
-      return '返回内容'
-  }
-}
-
-function resolveToolCardTitle(turn: CopilotToolMessageItem): string {
-  const displayNameFromTitle = extractToolDisplayNameFromTitle(turn.title)
-  const displayName = displayNameFromTitle ?? resolveToolDisplayNameFromToolId(turn.toolId)
-
-  switch (turn.status) {
-    case 'streaming':
-      return displayName === null ? turn.title : `${displayName}调用中`
-    case 'completed':
-      return displayName === null ? turn.title : `${displayName}被调用`
-    case 'cancelled':
-      return displayName === null ? (findFirstNonEmptyValue(turn.title) ?? '工具调用已取消') : `${displayName}已取消`
-    case 'failed':
-      return displayNameFromTitle === null ? (findFirstNonEmptyValue(turn.title) ?? '工具调用失败') : `${displayNameFromTitle}调用失败`
-  }
-}
-
-function extractToolDisplayNameFromTitle(title: string): string | null {
-  const trimmedTitle = title.trim()
-  if (trimmedTitle === '') {
-    return null
-  }
-
-  const titlePatterns = [
-    /^调用(.+?工具)$/,
-    /^(.+?工具)已返回结果$/,
-    /^(.+?工具)被调用$/,
-    /^(.+?工具)调用中$/,
-    /^(.+?工具)调用失败$/,
-    /^(.+?工具)已取消$/,
-  ]
-
-  for (const pattern of titlePatterns) {
-    const matched = trimmedTitle.match(pattern)
-    const candidate = matched?.[1]?.trim() ?? ''
-    if (candidate !== '') {
-      return candidate
-    }
-  }
-
-  return trimmedTitle.endsWith('工具') && trimmedTitle !== '工具' ? trimmedTitle : null
-}
-
-function resolveToolDisplayNameFromToolId(toolId: string): string | null {
-  const trimmedToolId = toolId.trim()
-  if (trimmedToolId === '') {
-    return null
-  }
-
-  const toolIdParts = trimmedToolId.split(/[./:]/).filter((part) => part.trim() !== '')
-  const lastToolIdPart = toolIdParts.length > 0 ? toolIdParts[toolIdParts.length - 1] : trimmedToolId
-  const normalizedName = lastToolIdPart.replace(/[-_]+/g, ' ').trim()
-  if (normalizedName === '') {
-    return null
-  }
-
-  return normalizedName.endsWith('工具') ? normalizedName : `${normalizedName}工具`
-}
-
-function hasNonEmptyValue(value: string | null | undefined): value is string {
-  return (value?.trim() ?? '') !== ''
-}
-
-function hasDistinctNonEmptyValue(
-  value: string | null | undefined,
-  comparedValue: string,
-): value is string {
-  if (!hasNonEmptyValue(value)) {
-    return false
-  }
-
-  return value !== comparedValue
-}
-
-function parseStructuredToolValue(value: string):
-  | { kind: 'json'; value: unknown }
-  | { kind: 'text'; value: string } {
-  const trimmedValue = value.trim()
-  if (trimmedValue === '') {
-    return {
-      kind: 'text',
-      value,
-    }
-  }
-
-  try {
-    return {
-      kind: 'json',
-      value: JSON.parse(trimmedValue),
-    }
-  } catch {
-    return {
-      kind: 'text',
-      value,
-    }
-  }
-}
-
-function ToolJsonFallback({ value }: { value: unknown }) {
-  return (
-    <pre className="copilot-chat__tool-plain-text copilot-chat__tool-plain-text--json-fallback">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  )
-}
-
-function resolveJsonViewComponent(module: unknown): JsonViewComponent {
-  if (typeof module === 'function') {
-    return module as JsonViewComponent
-  }
-
-  if (typeof module === 'object' && module !== null && 'default' in module) {
-    const defaultExport = (module as { default?: unknown }).default
-    if (typeof defaultExport === 'function') {
-      return defaultExport as JsonViewComponent
-    }
-
-    if (typeof defaultExport === 'object' && defaultExport !== null && 'default' in defaultExport) {
-      const nestedDefaultExport = (defaultExport as { default?: unknown }).default
-      if (typeof nestedDefaultExport === 'function') {
-        return nestedDefaultExport as JsonViewComponent
-      }
-    }
-  }
-
-  throw new TypeError('Unsupported react18-json-view export shape.')
-}
-
-function createRenderedAssistantPlaceholderState(
-  assistantPlaceholder: CopilotAssistantPlaceholderState | null,
-): RenderedAssistantPlaceholderState {
-  return {
-    visible: assistantPlaceholder?.shouldRender === true,
-    fading: false,
-    dismissReason: null,
-  }
-}
-
-function renderAssistantPlaceholder(state: RenderedAssistantPlaceholderState) {
-  return (
-    <article
-      className={[
-        'copilot-chat__message',
-        'copilot-chat__message--assistant',
-        'copilot-chat__message--placeholder',
-        state.fading ? 'copilot-chat__message--placeholder-fading' : '',
-      ].filter((className) => className !== '').join(' ')}
-      data-testid="chat-assistant-placeholder"
-      data-dismiss-reason={state.dismissReason ?? 'pending'}
-      aria-live="polite"
-    >
-      <div className="copilot-chat__assistant-placeholder" data-testid="chat-assistant-placeholder-content">
-        <span
-          className="copilot-chat__assistant-placeholder-spinner"
-          data-testid="chat-assistant-placeholder-spinner"
-          aria-hidden="true"
-        />
-        <span className="copilot-chat__assistant-placeholder-text">助手正在准备响应…</span>
-      </div>
-    </article>
-  )
 }

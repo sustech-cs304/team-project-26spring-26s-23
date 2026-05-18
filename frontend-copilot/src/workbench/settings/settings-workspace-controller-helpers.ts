@@ -9,6 +9,14 @@ export function cloneSettingsWorkspaceFormState(state: SettingsWorkspaceFormStat
     providerProfiles: cloneProviderProfiles(state.providerProfiles),
     primaryAssistantModelRoute: cloneModelRouteRef(state.primaryAssistantModelRoute ?? null),
     fastAssistantModelRoute: cloneModelRouteRef(state.fastAssistantModelRoute ?? null),
+    toolPermissionPolicy: {
+      version: state.toolPermissionPolicy.version,
+      migrationSourceMode: state.toolPermissionPolicy.migrationSourceMode,
+      defaultMode: state.toolPermissionPolicy.defaultMode,
+      toolPermissions: Object.fromEntries(
+        Object.entries(state.toolPermissionPolicy.toolPermissions).map(([toolId, entry]) => [toolId, { ...entry }]),
+      ),
+    },
   }
 }
 

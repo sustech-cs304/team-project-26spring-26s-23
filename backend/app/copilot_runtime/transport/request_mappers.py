@@ -20,7 +20,6 @@ async def read_runtime_payload(
     return payload, requested_method
 
 
-
 def set_runtime_request_context(
     request: Request,
     *,
@@ -38,7 +37,6 @@ def set_runtime_request_context(
     set_request_state_text(request, "copilot_runtime_phase", phase)
 
 
-
 def ensure_runtime_request_id(request: Request) -> str:
     existing_request_id = get_request_state_text(request, "copilot_runtime_request_id")
     if existing_request_id is not None:
@@ -51,13 +49,11 @@ def ensure_runtime_request_id(request: Request) -> str:
     return generated_request_id
 
 
-
 def set_request_state_text(request: Request, attr_name: str, value: str | None) -> None:
     if value is None or value == "":
         return
     setattr(request.state, attr_name, value)
     request.scope[attr_name] = value
-
 
 
 def get_request_state_text(request: Request, attr_name: str) -> str | None:

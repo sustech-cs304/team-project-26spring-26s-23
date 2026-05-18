@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from sqlalchemy import (
@@ -21,15 +21,22 @@ class Base(DeclarativeBase):
     """SQLAlchemy declarative base."""
 
 
+def utc_now_naive() -> datetime:
+    """Return a naive UTC timestamp to preserve existing SQLite storage semantics."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 class TimestampSoftDeleteMixin:
     """Common columns for all tables."""
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now_naive, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utc_now_naive,
+        onupdate=utc_now_naive,
         nullable=False,
     )
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -43,7 +50,9 @@ class Course(TimestampSoftDeleteMixin, Base):
         Index("idx_courses_last_synced_at", "last_synced_at"),
     )
 
-    course_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    course_id: Mapped[str] = mapped_column(
+        String(128), unique=True, nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     instructor: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -59,10 +68,18 @@ class Course(TimestampSoftDeleteMixin, Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    assignments: Mapped[list[Assignment]] = relationship(back_populates="course", cascade="all, delete-orphan")
-    resources: Mapped[list[Resource]] = relationship(back_populates="course", cascade="all, delete-orphan")
-    grades: Mapped[list[Grade]] = relationship(back_populates="course", cascade="all, delete-orphan")
-    announcements: Mapped[list[Announcement]] = relationship(back_populates="course", cascade="all, delete-orphan")
+    assignments: Mapped[list[Assignment]] = relationship(
+        back_populates="course", cascade="all, delete-orphan"
+    )
+    resources: Mapped[list[Resource]] = relationship(
+        back_populates="course", cascade="all, delete-orphan"
+    )
+    grades: Mapped[list[Grade]] = relationship(
+        back_populates="course", cascade="all, delete-orphan"
+    )
+    announcements: Mapped[list[Announcement]] = relationship(
+        back_populates="course", cascade="all, delete-orphan"
+    )
 
 
 class Assignment(TimestampSoftDeleteMixin, Base):
@@ -79,7 +96,9 @@ class Assignment(TimestampSoftDeleteMixin, Base):
         nullable=False,
         index=True,
     )
-    assignment_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    assignment_id: Mapped[str] = mapped_column(
+        String(128), unique=True, nullable=False, index=True
+    )
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -121,7 +140,9 @@ class Resource(TimestampSoftDeleteMixin, Base):
         ForeignKey("assignments.assignment_id", ondelete="SET NULL"),
         nullable=True,
     )
-    resource_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    resource_id: Mapped[str] = mapped_column(
+        String(128), unique=True, nullable=False, index=True
+    )
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     type: Mapped[Optional[str]] = mapped_column("type", String(64), nullable=True)
     size: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
@@ -130,7 +151,9 @@ class Resource(TimestampSoftDeleteMixin, Base):
     source_page: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     local_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_downloaded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    download_failed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    download_failed: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
 
     # 以业务ID建立父子层级（修复字符串resource_id与整型id错位问题）
     parent_id: Mapped[Optional[str]] = mapped_column(
@@ -170,7 +193,9 @@ class Grade(TimestampSoftDeleteMixin, Base):
         nullable=True,
     )
 
-    grade_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    grade_id: Mapped[str] = mapped_column(
+        String(128), unique=True, nullable=False, index=True
+    )
     item_name: Mapped[str] = mapped_column(String(512), nullable=False)
 
     score: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
@@ -197,9 +222,7 @@ class Grade(TimestampSoftDeleteMixin, Base):
 
 class Announcement(TimestampSoftDeleteMixin, Base):
     __tablename__ = "announcements"
-    __table_args__ = (
-        Index("idx_announcements_posted_at", "posted_at"),
-    )
+    __table_args__ = (Index("idx_announcements_posted_at", "posted_at"),)
 
     course_id: Mapped[Optional[str]] = mapped_column(
         String(128),
@@ -207,7 +230,9 @@ class Announcement(TimestampSoftDeleteMixin, Base):
         nullable=True,
         index=True,
     )
-    announcement_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    announcement_id: Mapped[str] = mapped_column(
+        String(128), unique=True, nullable=False, index=True
+    )
 
     course_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -229,10 +254,14 @@ class CalendarSubscription(TimestampSoftDeleteMixin, Base):
         Index("idx_calendar_subscriptions_last_refreshed", "last_refreshed_at"),
     )
 
-    feed_url: Mapped[str] = mapped_column(String(1024), unique=True, nullable=False, index=True)
+    feed_url: Mapped[str] = mapped_column(
+        String(1024), unique=True, nullable=False, index=True
+    )
     etag: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     last_modified: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    last_refreshed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_refreshed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -269,4 +298,6 @@ class CalendarEvent(TimestampSoftDeleteMixin, Base):
     all_day: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    subscription: Mapped[CalendarSubscription] = relationship("CalendarSubscription", back_populates="events")
+    subscription: Mapped[CalendarSubscription] = relationship(
+        "CalendarSubscription", back_populates="events"
+    )

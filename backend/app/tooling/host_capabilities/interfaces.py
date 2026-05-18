@@ -42,7 +42,9 @@ class HostArtifact:
         object.__setattr__(self, "artifact_id", normalized_artifact_id)
         object.__setattr__(self, "uri", _normalize_optional_text(self.uri))
         object.__setattr__(self, "name", _normalize_optional_text(self.name))
-        object.__setattr__(self, "content_type", _normalize_optional_text(self.content_type))
+        object.__setattr__(
+            self, "content_type", _normalize_optional_text(self.content_type)
+        )
         object.__setattr__(self, "metadata", _normalize_metadata(self.metadata))
 
     def to_dict(self) -> dict[str, Any]:
@@ -104,17 +106,17 @@ class WorkspaceResolver(Protocol):
     """Resolve host workspace paths for tools that operate on local project files."""
 
     def resolve_workspace_path(self, *, relative_path: str | None = None) -> Path:
-        pass
+        raise NotImplementedError
 
     def ensure_workspace_directory(self, *, relative_path: str) -> Path:
-        pass
+        raise NotImplementedError
 
 
 class DatabaseResolver(Protocol):
     """Resolve host-managed database paths under the canonical runtime database root."""
 
     def resolve_database_path(self, *, relative_path: str | None = None) -> Path:
-        pass
+        raise NotImplementedError
 
 
 class ArtifactStore(Protocol):
@@ -128,7 +130,7 @@ class ArtifactStore(Protocol):
         content_type: str | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> HostArtifact:
-        pass
+        raise NotImplementedError
 
     async def save_bytes(
         self,
@@ -138,40 +140,40 @@ class ArtifactStore(Protocol):
         content_type: str | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> HostArtifact:
-        pass
+        raise NotImplementedError
 
     async def describe_artifact(self, *, artifact_id: str) -> HostArtifact:
-        pass
+        raise NotImplementedError
 
 
 class StateStore(Protocol):
     """Persist and retrieve structured tool state under host-controlled namespaces."""
 
     async def get(self, *, namespace: str, key: str) -> dict[str, Any] | None:
-        pass
+        raise NotImplementedError
 
     async def put(self, *, namespace: str, key: str, value: Mapping[str, Any]) -> None:
-        pass
+        raise NotImplementedError
 
     async def delete(self, *, namespace: str, key: str) -> None:
-        pass
+        raise NotImplementedError
 
 
 class SecretProvider(Protocol):
     """Resolve host-managed secrets without exposing storage internals."""
 
     async def get_secret(self, *, name: str) -> str | None:
-        pass
+        raise NotImplementedError
 
     async def has_secret(self, *, name: str) -> bool:
-        pass
+        raise NotImplementedError
 
 
 class EventSink(Protocol):
     """Emit structured tool lifecycle or diagnostic events to the host."""
 
     def emit(self, event: HostEvent) -> None:
-        pass
+        raise NotImplementedError
 
 
 @dataclass(frozen=True, slots=True)

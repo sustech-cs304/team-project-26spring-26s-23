@@ -9,12 +9,14 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
+from pydantic import ValidationError
 
 from app.desktop_runtime.capability_bridge_protocol import (
     DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES,
     DESKTOP_CAPABILITY_BRIDGE_RETRYABLE_ERROR_CODES,
     DesktopCapabilityArtifactDescriptor,
     DesktopCapabilityBridgeRequest,
+    DesktopCapabilityBridgeResponse,
     DesktopCapabilityName,
     DesktopCapabilityOperation,
     validate_desktop_capability_bridge_result,
@@ -22,8 +24,10 @@ from app.desktop_runtime.capability_bridge_protocol import (
 from app.tooling import ToolInvocationContext
 from app.tooling.host_capabilities import HostCapabilityOperationError
 
-HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME = "X-Host-Capability-Bridge-Token"
+_HOST_CAPABILITY_BRIDGE_AUTH_HEADER_NAME = "X-Host-Capability-Bridge-Token"
+HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME = _HOST_CAPABILITY_BRIDGE_AUTH_HEADER_NAME
 _DEFAULT_TIMEOUT = 5.0
+_MCP_TOOL_CALL_TIMEOUT = 20.0
 
 
 def _normalize_optional_text(value: Any) -> str | None:
@@ -71,6 +75,27 @@ def _build_unavailable_error(
     )
 
 
+def _build_transport_error(
+    *,
+    capability: DesktopCapabilityName,
+    operation: DesktopCapabilityOperation,
+    detail: str,
+    code: str,
+    retryable: bool,
+    transport_error: Exception,
+) -> HostCapabilityOperationError:
+    return HostCapabilityOperationError(
+        capability=capability,
+        code=code,
+        message=detail,
+        retryable=retryable,
+        details={
+            "operation": operation,
+            "transportErrorType": transport_error.__class__.__name__,
+        },
+    )
+
+
 class DesktopCapabilityBridgeClient:
     """Typed client for the white-listed desktop capability bridge protocol."""
 
@@ -85,7 +110,10 @@ class DesktopCapabilityBridgeClient:
     ) -> None:
         self._bridge_url = _normalize_optional_text(bridge_url)
         self._bridge_token = _normalize_optional_text(bridge_token)
-        self._header_name = _normalize_optional_text(header_name) or HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME
+        self._header_name = (
+            _normalize_optional_text(header_name)
+            or HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME
+        )
         self._transport = transport
         self._timeout = timeout
         self._sync_client: httpx.Client | None = None
@@ -308,6 +336,31 @@ class DesktopCapabilityBridgeClient:
             payload=payload,
         )
 
+    async def call_mcp_tool(
+        self,
+        *,
+        context: ToolInvocationContext,
+        server_id: str,
+        remote_tool_name: str,
+        arguments: Mapping[str, Any] | None = None,
+        snapshot_revision: int | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "serverId": server_id,
+            "remoteToolName": remote_tool_name,
+            "arguments": dict(arguments or {}),
+        }
+        if snapshot_revision is not None:
+            payload["snapshotRevision"] = snapshot_revision
+        result = await self._call_async(
+            capability="mcp",
+            operation="call_tool",
+            context=context,
+            payload=payload,
+            timeout=max(self._timeout, _MCP_TOOL_CALL_TIMEOUT),
+        )
+        return dict(result)
+
     async def _call_async(
         self,
         *,
@@ -315,6 +368,7 @@ class DesktopCapabilityBridgeClient:
         operation: DesktopCapabilityOperation,
         context: ToolInvocationContext,
         payload: Mapping[str, Any],
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         request = self._build_request(
             capability=capability,
@@ -322,18 +376,43 @@ class DesktopCapabilityBridgeClient:
             context=context,
             payload=payload,
         )
-        bridge_url = self._require_bridge_url(capability=capability, operation=operation)
+        bridge_url = self._require_bridge_url(
+            capability=capability, operation=operation
+        )
+        request_kwargs: dict[str, Any] = {
+            "json": request.to_dict(),
+            "headers": self._build_headers(),
+        }
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
         try:
             response = await self._get_async_client().post(
                 bridge_url,
-                json=request.to_dict(),
-                headers=self._build_headers(),
+                **request_kwargs,
             )
-        except httpx.HTTPError as exc:
-            raise _build_unavailable_error(
+        except httpx.TimeoutException as exc:
+            if capability != "mcp" or operation != "call_tool":
+                raise _build_unavailable_error(
+                    capability=capability,
+                    operation=operation,
+                    detail=f"Desktop capability bridge request failed: {exc}",
+                ) from exc
+            raise _build_transport_error(
                 capability=capability,
                 operation=operation,
-                detail=f"Desktop capability bridge request failed: {exc}",
+                detail="Desktop capability bridge timed out while waiting for the host response.",
+                code="timeout",
+                retryable=True,
+                transport_error=exc,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise _build_transport_error(
+                capability=capability,
+                operation=operation,
+                detail=f"Desktop capability bridge transport request failed: {exc}",
+                code="temporarily_unavailable",
+                retryable=True,
+                transport_error=exc,
             ) from exc
         return self._parse_response(
             capability=capability,
@@ -356,7 +435,9 @@ class DesktopCapabilityBridgeClient:
             context=context,
             payload=payload,
         )
-        bridge_url = self._require_bridge_url(capability=capability, operation=operation)
+        bridge_url = self._require_bridge_url(
+            capability=capability, operation=operation
+        )
         try:
             response = self._get_sync_client().post(
                 bridge_url,
@@ -511,12 +592,19 @@ class DesktopCapabilityBridgeClient:
                     detail="Success result must be an object when provided.",
                 )
             try:
+                response_model = DesktopCapabilityBridgeResponse.model_validate(
+                    {
+                        "requestId": request.request_id,
+                        "ok": True,
+                        "result": dict(raw_result),
+                    }
+                )
                 return validate_desktop_capability_bridge_result(
                     capability=capability,
                     operation=operation,
-                    result=raw_result,
+                    result=response_model.result or {},
                 )
-            except ValueError as exc:
+            except (ValidationError, ValueError) as exc:
                 raise _build_invalid_response_error(
                     capability=capability,
                     operation=operation,
@@ -525,7 +613,11 @@ class DesktopCapabilityBridgeClient:
 
         if ok is False:
             raw_code = _normalize_optional_text(payload.get("errorCode"))
-            code = raw_code if raw_code in DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES else "internal_error"
+            code = (
+                raw_code
+                if raw_code in DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES
+                else "internal_error"
+            )
             message = _normalize_optional_text(payload.get("errorMessage")) or (
                 "Desktop capability bridge request failed."
             )
@@ -539,15 +631,41 @@ class DesktopCapabilityBridgeClient:
             details = _normalize_mapping(
                 details_value if isinstance(details_value, Mapping) else None
             )
-            details.setdefault("operation", operation)
+            try:
+                response_model = DesktopCapabilityBridgeResponse.model_validate(
+                    {
+                        "requestId": request.request_id,
+                        "ok": False,
+                        "errorCode": code,
+                        "errorMessage": message,
+                        "errorRetryable": retryable,
+                        "details": details,
+                    }
+                )
+            except ValidationError as exc:
+                raise _build_invalid_response_error(
+                    capability=capability,
+                    operation=operation,
+                    detail=str(exc),
+                ) from exc
+
+            error = response_model.error
+            if error is None:  # pragma: no cover - invariant guarded by model
+                raise _build_invalid_response_error(
+                    capability=capability,
+                    operation=operation,
+                    detail="Failed bridge responses must include an error payload.",
+                )
+            error_details = _normalize_mapping(error.details)
+            error_details.setdefault("operation", operation)
             if raw_code is not None and raw_code != code:
-                details["bridgeErrorCode"] = raw_code
+                error_details["bridgeErrorCode"] = raw_code
             raise HostCapabilityOperationError(
                 capability=capability,
-                code=code,
-                message=message,
-                retryable=retryable,
-                details=details,
+                code=error.code,
+                message=error.message,
+                retryable=bool(error.retryable),
+                details=error_details,
             )
 
         raise _build_invalid_response_error(
@@ -560,15 +678,7 @@ class DesktopCapabilityBridgeClient:
 def _build_artifact_descriptor(
     payload: Mapping[str, Any],
 ) -> DesktopCapabilityArtifactDescriptor:
-    return DesktopCapabilityArtifactDescriptor(
-        artifact_id=str(payload["artifactId"]),
-        uri=_normalize_optional_text(payload.get("uri")),
-        name=_normalize_optional_text(payload.get("name")),
-        content_type=_normalize_optional_text(payload.get("contentType")),
-        metadata=_normalize_mapping(
-            payload.get("metadata") if isinstance(payload.get("metadata"), Mapping) else None
-        ),
-    )
+    return DesktopCapabilityArtifactDescriptor.model_validate(dict(payload))
 
 
 __all__ = [

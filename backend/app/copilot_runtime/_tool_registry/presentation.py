@@ -1,0 +1,230 @@
+"""Presentation groups and localized presentation metadata for tool catalog entries."""
+
+from __future__ import annotations
+
+from .constants import (
+    FILE_CONVERT_TOOL_DESCRIPTION,
+    FILE_CONVERT_TOOL_DISPLAY_NAME,
+    FILE_CONVERT_TOOL_ID,
+    FILE_TOOL_EDIT_DESCRIPTION,
+    FILE_TOOL_EDIT_DISPLAY_NAME,
+    FILE_TOOL_EDIT_ID,
+    FILE_TOOL_GLOB_DESCRIPTION,
+    FILE_TOOL_GLOB_DISPLAY_NAME,
+    FILE_TOOL_GLOB_ID,
+    FILE_TOOL_GREP_DESCRIPTION,
+    FILE_TOOL_GREP_DISPLAY_NAME,
+    FILE_TOOL_GREP_ID,
+    FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION,
+    FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME,
+    FILE_TOOL_NOTEBOOK_EDIT_ID,
+    FILE_TOOL_READ_DESCRIPTION,
+    FILE_TOOL_READ_DISPLAY_NAME,
+    FILE_TOOL_READ_ID,
+    FILE_TOOL_SWITCH_ROOT_DESCRIPTION,
+    FILE_TOOL_SWITCH_ROOT_DISPLAY_NAME,
+    FILE_TOOL_SWITCH_ROOT_ID,
+    FILE_TOOL_WRITE_DESCRIPTION,
+    FILE_TOOL_WRITE_DISPLAY_NAME,
+    FILE_TOOL_WRITE_ID,
+    REQUEST_USER_FORM_TOOL_DESCRIPTION,
+    REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
+    REQUEST_USER_FORM_TOOL_ID,
+    SKILL_ACTIVATE_TOOL_DESCRIPTION,
+    SKILL_ACTIVATE_TOOL_DISPLAY_NAME,
+    SKILL_ACTIVATE_TOOL_ID,
+    SKILL_READ_RESOURCE_TOOL_DESCRIPTION,
+    SKILL_READ_RESOURCE_TOOL_DISPLAY_NAME,
+    SKILL_READ_RESOURCE_TOOL_ID,
+    WEATHER_CURRENT_TOOL_DESCRIPTION,
+    WEATHER_CURRENT_TOOL_DISPLAY_NAME,
+    WEATHER_CURRENT_TOOL_ID,
+)
+from .models import ToolPresentation, ToolPresentationGroup
+
+BUILTIN_TOOL_GROUP = ToolPresentationGroup(
+    group_id="builtin-core",
+    label_zh="内置基础工具",
+    label_en="Built-in Core Tools",
+    order=0,
+    source_kind="builtin",
+)
+BLACKBOARD_TOOL_GROUP = ToolPresentationGroup(
+    group_id="blackboard",
+    label_zh="Blackboard 工具",
+    label_en="Blackboard Tools",
+    order=10,
+    source_kind="sustech-blackboard",
+)
+TIS_TOOL_GROUP = ToolPresentationGroup(
+    group_id="tis",
+    label_zh="TIS 工具",
+    label_en="TIS Tools",
+    order=20,
+    source_kind="sustech-tis",
+)
+SKILL_TOOL_GROUP = ToolPresentationGroup(
+    group_id="runtime-skill",
+    label_zh="Skill 工具",
+    label_en="Skill Tools",
+    order=5,
+    source_kind="runtime-skill",
+)
+
+TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
+    FILE_CONVERT_TOOL_ID: BUILTIN_TOOL_GROUP,
+    FILE_TOOL_READ_ID: BUILTIN_TOOL_GROUP,
+    FILE_TOOL_WRITE_ID: BUILTIN_TOOL_GROUP,
+    FILE_TOOL_EDIT_ID: BUILTIN_TOOL_GROUP,
+    FILE_TOOL_GLOB_ID: BUILTIN_TOOL_GROUP,
+    FILE_TOOL_GREP_ID: BUILTIN_TOOL_GROUP,
+    FILE_TOOL_NOTEBOOK_EDIT_ID: BUILTIN_TOOL_GROUP,
+    FILE_TOOL_SWITCH_ROOT_ID: BUILTIN_TOOL_GROUP,
+    WEATHER_CURRENT_TOOL_ID: BUILTIN_TOOL_GROUP,
+    REQUEST_USER_FORM_TOOL_ID: BUILTIN_TOOL_GROUP,
+    SKILL_ACTIVATE_TOOL_ID: SKILL_TOOL_GROUP,
+    SKILL_READ_RESOURCE_TOOL_ID: SKILL_TOOL_GROUP,
+    "blackboard.sql.query": BLACKBOARD_TOOL_GROUP,
+    "blackboard.course_catalog.search": BLACKBOARD_TOOL_GROUP,
+    "blackboard.calendar.refresh": BLACKBOARD_TOOL_GROUP,
+    "blackboard.snapshot.sync": BLACKBOARD_TOOL_GROUP,
+    "blackboard.course_resources.sync": BLACKBOARD_TOOL_GROUP,
+    "tis.sql.query": TIS_TOOL_GROUP,
+    "tis.personal_grades.fetch": TIS_TOOL_GROUP,
+    "tis.credit_gpa.fetch": TIS_TOOL_GROUP,
+    "tis.selected_courses.fetch": TIS_TOOL_GROUP,
+}
+
+TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
+    FILE_CONVERT_TOOL_ID: {
+        "display_name_zh": "文件转换",
+        "display_name_en": FILE_CONVERT_TOOL_DISPLAY_NAME,
+        "description_zh": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
+        "description_en": FILE_CONVERT_TOOL_DESCRIPTION,
+    },
+    FILE_TOOL_READ_ID: {
+        "display_name_zh": "文件读取",
+        "display_name_en": FILE_TOOL_READ_DISPLAY_NAME,
+        "description_zh": "按行分页读取工作区内 UTF-8 文本文件。",
+        "description_en": FILE_TOOL_READ_DESCRIPTION,
+    },
+    FILE_TOOL_WRITE_ID: {
+        "display_name_zh": "文件写入",
+        "display_name_en": FILE_TOOL_WRITE_DISPLAY_NAME,
+        "description_zh": "在工作区内创建或覆写 UTF-8 文本文件，并带有保护性覆写语义。",
+        "description_en": FILE_TOOL_WRITE_DESCRIPTION,
+    },
+    FILE_TOOL_EDIT_ID: {
+        "display_name_zh": "文件编辑",
+        "display_name_en": FILE_TOOL_EDIT_DISPLAY_NAME,
+        "description_zh": "按精确字符串替换语义编辑工作区内 UTF-8 文本文件。",
+        "description_en": FILE_TOOL_EDIT_DESCRIPTION,
+    },
+    FILE_TOOL_GLOB_ID: {
+        "display_name_zh": "文件发现",
+        "display_name_en": FILE_TOOL_GLOB_DISPLAY_NAME,
+        "description_zh": "按 glob 模式发现工作区内文件与目录，不读取内容。",
+        "description_en": FILE_TOOL_GLOB_DESCRIPTION,
+    },
+    FILE_TOOL_GREP_ID: {
+        "display_name_zh": "文件搜索",
+        "display_name_en": FILE_TOOL_GREP_DISPLAY_NAME,
+        "description_zh": "按字面量或正则搜索工作区文本文件，并返回有限行上下文。",
+        "description_en": FILE_TOOL_GREP_DESCRIPTION,
+    },
+    FILE_TOOL_NOTEBOOK_EDIT_ID: {
+        "display_name_zh": "Notebook 编辑",
+        "display_name_en": FILE_TOOL_NOTEBOOK_EDIT_DISPLAY_NAME,
+        "description_zh": "按 cell 级事务语义编辑工作区 notebook。",
+        "description_en": FILE_TOOL_NOTEBOOK_EDIT_DESCRIPTION,
+    },
+    FILE_TOOL_SWITCH_ROOT_ID: {
+        "display_name_zh": "文件根切换",
+        "display_name_en": FILE_TOOL_SWITCH_ROOT_DISPLAY_NAME,
+        "description_zh": "验证并解析后续文件工具可使用的新默认根目录。",
+        "description_en": FILE_TOOL_SWITCH_ROOT_DESCRIPTION,
+    },
+    WEATHER_CURRENT_TOOL_ID: {
+        "display_name_zh": "当前天气",
+        "display_name_en": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
+        "description_zh": "返回指定地点的占位当前天气结果。",
+        "description_en": WEATHER_CURRENT_TOOL_DESCRIPTION,
+    },
+    REQUEST_USER_FORM_TOOL_ID: {
+        "display_name_zh": "请求用户表单",
+        "display_name_en": REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
+        "description_zh": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
+        "description_en": REQUEST_USER_FORM_TOOL_DESCRIPTION,
+    },
+    SKILL_ACTIVATE_TOOL_ID: {
+        "display_name_zh": "Skill 激活",
+        "display_name_en": SKILL_ACTIVATE_TOOL_DISPLAY_NAME,
+        "description_zh": "读取已启用 Skill 的 SKILL.md 入口说明和资源摘要。",
+        "description_en": SKILL_ACTIVATE_TOOL_DESCRIPTION,
+    },
+    SKILL_READ_RESOURCE_TOOL_ID: {
+        "display_name_zh": "Skill 资源读取",
+        "display_name_en": SKILL_READ_RESOURCE_TOOL_DISPLAY_NAME,
+        "description_zh": "读取已启用 Skill 资源索引中的 UTF-8 文本资源，不要求先激活。",
+        "description_en": SKILL_READ_RESOURCE_TOOL_DESCRIPTION,
+    },
+    "blackboard.sql.query": {
+        "display_name_zh": "Blackboard 数据查询",
+        "display_name_en": "Blackboard SQL Query",
+        "description_zh": "查询 Blackboard 本地数据。",
+        "description_en": "Query Blackboard local data.",
+    },
+    "blackboard.course_catalog.search": {
+        "display_name_zh": "课程目录搜索",
+        "display_name_en": "Course Catalog Search",
+        "description_zh": "搜索 Blackboard 课程目录。",
+        "description_en": "Search Blackboard course catalog.",
+    },
+    "blackboard.calendar.refresh": {
+        "display_name_zh": "日历刷新",
+        "display_name_en": "Calendar Refresh",
+        "description_zh": "刷新 Blackboard 课程日历。",
+        "description_en": "Refresh Blackboard course calendar.",
+    },
+    "blackboard.snapshot.sync": {
+        "display_name_zh": "快照同步",
+        "display_name_en": "Snapshot Sync",
+        "description_zh": "同步 Blackboard 基础快照。",
+        "description_en": "Sync Blackboard base snapshots.",
+    },
+    "blackboard.course_resources.sync": {
+        "display_name_zh": "课程资源同步",
+        "display_name_en": "Course Resources Sync",
+        "description_zh": "同步指定课程资源。",
+        "description_en": "Sync resources for a selected Blackboard course.",
+    },
+    "tis.sql.query": {
+        "display_name_zh": "TIS 数据查询",
+        "display_name_en": "TIS SQL Query",
+        "description_zh": "查询 TIS 本地数据。",
+        "description_en": "Query TIS local data.",
+    },
+    "tis.personal_grades.fetch": {
+        "display_name_zh": "成绩获取",
+        "display_name_en": "Personal Grades Fetch",
+        "description_zh": "获取个人成绩记录。",
+        "description_en": "Fetch personal grade records.",
+    },
+    "tis.credit_gpa.fetch": {
+        "display_name_zh": "绩点概览",
+        "display_name_en": "Credit GPA Overview",
+        "description_zh": "获取学分与绩点概览。",
+        "description_en": "Fetch credit and GPA overview.",
+    },
+    "tis.selected_courses.fetch": {
+        "display_name_zh": "已选课程",
+        "display_name_en": "Selected Courses",
+        "description_zh": "获取当前已选课程。",
+        "description_en": "Fetch currently selected courses.",
+    },
+}
+
+TOOL_PRESENTATION_BY_ID: dict[str, ToolPresentation] = {
+    tool_id: ToolPresentation(group=TOOL_PRESENTATION_GROUPS_BY_ID[tool_id], **copy)
+    for tool_id, copy in TOOL_PRESENTATION_COPY_BY_ID.items()
+}

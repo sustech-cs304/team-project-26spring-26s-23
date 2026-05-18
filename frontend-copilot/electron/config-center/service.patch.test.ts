@@ -33,6 +33,9 @@ function createExpectedPublicSnapshot(debugModeEnabled = false): ConfigCenterPub
       backendExposed: {
         model: 'qwen-plus',
       },
+      general: {
+        language: 'zh-CN',
+      },
     },
   }
 }

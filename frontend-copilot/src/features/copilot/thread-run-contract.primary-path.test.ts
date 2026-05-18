@@ -53,7 +53,7 @@ describe('thread run primary path', () => {
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
       thinkingSelection: createRuntimeThinkingSelection({ level: 'auto' }),
-      enabledTools: ['tool.file-convert'],
+      enabledTools: ['tool.remote-search'],
       debugModeEnabled: true,
       requestOptions: {
         trace: true,
@@ -92,7 +92,7 @@ describe('thread run primary path', () => {
                 labelZh: '自动',
               },
             },
-            enabledTools: ['tool.file-convert'],
+            enabledTools: ['tool.remote-search'],
             debugModeEnabled: true,
             requestOptions: {
               trace: true,
@@ -129,7 +129,7 @@ describe('thread run primary path', () => {
       agent: agentId,
       message: createUserMessage(),
       modelRoute: createRuntimeModelRoute(),
-      enabledTools: ['tool.file-convert'],
+      enabledTools: ['tool.remote-search'],
       requestOptions: {
         trace: true,
       },
@@ -159,10 +159,60 @@ describe('thread run primary path', () => {
               },
               catalogRevision: '2026-04-06-provider-catalog-v1',
             },
-            enabledTools: ['tool.file-convert'],
+            enabledTools: ['tool.remote-search'],
             requestOptions: {
               trace: true,
             },
+          },
+        },
+      }),
+      signal: undefined,
+    })
+  })
+
+  it('preserves an explicit empty enabledTools array in run/start payloads', async () => {
+    const fetchFn = createFetchFn(createRuntimeRunStartResponse(), {
+      headers: {
+        'content-type': 'application/json',
+      },
+    })
+
+    await startRuntimeRun({
+      runtimeUrl,
+      threadId: sessionId,
+      agent: agentId,
+      message: createUserMessage(),
+      modelRoute: createRuntimeModelRoute(),
+      enabledTools: [],
+      requestOptions: {},
+      fetchFn,
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:8765/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        method: 'run/start',
+        body: {
+          threadId: 'session-1',
+          agent: 'general',
+          message: {
+            role: 'user',
+            content: '请总结这份文档',
+          },
+          policy: {
+            modelRoute: {
+              routeRef: {
+                routeKind: 'provider-model',
+                profileId: 'provider-openai',
+                modelId: 'qwen-plus',
+              },
+              catalogRevision: '2026-04-06-provider-catalog-v1',
+            },
+            enabledTools: [],
+            requestOptions: {},
           },
         },
       }),

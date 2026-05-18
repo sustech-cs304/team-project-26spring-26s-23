@@ -9,7 +9,7 @@ import { ErrorDetailOverlay } from './ErrorDetailOverlay'
 import { buildErrorDetailOverlayViewModel, createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
 
 function createViewModel(details: Record<string, unknown> = {
-  toolId: 'tool.weather-current',
+  toolId: 'tool.remote-search',
 }) {
   return buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
     source: 'streaming',
@@ -21,7 +21,7 @@ function createViewModel(details: Record<string, unknown> = {
     requestedMethod: 'run/stream',
     details,
     resolvedModelId: 'openai/gpt-4.1',
-    resolvedToolIds: ['tool.weather-current'],
+    resolvedToolIds: ['tool.remote-search'],
     requestOptions: {
       trace: true,
     },
@@ -70,7 +70,7 @@ describe('ErrorDetailOverlay', () => {
   })
 
   it('copies the full summary and individual groups through the clipboard helper', async () => {
-    const writeText = vi.fn<(text: string) => Promise<void>>(async (_text) => undefined)
+    const writeText = vi.fn<(text: string) => Promise<void>>(async () => undefined)
     Object.defineProperty(window.navigator, 'clipboard', {
       configurable: true,
       value: {
@@ -103,7 +103,7 @@ describe('ErrorDetailOverlay', () => {
     const rendered = renderWithRoot(
       <ErrorDetailOverlay
         viewModel={createViewModel({
-          toolId: 'tool.weather-current',
+          toolId: 'tool.remote-search',
           retryable: false,
           nested: {
             attempt: 1,
@@ -117,7 +117,7 @@ describe('ErrorDetailOverlay', () => {
     const rawDetailsJson = rendered.getByTestId('error-detail-overlay-raw-details-json')
     expect(rawDetailsJson.getAttribute('data-json-viewer')).toMatch(/react18-json-view|fallback/)
     expect(rawDetailsJson.textContent).toContain('toolId')
-    expect(rawDetailsJson.textContent).toContain('tool.weather-current')
+    expect(rawDetailsJson.textContent).toContain('tool.remote-search')
     expect(rendered.queryByTestId('error-detail-overlay-raw-details-text')).toBeNull()
     expect(rendered.getByTestId('error-detail-overlay-group-raw-details').textContent).toContain('Tool failed: boom')
 
@@ -204,7 +204,7 @@ describe('ErrorDetailOverlay', () => {
   it('clears stale summary copy reset timers before scheduling a new one', async () => {
     vi.useFakeTimers()
 
-    const writeText = vi.fn<(text: string) => Promise<void>>(async (_text) => undefined)
+    const writeText = vi.fn<(text: string) => Promise<void>>(async () => undefined)
     Object.defineProperty(window.navigator, 'clipboard', {
       configurable: true,
       value: {

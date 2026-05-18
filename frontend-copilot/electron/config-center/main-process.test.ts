@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import type { HostedBackendService } from '../runtime/hosted-backend-service'
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../runtime/runtime-paths'
 import { createElectronUnifiedConfigService } from './main-process'
 
@@ -44,6 +45,9 @@ describe('createElectronUnifiedConfigService', () => {
             },
             backendExposed: {
               model: null,
+            },
+            general: {
+              language: 'zh-CN',
             },
           },
         },
@@ -97,6 +101,9 @@ describe('createElectronUnifiedConfigService', () => {
             },
             backendExposed: {
               model: 'qwen-plus',
+            },
+            general: {
+              language: 'zh-CN',
             },
           },
         },
@@ -161,6 +168,30 @@ describe('createElectronUnifiedConfigService', () => {
 
       expect(result.error).toContain('Failed to apply config center public patch:')
       expect(result.error).toContain('assistantBehavior.agentName')
+    } finally {
+      await rm(fixture.tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('exposes the hosted backend service accessor when configured', async () => {
+    const fixture = await createPreparedPaths('hosted-backend-accessor')
+    const hostedBackendService = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      getState: vi.fn(),
+      getLastFailure: vi.fn(),
+      getRuntimeBaseUrl: vi.fn(() => 'http://127.0.0.1:8765'),
+      getLocalToken: vi.fn(() => 'runtime-token'),
+    } as unknown as HostedBackendService
+    const ensureHostedBackendService = vi.fn(async () => hostedBackendService)
+    const service = createElectronUnifiedConfigService({
+      prepareRuntimePaths: async () => fixture.hostedPaths,
+      ensureHostedBackendService,
+    })
+
+    try {
+      await expect(service.getHostedBackendService()).resolves.toBe(hostedBackendService)
+      expect(ensureHostedBackendService).toHaveBeenCalledOnce()
     } finally {
       await rm(fixture.tempRoot, { recursive: true, force: true })
     }

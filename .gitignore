@@ -1,5 +1,7 @@
 # extensions
 .VSCodeCounter/
 
-team-project-26spring-26s-23-agent-struct/
-team-project-26spring-26s-23-frontend-ui-consistence/
+# test-related
+database-root
+backend/database-root
+backend/env-user-data

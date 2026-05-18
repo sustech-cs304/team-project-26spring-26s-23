@@ -25,6 +25,7 @@ import { runCreateSessionPendingScenario } from './test-support/assistant-worksp
 import { ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY } from './assistant-workspace-shell-state'
 import { COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY } from './useAssistantWorkspaceState'
 import { runSessionContextMenuScenario } from './test-support/assistant-workspace-session-scenarios'
+import type { McpRegistrySubscriptionEvent } from '../../../electron/mcp-registry/types'
 
 const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
   <div
@@ -36,12 +37,17 @@ const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
   </div>
 ))
 
+let activeMcpRegistryListener: ((event: McpRegistrySubscriptionEvent) => void) | null = null
+let mcpRegistryUnsubscribeMock = vi.fn()
+
 vi.mock('../../features/copilot/CopilotChatPanel', () => ({
   CopilotChatPanel: (props: Record<string, unknown>) => mockCopilotChatPanel(props),
 }))
 
 afterEach(() => {
   window.localStorage.removeItem(ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY)
+  activeMcpRegistryListener = null
+  mcpRegistryUnsubscribeMock = vi.fn()
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
@@ -90,7 +96,7 @@ describe('AssistantWorkspace render + interactions', () => {
         sessionId: 'session-1',
         capabilities: expect.objectContaining({
           capabilitiesVersion: 'cap-v12',
-          recommendedToolsForAgent: ['tool.file-convert'],
+          recommendedToolsForAgent: ['tool.fs.read'],
         }),
       }),
       directoryState: expect.objectContaining({
@@ -630,6 +636,265 @@ describe('AssistantWorkspace render + interactions', () => {
     rendered.unmount()
   })
 
+  it('reloads live session capabilities after an MCP snapshot event and applies the same snapshot round tool update to chat picker state', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const createSession = vi.fn().mockResolvedValue(createSessionResponse({
+      threadId: 'thread-live',
+      createdAt: '2026-04-14T08:00:00Z',
+      updatedAt: '2026-04-14T08:00:00Z',
+    }))
+    const getCapabilities = vi.fn()
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: 'thread-live',
+        capabilitiesVersion: 'cap-thread-live-v1',
+        tools: [
+          { toolId: 'tool.remote-search', kind: 'builtin', availability: 'available', displayName: '联网搜索', description: '初始目录' },
+        ],
+      }))
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: 'thread-live',
+        capabilitiesVersion: 'cap-thread-live-v1',
+        tools: [
+          { toolId: 'mcp__filesystem__read_text_file', kind: 'external', availability: 'available', displayName: '读取文本文件', description: '同轮目录变化' },
+        ],
+      }))
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: 'thread-live',
+        capabilitiesVersion: 'cap-thread-live-v2',
+        tools: [
+          { toolId: 'mcp__filesystem__read_text_file', kind: 'external', availability: 'available', displayName: '读取文本文件', description: '最新目录' },
+        ],
+      }))
+
+    Object.defineProperty(window, 'mcpRegistrySubscription', {
+      configurable: true,
+      writable: true,
+      value: {
+        subscribe: (listener: (event: McpRegistrySubscriptionEvent) => void) => {
+          activeMcpRegistryListener = listener
+          return mcpRegistryUnsubscribeMock.mockImplementation(() => {
+            if (activeMcpRegistryListener === listener) {
+              activeMcpRegistryListener = null
+            }
+          })
+        },
+      },
+    })
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        createSession={createSession}
+        getCapabilities={getCapabilities}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => {
+      const sessionShell = getLastMockCopilotChatPanelProps().sessionShell as {
+        sessionId?: string
+        capabilities?: {
+          capabilitiesVersion?: string
+        }
+      } | undefined
+
+      return sessionShell?.sessionId === 'thread-live'
+        && sessionShell.capabilities?.capabilitiesVersion === 'cap-thread-live-v1'
+    })
+
+    await act(async () => {
+      activeMcpRegistryListener?.({
+        kind: 'snapshot',
+        registryRevision: 8,
+        snapshotRevision: 12,
+        servers: [],
+        states: [],
+      })
+      await Promise.resolve()
+    })
+
+    await waitForAssistantWorkspaceCondition(() => getCapabilities.mock.calls.length >= 2)
+
+    expect(getLastMockCopilotChatPanelProps().sessionShell as {
+      capabilities?: {
+        capabilitiesVersion?: string
+        allAvailableTools?: Array<{ toolId?: string, description?: string }>
+      }
+    }).toMatchObject({
+      capabilities: {
+        capabilitiesVersion: 'cap-thread-live-v1',
+        allAvailableTools: [
+          expect.objectContaining({ toolId: 'mcp__filesystem__read_text_file', description: '同轮目录变化' }),
+        ],
+      },
+    })
+
+    await act(async () => {
+      activeMcpRegistryListener?.({
+        kind: 'snapshot',
+        registryRevision: 9,
+        snapshotRevision: 13,
+        servers: [],
+        states: [],
+      })
+      await Promise.resolve()
+    })
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const sessionShell = getLastMockCopilotChatPanelProps().sessionShell as {
+        sessionId?: string
+        capabilities?: {
+          capabilitiesVersion?: string
+          allAvailableTools?: Array<{ toolId?: string }>
+        }
+      } | undefined
+
+      return sessionShell?.sessionId === 'thread-live'
+        && sessionShell.capabilities?.capabilitiesVersion === 'cap-thread-live-v2'
+        && sessionShell.capabilities.allAvailableTools?.some((tool) => tool.toolId === 'mcp__filesystem__read_text_file') === true
+    })
+
+    expect(getCapabilities).toHaveBeenCalledTimes(3)
+    expect(mcpRegistryUnsubscribeMock).not.toHaveBeenCalled()
+    expect(getLastMockCopilotChatPanelProps().sessionShell as {
+      capabilities?: {
+        capabilitiesVersion?: string
+        allAvailableTools?: unknown[]
+      }
+    }).toMatchObject({
+      capabilities: {
+        capabilitiesVersion: 'cap-thread-live-v2',
+        allAvailableTools: [
+          expect.objectContaining({ toolId: 'mcp__filesystem__read_text_file' }),
+        ],
+      },
+    })
+
+    rendered.unmount()
+    expect(mcpRegistryUnsubscribeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a single MCP registry subscription while reading the latest session list for snapshot refreshes', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const directoryResponse = createDirectoryResponse()
+    const directoryState = createAssistantAgentDirectoryState(directoryResponse)
+    const listAgents = vi.fn().mockResolvedValue(directoryResponse)
+    const createSession = vi.fn()
+      .mockResolvedValueOnce(createSessionResponse({
+        threadId: 'thread-live',
+        createdAt: '2026-04-14T08:00:00Z',
+        updatedAt: '2026-04-14T08:00:00Z',
+      }))
+      .mockResolvedValueOnce(createSessionResponse({
+        threadId: 'thread-new',
+        createdAt: '2026-04-14T08:05:00Z',
+        updatedAt: '2026-04-14T08:05:00Z',
+      }))
+    const getCapabilities = vi.fn()
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: 'thread-live',
+        capabilitiesVersion: 'cap-thread-live-v1',
+      }))
+      .mockResolvedValueOnce(createCapabilitiesResponse({
+        sessionId: 'thread-new',
+        capabilitiesVersion: 'cap-thread-new-v1',
+      }))
+      .mockImplementation(async ({ sessionId }: { sessionId: string }) => createCapabilitiesResponse({
+        sessionId,
+        capabilitiesVersion: `cap-refresh-${sessionId}`,
+        tools: [{
+          toolId: `${sessionId}.tool`,
+          kind: 'external',
+          availability: 'available',
+          displayName: `${sessionId} tool`,
+          description: `${sessionId} tool from snapshot refresh`,
+        }],
+      }))
+    const subscribe = vi.fn((listener: (event: McpRegistrySubscriptionEvent) => void) => {
+      activeMcpRegistryListener = listener
+      return mcpRegistryUnsubscribeMock.mockImplementation(() => {
+        if (activeMcpRegistryListener === listener) {
+          activeMcpRegistryListener = null
+        }
+      })
+    })
+
+    Object.defineProperty(window, 'mcpRegistrySubscription', {
+      configurable: true,
+      writable: true,
+      value: { subscribe },
+    })
+
+    const rendered = renderWithRoot(
+      <AssistantWorkspace
+        bootstrap={createBootstrapController()}
+        listAgents={listAgents}
+        createSession={createSession}
+        getCapabilities={getCapabilities}
+        initialDirectoryState={directoryState}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-live'
+    ))
+
+    await clickElement(rendered.getByTestId('assistant-create-session-button'))
+    await waitForAssistantWorkspaceCondition(() => (
+      getLastMockCopilotChatPanelProps().sessionShell?.sessionId === 'thread-new'
+    ))
+
+    await act(async () => {
+      activeMcpRegistryListener?.({
+        kind: 'snapshot',
+        registryRevision: 10,
+        snapshotRevision: 14,
+        servers: [],
+        states: [],
+      })
+      await Promise.resolve()
+    })
+
+    await waitForAssistantWorkspaceCondition(() => getCapabilities.mock.calls.length >= 4)
+
+    expect(subscribe).toHaveBeenCalledTimes(1)
+    expect(mcpRegistryUnsubscribeMock).not.toHaveBeenCalled()
+    expect(getCapabilities).toHaveBeenCalledWith({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionId: 'thread-live',
+    })
+    expect(getCapabilities).toHaveBeenCalledWith({
+      runtimeUrl: 'http://127.0.0.1:8765',
+      sessionId: 'thread-new',
+    })
+    expect(getLastMockCopilotChatPanelProps().sessionShell as {
+      sessionId?: string
+      capabilities?: {
+        capabilitiesVersion?: string
+        allAvailableTools?: Array<{ toolId?: string }>
+      }
+    }).toMatchObject({
+      sessionId: 'thread-new',
+      capabilities: {
+        capabilitiesVersion: 'cap-refresh-thread-new',
+        allAvailableTools: [
+          expect.objectContaining({ toolId: 'thread-new.tool' }),
+        ],
+      },
+    })
+
+    rendered.unmount()
+    expect(mcpRegistryUnsubscribeMock).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps a late-settling run bound to its original session after switching to a newer live session', async () => {
     mockCopilotChatPanel.mockClear()
 
@@ -737,7 +1002,7 @@ describe('AssistantWorkspace render + interactions', () => {
     const directoryState = createAssistantAgentDirectoryState(directoryResponse)
     const liveFixture = createLivePersistedHistoryFixture()
     const listAgents = vi.fn().mockResolvedValue(directoryResponse)
-    let includePersistedLiveSession = false
+    const includePersistedLiveSession = false
     const listHistoryThreads = vi.fn().mockImplementation(async () => ({
       ok: true as const,
       version: 'chat-history-v1',
@@ -923,6 +1188,157 @@ describe('AssistantWorkspace render + interactions', () => {
         && controllerRecord[protectedFixture.summary.threadId] !== undefined
         && controllerRecord[protectedFixture.summary.threadId]?.pendingHistorySyncRunId === protectedFixture.replay.run.runId
         && controllerRecord[evictableFixture.summary.threadId] === undefined
+    }, 24)
+
+    rendered.unmount()
+  })
+
+  it('does not evict awaiting-input controllers with pending inline forms when persisted history cannot rebuild the form', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const fixtures = createLruPersistedHistoryFixtures()
+    const protectedFixture = fixtures[0]
+    const evictableFixture = fixtures[1]
+    if (protectedFixture === undefined || evictableFixture === undefined) {
+      throw new Error('Expected protected and evictable LRU fixtures.')
+    }
+
+    protectedFixture.detail.runSummaries = [{
+      ...protectedFixture.detail.runSummaries[0],
+      status: 'failed',
+    }]
+    protectedFixture.summary.lastRunStatus = 'failed'
+    ;(protectedFixture.detail as { timelineItems: Array<Record<string, unknown>> }).timelineItems = [{
+      kind: 'user_message',
+      runId: protectedFixture.replay.run.runId,
+      sequenceStart: 0,
+      text: protectedFixture.summary.lastUserMessagePreview,
+    }]
+
+    const { rendered } = await renderAssistantWorkspaceWithHydratedLruFixtures(fixtures, {
+      afterFirstThreadReady: async () => {
+        await updateAssistantWorkspaceRuntimeControllers((current) => ({
+          ...current,
+          [protectedFixture.summary.threadId]: {
+            ...current[protectedFixture.summary.threadId],
+            runState: {
+              ...current[protectedFixture.summary.threadId]?.runState,
+              phase: 'awaiting_input',
+              runId: protectedFixture.replay.run.runId,
+              threadId: protectedFixture.summary.threadId,
+              segments: [{
+                kind: 'inline-form',
+                formState: 'pending',
+              }],
+            },
+            pendingHistorySyncRunId: protectedFixture.replay.run.runId,
+            lastAccessedAt: Date.now(),
+          },
+        }))
+      },
+    })
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const controllerRecord = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId ?? {}
+      return Object.keys(controllerRecord).length === COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY
+        && controllerRecord[protectedFixture.summary.threadId] !== undefined
+        && controllerRecord[evictableFixture.summary.threadId] === undefined
+    }, 24)
+
+    rendered.unmount()
+  })
+
+  it('evicts awaiting-input controllers with pending inline forms once persisted history can rebuild the form', async () => {
+    mockCopilotChatPanel.mockClear()
+
+    const fixtures = createLruPersistedHistoryFixtures()
+    const protectedFixture = fixtures[0]
+    const evictableFixture = fixtures[1]
+    if (protectedFixture === undefined || evictableFixture === undefined) {
+      throw new Error('Expected protected and evictable LRU fixtures.')
+    }
+
+    protectedFixture.detail.runSummaries = [{
+      ...protectedFixture.detail.runSummaries[0],
+      status: 'failed',
+    }]
+    protectedFixture.summary.lastRunStatus = 'failed'
+    ;(protectedFixture.detail as { timelineItems: Array<Record<string, unknown>> }).timelineItems = [
+      {
+        kind: 'user_message',
+        runId: protectedFixture.replay.run.runId,
+        sequenceStart: 0,
+        text: protectedFixture.summary.lastUserMessagePreview,
+      },
+      {
+        kind: 'tool_call_block',
+        runId: protectedFixture.replay.run.runId,
+        toolCallId: 'tool.request-user-form:call-1',
+        toolId: 'tool.request-user-form',
+        sequenceStart: 1,
+        title: '请求课程表单',
+        summary: '请填写课程编码。',
+        resultSummary: '表单请求已发送，等待用户提交。',
+        formRequest: {
+          formId: 'course-form',
+          title: '请求课程表单',
+          submitLabel: '提交',
+          fields: [{
+            name: 'courseCode',
+            label: '课程编码',
+            type: 'text',
+            required: true,
+          }],
+        },
+        phases: [{
+          phase: 'completed',
+          sequence: 1,
+          title: '请求课程表单',
+          summary: '请填写课程编码。',
+          resultSummary: '表单请求已发送，等待用户提交。',
+          formRequest: {
+            formId: 'course-form',
+            title: '请求课程表单',
+            submitLabel: '提交',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+          },
+        }],
+      },
+    ]
+
+    const { rendered } = await renderAssistantWorkspaceWithHydratedLruFixtures(fixtures, {
+      afterFirstThreadReady: async () => {
+        await updateAssistantWorkspaceRuntimeControllers((current) => ({
+          ...current,
+          [protectedFixture.summary.threadId]: {
+            ...current[protectedFixture.summary.threadId],
+            runState: {
+              ...current[protectedFixture.summary.threadId]?.runState,
+              phase: 'awaiting_input',
+              runId: protectedFixture.replay.run.runId,
+              threadId: protectedFixture.summary.threadId,
+              segments: [{
+                kind: 'inline-form',
+                formState: 'pending',
+              }],
+            },
+            pendingHistorySyncRunId: protectedFixture.replay.run.runId,
+            lastAccessedAt: 0,
+          },
+        }))
+      },
+    })
+
+    await waitForAssistantWorkspaceCondition(() => {
+      const controllerRecord = getLastMockCopilotChatPanelProps().runtimeControllerBySessionId ?? {}
+      return Object.keys(controllerRecord).length === COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY
+        && controllerRecord[protectedFixture.summary.threadId] === undefined
+        && controllerRecord[evictableFixture.summary.threadId] !== undefined
     }, 24)
 
     rendered.unmount()
@@ -1880,7 +2296,7 @@ function createPersistedHistoryFixture() {
           resolvedModelId: 'openai/gpt-4.1',
         },
         toolsSnapshot: {
-          resolvedToolIds: ['tool.file-convert'],
+          resolvedToolIds: ['tool.remote-search'],
         },
       },
       availabilityDrift: {
@@ -1911,7 +2327,7 @@ function createPersistedHistoryFixture() {
             modelId: 'openai/gpt-4.1',
           },
         },
-        resolvedToolIds: ['tool.file-convert'],
+        resolvedToolIds: ['tool.remote-search'],
       },
       orderedEvents: [],
       toolCallBlocks: [],
@@ -1986,7 +2402,7 @@ function createLivePersistedHistoryFixture() {
           resolvedModelId: 'openai/gpt-4.1',
         },
         toolsSnapshot: {
-          resolvedToolIds: ['tool.file-convert'],
+          resolvedToolIds: ['tool.remote-search'],
         },
       },
       availabilityDrift: {
@@ -2010,7 +2426,7 @@ function createLivePersistedHistoryFixture() {
       },
       historicalSnapshot: {
         resolvedModelId: 'openai/gpt-4.1',
-        resolvedToolIds: ['tool.file-convert'],
+        resolvedToolIds: ['tool.remote-search'],
       },
       orderedEvents: [],
       toolCallBlocks: [],
@@ -2060,7 +2476,7 @@ function createMultiRunPersistedHistoryFixture() {
     },
     historicalSnapshot: {
       resolvedModelId: 'openai/gpt-4.1-mini',
-      resolvedToolIds: ['tool.file-convert'],
+      resolvedToolIds: ['tool.remote-search'],
     },
     orderedEvents: [],
     toolCallBlocks: [],
@@ -2087,7 +2503,7 @@ function createMultiRunPersistedHistoryFixture() {
     },
     historicalSnapshot: {
       resolvedModelId: 'openai/gpt-4.1',
-      resolvedToolIds: ['tool.file-convert'],
+      resolvedToolIds: ['tool.remote-search'],
     },
     orderedEvents: [],
     toolCallBlocks: [],
@@ -2164,7 +2580,7 @@ function createMultiRunPersistedHistoryFixture() {
           resolvedModelId: 'openai/gpt-4.1',
         },
         toolsSnapshot: {
-          resolvedToolIds: ['tool.file-convert'],
+          resolvedToolIds: ['tool.remote-search'],
         },
       },
       availabilityDrift: {
@@ -2270,7 +2686,7 @@ function createIndexedPersistedHistoryFixture(index: number) {
           resolvedModelId: 'openai/gpt-4.1',
         },
         toolsSnapshot: {
-          resolvedToolIds: ['tool.file-convert'],
+          resolvedToolIds: ['tool.remote-search'],
         },
       },
       availabilityDrift: {
@@ -2285,7 +2701,7 @@ function createIndexedPersistedHistoryFixture(index: number) {
       },
       historicalSnapshot: {
         resolvedModelId: 'openai/gpt-4.1',
-        resolvedToolIds: ['tool.file-convert'],
+        resolvedToolIds: ['tool.remote-search'],
       },
       orderedEvents: [],
       toolCallBlocks: [],

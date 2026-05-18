@@ -3,93 +3,31 @@ import type {
   RuntimeResolvedModelRoute,
 } from './thread-run-contract'
 
-export type CopilotErrorDetailSourceKind = 'preflight' | 'run-start' | 'streaming'
+import type {
+  CopilotErrorDetailMeta,
+  CopilotErrorDetailSourceKind,
+  CopilotErrorDetailSource,
+  ErrorDetailOverlayGroupKey,
+  ErrorDetailOverlayStructuredJsonValue,
+  ErrorDetailOverlayContentItem,
+  ErrorDetailOverlayGroup,
+  ErrorDetailOverlayViewModel,
+} from './_error-detail-overlay-view-model/types'
 
-export interface CopilotErrorDetailMeta {
-  stage?: string | null
-  requestedMethod?: string | null
-  status?: number | null
-  rawMessage?: string | null
-  summaryMessage?: string | null
-  resolvedToolIds?: string[]
+import { ERROR_DETAIL_META_KEYS, groupOrder } from './_error-detail-overlay-view-model/constants'
+
+export type {
+  CopilotErrorDetailSourceKind,
+  CopilotErrorDetailMeta,
+  CopilotErrorDetailSource,
+  ErrorDetailOverlayGroupKey,
+  ErrorDetailOverlayStructuredJsonValue,
+  ErrorDetailOverlayContentItem,
+  ErrorDetailOverlayGroup,
+  ErrorDetailOverlayViewModel,
 }
 
-export interface CopilotErrorDetailSource {
-  source: CopilotErrorDetailSourceKind
-  title: string
-  summaryMessage: string
-  rawMessage: string | null
-  code: string | null
-  stage: string | null
-  requestedMethod: string | null
-  status: number | null
-  details: Record<string, unknown>
-  resolvedModelId: string | null
-  resolvedModelRoute: RuntimeResolvedModelRoute | RuntimeModelRoute | null
-  resolvedToolIds: string[]
-  requestOptions: Record<string, unknown>
-}
-
-export type ErrorDetailOverlayGroupKey =
-  | 'summary'
-  | 'request-context'
-  | 'tool-model-context'
-  | 'raw-details'
-
-export type ErrorDetailOverlayStructuredJsonValue = Record<string, unknown> | unknown[]
-
-export type ErrorDetailOverlayContentItem =
-  | {
-      kind: 'key-value'
-      label: string
-      value: string
-    }
-  | {
-      kind: 'list'
-      label: string
-      values: string[]
-    }
-  | {
-      kind: 'text'
-      label: string | null
-      text: string
-      presentation?: 'plain-text' | 'json'
-      structuredValue?: ErrorDetailOverlayStructuredJsonValue
-    }
-
-export interface ErrorDetailOverlayGroup {
-  key: ErrorDetailOverlayGroupKey
-  title: string
-  description: string
-  items: ErrorDetailOverlayContentItem[]
-}
-
-export interface ErrorDetailOverlayViewModel {
-  title: string
-  summaryMessage: string
-  source: CopilotErrorDetailSourceKind
-  code: string | null
-  stage: string | null
-  groups: ErrorDetailOverlayGroup[]
-  hasAdditionalDetails: boolean
-  emptyStateMessage: string | null
-}
-
-const ERROR_DETAIL_META_KEYS = {
-  stage: '__copilotMeta_stage',
-  requestedMethod: '__copilotMeta_requestedMethod',
-  status: '__copilotMeta_status',
-  rawMessage: '__copilotMeta_rawMessage',
-  summaryMessage: '__copilotMeta_summaryMessage',
-  resolvedToolIds: '__copilotMeta_resolvedToolIds',
-} as const
-
-const groupOrder: Record<ErrorDetailOverlayGroupKey, number> = {
-  summary: 0,
-  'request-context': 1,
-  'tool-model-context': 2,
-  'raw-details': 3,
-}
+export { ERROR_DETAIL_META_KEYS, groupOrder }
 
 export function withCopilotErrorDetailMeta(
   details: Record<string, unknown> | null | undefined,
@@ -253,6 +191,7 @@ function buildSummaryGroup(source: CopilotErrorDetailSource): ErrorDetailOverlay
 
 function buildRequestContextGroup(source: CopilotErrorDetailSource): ErrorDetailOverlayGroup | null {
   const items: ErrorDetailOverlayContentItem[] = []
+  const mcpDetail = readMcpFailureDetail(source)
 
   if (source.requestedMethod !== null) {
     items.push({
@@ -287,6 +226,31 @@ function buildRequestContextGroup(source: CopilotErrorDetailSource): ErrorDetail
     })
   }
 
+  if (mcpDetail !== null) {
+    items.push(
+      {
+        kind: 'key-value',
+        label: '调用阶段',
+        value: mcpDetail.phase,
+      },
+      {
+        kind: 'key-value',
+        label: '快照版本',
+        value: mcpDetail.snapshotRevision,
+      },
+      {
+        kind: 'key-value',
+        label: '目录版本',
+        value: mcpDetail.catalogVersion,
+      },
+      {
+        kind: 'key-value',
+        label: '目标摘要',
+        value: mcpDetail.targetSummary,
+      },
+    )
+  }
+
   return items.length === 0
     ? null
     : {
@@ -301,6 +265,7 @@ function buildToolModelContextGroup(source: CopilotErrorDetailSource): ErrorDeta
   const items: ErrorDetailOverlayContentItem[] = []
   const modelId = source.resolvedModelId ?? readModelIdFromRoute(source.resolvedModelRoute)
   const routeSummary = formatRouteSummary(source.resolvedModelRoute)
+  const mcpDetail = readMcpFailureDetail(source)
 
   if (modelId !== null) {
     items.push({
@@ -326,6 +291,36 @@ function buildToolModelContextGroup(source: CopilotErrorDetailSource): ErrorDeta
     })
   }
 
+  if (mcpDetail !== null) {
+    items.push(
+      {
+        kind: 'key-value',
+        label: '工具名称',
+        value: mcpDetail.toolName,
+      },
+      {
+        kind: 'key-value',
+        label: 'toolId',
+        value: mcpDetail.toolId,
+      },
+      {
+        kind: 'key-value',
+        label: 'toolCallId',
+        value: mcpDetail.toolCallId,
+      },
+      {
+        kind: 'key-value',
+        label: '服务器名称',
+        value: mcpDetail.serverName,
+      },
+      {
+        kind: 'key-value',
+        label: 'serverId',
+        value: mcpDetail.serverId,
+      },
+    )
+  }
+
   return items.length === 0
     ? null
     : {
@@ -342,6 +337,22 @@ function buildRawDetailsGroup(source: CopilotErrorDetailSource): ErrorDetailOver
     ? null
     : source.rawMessage
   const rawDetails = stripCopilotErrorDetailMeta(source.details)
+  const mcpDetail = readMcpFailureDetail(source)
+
+  if (mcpDetail !== null) {
+    items.push(
+      {
+        kind: 'key-value',
+        label: '诊断摘要',
+        value: mcpDetail.diagnosticSummary,
+      },
+      {
+        kind: 'key-value',
+        label: 'stderr 摘要',
+        value: mcpDetail.stderrSummary,
+      },
+    )
+  }
 
   if (rawMessage !== null) {
     items.push({
@@ -393,6 +404,104 @@ function stringifyRecord(record: Record<string, unknown>): string | null {
 
   const serialized = JSON.stringify(record, null, 2)
   return serialized === undefined || serialized.trim() === '' ? null : serialized
+}
+
+function readMcpFailureDetail(source: CopilotErrorDetailSource): {
+  toolName: string
+  toolId: string
+  toolCallId: string
+  serverName: string
+  serverId: string
+  phase: string
+  diagnosticSummary: string
+  stderrSummary: string
+  snapshotRevision: string
+  catalogVersion: string
+  targetSummary: string
+} | null {
+  const details = source.details
+  const toolId = readOptionalString(details.toolId)
+  const serverId = readOptionalString(details.serverId)
+  const requestedServerId = readOptionalString(details.requestedServerId)
+  const remoteToolName = readOptionalString(details.remoteToolName)
+  const requestedRemoteToolName = readOptionalString(details.requestedRemoteToolName)
+
+  const isMcpToolId = toolId !== null && /^mcp[.:/]/iu.test(toolId)
+  const hasMcpContext = serverId !== null
+    || requestedServerId !== null
+    || remoteToolName !== null
+    || requestedRemoteToolName !== null
+
+  if (!isMcpToolId && !hasMcpContext) {
+    return null
+  }
+
+  const toolName = remoteToolName
+    ?? requestedRemoteToolName
+    ?? deriveToolNameFromToolId(toolId)
+    ?? '未提供'
+  const resolvedServerId = serverId ?? requestedServerId ?? '未提供'
+  const resolvedToolId = toolId ?? '未提供'
+  const resolvedToolCallId = readOptionalString(details.toolCallId) ?? '未提供'
+  const serverName = readOptionalString(details.serverName)
+    ?? readOptionalString(details.displayName)
+    ?? resolvedServerId
+  const phase = readOptionalString(details.phase)
+    ?? readOptionalString(details.stage)
+    ?? source.stage
+    ?? '未提供'
+  const diagnosticSummary = readOptionalString(details.diagnosticSummary)
+    ?? readOptionalString(details.errorSummary)
+    ?? readOptionalString(details.diagnostic)
+    ?? '未提供'
+  const stderrSummary = readOptionalString(details.stderrSummary) ?? '未提供'
+  const snapshotRevision = readOptionalIntegerText(details.snapshotRevision)
+    ?? readOptionalIntegerText(details.requestedSnapshotRevision)
+    ?? '未提供'
+  const catalogVersion = readOptionalIntegerText(details.catalogVersion)
+    ?? readOptionalIntegerText(details.catalogRevision)
+    ?? '未提供'
+  const targetSummary = summarizeDefinedEntries({
+    serverId: resolvedServerId === '未提供' ? null : resolvedServerId,
+    remoteToolName: toolName === '未提供' ? null : toolName,
+    toolCallId: resolvedToolCallId === '未提供' ? null : resolvedToolCallId,
+  }) ?? '未提供'
+
+  return {
+    toolName,
+    toolId: resolvedToolId,
+    toolCallId: resolvedToolCallId,
+    serverName,
+    serverId: resolvedServerId,
+    phase,
+    diagnosticSummary,
+    stderrSummary,
+    snapshotRevision,
+    catalogVersion,
+    targetSummary,
+  }
+}
+
+function readOptionalIntegerText(value: unknown): string | null {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? String(value)
+    : null
+}
+
+function summarizeDefinedEntries(record: Record<string, string | null>): string | null {
+  const entries = Object.entries(record)
+    .filter(([, value]) => value !== null)
+    .map(([key, value]) => `${key}=${value}`)
+  return entries.length > 0 ? entries.join('; ') : null
+}
+
+function deriveToolNameFromToolId(toolId: string | null): string | null {
+  if (toolId === null) {
+    return null
+  }
+
+  const segments = toolId.split('.')
+  return segments.length > 1 ? segments[segments.length - 2] ?? null : toolId
 }
 
 export function parseErrorDetailJsonTextForViewer(

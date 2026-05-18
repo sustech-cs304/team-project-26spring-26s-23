@@ -12,6 +12,7 @@ import {
 import type { CopilotMessageDispatchInput } from './copilot-send-controller'
 import {
   createRuntimeMessageEventStream,
+  createRuntimeModelRoute,
   createRuntimeResolvedModelRoute,
   createRuntimeRunCancelResponse,
   createRuntimeToolEvent,
@@ -29,6 +30,10 @@ import {
   setFormControlValue,
   submitForm,
 } from './CopilotChatPanel.test-support'
+import {
+  createCopilotThreadRuntimeControllerState,
+  type CopilotThreadRuntimeControllerState,
+} from './thread-runtime-controller'
 import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
 import { createPersistedWorkspaceState, createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 
@@ -620,7 +625,7 @@ describe('CopilotChatPanel composer interactions', () => {
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
     await setFormControlValue(searchInput, '远程')
     expect(rendered.queryByTestId('chat-tool-option-tool.remote-search')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).toBeNull()
 
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-tool-picker-select-all'))
@@ -636,9 +641,186 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      enabledTools: ['tool.file-convert', 'tool.remote-search'],
+      enabledTools: ['tool.fs.read', 'tool.remote-search'],
       message: {
         content: '请使用当前工具集执行摘要',
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('keeps denied tools visible but disabled in the picker and strips them before send', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const sessionShell = createSessionShell()
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        mcp: {
+          toolPermissionPolicy: {
+            version: 1,
+            defaultMode: 'ask',
+            toolPermissions: {
+              'tool.remote-search': { mode: 'deny' },
+            },
+          },
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={sessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
+    const allowedOption = rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement
+
+    expect(deniedOption.disabled).toBe(false)
+    expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
+    expect(deniedOption.getAttribute('aria-disabled')).toBe('true')
+    expect(deniedOption.title).toContain('总是关闭')
+    expect(allowedOption.disabled).toBe(false)
+
+    await clickElement(deniedOption)
+    expect(deniedOption.getAttribute('aria-pressed')).toBe('false')
+
+    await clickElement(allowedOption)
+    expect(allowedOption.getAttribute('aria-pressed')).toBe('true')
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请在清洗 deny 后发送')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      enabledTools: ['tool.fs.read'],
+      message: {
+        content: '请在清洗 deny 后发送',
+      },
+    })
+
+    rendered.unmount()
+  })
+
+  it('strips stale denied enabledTools from live composer state before dispatching the request', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const sessionShell = createSessionShell({ sessionId: 'session-stale-deny' })
+    const staleState = createCopilotThreadRuntimeControllerState(sessionShell)
+    const runtimeControllerBySessionId: Record<string, CopilotThreadRuntimeControllerState> = {
+      [sessionShell.sessionId]: {
+        ...staleState,
+        composerDraft: {
+          ...staleState.composerDraft,
+          messageText: '请清洗残留 deny 工具',
+          selectedModelId: 'provider-openai:openai/gpt-4.1',
+          selectedModelRoute: createRuntimeModelRoute({
+            providerProfileId: 'provider-openai',
+            modelId: 'openai/gpt-4.1',
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'provider-openai',
+              modelId: 'openai/gpt-4.1',
+            },
+          }),
+          enabledTools: ['tool.fs.read', 'tool.remote-search'],
+        },
+      },
+    }
+    const loadWorkspaceState = vi.fn(async () => ({
+      ok: true as const,
+      source: 'stored' as const,
+      state: createPersistedWorkspaceState({
+        providerProfiles: [
+          createProviderProfile({
+            id: 'provider-openai',
+            name: 'OpenAI Compatible',
+            availableModels: [
+              {
+                id: 'provider-openai:openai/gpt-4.1',
+                modelId: 'openai/gpt-4.1',
+                displayName: 'GPT 4.1',
+                groupName: 'OpenAI',
+                capabilities: ['reasoning', 'tools'],
+                supportsStreaming: true,
+                currency: 'usd',
+                inputPrice: '1',
+                outputPrice: '2',
+              },
+            ],
+          }),
+        ],
+        defaultModelRouting: {
+          primaryAssistantModel: 'openai/gpt-4.1',
+        },
+        mcp: {
+          toolPermissionPolicy: {
+            version: 1,
+            defaultMode: 'ask',
+            toolPermissions: {
+              'tool.remote-search': { mode: 'deny' },
+            },
+          },
+        },
+      }),
+    }))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={sessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+        runtimeControllerBySessionId={runtimeControllerBySessionId}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    const deniedOption = rendered.getByTestId('chat-tool-option-tool.remote-search') as HTMLButtonElement
+    const allowedOption = rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement
+
+    expect(deniedOption.disabled).toBe(false)
+    expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(deniedOption.getAttribute('aria-disabled')).toBe(null)
+    expect(allowedOption.getAttribute('aria-pressed')).toBe('true')
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    expect(messageInput.value).toBe('请清洗残留 deny 工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      enabledTools: ['tool.fs.read'],
+      message: {
+        content: '请清洗残留 deny 工具',
       },
     })
 
@@ -1630,6 +1812,146 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('renders tool approval buttons without waiting callout in manual approval mode', async () => {
+    const toolApprovalControl = createDeferredSignal()
+    const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl, {
+      approval: {
+        mode: 'ask',
+        timeoutAt: null,
+        timeoutSeconds: null,
+        timeoutAction: null,
+      },
+    })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请人工审批天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    toolApprovalControl.release()
+
+    await waitForCondition(
+      () => rendered.queryByTestId('chat-message-tool-approval-approve-1') !== null,
+      'manual approval buttons rendered',
+    )
+    expect(rendered.container.textContent).toContain('拒绝')
+    expect(rendered.container.textContent).toContain('批准')
+    expect(rendered.container.textContent).not.toContain('等待批准')
+    expect(rendered.container.textContent).not.toContain('后自动')
+
+    rendered.unmount()
+  })
+
+  it('renders a waiting approval tool bubble with delay auto deny countdown on reject action', async () => {
+    const toolApprovalControl = createDeferredSignal()
+    const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl)
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请审批天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    toolApprovalControl.release()
+
+    await waitForCondition(
+      () => (rendered.container.textContent ?? '').includes('拒绝（30s）'),
+      'delay auto deny countdown rendered on reject action',
+    )
+    expect(rendered.container.textContent).toContain('拒绝（30s）')
+    expect(rendered.container.textContent).toContain('批准')
+    expect(rendered.container.textContent).not.toContain('等待批准')
+    expect(rendered.container.textContent).not.toContain('后自动拒绝')
+
+    rendered.unmount()
+  })
+
+  it('renders a waiting approval tool bubble with delay auto approve countdown on approve action', async () => {
+    const toolApprovalControl = createDeferredSignal()
+    const sendMessage = createToolWaitingApprovalSendMessageSpy(toolApprovalControl, {
+      approval: {
+        mode: 'delay',
+        timeoutAt: new Date(Date.now() + 30_000).toISOString(),
+        timeoutSeconds: 30,
+        timeoutAction: 'approve',
+      },
+    })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请限时审批天气工具')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    toolApprovalControl.release()
+
+    await waitForCondition(
+      () => (rendered.container.textContent ?? '').includes('批准（30s）'),
+      'delay auto approve countdown rendered on approve action',
+    )
+    expect(rendered.container.textContent).toContain('批准（30s）')
+    expect(rendered.container.textContent).toContain('拒绝')
+    expect(rendered.container.textContent).not.toContain('等待批准')
+    expect(rendered.container.textContent).not.toContain('后自动批准')
+
+    rendered.unmount()
+  })
+
   it('does not keep the assistant placeholder after cancelling before any assistant text arrives', async () => {
     const sendMessage = createStartOnlyPendingSendMessageSpy()
     const cancelRun = vi.fn(async (): ReturnType<typeof cancelRuntimeRun> => createRuntimeRunCancelResponse({
@@ -1854,6 +2176,315 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('keeps the transient failed terminal visible until persisted replay contains the failed terminal handoff', async () => {
+    const sendMessage = createToolFailureThenFatalSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '请调用天气工具并处理 fatal 失败')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+    await waitForText(rendered.container, '发送失败')
+    await waitForText(rendered.container, '当前响应失败，请重试。')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          runSummaries: [
+            {
+              runId: 'run-tool-then-failed',
+              threadId: 'session-1',
+              status: 'failed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              assistantText: null,
+            },
+          ],
+          selectedRunId: 'run-tool-then-failed',
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            lastRunId: 'run-tool-then-failed',
+            lastRunStatus: 'failed',
+            lastUserMessagePreview: '请调用天气工具并处理 fatal 失败',
+            lastAssistantMessagePreview: '',
+          },
+          replayStatus: 'idle',
+          replay: null,
+          replayByRunId: {},
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).toContain('发送失败')
+    expect(rendered.container.textContent).toContain('当前响应失败，请重试。')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState({
+          bootstrapFields: {
+            runtimeUrl: 'http://127.0.0.1:8765',
+            agentName: null,
+            debugModeEnabled: true,
+          },
+        })}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          runSummaries: [
+            {
+              runId: 'run-tool-then-failed',
+              threadId: 'session-1',
+              status: 'failed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              assistantText: null,
+            },
+          ],
+          selectedRunId: 'run-tool-then-failed',
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            lastRunId: 'run-tool-then-failed',
+            lastRunStatus: 'failed',
+            lastUserMessagePreview: '请调用天气工具并处理 fatal 失败',
+            lastAssistantMessagePreview: '',
+          },
+          replayStatus: 'ready',
+          replay: {
+            ok: true,
+            version: 'chat-history-v1',
+            run: {
+              runId: 'run-tool-then-failed',
+              threadId: 'session-1',
+              status: 'failed',
+              createdAt: '2026-04-14T08:00:00Z',
+              updatedAt: '2026-04-14T08:00:03Z',
+              startedAt: '2026-04-14T08:00:01Z',
+              terminalAt: '2026-04-14T08:00:03Z',
+              resolvedModelId: 'openai/gpt-4.1',
+              requestedMessageText: '请调用天气工具并处理 fatal 失败',
+              assistantText: null,
+            },
+            historicalSnapshot: {
+              resolvedModelId: 'openai/gpt-4.1',
+              resolvedModelRoute: createRuntimeResolvedModelRoute({
+                routeRef: {
+                  routeKind: 'provider-model',
+                  profileId: 'provider-openai',
+                  modelId: 'openai/gpt-4.1',
+                },
+                providerProfileId: 'provider-openai',
+                provider: 'openai',
+                providerId: 'openai',
+                adapterId: 'openai-chat',
+                runtimeStatus: 'enabled',
+                endpointFamily: 'openai',
+                endpointType: 'responses',
+                baseUrl: 'https://api.openai.com/v1',
+                modelId: 'openai/gpt-4.1',
+                authKind: 'api-key',
+              }),
+              resolvedToolIds: ['tool.remote-search'],
+              requestOptions: {},
+            },
+            orderedEvents: [
+              {
+                eventType: 'tool_event',
+                sequence: 2,
+                createdAt: '2026-04-14T08:00:02Z',
+                payload: {
+                  toolCallId: 'tool.remote-search:call-1',
+                  toolId: 'tool.remote-search',
+                  phase: 'failed',
+                  title: '工具调用失败',
+                  summary: '工具执行失败。',
+                  inputSummary: '{"location":"Shenzhen"}',
+                  errorSummary: 'boom',
+                },
+                toolCallId: 'tool.remote-search:call-1',
+                toolId: 'tool.remote-search',
+                phase: 'failed',
+                isRedacted: false,
+                redactionVersion: 0,
+              },
+              {
+                eventType: 'run_failed',
+                sequence: 3,
+                createdAt: '2026-04-14T08:00:03Z',
+                payload: {
+                  code: 'agent_execution_failed',
+                  message: 'Model stream collapsed.',
+                  details: {
+                    stage: 'execute_model',
+                  },
+                },
+                toolCallId: null,
+                toolId: null,
+                phase: null,
+                isRedacted: false,
+                redactionVersion: 0,
+              },
+            ],
+            toolCallBlocks: [],
+            diagnosticBlocks: [],
+            terminalState: null,
+            availabilityInterpretation: null,
+          },
+          replayByRunId: {
+            'run-tool-then-failed': {
+              ok: true,
+              version: 'chat-history-v1',
+              run: {
+                runId: 'run-tool-then-failed',
+                threadId: 'session-1',
+                status: 'failed',
+                createdAt: '2026-04-14T08:00:00Z',
+                updatedAt: '2026-04-14T08:00:03Z',
+                startedAt: '2026-04-14T08:00:01Z',
+                terminalAt: '2026-04-14T08:00:03Z',
+                resolvedModelId: 'openai/gpt-4.1',
+                requestedMessageText: '请调用天气工具并处理 fatal 失败',
+                assistantText: null,
+              },
+              historicalSnapshot: {
+                resolvedModelId: 'openai/gpt-4.1',
+                resolvedModelRoute: createRuntimeResolvedModelRoute({
+                  routeRef: {
+                    routeKind: 'provider-model',
+                    profileId: 'provider-openai',
+                    modelId: 'openai/gpt-4.1',
+                  },
+                  providerProfileId: 'provider-openai',
+                  provider: 'openai',
+                  providerId: 'openai',
+                  adapterId: 'openai-chat',
+                  runtimeStatus: 'enabled',
+                  endpointFamily: 'openai',
+                  endpointType: 'responses',
+                  baseUrl: 'https://api.openai.com/v1',
+                  modelId: 'openai/gpt-4.1',
+                  authKind: 'api-key',
+                }),
+                resolvedToolIds: ['tool.remote-search'],
+                requestOptions: {},
+              },
+              orderedEvents: [
+                {
+                  eventType: 'tool_event',
+                  sequence: 2,
+                  createdAt: '2026-04-14T08:00:02Z',
+                  payload: {
+                    toolCallId: 'tool.remote-search:call-1',
+                    toolId: 'tool.remote-search',
+                    phase: 'failed',
+                    title: '工具调用失败',
+                    summary: '工具执行失败。',
+                    inputSummary: '{"location":"Shenzhen"}',
+                    errorSummary: 'boom',
+                  },
+                  toolCallId: 'tool.remote-search:call-1',
+                  toolId: 'tool.remote-search',
+                  phase: 'failed',
+                  isRedacted: false,
+                  redactionVersion: 0,
+                },
+                {
+                  eventType: 'run_failed',
+                  sequence: 3,
+                  createdAt: '2026-04-14T08:00:03Z',
+                  payload: {
+                    code: 'agent_execution_failed',
+                    message: 'Model stream collapsed.',
+                    details: {
+                      stage: 'execute_model',
+                    },
+                  },
+                  toolCallId: null,
+                  toolId: null,
+                  phase: null,
+                  isRedacted: false,
+                  redactionVersion: 0,
+                },
+              ],
+              toolCallBlocks: [],
+              diagnosticBlocks: [],
+              terminalState: null,
+              availabilityInterpretation: null,
+            },
+          },
+        })}
+        sendMessage={sendMessage}
+        loadWorkspaceState={loadWorkspaceState}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).toContain('发送失败')
+    expect(rendered.container.textContent).toContain('当前响应失败，请重试。')
+
+    rendered.unmount()
+  })
+
   it('keeps failed sends as echoed user messages plus an error turn', async () => {
     const sendMessage = vi.fn(async function* () {
       yield* []
@@ -1897,6 +2528,638 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('tool_not_found')
     expect(rendered.getByTestId('error-detail-overlay').textContent).toContain('run/start')
 
+    rendered.unmount()
+  })
+
+  it('prevents inline form submission when local validation fails', async () => {
+    const sendMessage = vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+      {
+        type: 'run_started',
+        runId: 'run-inline-form-validation',
+        sessionId: input.sessionId,
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-inline-form-validation:assistant',
+        },
+      },
+      createRuntimeToolEvent({
+        runId: 'run-inline-form-validation',
+        sessionId: input.sessionId,
+        sequence: 2,
+        payload: {
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          phase: 'completed',
+          title: '请求课程表单',
+          summary: '请填写课程编码。',
+          formRequest: {
+            formId: 'course-form',
+            title: '请求课程表单',
+            submitLabel: '提交',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+          },
+        },
+      }),
+      {
+        type: 'run_failed',
+        runId: 'run-inline-form-validation',
+        sessionId: input.sessionId,
+        sequence: 3,
+        payload: {
+          code: 'awaiting_user_input',
+          message: 'Run interrupted until the user submits the requested form.',
+          details: {
+            toolId: 'tool.request-user-form',
+            toolCallId: 'tool.request-user-form:call-1',
+          },
+        },
+      },
+    ]))
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={createPersistedWorkspaceStateLoader()}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '需要课程筛选条件')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    await clickElement(rendered.getByTestId('chat-message-inline-form-submit-1'))
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(rendered.getByTestId('chat-message-inline-form-error-courseCode-1').textContent).toContain('此项为必填。')
+    rendered.unmount()
+  })
+
+  it('submits inline form payload as a new user message and keeps the form readonly afterwards', async () => {
+    const sendMessage = vi.fn()
+      .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+        {
+          type: 'run_started',
+          runId: 'run-inline-form-first',
+          sessionId: input.sessionId,
+          sequence: 1,
+          payload: {
+            assistantMessageId: 'run-inline-form-first:assistant',
+          },
+        },
+        createRuntimeToolEvent({
+          runId: 'run-inline-form-first',
+          sessionId: input.sessionId,
+          sequence: 2,
+          payload: {
+            toolCallId: 'tool.request-user-form:call-1',
+            toolId: 'tool.request-user-form',
+            phase: 'completed',
+            title: '请求课程表单',
+            summary: '请填写课程编码。',
+            formRequest: {
+              formId: 'course-form',
+              title: '请求课程表单',
+              submitLabel: '提交',
+              fields: [{
+                name: 'courseCode',
+                label: '课程编码',
+                type: 'text',
+                required: true,
+              }],
+            },
+          },
+        }),
+        {
+          type: 'run_failed',
+          runId: 'run-inline-form-first',
+          sessionId: input.sessionId,
+          sequence: 3,
+          payload: {
+            code: 'awaiting_user_input',
+            message: 'Run interrupted until the user submits the requested form.',
+            details: {
+              toolId: 'tool.request-user-form',
+              toolCallId: 'tool.request-user-form:call-1',
+            },
+          },
+        },
+      ]))
+      .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+        {
+          type: 'run_started',
+          runId: 'run-inline-form-second',
+          sessionId: input.sessionId,
+          sequence: 1,
+          payload: {
+            assistantMessageId: 'run-inline-form-second:assistant',
+          },
+        },
+        {
+          type: 'text_delta',
+          runId: 'run-inline-form-second',
+          sessionId: input.sessionId,
+          sequence: 2,
+          payload: {
+            assistantMessageId: 'run-inline-form-second:assistant',
+            delta: '已收到课程编码。',
+          },
+        },
+        {
+          type: 'run_completed',
+          runId: 'run-inline-form-second',
+          sessionId: input.sessionId,
+          sequence: 3,
+          payload: {
+            assistantMessageId: 'run-inline-form-second:assistant',
+            assistantText: '已收到课程编码。',
+            resolvedModelId: 'openai/gpt-4.1',
+            resolvedModelRoute: createRuntimeResolvedModelRoute(),
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+        },
+      ]))
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={createPersistedWorkspaceStateLoader()}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '需要课程筛选条件')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    const field = rendered.getByTestId('chat-message-inline-form-field-courseCode-1').querySelector('input') as HTMLInputElement
+    await setFormControlValue(field, 'CS304')
+    await clickElement(rendered.getByTestId('chat-message-inline-form-submit-1'))
+
+    expect(sendMessage).toHaveBeenCalledTimes(2)
+    expect(sendMessage.mock.calls[1]?.[0].message).toMatchObject({
+      content: '已提交表单：请求课程表单\n课程编码: CS304',
+      structuredPayload: {
+        type: 'inline_form_submission',
+        toolId: 'tool.request-user-form',
+        toolCallId: 'tool.request-user-form:call-1',
+        formId: 'course-form',
+        values: {
+          courseCode: 'CS304',
+        },
+      },
+    })
+    expect(rendered.queryByTestId('chat-message-inline-form-readonly-1')).toBeNull()
+    expect(rendered.getByTestId('chat-message-inline-form-value-courseCode-1').textContent).toContain('CS304')
+    expect(rendered.queryByTestId('chat-message-inline-form-submit-1')).toBeNull()
+    rendered.unmount()
+  })
+
+  it('keeps the composer enabled while an inline form is pending and expires the old form after a normal send', async () => {
+    const sendMessage = vi.fn()
+      .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+        {
+          type: 'run_started',
+          runId: 'run-inline-form-pending',
+          sessionId: input.sessionId,
+          sequence: 1,
+          payload: {
+            assistantMessageId: 'run-inline-form-pending:assistant',
+          },
+        },
+        createRuntimeToolEvent({
+          runId: 'run-inline-form-pending',
+          sessionId: input.sessionId,
+          sequence: 2,
+          payload: {
+            toolCallId: 'tool.request-user-form:call-1',
+            toolId: 'tool.request-user-form',
+            phase: 'completed',
+            title: '请求课程表单',
+            summary: '请填写课程编码。',
+            formRequest: {
+              formId: 'course-form',
+              title: '请求课程表单',
+              submitLabel: '提交',
+              fields: [{
+                name: 'courseCode',
+                label: '课程编码',
+                type: 'text',
+                required: true,
+              }],
+            },
+          },
+        }),
+        {
+          type: 'run_failed',
+          runId: 'run-inline-form-pending',
+          sessionId: input.sessionId,
+          sequence: 3,
+          payload: {
+            code: 'awaiting_user_input',
+            message: 'Run interrupted until the user submits the requested form.',
+            details: {
+              toolId: 'tool.request-user-form',
+              toolCallId: 'tool.request-user-form:call-1',
+            },
+          },
+        },
+      ]))
+      .mockImplementationOnce((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+        {
+          type: 'run_started',
+          runId: 'run-inline-form-bypass',
+          sessionId: input.sessionId,
+          sequence: 1,
+          payload: {
+            assistantMessageId: 'run-inline-form-bypass:assistant',
+          },
+        },
+        {
+          type: 'text_delta',
+          runId: 'run-inline-form-bypass',
+          sessionId: input.sessionId,
+          sequence: 2,
+          payload: {
+            assistantMessageId: 'run-inline-form-bypass:assistant',
+            delta: '收到说明，继续普通对话。',
+          },
+        },
+        {
+          type: 'run_completed',
+          runId: 'run-inline-form-bypass',
+          sessionId: input.sessionId,
+          sequence: 3,
+          payload: {
+            assistantMessageId: 'run-inline-form-bypass:assistant',
+            assistantText: '收到说明，继续普通对话。',
+            resolvedModelId: 'openai/gpt-4.1',
+            resolvedModelRoute: createRuntimeResolvedModelRoute(),
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+        },
+      ]))
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={createPersistedWorkspaceStateLoader()}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    const composer = rendered.getByTestId('chat-composer-dock') as HTMLFormElement
+    await setFormControlValue(messageInput, '需要课程筛选条件')
+    await submitForm(composer)
+
+    const sendButton = rendered.getByTestId('chat-composer-send-button') as HTMLButtonElement
+    expect(rendered.getByTestId('chat-message-inline-form-card-1').textContent).toContain('填写后继续')
+    expect(messageInput.disabled).toBe(false)
+    expect(rendered.container.textContent).toContain('需要你补充信息')
+
+    await setFormControlValue(messageInput, '先不用表单，直接说明原因')
+    expect(sendButton.disabled).toBe(false)
+    await submitForm(composer)
+
+    expect(sendMessage).toHaveBeenCalledTimes(2)
+    expect(sendMessage.mock.calls[1]?.[0].message).toMatchObject({
+      content: '先不用表单，直接说明原因',
+    })
+    expect(rendered.getByTestId('chat-message-inline-form-expired-1').textContent).toContain('该表单已过期，不能继续提交。')
+    expect(rendered.queryByTestId('chat-message-inline-form-submit-1')).toBeNull()
+    rendered.unmount()
+  })
+
+  it('keeps a pending inline form across session switches and keeps the composer usable after returning', async () => {
+    const firstSessionShell = createSessionShell({ sessionId: 'session-inline-form-a' })
+    const secondSessionShell = createSessionShell({ sessionId: 'session-inline-form-b' })
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+
+    const firstSessionState = createCopilotThreadRuntimeControllerState(firstSessionShell)
+    const secondSessionState = createCopilotThreadRuntimeControllerState(secondSessionShell)
+    const runtimeControllerBySessionId: Record<string, CopilotThreadRuntimeControllerState> = {
+      [firstSessionShell.sessionId]: {
+        ...firstSessionState,
+        composerDraft: {
+          ...firstSessionState.composerDraft,
+          selectedModelId: 'provider-model|openrouter|openai%2Fgpt-4.1',
+          selectedModelRoute: createRuntimeModelRoute({
+            providerProfileId: 'openrouter',
+            modelId: 'openai/gpt-4.1',
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'openrouter',
+              modelId: 'openai/gpt-4.1',
+            },
+          }),
+        },
+        conversation: [{
+          id: 'session-inline-form-a:user-message',
+          kind: 'user',
+          title: '',
+          content: '需要课程筛选条件',
+          status: 'completed',
+        }],
+        runState: {
+          ...firstSessionState.runState,
+          phase: 'awaiting_input',
+          runId: 'run-inline-form-switch',
+          threadId: firstSessionShell.sessionId,
+          failure: {
+            code: 'awaiting_user_input',
+            message: 'Run interrupted until the user submits the requested form.',
+            details: {
+              toolId: 'tool.request-user-form',
+              toolCallId: 'tool.request-user-form:call-1',
+            },
+          },
+          segments: [{
+            id: 'inline-form:run-inline-form-switch:tool.request-user-form:call-1',
+            kind: 'inline-form',
+            runId: 'run-inline-form-switch',
+            startedSequence: 1,
+            lastSequence: 1,
+            status: 'completed',
+            toolCallId: 'tool.request-user-form:call-1',
+            toolId: 'tool.request-user-form',
+            formId: 'course-form',
+            title: '请求课程表单',
+            summary: '请填写课程编码。',
+            description: null,
+            submitLabel: '提交',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+            formState: 'pending',
+            formValues: {
+              courseCode: '',
+            },
+            submittedPayload: null,
+          }],
+        },
+      },
+      [secondSessionShell.sessionId]: {
+        ...secondSessionState,
+        composerDraft: {
+          ...secondSessionState.composerDraft,
+          selectedModelId: 'provider-model|openrouter|openai%2Fgpt-4.1',
+          selectedModelRoute: createRuntimeModelRoute({
+            providerProfileId: 'openrouter',
+            modelId: 'openai/gpt-4.1',
+            routeRef: {
+              routeKind: 'provider-model',
+              profileId: 'openrouter',
+              modelId: 'openai/gpt-4.1',
+            },
+          }),
+        },
+      },
+    }
+
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            threadId: firstSessionShell.sessionId,
+            lastRunId: 'run-inline-form-switch',
+            lastRunStatus: 'failed',
+            lastUserMessagePreview: '需要课程筛选条件',
+            lastAssistantMessagePreview: '请填写课程编码。',
+          },
+          selectedRunId: 'run-inline-form-switch',
+          runSummaries: [{
+            runId: 'run-inline-form-switch',
+            threadId: firstSessionShell.sessionId,
+            status: 'failed',
+            createdAt: '2026-04-14T08:00:00Z',
+            updatedAt: '2026-04-14T08:00:03Z',
+            startedAt: '2026-04-14T08:00:01Z',
+            terminalAt: '2026-04-14T08:00:03Z',
+            resolvedModelId: 'openai/gpt-4.1',
+            requestedMessageText: '需要课程筛选条件',
+            assistantText: '请填写课程编码。',
+          }],
+        })}
+        loadWorkspaceState={loadWorkspaceState}
+        runtimeControllerBySessionId={runtimeControllerBySessionId}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).toContain('需要课程筛选条件')
+    expect(rendered.container.textContent).toContain('请求课程表单')
+    expect(rendered.container.textContent).toContain('填写后继续')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={secondSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            threadId: secondSessionShell.sessionId,
+            lastRunId: 'run-second-session',
+          },
+          selectedRunId: 'run-second-session',
+        })}
+        loadWorkspaceState={loadWorkspaceState}
+        runtimeControllerBySessionId={runtimeControllerBySessionId}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(rendered.container.textContent).not.toContain('需要课程筛选条件')
+    expect(rendered.container.textContent).not.toContain('请求课程表单')
+
+    rendered.rerender(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={firstSessionShell}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+          summary: {
+            ...createLiveReadyButEmptyPersistedHistoryState().summary,
+            threadId: firstSessionShell.sessionId,
+            lastRunId: 'run-inline-form-switch',
+            lastRunStatus: 'failed',
+            lastUserMessagePreview: '需要课程筛选条件',
+            lastAssistantMessagePreview: '请填写课程编码。',
+          },
+          selectedRunId: 'run-inline-form-switch',
+          runSummaries: [{
+            runId: 'run-inline-form-switch',
+            threadId: firstSessionShell.sessionId,
+            status: 'failed',
+            createdAt: '2026-04-14T08:00:00Z',
+            updatedAt: '2026-04-14T08:00:03Z',
+            startedAt: '2026-04-14T08:00:01Z',
+            terminalAt: '2026-04-14T08:00:03Z',
+            resolvedModelId: 'openai/gpt-4.1',
+            requestedMessageText: '需要课程筛选条件',
+            assistantText: '请填写课程编码。',
+          }],
+        })}
+        loadWorkspaceState={loadWorkspaceState}
+        runtimeControllerBySessionId={runtimeControllerBySessionId}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const fieldAfterReturn = rendered.container.querySelector('[data-testid^="chat-message-inline-form-field-courseCode-"] input') as HTMLInputElement
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    expect(fieldAfterReturn).not.toBeNull()
+    expect(fieldAfterReturn.disabled).toBe(false)
+    expect(messageInput.disabled).toBe(false)
+    await setFormControlValue(fieldAfterReturn, 'CS304')
+    await setFormControlValue(messageInput, '切回后直接继续普通对话')
+    expect(messageInput.disabled).toBe(false)
+    rendered.unmount()
+  })
+
+
+  it('does not expose inline form protocol details in the form card UI', async () => {
+    const sendMessage = vi.fn((input: CopilotMessageDispatchInput) => createRuntimeMessageEventStream([
+      {
+        type: 'run_started',
+        runId: 'run-inline-form-clean-ui',
+        sessionId: input.sessionId,
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-inline-form-clean-ui:assistant',
+        },
+      },
+      createRuntimeToolEvent({
+        runId: 'run-inline-form-clean-ui',
+        sessionId: input.sessionId,
+        sequence: 2,
+        payload: {
+          toolCallId: 'tool.request-user-form:call-1',
+          toolId: 'tool.request-user-form',
+          phase: 'completed',
+          title: '请求课程表单',
+          summary: '请填写课程编码。',
+          formRequest: {
+            formId: 'course-form',
+            title: '请求课程表单',
+            fields: [{
+              name: 'courseCode',
+              label: '课程编码',
+              type: 'text',
+              required: true,
+            }],
+          },
+        },
+      }),
+      {
+        type: 'run_failed',
+        runId: 'run-inline-form-clean-ui',
+        sessionId: input.sessionId,
+        sequence: 3,
+        payload: {
+          code: 'awaiting_user_input',
+          message: 'Run interrupted until the user submits the requested form.',
+          details: {},
+        },
+      },
+    ]))
+    const rendered = renderWithRoot(
+      <CopilotChatPanel
+        state={createReadyState()}
+        retrying={false}
+        retry={() => {}}
+        selectedAgent={createSelectedAgent()}
+        sessionShell={createSessionShell()}
+        directoryState={createDirectoryState()}
+        sessionStatus="idle"
+        sessionError={null}
+        sendMessage={sendMessage}
+        loadWorkspaceState={createPersistedWorkspaceStateLoader()}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const messageInput = rendered.container.querySelector('textarea[name="messageText"]') as HTMLTextAreaElement
+    await setFormControlValue(messageInput, '需要课程筛选条件')
+    await submitForm(rendered.getByTestId('chat-composer-dock') as HTMLFormElement)
+
+    const cardText = rendered.getByTestId('chat-message-inline-form-card-1').textContent ?? ''
+    expect(cardText).not.toContain('fieldCount')
+    expect(cardText).not.toContain('formId')
+    expect(cardText).not.toContain('type')
     rendered.unmount()
   })
 
@@ -2013,7 +3276,7 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史模型')
     expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('legacy-model')
     expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史工具')
-    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('tool.file-convert')
+    expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('tool.remote-search')
     expect(rendered.getByTestId('chat-history-drift-notice').textContent).toContain('历史思考')
     expect(rendered.getByTestId('chat-history-drift-warning-list').textContent).toContain('历史线程绑定的模型服务商当前已不可用，继续对话前需重新绑定模型。')
     expect(sendButton.disabled).toBe(true)
@@ -2317,8 +3580,8 @@ function createToolFirstPendingSendMessageSpy(control: DeferredSignal) {
       sessionId: input.sessionId,
       sequence: 2,
       payload: {
-        toolCallId: 'tool.weather-current:call-placeholder',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-placeholder',
+        toolId: 'tool.remote-search',
         phase: 'started',
         title: '调用天气工具',
         summary: '正在获取 Shenzhen 的天气。',
@@ -2384,7 +3647,7 @@ function createFailedBeforeAssistantSendMessageSpy(control: DeferredSignal) {
         code: 'tool_execution_failed',
         message: 'Tool failed: boom',
         details: {
-          toolId: 'tool.weather-current',
+          toolId: 'tool.remote-search',
         },
       },
     }
@@ -2538,8 +3801,8 @@ function createToolLifecycleSendMessageSpy() {
         sessionId: input.sessionId,
         sequence: 2,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'started',
           title: '调用天气工具',
           summary: '正在获取 Shenzhen 的天气。',
@@ -2551,8 +3814,8 @@ function createToolLifecycleSendMessageSpy() {
         sessionId: input.sessionId,
         sequence: 3,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'completed',
           title: '天气工具已返回结果',
           summary: '{\n  "condition": "晴",\n  "humidity": 60,\n  "location": "Shenzhen",\n  "summary": "体感舒适，适合外出。",\n  "temperatureC": 24\n}',
@@ -2591,7 +3854,7 @@ function createToolLifecycleSendMessageSpy() {
             modelId: routeRef.modelId,
             catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
           }),
-          resolvedToolIds: ['tool.weather-current'],
+          resolvedToolIds: ['tool.remote-search'],
           requestOptions: input.requestOptions ?? {},
         },
       },
@@ -2622,8 +3885,8 @@ function createToolFailureSendMessageSpy() {
         sessionId: input.sessionId,
         sequence: 2,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'started',
           title: '调用天气工具',
           summary: '正在获取 Shenzhen 的天气。',
@@ -2635,8 +3898,8 @@ function createToolFailureSendMessageSpy() {
         sessionId: input.sessionId,
         sequence: 3,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'failed',
           title: '工具调用失败',
           summary: '工具执行失败。',
@@ -2675,7 +3938,7 @@ function createToolFailureSendMessageSpy() {
             modelId: routeRef.modelId,
             catalogRevision: input.modelRoute.catalogRevision ?? '2026-04-06-provider-catalog-v1',
           }),
-          resolvedToolIds: ['tool.weather-current'],
+          resolvedToolIds: ['tool.remote-search'],
           requestOptions: input.requestOptions ?? {},
         },
       },
@@ -2699,8 +3962,8 @@ function createToolFailureThenFatalSendMessageSpy() {
       sessionId: input.sessionId,
       sequence: 2,
       payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         phase: 'started',
         title: '调用天气工具',
         summary: '正在获取 Shenzhen 的天气。',
@@ -2712,8 +3975,8 @@ function createToolFailureThenFatalSendMessageSpy() {
       sessionId: input.sessionId,
       sequence: 3,
       payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         phase: 'failed',
         title: '工具调用失败',
         summary: '工具执行失败。',
@@ -2735,6 +3998,60 @@ function createToolFailureThenFatalSendMessageSpy() {
       },
     },
   ]))
+}
+
+function createToolWaitingApprovalSendMessageSpy(
+  control: DeferredSignal,
+  options?: {
+    approval?: {
+      mode: 'allow' | 'ask' | 'delay' | 'deny'
+      timeoutAt: string | null
+      timeoutSeconds: number | null
+      timeoutAction: 'approve' | 'deny' | null
+    }
+  },
+) {
+  return vi.fn(async function* (
+    input: CopilotMessageDispatchInput,
+  ): AsyncGenerator<RuntimeRunEvent> {
+    yield {
+      type: 'run_started',
+      runId: 'run-tool-approval',
+      sessionId: input.sessionId,
+      sequence: 1,
+      payload: {
+        assistantMessageId: 'run-tool-approval:assistant',
+      },
+    }
+
+    await control.wait()
+
+    yield createRuntimeToolEvent({
+      runId: 'run-tool-approval',
+      sessionId: input.sessionId,
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.remote-search:call-approve',
+        toolId: 'tool.remote-search',
+        phase: 'waiting_approval',
+        title: '工具等待审批',
+        summary: '工具调用正在等待审批决议。',
+        inputSummary: '{"location":"Shenzhen"}',
+        security: {
+          riskLevel: 'high',
+          approvalMethod: 'accept_reject',
+        },
+        approval: options?.approval ?? {
+          mode: 'delay',
+          timeoutAt: new Date(Date.now() + 30_000).toISOString(),
+          timeoutSeconds: 30,
+          timeoutAction: 'deny',
+        },
+      },
+    })
+
+    await waitForAbort(input.signal)
+  })
 }
 
 function createPersistedWorkspaceStateLoader() {
@@ -2824,7 +4141,7 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
   const driftPayload = {
     status: 'historical_provider_removed',
     historicalModelId: 'legacy-model',
-    historicalToolIds: ['tool.file-convert'],
+    historicalToolIds: ['tool.remote-search'],
     historicalThinkingSummary: 'unified-4-level-v1 / 中 / medium / preset',
     warnings: [{
       code: 'historical_provider_removed',
@@ -2905,7 +4222,7 @@ function createHistoryStateWithProviderDrift(): AssistantSessionHistoryState {
             modelId: 'legacy-model',
           },
         },
-        resolvedToolIds: ['tool.file-convert'],
+        resolvedToolIds: ['tool.remote-search'],
         appliedThinkingSelection: {
           series: 'unified-4-level-v1',
           mode: 'preset',
@@ -2946,8 +4263,8 @@ function createAbortableSendMessageSpy() {
       sessionId: input.sessionId,
       sequence: 2,
       payload: {
-        toolCallId: 'tool.weather-current:call-1',
-        toolId: 'tool.weather-current',
+        toolCallId: 'tool.remote-search:call-1',
+        toolId: 'tool.remote-search',
         phase: 'started',
         title: '调用天气工具',
         summary: '正在获取 Shenzhen 的天气。',

@@ -18,7 +18,9 @@ def _utc_now_naive() -> datetime:
 
 class TimestampSoftDeleteMixin:
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now_naive, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utc_now_naive, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=_utc_now_naive,

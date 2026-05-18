@@ -33,11 +33,11 @@ describe('getRuntimeCapabilities', () => {
       signal: undefined,
     })
     expect(response.capabilitiesVersion).toBe('cap-v12')
-    expect(response.tools.map((tool) => tool.toolId)).toEqual([
-      'tool.file-convert',
+    expect(response.tools.map((tool: { toolId: string }) => tool.toolId)).toEqual([
+      'tool.fs.read',
       'tool.remote-search',
     ])
-    expect(response.recommendedTools).toEqual(['tool.file-convert'])
+    expect(response.recommendedTools).toEqual(['tool.fs.read'])
   })
 
   it('throws a structured RuntimeRequestError when thread/get fails', async () => {

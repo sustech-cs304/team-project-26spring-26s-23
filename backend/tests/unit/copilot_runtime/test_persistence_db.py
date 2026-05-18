@@ -79,6 +79,7 @@ def _build_runtime_config(tmp_path: Path) -> DesktopRuntimeConfig:
             logs_dir=runtime_root_dir / "logs",
             database_dir=runtime_root_dir / "database",
             state_dir=runtime_root_dir / "state",
+            debug_log_database_file=runtime_root_dir / "database" / "copilot-debug-log.db",
             copilot_settings_file=runtime_root_dir / "config" / "copilot-settings.json",
             host_log_file=runtime_root_dir / "logs" / "electron-host.log",
             backend_stdout_log_file=runtime_root_dir / "logs" / "backend.stdout.log",

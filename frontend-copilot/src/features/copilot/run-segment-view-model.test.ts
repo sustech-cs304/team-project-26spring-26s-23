@@ -237,6 +237,48 @@ describe('run segment view model', () => {
     })
   })
 
+  it('projects skill tool segments as normal tool items', () => {
+    const items = buildCopilotRunSegmentViewModel({
+      segments: [{
+        id: 'tool:run-skill:skill.activate:call-1',
+        kind: 'tool',
+        runId: 'run-skill',
+        startedSequence: 2,
+        lastSequence: 2,
+        status: 'completed',
+        toolCallId: 'skill.activate:call-1',
+        toolId: 'skill.activate',
+        toolPhase: 'completed',
+        title: '技能激活已返回结果',
+        summary: 'Skill activated.',
+        inputSummary: '{"skill_id":"writing-clear-docs"}',
+        resultSummary: '{"displayName":"清晰文档写作","entryContentLength":120}',
+        errorSummary: null,
+        approval: null,
+      }],
+      activeModelRoute: createRuntimeModelRoute(),
+      resolvedModelId: null,
+      resolvedModelRoute: null,
+      resolvedToolIds: [],
+      requestOptions: {},
+      requestedThinkingSelection: null,
+      appliedThinkingSelection: null,
+      requestedThinkingLevel: null,
+      appliedThinkingLevel: null,
+      thinkingCapabilitySnapshot: null,
+      reasoningSuppressed: false,
+      reasoningTraceState: 'visible',
+      reasoningSuppressionBasis: null,
+    })
+
+    expect(items[0]).toMatchObject({
+      kind: 'tool',
+      toolId: 'skill.activate',
+      inputSummary: '{"skill_id":"writing-clear-docs"}',
+      resultSummary: '{"displayName":"清晰文档写作","entryContentLength":120}',
+    })
+  })
+
   it('omits reasoning cards when run state marks the trace as suppressed but keeps visible reasoning unchanged otherwise', () => {
     const suppressedItems = buildCopilotRunSegmentViewModel({
       segments: [{

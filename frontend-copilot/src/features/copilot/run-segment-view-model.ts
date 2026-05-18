@@ -1,4 +1,5 @@
 import {
+  type RuntimeInlineFormField,
   cloneRuntimeReasoningSuppressionBasis as cloneRuntimeReasoningSuppressionBasisValue,
   cloneRuntimeThinkingCapability as cloneRuntimeThinkingCapabilityValue,
   cloneRuntimeThinkingSelection as cloneRuntimeThinkingSelectionValue,
@@ -10,6 +11,7 @@ import {
   type CopilotErrorDetailSource,
 } from './error-detail-overlay-view-model'
 import type {
+  CopilotInlineFormSegmentState,
   CopilotRunDiagnosticSummary,
   CopilotRunFailureSummary,
   CopilotRunSegment,
@@ -22,6 +24,7 @@ export interface CopilotUserMessageItem {
   kind: 'user'
   title: string
   content: string
+  structuredPayload?: Record<string, unknown> | null
   status: 'completed'
 }
 
@@ -71,6 +74,23 @@ export interface CopilotToolMessageItem extends CopilotRunSegmentViewItemBase {
   inputSummary: string | null
   resultSummary: string | null
   errorSummary: string | null
+  approval?: Extract<CopilotRunSegment, { kind: 'tool' }>['approval']
+  errorDetail?: CopilotErrorDetailSource | null
+}
+
+export interface CopilotInlineFormMessageItem extends CopilotRunSegmentViewItemBase {
+  kind: 'inline-form'
+  title: string
+  content: string
+  toolCallId: string
+  toolId: string
+  formId: string
+  description: string | null
+  submitLabel: string
+  fields: RuntimeInlineFormField[]
+  formState: CopilotInlineFormSegmentState
+  formValues: Record<string, string | number | boolean>
+  submittedPayload: Record<string, unknown> | null
 }
 
 export interface CopilotDiagnosticMessageItem extends CopilotRunSegmentViewItemBase {
@@ -108,17 +128,25 @@ export type CopilotRunSegmentViewItem =
   | CopilotAssistantMessageItem
   | CopilotReasoningMessageItem
   | CopilotToolMessageItem
+  | CopilotInlineFormMessageItem
   | CopilotDiagnosticMessageItem
   | CopilotTerminalMessageItem
 
 export type CopilotMessageListItem = CopilotUserMessageItem | CopilotRunSegmentViewItem
 
-export function createUserMessageListItem(content: string): CopilotUserMessageItem {
+export function createUserMessageListItem(
+  input: string | {
+    content: string
+    structuredPayload?: Record<string, unknown> | null
+  },
+): CopilotUserMessageItem {
+  const content = typeof input === 'string' ? input : input.content
   return {
     id: `user:${content}:${Math.random().toString(36).slice(2)}`,
     kind: 'user',
     title: '',
     content,
+    ...(typeof input === 'string' ? {} : { structuredPayload: input.structuredPayload ?? null }),
     status: 'completed',
   }
 }
@@ -159,6 +187,13 @@ export function resolveCopilotAssistantPlaceholderState(
   }
 
   if (runState.segments.some((segment) => segment.kind === 'tool')) {
+    return {
+      shouldRender: false,
+      dismissReason: 'tool',
+    }
+  }
+
+  if (runState.segments.some((segment) => segment.kind === 'inline-form')) {
     return {
       shouldRender: false,
       dismissReason: 'tool',
@@ -210,6 +245,9 @@ type CopilotRunSegmentProjectionState = Pick<
   CopilotRunState,
   | 'segments'
 > & CopilotRunResolvedRouteProjectionState & CopilotRunThinkingProjectionState
+  & {
+    failure?: CopilotRunState['failure']
+  }
 
 export function buildCopilotRunSegmentViewModel(
   runState: CopilotRunSegmentProjectionState,
@@ -243,13 +281,41 @@ function projectSegmentToViewItems(
     case 'reasoning':
       return shouldProjectReasoningSegment(runState) ? [projectReasoningSegment(segment)] : []
     case 'tool':
-      return [projectToolSegment(segment)]
+      return [projectToolSegment(segment, runState)]
+    case 'inline-form':
+      return [projectInlineFormSegment(segment)]
     case 'diagnostic':
       return [projectDiagnosticSegment(segment)]
     case 'terminal': {
       const terminalItem = projectTerminalSegment(segment, runState)
       return terminalItem === null ? [] : [terminalItem]
     }
+  }
+}
+
+function projectInlineFormSegment(
+  segment: Extract<CopilotRunSegment, { kind: 'inline-form' }>,
+): CopilotInlineFormMessageItem {
+  return {
+    id: segment.id,
+    kind: 'inline-form',
+    runId: segment.runId,
+    sequence: segment.lastSequence,
+    status: 'completed',
+    title: segment.title,
+    content: segment.summary,
+    toolCallId: segment.toolCallId,
+    toolId: segment.toolId,
+    formId: segment.formId,
+    description: segment.description,
+    submitLabel: segment.submitLabel,
+    fields: segment.fields.map((field) => ({
+      ...field,
+      ...(field.options === undefined ? {} : { options: field.options.map((option) => ({ ...option })) }),
+    })),
+    formState: segment.formState,
+    formValues: { ...segment.formValues },
+    submittedPayload: segment.submittedPayload === null ? null : { ...segment.submittedPayload },
   }
 }
 
@@ -305,7 +371,11 @@ function projectReasoningSegment(
 
 function projectToolSegment(
   segment: Extract<CopilotRunSegment, { kind: 'tool' }>,
+  runState: CopilotRunSegmentProjectionState,
 ): CopilotToolMessageItem {
+  const toolFailure: CopilotRunState['failure'] = segment.status === 'failed'
+    ? (runState.failure ?? null)
+    : null
   return {
     id: segment.id,
     kind: 'tool',
@@ -320,7 +390,64 @@ function projectToolSegment(
     inputSummary: segment.inputSummary,
     resultSummary: segment.resultSummary,
     errorSummary: segment.errorSummary,
+    approval: segment.approval == null
+      ? null
+      : {
+          mode: segment.approval.mode ?? null,
+          riskLevel: segment.approval.riskLevel ?? null,
+          approvalMethod: segment.approval.approvalMethod ?? null,
+          timeoutAt: segment.approval.timeoutAt ?? null,
+          timeoutSeconds: segment.approval.timeoutSeconds ?? null,
+          timeoutAction: segment.approval.timeoutAction ?? null,
+        },
+    errorDetail: toolFailure === null
+      ? null
+      : createCopilotErrorDetailSource({
+          source: 'streaming',
+          title: segment.title,
+          summaryMessage: formatFailureMessage(toolFailure),
+          rawMessage: toolFailure.message,
+          code: toolFailure.code,
+          stage: readFailureStage(toolFailure.details) ?? 'streaming',
+          requestedMethod: 'run/stream',
+          details: {
+            toolId: segment.toolId,
+            toolCallId: segment.toolCallId,
+            ...toolFailure.details,
+          },
+          resolvedModelId: runState.resolvedModelId,
+          resolvedModelRoute: runState.resolvedModelRoute,
+          resolvedToolIds: dedupeStrings([
+            ...runState.resolvedToolIds,
+            segment.toolId,
+          ]),
+          requestOptions: runState.requestOptions,
+        }),
   }
+}
+
+function readFailureStage(details: Record<string, unknown>): string | null {
+  const phase = details.phase
+  if (typeof phase === 'string' && phase.trim() !== '') {
+    return phase.trim()
+  }
+
+  const stage = details.stage
+  return typeof stage === 'string' && stage.trim() !== '' ? stage.trim() : null
+}
+
+function dedupeStrings(values: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const deduped: string[] = []
+  for (const value of values) {
+    const normalized = value.trim()
+    if (normalized === '' || seen.has(normalized)) {
+      continue
+    }
+    seen.add(normalized)
+    deduped.push(normalized)
+  }
+  return deduped
 }
 
 function projectDiagnosticSegment(

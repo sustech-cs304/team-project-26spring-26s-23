@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal, TypedDict, cast
 
 import pytest
+from pydantic_ai.models.test import TestModel
 
-from app.copilot_runtime.agent import AgentExecutionError, RuntimeToolLifecycleEvent
-from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
-from app.copilot_runtime.execution_support import ThreadNotFoundError
+from app.copilot_runtime.agent import AwaitingUserInputError, AgentExecutionError, PydanticAIAgentExecutor, RuntimeToolLifecycleEvent
+from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventType
+from app.copilot_runtime.execution_support import ThreadNotFoundError, build_message_history, build_runtime_user_prompt
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
 from app.copilot_runtime.run_events import encode_runtime_run_event
 from app.copilot_runtime.model_routes import (
@@ -21,11 +24,130 @@ from app.copilot_runtime.contracts import (
     RuntimeRunStartRequest,
     RuntimeThinkingSelection,
     RuntimeThinkingValue,
+    RuntimeToolPermissionPolicy,
     build_runtime_scaffold,
 )
 from app.copilot_runtime.agent_registry import build_default_agent_registry
-from app.copilot_runtime.session_store import InMemorySessionStore
-from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
+from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextMessage
+from app.copilot_runtime.tool_approval_coordinator import RuntimeToolApprovalCoordinator
+from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
+from app.copilot_runtime.tool_registry import REQUEST_USER_FORM_TOOL_ID, WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
+
+
+class _ExecutorCallRecord(TypedDict):
+    run_id: str
+    agent_name: str
+    user_prompt: str
+    message_history: list[object]
+    model_id: str
+    enabled_tools: list[str]
+    debug_enabled: bool
+    request_options: dict[str, object]
+    model_settings: dict[str, object]
+
+
+class _ThinkingOptionValue(TypedDict):
+    valueType: str
+    code: str
+    labelZh: str
+    mode: str | None
+    budgetTokens: int | None
+
+
+class _ThinkingCapabilityLog(TypedDict):
+    status: str
+    series: str | None
+    seriesLabelZh: str | None
+    providerBuilderKey: str | None
+    allowedValues: list[_ThinkingOptionValue]
+    defaultValue: _ThinkingOptionValue
+
+
+class _ThinkingSeriesDecisionLog(TypedDict):
+    reasonCode: str
+    errorCode: str | None
+
+
+class _ThinkingYieldedEventLog(TypedDict):
+    type: str
+    sequence: int
+    requestedThinkingSelection: dict[str, object] | None
+    appliedThinkingSelection: dict[str, object] | None
+    thinkingCapability: dict[str, object]
+    thinkingSeriesDecision: _ThinkingSeriesDecisionLog
+
+
+class _ThinkingFailFastDiagnosticsLog(TypedDict):
+    requestedSelection: dict[str, object] | None
+    providerBuilderKey: str | None
+    reasonCode: str
+    reason: str
+
+
+class _ThinkingFailFastLog(TypedDict):
+    code: str
+    reason: str
+    diagnostics: _ThinkingFailFastDiagnosticsLog
+
+
+class _ThinkingRequestValidatedLog(TypedDict):
+    requestedThinkingSelection: dict[str, object] | None
+    applied: bool
+    reason: str
+
+
+class _ThinkingProviderMappingResolvedLog(TypedDict):
+    reason: str
+    providerBuilderKey: str | None
+
+
+class _ThinkingCapabilityResolvedLog(TypedDict):
+    capability: _ThinkingCapabilityLog
+
+
+def _build_executor_call_record(
+    *,
+    run_id: str,
+    agent_name: str,
+    user_prompt: str,
+    message_history: Sequence[object],
+    model_id: str,
+    enabled_tools: Sequence[str],
+    debug_enabled: bool,
+    request_options: Mapping[str, object] | None,
+    model_settings: Mapping[str, object] | None,
+) -> _ExecutorCallRecord:
+    return {
+        "run_id": run_id,
+        "agent_name": agent_name,
+        "user_prompt": user_prompt,
+        "message_history": list(message_history),
+        "model_id": model_id,
+        "enabled_tools": list(enabled_tools),
+        "debug_enabled": debug_enabled,
+        "request_options": dict(request_options or {}),
+        "model_settings": dict(model_settings or {}),
+    }
+
+
+def _build_test_executor_factory(executor: object) -> Any:
+    def _factory() -> object:
+        return executor
+
+    return _factory
+
+
+def _typed_log_payload(payload: object) -> dict[str, object]:
+    assert isinstance(payload, dict)
+    return cast(dict[str, object], payload)
+
+
+def _typed_runtime_event_type(value: str) -> RuntimeExecutionEventType:
+    return value  # type: ignore[return-value]
+
+
+def _typed_thinking_level_intent(value: str) -> Literal["off", "auto", "low", "medium", "high", "xhigh"]:
+    return value  # type: ignore[return-value]
 
 
 class _ImmediateEventStream:
@@ -66,9 +188,21 @@ class _StreamingExecutor:
         self._deltas = list(deltas)
         self._output = output
         self._tool_events = list(tool_events or [])
-        self.calls: list[dict[str, object]] = []
+        self.calls: list[_ExecutorCallRecord] = []
         self.model_configured = True
         self.model_environment_keys: tuple[str, ...] = ()
+
+    async def run(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: Sequence[object],
+        model: Any | None = None,
+        enabled_tools: Sequence[str] = (),
+        request_options: Mapping[str, Any] | None = None,
+    ) -> str:
+        raise AssertionError("streaming test executor should not use run()")
 
     def open_event_stream(
         self,
@@ -82,19 +216,21 @@ class _StreamingExecutor:
         debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
         model_settings: dict[str, object] | None = None,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> _ImmediateEventStream:
+        del tool_permission_resolver
         self.calls.append(
-            {
-                "run_id": run_id,
-                "agent_name": agent_name,
-                "user_prompt": user_prompt,
-                "message_history": list(message_history),
-                "model_id": model_route.model_id,
-                "enabled_tools": list(enabled_tools),
-                "debug_enabled": debug_enabled,
-                "request_options": dict(request_options or {}),
-                "model_settings": dict(model_settings or {}),
-            }
+            _build_executor_call_record(
+                run_id=run_id,
+                agent_name=agent_name,
+                user_prompt=user_prompt,
+                message_history=message_history,
+                model_id=model_route.model_id,
+                enabled_tools=enabled_tools,
+                debug_enabled=debug_enabled,
+                request_options=request_options,
+                model_settings=model_settings,
+            )
         )
         return _ImmediateEventStream(
             events=self._build_events(run_id=run_id),
@@ -129,9 +265,21 @@ class _EventStreamingExecutor:
     ) -> None:
         self._events = list(events)
         self._output = output
-        self.calls: list[dict[str, object]] = []
+        self.calls: list[_ExecutorCallRecord] = []
         self.model_configured = True
         self.model_environment_keys: tuple[str, ...] = ()
+
+    async def run(
+        self,
+        *,
+        agent_name: str,
+        user_prompt: str,
+        message_history: Sequence[object],
+        model: Any | None = None,
+        enabled_tools: Sequence[str] = (),
+        request_options: Mapping[str, Any] | None = None,
+    ) -> str:
+        raise AssertionError("streaming test executor should not use run()")
 
     def open_event_stream(
         self,
@@ -145,19 +293,21 @@ class _EventStreamingExecutor:
         debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
         model_settings: dict[str, object] | None = None,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> _ImmediateEventStream:
+        del tool_permission_resolver
         self.calls.append(
-            {
-                "run_id": run_id,
-                "agent_name": agent_name,
-                "user_prompt": user_prompt,
-                "message_history": list(message_history),
-                "model_id": model_route.model_id,
-                "enabled_tools": list(enabled_tools),
-                "debug_enabled": debug_enabled,
-                "request_options": dict(request_options or {}),
-                "model_settings": dict(model_settings or {}),
-            }
+            _build_executor_call_record(
+                run_id=run_id,
+                agent_name=agent_name,
+                user_prompt=user_prompt,
+                message_history=message_history,
+                model_id=model_route.model_id,
+                enabled_tools=enabled_tools,
+                debug_enabled=debug_enabled,
+                request_options=request_options,
+                model_settings=model_settings,
+            )
         )
         return _ImmediateEventStream(events=self._events, output=self._output)
 
@@ -237,19 +387,21 @@ class _CancellingExecutor(_StreamingExecutor):
         debug_enabled: bool = False,
         request_options: dict[str, object] | None = None,
         model_settings: dict[str, object] | None = None,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> _ImmediateEventStream:
+        del tool_permission_resolver
         self.calls.append(
-            {
-                "run_id": run_id,
-                "agent_name": agent_name,
-                "user_prompt": user_prompt,
-                "message_history": list(message_history),
-                "model_id": model_route.model_id,
-                "enabled_tools": list(enabled_tools),
-                "debug_enabled": debug_enabled,
-                "request_options": dict(request_options or {}),
-                "model_settings": dict(model_settings or {}),
-            }
+            _build_executor_call_record(
+                run_id=run_id,
+                agent_name=agent_name,
+                user_prompt=user_prompt,
+                message_history=message_history,
+                model_id=model_route.model_id,
+                enabled_tools=enabled_tools,
+                debug_enabled=debug_enabled,
+                request_options=request_options,
+                model_settings=model_settings,
+            )
         )
         return _CancellingStream(events=self._build_events(run_id=run_id), output="unused")
 
@@ -293,13 +445,13 @@ class _ToolFailingExecutor(_StreamingExecutor):
 def _build_tool_execution_event(
     tool_event: RuntimeToolLifecycleEvent,
 ) -> RuntimeExecutionEvent:
-    event_type = {
+    event_type = _typed_runtime_event_type({
         "started": "tool_started",
         "waiting_approval": "tool_waiting_approval",
         "completed": "tool_completed",
         "failed": "tool_failed",
         "cancelled": "tool_cancelled",
-    }[tool_event.phase]
+    }[tool_event.phase])
     return RuntimeExecutionEvent(type=event_type, payload=tool_event.to_payload())
 
 
@@ -308,7 +460,7 @@ def test_stream_events_success_projects_completed_assistant_message_without_arch
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _StreamingExecutor(deltas=["Hello", " world"], output="Hello world")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -371,7 +523,7 @@ def test_stream_events_emits_tool_started_completed_before_terminal_success() ->
         output="Weather answer",
         tool_events=tool_events,
     )
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -404,6 +556,242 @@ def test_stream_events_emits_tool_started_completed_before_terminal_success() ->
     assert events[3].payload["phase"] == "completed"
     assert events[3].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
     assert events[-1].payload["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
+
+
+
+def test_stream_events_emits_waiting_approval_tool_event_without_unsupported_error() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_events = [
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="started",
+            title="调用天气工具",
+            summary="正在获取 Shenzhen 的天气。",
+            input_summary='{"location": "Shenzhen"}',
+        ),
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="waiting_approval",
+            title="工具等待审批",
+            summary="工具调用正在等待审批决议。",
+            input_summary='{"location": "Shenzhen"}',
+            approval={
+                "mode": "ask",
+                "timeoutSeconds": None,
+                "timeoutAction": None,
+            },
+        ),
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="completed",
+            title="天气工具已返回结果",
+            summary="Shenzhen：晴 / 24°C / 湿度 60%",
+            input_summary='{"location": "Shenzhen"}',
+            result_summary="Shenzhen：晴 / 24°C / 湿度 60%",
+        ),
+    ]
+    executor = _StreamingExecutor(
+        deltas=["Weather answer"],
+        output="Weather answer",
+        tool_events=tool_events,
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(thread_id="thread-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "tool_event",
+        "tool_event",
+        "text_delta",
+        "run_completed",
+    ]
+    tool_event_payloads = [event.payload for event in events if event.type == "tool_event"]
+    assert [payload["phase"] for payload in tool_event_payloads] == [
+        "started",
+        "waiting_approval",
+        "completed",
+    ]
+    assert tool_event_payloads[1]["approval"] == {
+        "mode": "ask",
+        "timeoutSeconds": None,
+        "timeoutAction": None,
+    }
+    assert events[-1].payload["assistantText"] == "Weather answer"
+
+
+def test_stream_events_delay_timeout_auto_approve_continues_tool_execution() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_registry = build_default_tool_registry()
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    executor = PydanticAIAgentExecutor(
+        model=TestModel(call_tools=["weather_current"], custom_output_text="Weather answer", seed=0),
+        tool_registry=tool_registry,
+        approval_coordinator=approval_coordinator,
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=tool_registry,
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                thread_id="thread-1",
+                enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                tool_permission_policy=RuntimeToolPermissionPolicy(
+                    schemaVersion=1,
+                    defaultMode="allow",
+                    toolModes={WEATHER_CURRENT_TOOL_ID: "delay"},
+                    toolTimeoutSeconds={WEATHER_CURRENT_TOOL_ID: 1},
+                    toolTimeoutActions={WEATHER_CURRENT_TOOL_ID: "approve"},
+                ),
+            ),
+        )
+    )
+
+    tool_event_payloads = [event.payload for event in events if event.type == "tool_event"]
+    assert [payload["phase"] for payload in tool_event_payloads] == [
+        "started",
+        "waiting_approval",
+        "completed",
+    ]
+    assert tool_event_payloads[1]["approval"] == {
+        "mode": "delay",
+        "timeoutAt": tool_event_payloads[1]["approval"]["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "approve",
+    }
+    assert isinstance(tool_event_payloads[1]["approval"]["timeoutAt"], str)
+    assert any(event.type == "text_delta" for event in events)
+    assert events[-1].type == "run_completed"
+    assert events[-1].payload["assistantText"] == "Weather answer"
+    assert approval_coordinator.snapshot() == ()
+
+
+def test_stream_events_delay_timeout_auto_deny_reinjects_failure_result() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_registry = build_default_tool_registry()
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    executor = PydanticAIAgentExecutor(
+        model=TestModel(call_tools=["weather_current"], custom_output_text="Weather answer", seed=0),
+        tool_registry=tool_registry,
+        approval_coordinator=approval_coordinator,
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=tool_registry,
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                thread_id="thread-1",
+                enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                tool_permission_policy=RuntimeToolPermissionPolicy(
+                    schemaVersion=1,
+                    defaultMode="allow",
+                    toolModes={WEATHER_CURRENT_TOOL_ID: "delay"},
+                    toolTimeoutSeconds={WEATHER_CURRENT_TOOL_ID: 1},
+                    toolTimeoutActions={WEATHER_CURRENT_TOOL_ID: "deny"},
+                ),
+            ),
+        )
+    )
+
+    tool_event_payloads = [event.payload for event in events if event.type == "tool_event"]
+    assert [payload["phase"] for payload in tool_event_payloads] == [
+        "started",
+        "waiting_approval",
+        "failed",
+    ]
+    assert tool_event_payloads[1]["approval"] == {
+        "mode": "delay",
+        "timeoutAt": tool_event_payloads[1]["approval"]["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "deny",
+    }
+    assert tool_event_payloads[2]["errorSummary"] == "Tool approval timed out and was automatically rejected."
+    assert any(event.type == "text_delta" for event in events)
+    assert events[-1].type == "run_completed"
+    assert events[-1].payload["assistantText"] == "Weather answer"
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_stream_events_filters_denied_tools_from_enabled_tools() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    executor = _StreamingExecutor(deltas=["Hello world"], output="Hello world")
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    request = _build_request(
+        thread_id="thread-1",
+        enabled_tools=("tool.file-convert",),
+        tool_permission_policy=RuntimeToolPermissionPolicy(
+            schemaVersion=1,
+            defaultMode="allow",
+            toolModes={WEATHER_CURRENT_TOOL_ID: "deny"},
+        ),
+    )
+    events = asyncio.run(_collect_events(orchestrator, request))
+
+    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
+    assert executor.calls[0]["enabled_tools"] == ["tool.file-convert"]
+    assert not any(WEATHER_CURRENT_TOOL_ID in call["enabled_tools"] for call in executor.calls)
 
 
 
@@ -505,7 +893,7 @@ def test_stream_events_projects_raw_tool_call_diagnostics_and_tool_events() -> N
         ],
         output="我先查一下。查到了。",
     )
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -649,7 +1037,7 @@ def test_stream_events_emits_explicit_diagnostic_when_raw_tool_call_never_execut
         ],
         output="我先查一下。",
     )
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -702,7 +1090,7 @@ def test_stream_events_host_resolution_failure_emits_diagnostic_and_failed_witho
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _StreamingExecutor(deltas=["should-not-run"], output="should-not-run")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -732,7 +1120,7 @@ def test_stream_events_tool_failure_emits_failed_tool_event_and_run_completes() 
         message="Tool 'tool.weather-current' failed: boom",
         tool_id=WEATHER_CURRENT_TOOL_ID,
     )
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -796,7 +1184,7 @@ def test_stream_events_recoverable_tool_failure_allows_run_completion() -> None:
         output="Tool failed but I can still help.",
         tool_events=tool_events,
     )
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -833,6 +1221,102 @@ def test_stream_events_recoverable_tool_failure_allows_run_completion() -> None:
     assert store.list_messages("thread-1") == ()
 
 
+def test_stream_events_form_request_interrupts_run_and_ends_with_awaiting_user_input() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    executor = _EventStreamingExecutor(
+        events=[
+            RuntimeExecutionEvent(
+                type="tool_completed",
+                payload={
+                    "toolCallId": f"{REQUEST_USER_FORM_TOOL_ID}:call-1",
+                    "toolId": REQUEST_USER_FORM_TOOL_ID,
+                    "phase": "completed",
+                    "title": "请求用户表单",
+                    "summary": "请填写课程编码。",
+                    "resultSummary": "表单请求已发送，等待用户提交。",
+                    "formRequest": {
+                        "formId": "course-form",
+                        "title": "请求课程表单",
+                        "description": "请填写课程编码。",
+                        "fields": [{
+                            "name": "courseCode",
+                            "label": "课程编码",
+                            "type": "text",
+                            "required": True,
+                        }],
+                    },
+                },
+            ),
+        ],
+        output=AwaitingUserInputError(
+            tool_id=REQUEST_USER_FORM_TOOL_ID,
+            tool_call_id=f"{REQUEST_USER_FORM_TOOL_ID}:call-1",
+            form_request={
+                "formId": "course-form",
+                "title": "请求课程表单",
+                "description": "请填写课程编码。",
+                "fields": [{
+                    "name": "courseCode",
+                    "label": "课程编码",
+                    "type": "text",
+                    "required": True,
+                }],
+            },
+            summary="请填写课程编码。",
+        ),
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(thread_id="thread-1", enabled_tools=(REQUEST_USER_FORM_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "run_failed",
+    ]
+    assert events[2].payload["toolId"] == REQUEST_USER_FORM_TOOL_ID
+    assert events[2].payload["summary"] == "请填写课程编码。"
+    assert events[3].payload == {
+        "code": "awaiting_user_input",
+        "message": "Run interrupted until the user submits the requested form.",
+        "details": {
+            "toolId": REQUEST_USER_FORM_TOOL_ID,
+            "toolCallId": f"{REQUEST_USER_FORM_TOOL_ID}:call-1",
+            "summary": "请填写课程编码。",
+            "formRequest": {
+                "formId": "course-form",
+                "title": "请求课程表单",
+                "description": "请填写课程编码。",
+                "fields": [{
+                    "name": "courseCode",
+                    "label": "课程编码",
+                    "type": "text",
+                    "required": True,
+                }],
+            },
+        },
+    }
+    assert store.list_messages("thread-1") == ()
+
+
 
 def test_stream_events_tool_failure_can_be_followed_by_true_non_tool_fatal_failure() -> None:
     store = InMemorySessionStore()
@@ -862,7 +1346,7 @@ def test_stream_events_tool_failure_can_be_followed_by_true_non_tool_fatal_failu
         output=AgentExecutionError("model stream collapsed"),
         tool_events=tool_events,
     )
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -915,7 +1399,7 @@ def test_stream_events_cancelled_run_discards_draft_and_does_not_archive() -> No
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _CancellingExecutor(deltas=["partial"], output="unused")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -944,7 +1428,7 @@ def test_stream_events_client_disconnect_cancels_run_and_does_not_archive() -> N
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _StreamingExecutor(deltas=["partial", "late"], output="partial late")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -986,7 +1470,7 @@ def test_stream_events_explicit_false_overrides_runtime_debug_env(monkeypatch: p
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -1017,7 +1501,7 @@ def test_stream_events_uses_runtime_debug_env_when_request_debug_omitted(
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -1096,7 +1580,7 @@ def test_stream_events_applies_verified_openai_series_settings_for_gpt5_route() 
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="session-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -1148,7 +1632,7 @@ def test_stream_events_applies_structured_selection_for_verified_route() -> None
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="session-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -1194,7 +1678,7 @@ def test_stream_events_unknown_with_override_applies_when_mapping_exists() -> No
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="session-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -1258,7 +1742,7 @@ def test_stream_events_unknown_with_override_fails_fast_when_mapping_missing() -
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="session-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -1319,7 +1803,7 @@ def test_stream_events_fails_when_thinking_intent_targets_unverified_route_witho
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -1363,7 +1847,7 @@ def test_stream_events_fails_when_legacy_thinking_intent_maps_to_unsupported_ser
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -1458,7 +1942,11 @@ def test_stream_events_logs_thinking_diagnostics_when_debug_enabled(monkeypatch:
         "thinking.run_metadata_attached",
         "thinking.fail_fast",
     }
-    capability_log = thinking_logs["thinking.capability_resolved"]["capability"]
+    capability_resolved_log = cast(
+        _ThinkingCapabilityResolvedLog,
+        _typed_log_payload(thinking_logs["thinking.capability_resolved"]),
+    )
+    capability_log = cast(_ThinkingCapabilityLog, capability_resolved_log["capability"])
     assert capability_log["status"] == "verified-supported"
     assert capability_log["series"] == "openai-4-level-minimal-v1"
     assert capability_log["seriesLabelZh"] == "OpenAI 4 档 Minimal 系"
@@ -1466,13 +1954,22 @@ def test_stream_events_logs_thinking_diagnostics_when_debug_enabled(monkeypatch:
     assert capability_log["allowedValues"][0]["code"] == "minimal"
     assert capability_log["defaultValue"]["code"] == "medium"
 
-    assert thinking_logs["thinking.request_validated"]["requestedThinkingSelection"] == _compat_thinking_selection("medium")
-    assert thinking_logs["thinking.request_validated"]["applied"] is False
-    assert thinking_logs["thinking.request_validated"]["reason"] == "requested_series_mismatch"
-    assert thinking_logs["thinking.provider_mapping_resolved"]["reason"] == "requested_series_mismatch"
-    assert thinking_logs["thinking.provider_mapping_resolved"]["providerBuilderKey"] == "openai_reasoning_effort_v1"
+    request_validated_log = cast(
+        _ThinkingRequestValidatedLog,
+        _typed_log_payload(thinking_logs["thinking.request_validated"]),
+    )
+    assert request_validated_log["requestedThinkingSelection"] == _compat_thinking_selection("medium")
+    assert request_validated_log["applied"] is False
+    assert request_validated_log["reason"] == "requested_series_mismatch"
+    provider_mapping_log = cast(
+        _ThinkingProviderMappingResolvedLog,
+        _typed_log_payload(thinking_logs["thinking.provider_mapping_resolved"]),
+    )
+    assert provider_mapping_log["reason"] == "requested_series_mismatch"
+    assert provider_mapping_log["providerBuilderKey"] == "openai_reasoning_effort_v1"
 
-    yielded_event = thinking_logs["thinking.run_metadata_attached"]["yieldedEvent"]
+    run_metadata_attached_log = _typed_log_payload(thinking_logs["thinking.run_metadata_attached"])
+    yielded_event = cast(_ThinkingYieldedEventLog, run_metadata_attached_log["yieldedEvent"])
     assert yielded_event["type"] == "run_metadata"
     assert yielded_event["sequence"] == 2
     assert yielded_event["requestedThinkingSelection"] == _compact_code_selection("medium")
@@ -1481,12 +1978,16 @@ def test_stream_events_logs_thinking_diagnostics_when_debug_enabled(monkeypatch:
     assert yielded_event["thinkingSeriesDecision"]["reasonCode"] == "requested_series_mismatch"
     assert yielded_event["thinkingSeriesDecision"]["errorCode"] == "thinking_series_not_supported_for_route"
 
-    assert thinking_logs["thinking.fail_fast"]["code"] == "thinking_series_not_supported_for_route"
-    assert thinking_logs["thinking.fail_fast"]["reason"] == "requested_series_mismatch"
-    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["requestedSelection"] == _compat_thinking_selection("medium")
-    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["providerBuilderKey"] == "openai_reasoning_effort_v1"
-    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["reasonCode"] == "verified_series_resolved"
-    assert thinking_logs["thinking.fail_fast"]["diagnostics"]["reason"] == "requested_series_mismatch"
+    fail_fast_log = cast(
+        _ThinkingFailFastLog,
+        _typed_log_payload(thinking_logs["thinking.fail_fast"]),
+    )
+    assert fail_fast_log["code"] == "thinking_series_not_supported_for_route"
+    assert fail_fast_log["reason"] == "requested_series_mismatch"
+    assert fail_fast_log["diagnostics"]["requestedSelection"] == _compat_thinking_selection("medium")
+    assert fail_fast_log["diagnostics"]["providerBuilderKey"] == "openai_reasoning_effort_v1"
+    assert fail_fast_log["diagnostics"]["reasonCode"] == "verified_series_resolved"
+    assert fail_fast_log["diagnostics"]["reason"] == "requested_series_mismatch"
 
 
 
@@ -1530,7 +2031,7 @@ def test_stream_events_logs_reasoning_suppression_when_hidden_reasoning_delta_ar
         ],
         output="最终回答。",
     )
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -1632,7 +2133,7 @@ def test_encode_runtime_run_event_renders_sse_payload() -> None:
 def test_stream_events_missing_thread_emits_failed_terminal_event() -> None:
     store = InMemorySessionStore()
     executor = _StreamingExecutor(deltas=["unused"], output="unused")
-    registry = build_default_agent_registry(executor_factory=lambda: executor)
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
         agent_registry=registry,
@@ -1998,10 +2499,13 @@ def _build_request(
     thinking_level_intent: str | None = None,
     thinking_selection: RuntimeThinkingSelection | None = None,
     thinking_capability_override: dict[str, object] | None = None,
+    tool_permission_policy: RuntimeToolPermissionPolicy | None = None,
 ) -> RuntimeRunStartRequest:
     resolved_thinking_selection = thinking_selection
     if resolved_thinking_selection is None and thinking_level_intent is not None:
-        resolved_thinking_selection = RuntimeThinkingSelection.from_legacy_level_intent(thinking_level_intent)
+        resolved_thinking_selection = RuntimeThinkingSelection.from_legacy_level_intent(
+            _typed_thinking_level_intent(thinking_level_intent)
+        )
 
     return RuntimeRunStartRequest(
         thread_id=thread_id,
@@ -2018,8 +2522,49 @@ def _build_request(
             thinkingSelection=resolved_thinking_selection,
             thinkingCapabilityOverride=thinking_capability_override,
             enabledTools=enabled_tools,
+            toolPermissionPolicy=tool_permission_policy,
             debugModeEnabled=debug_mode_enabled,
             requestOptions={},
         ),
         agent_id="default",
     )
+
+
+def test_build_message_history_keeps_projected_structured_payload_context() -> None:
+    history = build_message_history(
+        (
+            RuntimeTextMessage(
+                role="user",
+                content=(
+                    "已提交表单：请求课程表单\n\n"
+                    "[structured_payload]\n"
+                    '{"formId": "course-form", "type": "inline_form_submission"}'
+                ),
+            ),
+            RuntimeTextMessage(role="assistant", content="已收到课程编码。"),
+        )
+    )
+
+    assert '"type": "inline_form_submission"' in str(history[0])
+
+
+
+def test_build_runtime_user_prompt_appends_structured_payload_block() -> None:
+    prompt = build_runtime_user_prompt(
+        RuntimeMessagePayload(
+            role="user",
+            content="已提交表单：请求课程表单\n课程编码: CS304",
+            structuredPayload={
+                "type": "inline_form_submission",
+                "formId": "course-form",
+                "values": {
+                    "courseCode": "CS304",
+                },
+            },
+        )
+    )
+
+    assert "已提交表单：请求课程表单" in prompt
+    assert "[structured_payload]" in prompt
+    assert '"formId": "course-form"' in prompt
+    assert '"courseCode": "CS304"' in prompt

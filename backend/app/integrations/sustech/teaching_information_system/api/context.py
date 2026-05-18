@@ -38,14 +38,24 @@ class TISAPIContext:
     def absolute_url(self, page_url: str, href: str) -> str:
         return urljoin(page_url, href)
 
-    def get(self, url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None, label: str = "GET") -> httpx.Response:
+    def get(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        label: str = "GET",
+    ) -> httpx.Response:
         full_url = self._normalize_url(url)
         merged_headers = self._build_headers(headers)
         if self.logger is not None:
             self.logger.debug(
                 "📤 发起 TIS GET 请求",
                 context={"label": label, "url": full_url},
-                payload={"params": params or {}, "header_keys": sorted(merged_headers.keys())},
+                payload={
+                    "params": params or {},
+                    "header_keys": sorted(merged_headers.keys()),
+                },
             )
         response = self.client.get(full_url, params=params, headers=merged_headers)
         self._record_response(label, response)
@@ -72,7 +82,9 @@ class TISAPIContext:
                     "header_keys": sorted(merged_headers.keys()),
                 },
             )
-        response = self.client.post(full_url, data=data, json=json_data, headers=merged_headers)
+        response = self.client.post(
+            full_url, data=data, json=json_data, headers=merged_headers
+        )
         self._record_response(label, response)
         return response
 
@@ -94,11 +106,20 @@ class TISAPIContext:
         if self.role_code:
             headers["RoleCode"] = self.role_code
         if extra_headers:
-            headers.update({str(key): str(value) for key, value in extra_headers.items()})
+            headers.update(
+                {str(key): str(value) for key, value in extra_headers.items()}
+            )
         return headers
 
     def _record_response(self, label: str, response: httpx.Response) -> None:
-        self.request_history.append((label, str(response.request.method), int(response.status_code), str(response.url)))
+        self.request_history.append(
+            (
+                label,
+                str(response.request.method),
+                int(response.status_code),
+                str(response.url),
+            )
+        )
         if self.logger is None:
             return
         context = {

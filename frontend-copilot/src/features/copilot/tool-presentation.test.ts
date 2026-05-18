@@ -27,7 +27,7 @@ describe('resolveCopilotToolPresentation', () => {
     expect(presentation.searchKeywords).toContain('远程搜索')
   })
 
-  it('truncates long cjk fallback copy for compact tool picker presentation', () => {
+  it('preserves canonical localized copy when available and still truncates fallback descriptions', () => {
     const tool: CopilotToolPresentationSource = {
       toolId: 'custom.tool-preview',
       kind: 'builtin',
@@ -37,23 +37,68 @@ describe('resolveCopilotToolPresentation', () => {
 
     const presentation = resolveCopilotToolPresentation(tool)
 
-    expect(presentation.name.length).toBeLessThanOrEqual(18)
-    expect(presentation.name.endsWith('…')).toBe(true)
-    expect(presentation.description.length).toBeLessThanOrEqual(26)
-    expect(presentation.description.endsWith('…')).toBe(true)
+    expect(presentation.name).toBe('这是一个用于测试工具选择器名称收口的超长中文名称示例')
+    expect(presentation.description).toBe('这是一个用于测试工具选择器描述收口的超长中文描述示例需要被截断')
+  })
+
+  it('builds compact fallback copy from tool ids when canonical localized copy is unavailable', () => {
+    const tool: CopilotToolPresentationSource = {
+      toolId: 'custom.long_preview_identifier_for_picker',
+      kind: 'builtin',
+      displayName: null,
+      description: null,
+    }
+
+    const presentation = resolveCopilotToolPresentation(tool)
+
+    expect(presentation.name).toBe('可选工具')
+    expect(presentation.description).toBe('内建辅助能力')
+  })
+
+  it('builds readable mcp fallback names from server and remote tool names', () => {
+    const tool: CopilotToolPresentationSource = {
+      toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+      kind: 'external',
+      displayName: null,
+      description: null,
+      serverId: 'mcp-stdio-stub',
+      remoteToolName: 'search-campus',
+      mcpServerName: 'stdio stub server',
+      group: {
+        id: 'mcp.server.mcp-stdio-stub',
+        label: 'stdio stub server',
+        labelZh: 'stdio stub server',
+        labelEn: 'stdio stub server',
+        order: 100,
+        sourceKind: 'mcp-server',
+      },
+    } as CopilotToolPresentationSource
+
+    const presentation = resolveCopilotToolPresentation(tool)
+
+    expect(presentation.name).toBe('stdio stub server / Search Campus')
+    expect(resolveCopilotToolPlatformGroup(tool).title).toBe('stdio stub server')
   })
 })
 
 describe('resolveCopilotToolPlatformGroup', () => {
-  it('maps built-in and sustech tool namespaces to stable grouped platform buckets', () => {
+  it('prefers explicit catalog groups that already encode suite-level semantics', () => {
     expect(resolveCopilotToolPlatformGroup({
-      toolId: 'tool.file-convert',
+      toolId: 'tool.remote-search',
       kind: 'builtin',
       displayName: 'File Convert',
       description: 'Convert office files',
+      group: {
+        id: 'builtin-core',
+        label: '内置基础工具',
+        labelZh: '内置基础工具',
+        labelEn: 'Built-in Core Tools',
+        order: 0,
+        sourceKind: 'builtin',
+      },
     })).toMatchObject({
-      key: 'builtin',
-      title: 'Candue 内建',
+      key: 'builtin-core',
+      title: '内置基础工具',
       order: 0,
       sourceKind: 'builtin',
     })
@@ -63,9 +108,17 @@ describe('resolveCopilotToolPlatformGroup', () => {
       kind: 'external',
       displayName: 'Course Catalog Search',
       description: 'Search Blackboard course catalog',
+      group: {
+        id: 'blackboard',
+        label: 'Blackboard 工具',
+        labelZh: 'Blackboard 工具',
+        labelEn: 'Blackboard Tools',
+        order: 10,
+        sourceKind: 'sustech-blackboard',
+      },
     })).toMatchObject({
-      key: 'sustech-blackboard',
-      title: 'SUSTech Blackboard',
+      key: 'blackboard',
+      title: 'Blackboard 工具',
       order: 10,
       sourceKind: 'sustech-blackboard',
     })
@@ -75,9 +128,17 @@ describe('resolveCopilotToolPlatformGroup', () => {
       kind: 'external',
       displayName: 'Personal Grades Fetch',
       description: 'Fetch personal grades',
+      group: {
+        id: 'tis',
+        label: 'TIS 工具',
+        labelZh: 'TIS 工具',
+        labelEn: 'TIS Tools',
+        order: 20,
+        sourceKind: 'sustech-tis',
+      },
     })).toMatchObject({
-      key: 'sustech-tis',
-      title: 'SUSTech TIS',
+      key: 'tis',
+      title: 'TIS 工具',
       order: 20,
       sourceKind: 'sustech-tis',
     })

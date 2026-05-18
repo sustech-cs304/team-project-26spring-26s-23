@@ -48,8 +48,8 @@ describe('run segment reducer', () => {
         sessionId: 'session-1',
         sequence: 3,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'completed',
           title: '天气工具已返回结果',
           summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
@@ -75,7 +75,7 @@ describe('run segment reducer', () => {
           assistantText: '第一段第二段',
           resolvedModelId: 'qwen-plus',
           resolvedModelRoute: createRuntimeModelRoute(),
-          resolvedToolIds: ['tool.weather-current'],
+          resolvedToolIds: ['tool.remote-search'],
           requestOptions: { trace: true },
         },
       }),
@@ -93,7 +93,7 @@ describe('run segment reducer', () => {
     expect(stateAfterEvents.segments.filter((segment) => segment.kind === 'assistant')).toHaveLength(2)
     expect(stateAfterEvents.segments.find((segment) => segment.kind === 'tool')).toMatchObject({
       kind: 'tool',
-      toolCallId: 'tool.weather-current:call-1',
+      toolCallId: 'tool.remote-search:call-1',
       status: 'completed',
     })
     expect(stateAfterEvents.segments[stateAfterEvents.segments.length - 1]).toMatchObject({
@@ -124,8 +124,8 @@ describe('run segment reducer', () => {
         sessionId: 'session-1',
         sequence: 2,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'started',
           title: '调用天气工具',
           summary: '正在获取 Shenzhen 的天气。',
@@ -137,8 +137,8 @@ describe('run segment reducer', () => {
         sessionId: 'session-1',
         sequence: 3,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'failed',
           title: '工具调用失败',
           summary: '工具执行失败。',
@@ -165,7 +165,7 @@ describe('run segment reducer', () => {
           assistantText: '我可以解释失败并继续。',
           resolvedModelId: 'qwen-plus',
           resolvedModelRoute: createRuntimeModelRoute(),
-          resolvedToolIds: ['tool.weather-current'],
+          resolvedToolIds: ['tool.remote-search'],
           requestOptions: { trace: true },
         },
       }),
@@ -195,6 +195,103 @@ describe('run segment reducer', () => {
     })
   })
 
+  it('keeps skill index diagnostics as diagnostics and renders skill tools as normal tool segments', () => {
+    const initialState = createStartingCopilotRunState({
+      threadId: 'session-1',
+      activeModelRoute: createRuntimeModelRoute(),
+      requestOptions: { trace: true },
+    })
+
+    const stateAfterEvents = [
+      {
+        type: 'run_started' as const,
+        runId: 'run-skill',
+        sessionId: 'session-1',
+        sequence: 1,
+        payload: {
+          assistantMessageId: 'run-skill:assistant',
+        },
+      },
+      {
+        type: 'run_diagnostic' as const,
+        runId: 'run-skill',
+        sessionId: 'session-1',
+        sequence: 2,
+        payload: {
+          code: 'skill_index_loaded',
+          message: 'Skill index loaded for this run.',
+          stage: 'load_skill_index',
+          details: {
+            source: 'snapshot-file',
+            snapshotRevision: 8,
+            registryRevision: 12,
+            skillCount: 1,
+          },
+        },
+      },
+      createRuntimeToolEvent({
+        runId: 'run-skill',
+        sessionId: 'session-1',
+        sequence: 3,
+        payload: {
+          toolCallId: 'skill.activate:call-1',
+          toolId: 'skill.activate',
+          phase: 'completed',
+          title: '技能激活已返回结果',
+          summary: '{"displayName":"清晰文档写作","entryContentLength":120,"ok":true,"resourceCount":1,"skillId":"writing-clear-docs","snapshotRevision":8}',
+          inputSummary: '{"skill_id":"writing-clear-docs"}',
+          resultSummary: '{"displayName":"清晰文档写作","entryContentLength":120,"ok":true,"resourceCount":1,"skillId":"writing-clear-docs","snapshotRevision":8}',
+        },
+      }),
+      createRuntimeToolEvent({
+        runId: 'run-skill',
+        sessionId: 'session-1',
+        sequence: 4,
+        payload: {
+          toolCallId: 'skill.read_resource:call-1',
+          toolId: 'skill.read_resource',
+          phase: 'failed',
+          title: '技能资源读取调用失败',
+          summary: '内部 Skill 控制工具调用失败。',
+          inputSummary: '{"path":"resources/checklist.md","skill_id":"writing-clear-docs"}',
+          errorSummary: '{"errorCode":"resource_not_found","message":"Skill resource was not found in the enabled skill snapshot resource index.","ok":false,"path":"resources/checklist.md","skillId":"writing-clear-docs","snapshotRevision":8}',
+        },
+      }),
+    ].reduce(applyRuntimeRunEventToCopilotRunState, initialState)
+
+    expect(stateAfterEvents.diagnostic).toMatchObject({
+      code: 'skill_index_loaded',
+      message: 'Skill index loaded for this run.',
+    })
+    expect(stateAfterEvents.segments.map((segment) => segment.kind)).toEqual([
+      'diagnostic',
+      'tool',
+      'tool',
+    ])
+    expect(stateAfterEvents.segments[0]).toMatchObject({
+      kind: 'diagnostic',
+      status: 'completed',
+      diagnostic: {
+        code: 'skill_index_loaded',
+      },
+    })
+    expect(stateAfterEvents.segments[1]).toMatchObject({
+      kind: 'tool',
+      toolId: 'skill.activate',
+      status: 'completed',
+      inputSummary: '{"skill_id":"writing-clear-docs"}',
+      resultSummary: '{"displayName":"清晰文档写作","entryContentLength":120,"ok":true,"resourceCount":1,"skillId":"writing-clear-docs","snapshotRevision":8}',
+    })
+    expect(stateAfterEvents.segments[2]).toMatchObject({
+      kind: 'tool',
+      toolId: 'skill.read_resource',
+      status: 'failed',
+      inputSummary: '{"path":"resources/checklist.md","skill_id":"writing-clear-docs"}',
+      errorSummary: '{"errorCode":"resource_not_found","message":"Skill resource was not found in the enabled skill snapshot resource index.","ok":false,"path":"resources/checklist.md","skillId":"writing-clear-docs","snapshotRevision":8}',
+    })
+    expect(stateAfterEvents.segments.every((segment) => segment.kind !== 'diagnostic' || segment.diagnostic.code === 'skill_index_loaded')).toBe(true)
+  })
+
   it('keeps failed tool steps visible when a later non-tool fatal failure ends the run', () => {
     const initialState = createStartingCopilotRunState({
       threadId: 'session-1',
@@ -217,8 +314,8 @@ describe('run segment reducer', () => {
         sessionId: 'session-1',
         sequence: 2,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'started',
           title: '调用天气工具',
           summary: '正在获取 Shenzhen 的天气。',
@@ -230,8 +327,8 @@ describe('run segment reducer', () => {
         sessionId: 'session-1',
         sequence: 3,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'failed',
           title: '工具调用失败',
           summary: '工具执行失败。',
@@ -317,8 +414,8 @@ describe('run segment reducer', () => {
         sessionId: 'session-1',
         sequence: 3,
         payload: {
-          toolCallId: 'tool.weather-current:call-1',
-          toolId: 'tool.weather-current',
+          toolCallId: 'tool.remote-search:call-1',
+          toolId: 'tool.remote-search',
           phase: 'completed',
           title: '天气工具已返回结果',
           summary: 'Shenzhen：晴 / 24°C / 湿度 60%',
@@ -353,7 +450,7 @@ describe('run segment reducer', () => {
           assistantText: '最终回答',
           resolvedModelId: 'qwen-plus',
           resolvedModelRoute: createRuntimeModelRoute(),
-          resolvedToolIds: ['tool.weather-current'],
+          resolvedToolIds: ['tool.remote-search'],
           requestOptions: { trace: true },
         },
       }),
@@ -589,6 +686,108 @@ describe('run segment reducer', () => {
     expect(suppressedReasoningState.reasoningSuppressed).toBe(true)
     expect(suppressedReasoningState.reasoningTraceState).toBe('suppressed')
     expect(suppressedReasoningState.segments).toEqual([])
+  })
+
+  it('stores waiting approval metadata on tool segments', () => {
+    const initialState = createStartingCopilotRunState({
+      threadId: 'session-1',
+      activeModelRoute: createRuntimeModelRoute(),
+      requestOptions: { trace: true },
+    })
+
+    const nextState = applyRuntimeRunEventToCopilotRunState(initialState, createRuntimeToolEvent({
+      runId: 'run-approval',
+      sessionId: 'session-1',
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.remote-search:call-approval',
+        toolId: 'tool.remote-search',
+        phase: 'waiting_approval',
+        title: '等待批准',
+        summary: '需要人工批准。',
+        security: {
+          riskLevel: 'high',
+          approvalMethod: 'accept_reject',
+        },
+        approval: {
+          mode: 'delay',
+          timeoutAt: '2026-04-17T16:00:30Z',
+          timeoutSeconds: 30,
+          timeoutAction: 'deny',
+        },
+      },
+    }))
+
+    expect(nextState.segments[0]).toMatchObject({
+      kind: 'tool',
+      toolPhase: 'waiting_approval',
+      approval: {
+        mode: 'delay',
+        approvalMethod: 'accept_reject',
+        riskLevel: 'high',
+        timeoutAt: '2026-04-17T16:00:30Z',
+        timeoutSeconds: 30,
+        timeoutAction: 'deny',
+      },
+    })
+  })
+
+  it('preserves the last known approval metadata after later non-waiting tool events', () => {
+    const initialState = createStartingCopilotRunState({
+      threadId: 'session-1',
+      activeModelRoute: createRuntimeModelRoute(),
+      requestOptions: { trace: true },
+    })
+
+    const waitingApprovalState = applyRuntimeRunEventToCopilotRunState(initialState, createRuntimeToolEvent({
+      runId: 'run-approval',
+      sessionId: 'session-1',
+      sequence: 2,
+      payload: {
+        toolCallId: 'tool.remote-search:call-approval',
+        toolId: 'tool.remote-search',
+        phase: 'waiting_approval',
+        title: '等待批准',
+        summary: '需要人工批准。',
+        security: {
+          riskLevel: 'high',
+          approvalMethod: 'accept_reject',
+        },
+        approval: {
+          mode: 'delay',
+          timeoutAt: '2026-04-17T16:00:30Z',
+          timeoutSeconds: 30,
+          timeoutAction: 'deny',
+        },
+      },
+    }))
+
+    const completedState = applyRuntimeRunEventToCopilotRunState(waitingApprovalState, createRuntimeToolEvent({
+      runId: 'run-approval',
+      sessionId: 'session-1',
+      sequence: 3,
+      payload: {
+        toolCallId: 'tool.remote-search:call-approval',
+        toolId: 'tool.remote-search',
+        phase: 'completed',
+        title: '天气查询完成',
+        summary: '已完成。',
+        resultSummary: '{"temperature":28}',
+      },
+    }))
+
+    expect(completedState.segments[0]).toMatchObject({
+      kind: 'tool',
+      toolPhase: 'completed',
+      approval: {
+        mode: 'delay',
+        approvalMethod: 'accept_reject',
+        riskLevel: 'high',
+        timeoutAt: '2026-04-17T16:00:30Z',
+        timeoutSeconds: 30,
+        timeoutAction: 'deny',
+      },
+    })
   })
 
   it('marks streaming segments cancelled when transport abort happens before terminal event', () => {

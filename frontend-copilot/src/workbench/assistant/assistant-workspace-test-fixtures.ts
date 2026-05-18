@@ -16,7 +16,7 @@ export function createDirectoryResponse(): RuntimeAgentsListResponse {
       {
         agentId: 'general',
         status: 'active',
-        recommendedTools: ['tool.file-convert'],
+        recommendedTools: ['tool.fs.read'],
         displayName: 'Default',
         description: '默认通用智能体',
         iconKey: 'sparkles',
@@ -48,7 +48,7 @@ export function createSessionResponse(
     },
     createdAt: '2026-03-27T10:00:00Z',
     updatedAt: '2026-03-27T10:00:00Z',
-    recommendedTools: ['tool.file-convert'],
+    recommendedTools: ['tool.fs.read'],
     capabilities: {
       tools: {
         selectionMode: 'recommendation-only',
@@ -74,11 +74,11 @@ export function createCapabilitiesResponse(
     capabilitiesVersion: 'cap-v12',
     tools: [
       {
-        toolId: 'tool.file-convert',
+        toolId: 'tool.fs.read',
         kind: 'builtin',
         availability: 'available',
-        displayName: '文件转换',
-        description: 'DOCX/PDF/PPTX 转换工具',
+        displayName: '读取文件',
+        description: '读取项目内文件内容。',
       },
       {
         toolId: 'tool.remote-search',
@@ -88,7 +88,7 @@ export function createCapabilitiesResponse(
         description: '访问外部搜索服务',
       },
     ],
-    recommendedTools: ['tool.file-convert'],
+    recommendedTools: ['tool.fs.read'],
     toolSelectionMode: 'recommendation-only',
     ...overrides,
   }

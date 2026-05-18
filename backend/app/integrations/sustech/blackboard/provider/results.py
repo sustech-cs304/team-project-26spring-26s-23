@@ -14,7 +14,10 @@ from app.integrations.sustech.blackboard.api.dto import (
     ResourceDTO,
 )
 from app.integrations.sustech.blackboard.data.results import SyncStats
-from app.integrations.sustech.blackboard.shared.logging import BlackboardLogEvent, summarize_log_events
+from app.integrations.sustech.blackboard.shared.logging import (
+    BlackboardLogEvent,
+    summarize_log_events,
+)
 
 ProgressCallback = Callable[[str], None]
 
@@ -74,7 +77,9 @@ class BlackboardSnapshotFetchResult:
     def scraped_counts(self) -> dict[str, int]:
         return {
             "courses": len(self.courses),
-            "assignments": sum(len(rows) for rows in self.assignments_by_course.values()),
+            "assignments": sum(
+                len(rows) for rows in self.assignments_by_course.values()
+            ),
             "resources": sum(len(rows) for rows in self.resources_by_course.values()),
             "grades": sum(len(rows) for rows in self.grades_by_course.values()),
             "announcements": len(self.announcements),
@@ -109,12 +114,17 @@ class BlackboardSnapshotSyncReport:
     def second_sync_has_no_new_records(self) -> bool:
         if self.second_sync_stats is None:
             return False
-        return all(int(item.get("inserted", 0)) == 0 for item in self.second_sync_stats.values())
+        return all(
+            int(item.get("inserted", 0)) == 0
+            for item in self.second_sync_stats.values()
+        )
 
     def second_sync_has_no_deleted_records(self) -> bool:
         if self.second_sync_stats is None:
             return False
-        return all(int(item.get("deleted", 0)) == 0 for item in self.second_sync_stats.values())
+        return all(
+            int(item.get("deleted", 0)) == 0 for item in self.second_sync_stats.values()
+        )
 
     @property
     def log_summary(self) -> dict[str, Any]:
@@ -136,7 +146,9 @@ class BlackboardCourseResourcesSyncReport:
     def scraped_counts(self) -> dict[str, int]:
         return {
             "courses": len(self.processed_course_ids),
-            "resources": sum(len(rows) for rows in self.resource_payloads_by_course.values()),
+            "resources": sum(
+                len(rows) for rows in self.resource_payloads_by_course.values()
+            ),
         }
 
     @property

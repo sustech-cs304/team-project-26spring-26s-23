@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal, cast
+from typing import Any, Literal, Self, cast
+
+from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from .agent_registry import AgentRegistry, build_default_agent_registry
 from .model_routes import RuntimeModelRoute
+from .mcp_catalog_provider import McpCatalogProvider
+from .pydantic_contracts import (
+    RuntimeContractModel,
+    contract_to_dict,
+    to_jsonable_contract,
+)
 from .session_store import RuntimeRunRecord, RuntimeThreadRecord
+from .tool_permissions import RuntimeToolPermissionResolver
 from .tool_registry import ToolRegistry, build_default_tool_registry
 
 AGENTS_LIST_METHOD = "agents/list"
@@ -18,7 +27,9 @@ RUN_START_METHOD = "run/start"
 RUN_STREAM_METHOD = "run/stream"
 RUN_CANCEL_METHOD = "run/cancel"
 CAPABILITIES_GET_METHOD = "capabilities/get"
+GLOBAL_TOOL_CATALOG_GET_METHOD = "tools/catalog/get"
 THINKING_CAPABILITY_GET_METHOD = "thinking/capability/get"
+TOOL_APPROVAL_RESOLVE_METHOD = "tool-approval/resolve"
 THINKING_CAPABILITY_SCHEMA_VERSION = "canonical-thinking-capability-v2"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
 DEFAULT_RUNTIME_STAGE = "phase3-run-bridge"
@@ -47,11 +58,10 @@ def normalize_thinking_level_intent(value: Any) -> ThinkingLevelIntent | None:
 
 class RuntimeContract:
     def to_dict(self) -> dict[str, Any]:
-        return cast(dict[str, Any], _jsonable(asdict(cast(Any, self))))
+        return contract_to_dict(self)
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThinkingValue(RuntimeContract):
+class RuntimeThinkingValue(RuntimeContractModel, RuntimeContract):
     valueType: ThinkingSeriesValueType
     code: str | None = None
     mode: str | None = None
@@ -73,8 +83,7 @@ class RuntimeThinkingValue(RuntimeContract):
         return None
 
 
-@dataclass(frozen=True, slots=True, init=False)
-class RuntimeThinkingSelection(RuntimeContract):
+class RuntimeThinkingSelection(RuntimeContractModel, RuntimeContract):
     series: str
     value: RuntimeThinkingValue
 
@@ -99,8 +108,24 @@ class RuntimeThinkingSelection(RuntimeContract):
         )
         if normalized_value is None:
             raise ValueError("RuntimeThinkingSelection requires a valid series value.")
-        object.__setattr__(self, "series", normalized_series)
-        object.__setattr__(self, "value", normalized_value)
+        self.__pydantic_validator__.validate_python(
+            {"series": normalized_series, "value": normalized_value},
+            self_instance=self,
+        )
+
+    @field_validator("series")
+    @classmethod
+    def _validate_series(cls, value: str) -> str:
+        normalized_series = value.strip()
+        if normalized_series == "":
+            raise ValueError("RuntimeThinkingSelection.series must be non-empty.")
+        return normalized_series
+
+    @model_validator(mode="after")
+    def _validate_value(self) -> Self:
+        if self.value is None:
+            raise ValueError("RuntimeThinkingSelection requires a valid series value.")
+        return self
 
     @classmethod
     def from_legacy_level_intent(
@@ -133,8 +158,7 @@ class RuntimeThinkingSelection(RuntimeContract):
         return self.value.budgetTokens if self.value.valueType == "budget" else None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeAgentDirectoryEntry(RuntimeContract):
+class RuntimeAgentDirectoryEntry(RuntimeContractModel, RuntimeContract):
     agentId: str
     status: str
     recommendedTools: tuple[str, ...] = ()
@@ -143,8 +167,7 @@ class RuntimeAgentDirectoryEntry(RuntimeContract):
     iconKey: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeBoundAgent(RuntimeContract):
+class RuntimeBoundAgent(RuntimeContractModel, RuntimeContract):
     agentId: str
     status: str
     displayName: str | None = None
@@ -152,58 +175,75 @@ class RuntimeBoundAgent(RuntimeContract):
     iconKey: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeAgentsListResponse(RuntimeContract):
+class RuntimeAgentsListResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     directoryVersion: str
     defaultAgentId: str
     agents: tuple[RuntimeAgentDirectoryEntry, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThreadCreateRequest(RuntimeContract):
-    agent_id: str
+class RuntimeThreadCreateRequest(RuntimeContractModel, RuntimeContract):
+    agent_id: str = Field(validation_alias="agentId")
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThreadGetRequest(RuntimeContract):
-    thread_id: str
+class RuntimeThreadGetRequest(RuntimeContractModel, RuntimeContract):
+    thread_id: str = Field(validation_alias="threadId")
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeCapabilitiesGetRequest(RuntimeContract):
-    session_id: str
+class RuntimeCapabilitiesGetRequest(RuntimeContractModel, RuntimeContract):
+    session_id: str = Field(validation_alias="sessionId")
+    tool_permission_policy: RuntimeToolPermissionPolicy | None = Field(
+        default=None,
+        validation_alias="toolPermissionPolicy",
+    )
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThinkingCapabilityGetRequest(RuntimeContract):
-    session_id: str
-    model_route: RuntimeModelRoute
-    thinking_capability_override: dict[str, Any] | None = None
+class RuntimeThinkingCapabilityGetRequest(RuntimeContractModel, RuntimeContract):
+    session_id: str = Field(validation_alias="sessionId")
+    model_route: RuntimeModelRoute = Field(validation_alias="modelRoute")
+    thinking_capability_override: dict[str, Any] | None = Field(
+        default=None,
+        validation_alias="thinkingCapabilityOverride",
+    )
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeToolDirectoryEntry(RuntimeContract):
+class RuntimeToolPresentationGroup(RuntimeContractModel, RuntimeContract):
+    id: str
+    label: str
+    labelZh: str
+    labelEn: str
+    order: int
+    sourceKind: str
+
+
+class RuntimeToolDirectoryEntry(RuntimeContractModel, RuntimeContract):
     toolId: str
     kind: str
     availability: str
     displayName: str | None = None
     description: str | None = None
+    prompt: str | None = None
+    displayNameZh: str | None = None
+    displayNameEn: str | None = None
+    descriptionZh: str | None = None
+    descriptionEn: str | None = None
+    serverId: str | None = None
+    remoteToolName: str | None = None
+    mcpServerName: str | None = None
+    group: RuntimeToolPresentationGroup | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThreadCreateResponse(RuntimeContract):
+class RuntimeThreadCreateResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     threadId: str
     boundAgent: RuntimeBoundAgent
     createdAt: datetime
     updatedAt: datetime
     recommendedTools: tuple[str, ...] = ()
-    capabilities: dict[str, Any] = field(default_factory=dict)
+    capabilities: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThreadGetResponse(RuntimeContract):
+class RuntimeThreadGetResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     threadId: str
     boundAgent: RuntimeBoundAgent
@@ -216,8 +256,7 @@ class RuntimeThreadGetResponse(RuntimeContract):
     latestRunId: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeCapabilitiesResponse(RuntimeContract):
+class RuntimeCapabilitiesResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     sessionId: str
     boundAgent: RuntimeBoundAgent
@@ -227,28 +266,51 @@ class RuntimeCapabilitiesResponse(RuntimeContract):
     toolSelectionMode: str = "recommendation-only"
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeThinkingCapabilityResponse(RuntimeContract):
+class RuntimeGlobalToolCatalogResponse(RuntimeContractModel, RuntimeContract):
+    ok: bool
+    directoryVersion: str
+    defaultToolset: str
+    language: str | None = None
+    tools: tuple[RuntimeToolDirectoryEntry, ...] = ()
+
+
+class RuntimeThinkingCapabilityResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     sessionId: str
     capabilitySchemaVersion: str = THINKING_CAPABILITY_SCHEMA_VERSION
-    capability: dict[str, Any] = field(default_factory=dict)
+    capability: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeMessagePayload(RuntimeContract):
+class RuntimeMessagePayload(RuntimeContractModel, RuntimeContract):
     role: str
     content: str
+    structuredPayload: dict[str, Any] | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeMessageExecutionPolicy(RuntimeContract):
+RuntimeToolPermissionMode = Literal["allow", "ask", "delay", "deny"]
+RuntimeToolApprovalDecision = Literal["approved", "rejected"]
+RuntimeToolApprovalStatus = Literal["pending", "approved", "rejected", "timed_out"]
+RuntimeToolTimeoutAction = Literal["approve", "deny"]
+
+
+class RuntimeToolPermissionPolicy(RuntimeContractModel, RuntimeContract):
+    schemaVersion: int
+    defaultMode: RuntimeToolPermissionMode
+    toolModes: dict[str, RuntimeToolPermissionMode] = Field(default_factory=dict)
+    toolTimeoutSeconds: dict[str, int | str] = Field(default_factory=dict)
+    toolTimeoutActions: dict[str, RuntimeToolTimeoutAction] = Field(
+        default_factory=dict
+    )
+
+
+class RuntimeMessageExecutionPolicy(RuntimeContractModel, RuntimeContract):
     modelRoute: RuntimeModelRoute
     thinkingSelection: RuntimeThinkingSelection | None = None
     thinkingCapabilityOverride: dict[str, Any] | None = None
     enabledTools: tuple[str, ...] = ()
+    toolPermissionPolicy: RuntimeToolPermissionPolicy | None = None
     debugModeEnabled: bool | None = None
-    requestOptions: dict[str, Any] = field(default_factory=dict)
+    requestOptions: dict[str, Any] = Field(default_factory=dict)
 
     def resolve_thinking_selection(self) -> RuntimeThinkingSelection | None:
         return self.thinkingSelection
@@ -258,26 +320,42 @@ class RuntimeMessageExecutionPolicy(RuntimeContract):
         return None if selection is None else selection.to_legacy_level_intent()
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunStartRequest(RuntimeContract):
-    thread_id: str
+class RuntimeRunStartRequest(RuntimeContractModel, RuntimeContract):
+    thread_id: str = Field(validation_alias="threadId")
     message: RuntimeMessagePayload
     policy: RuntimeMessageExecutionPolicy
-    agent_id: str | None = None
+    agent_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("agentId", "agent"),
+    )
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunStreamRequest(RuntimeContract):
-    run_id: str
+class RuntimeRunStreamRequest(RuntimeContractModel, RuntimeContract):
+    run_id: str = Field(validation_alias="runId")
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunCancelRequest(RuntimeContract):
-    run_id: str
+class RuntimeRunCancelRequest(RuntimeContractModel, RuntimeContract):
+    run_id: str = Field(validation_alias="runId")
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunView(RuntimeContract):
+class RuntimeToolApprovalResolveRequest(RuntimeContractModel, RuntimeContract):
+    run_id: str = Field(validation_alias="runId")
+    tool_call_id: str = Field(validation_alias="toolCallId")
+    decision: RuntimeToolApprovalDecision
+
+
+class RuntimeToolApprovalResolveResponse(RuntimeContractModel, RuntimeContract):
+    ok: bool
+    runId: str
+    toolCallId: str
+    decision: RuntimeToolApprovalDecision
+    status: RuntimeToolApprovalStatus
+    resolvedAt: datetime
+    source: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class RuntimeRunView(RuntimeContractModel, RuntimeContract):
     runId: str
     threadId: str
     status: str
@@ -305,17 +383,15 @@ class RuntimeRunView(RuntimeContract):
         return self.appliedThinkingSelection.to_legacy_level_intent()
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunStartResponse(RuntimeContract):
+class RuntimeRunStartResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     run: RuntimeRunView
     assistantMessageId: str
-    stream: dict[str, Any] = field(default_factory=dict)
-    cancel: dict[str, Any] = field(default_factory=dict)
+    stream: dict[str, Any] = Field(default_factory=dict)
+    cancel: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeRunCancelResponse(RuntimeContract):
+class RuntimeRunCancelResponse(RuntimeContractModel, RuntimeContract):
     ok: bool
     run: RuntimeRunView
     cancelAccepted: bool
@@ -334,12 +410,14 @@ class RuntimeScaffold(RuntimeContract):
     agent_toolsets: dict[str, str]
     tool_directory_version: str
     tool_catalog_by_toolset: dict[str, tuple[RuntimeToolDirectoryEntry, ...]]
+    tool_registry: ToolRegistry
     agent_diagnostics_summary: dict[str, Any]
     tool_diagnostics_summary: dict[str, Any]
     session_store_type: str
     model_configured: bool
     model_environment_keys: tuple[str, ...] = ()
     transport: dict[str, Any] = field(default_factory=dict)
+    mcp_catalog_provider: McpCatalogProvider | None = None
 
     def build_agents_list_response(self) -> RuntimeAgentsListResponse:
         return RuntimeAgentsListResponse(
@@ -371,12 +449,19 @@ class RuntimeScaffold(RuntimeContract):
         )
 
     def build_capabilities_version(self) -> str:
-        return f"capabilities:{self.agent_directory_version}:{self.tool_directory_version}"
+        base_version = (
+            f"capabilities:{self.agent_directory_version}:{self.tool_directory_version}"
+        )
+        mcp_snapshot_revision = self._resolve_mcp_snapshot_revision()
+        if mcp_snapshot_revision is None:
+            return base_version
+        return f"{base_version}:mcp:{mcp_snapshot_revision}"
 
     def build_thread_get_response(
         self,
         *,
         thread: RuntimeThreadRecord,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> RuntimeThreadGetResponse:
         entry = self._get_agent_directory_entry(thread.bound_agent_id)
         toolset_name = self._get_agent_toolset_name(thread.bound_agent_id)
@@ -387,8 +472,16 @@ class RuntimeScaffold(RuntimeContract):
             createdAt=thread.created_at,
             updatedAt=thread.updated_at,
             capabilitiesVersion=self.build_capabilities_version(),
-            tools=self._get_tool_catalog(toolset_name),
-            recommendedTools=entry.recommendedTools,
+            tools=self._get_tool_catalog(
+                toolset_name,
+                tool_permission_resolver=tool_permission_resolver,
+            ),
+            recommendedTools=tuple(
+                tool_id
+                for tool_id in entry.recommendedTools
+                if tool_permission_resolver is None
+                or tool_permission_resolver.is_visible(tool_id)
+            ),
             toolSelectionMode="recommendation-only",
             latestRunId=thread.last_run_id,
         )
@@ -397,8 +490,12 @@ class RuntimeScaffold(RuntimeContract):
         self,
         *,
         thread: RuntimeThreadRecord,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> RuntimeCapabilitiesResponse:
-        thread_response = self.build_thread_get_response(thread=thread)
+        thread_response = self.build_thread_get_response(
+            thread=thread,
+            tool_permission_resolver=tool_permission_resolver,
+        )
         return RuntimeCapabilitiesResponse(
             ok=thread_response.ok,
             sessionId=thread_response.threadId,
@@ -408,6 +505,71 @@ class RuntimeScaffold(RuntimeContract):
             recommendedTools=thread_response.recommendedTools,
             toolSelectionMode=thread_response.toolSelectionMode,
         )
+
+    def build_global_tool_catalog_response(
+        self,
+        *,
+        language: str | None = None,
+    ) -> RuntimeGlobalToolCatalogResponse:
+        return RuntimeGlobalToolCatalogResponse(
+            ok=True,
+            directoryVersion=self._build_tool_directory_version(),
+            defaultToolset=self.default_toolset,
+            language=language,
+            tools=self.get_global_tool_catalog(language=language),
+        )
+
+    def get_global_tool_catalog(
+        self,
+        *,
+        language: str | None = None,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
+    ) -> tuple[RuntimeToolDirectoryEntry, ...]:
+        catalog = list(
+            self._get_tool_catalog(
+                self.default_toolset,
+                language=language,
+                tool_permission_resolver=tool_permission_resolver,
+            )
+        )
+        if self.mcp_catalog_provider is None:
+            return tuple(catalog)
+
+        seen_tool_ids = {entry.toolId for entry in catalog}
+        for tool_view in self.mcp_catalog_provider.load_catalog_entries(
+            language=language
+        ):
+            entry = RuntimeToolDirectoryEntry(**tool_view)
+            if entry.toolId in seen_tool_ids:
+                continue
+            if not self._is_executable_tool_visible(
+                entry.toolId,
+                toolset_name=self.default_toolset,
+            ):
+                continue
+            if (
+                tool_permission_resolver is not None
+                and not tool_permission_resolver.is_visible(entry.toolId)
+            ):
+                continue
+            catalog.append(entry)
+            seen_tool_ids.add(entry.toolId)
+
+        return tuple(catalog)
+
+    def _build_tool_directory_version(self) -> str:
+        mcp_snapshot_revision = self._resolve_mcp_snapshot_revision()
+        if mcp_snapshot_revision is None:
+            return self.tool_directory_version
+        return f"{self.tool_directory_version}:mcp:{mcp_snapshot_revision}"
+
+    def _resolve_mcp_snapshot_revision(self) -> int | None:
+        if self.mcp_catalog_provider is None:
+            return None
+        snapshot = self.mcp_catalog_provider.snapshot_provider.load_snapshot()
+        if snapshot is None:
+            return None
+        return snapshot.snapshot_revision
 
     def build_thinking_capability_response(
         self,
@@ -426,9 +588,12 @@ class RuntimeScaffold(RuntimeContract):
         request_policy = run.request.policy
         request_policy_selection = _resolve_policy_thinking_selection(request_policy)
 
-        requested_thinking_selection = _coerce_runtime_thinking_selection(
-            run.metadata.get("requestedThinkingSelection")
-        ) or request_policy_selection
+        requested_thinking_selection = (
+            _coerce_runtime_thinking_selection(
+                run.metadata.get("requestedThinkingSelection")
+            )
+            or request_policy_selection
+        )
 
         applied_thinking_selection = _coerce_runtime_thinking_selection(
             run.metadata.get("appliedThinkingSelection")
@@ -440,7 +605,9 @@ class RuntimeScaffold(RuntimeContract):
         thinking_series_decision = _coerce_mapping_dict(
             run.metadata.get("thinkingSeriesDecision")
         ) or _coerce_mapping_dict(run.metadata.get("thinkingSelectionResult"))
-        reasoning_suppression_basis = _coerce_mapping_dict(run.metadata.get("reasoningSuppressionBasis"))
+        reasoning_suppression_basis = _coerce_mapping_dict(
+            run.metadata.get("reasoningSuppressionBasis")
+        )
         return RuntimeRunView(
             runId=run.run_id,
             threadId=run.thread_id,
@@ -464,7 +631,9 @@ class RuntimeScaffold(RuntimeContract):
             ),
         )
 
-    def build_run_start_response(self, *, run: RuntimeRunRecord) -> RuntimeRunStartResponse:
+    def build_run_start_response(
+        self, *, run: RuntimeRunRecord
+    ) -> RuntimeRunStartResponse:
         return RuntimeRunStartResponse(
             ok=True,
             run=self.build_run_view(run=run),
@@ -491,6 +660,32 @@ class RuntimeScaffold(RuntimeContract):
             cancelAccepted=cancel_accepted,
         )
 
+    def build_tool_approval_resolve_response(
+        self,
+        *,
+        resolution_payload: dict[str, Any],
+    ) -> RuntimeToolApprovalResolveResponse:
+        details: dict[str, Any] = {}
+        tool_id = resolution_payload.get("toolId")
+        if tool_id is not None:
+            details["toolId"] = str(tool_id)
+        mode = resolution_payload.get("mode")
+        if mode is not None:
+            details["mode"] = cast(RuntimeToolPermissionMode, mode)
+        timeout_action = resolution_payload.get("timeoutAction")
+        if timeout_action is not None:
+            details["timeoutAction"] = cast(RuntimeToolTimeoutAction, timeout_action)
+        return RuntimeToolApprovalResolveResponse(
+            ok=True,
+            runId=str(resolution_payload["runId"]),
+            toolCallId=str(resolution_payload["toolCallId"]),
+            decision=cast(RuntimeToolApprovalDecision, resolution_payload["decision"]),
+            status=cast(RuntimeToolApprovalStatus, resolution_payload["status"]),
+            resolvedAt=datetime.fromisoformat(str(resolution_payload["resolvedAt"])),
+            source=str(resolution_payload["source"]),
+            details=details,
+        )
+
     def supports_agent(self, agent_name: str) -> bool:
         return agent_name in self.bound_agent_views
 
@@ -499,8 +694,12 @@ class RuntimeScaffold(RuntimeContract):
         *,
         agent_id: str,
         enabled_tools: tuple[str, ...],
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
     ) -> tuple[str, ...]:
-        tool_catalog = self._get_tool_catalog(self._get_agent_toolset_name(agent_id))
+        tool_catalog = self._get_tool_catalog(
+            self._get_agent_toolset_name(agent_id),
+            tool_permission_resolver=tool_permission_resolver,
+        )
         tools_by_id = {entry.toolId: entry for entry in tool_catalog}
 
         normalized_requested: list[str] = []
@@ -527,14 +726,22 @@ class RuntimeScaffold(RuntimeContract):
             "supported_methods": list(self.supported_methods),
             "chat_runtime_stage": self.stage,
             "session_store_type": self.session_store_type,
-            "current_stage_supports_agents_list": AGENTS_LIST_METHOD in self.supported_methods,
-            "current_stage_supports_thread_create": THREAD_CREATE_METHOD in self.supported_methods,
-            "current_stage_supports_thread_get": THREAD_GET_METHOD in self.supported_methods,
-            "current_stage_supports_run_start": RUN_START_METHOD in self.supported_methods,
-            "current_stage_supports_run_stream": RUN_STREAM_METHOD in self.supported_methods,
-            "current_stage_supports_run_cancel": RUN_CANCEL_METHOD in self.supported_methods,
-            "current_stage_supports_capabilities_get": CAPABILITIES_GET_METHOD in self.supported_methods,
-            "current_stage_supports_thinking_capability_get": THINKING_CAPABILITY_GET_METHOD in self.supported_methods,
+            "current_stage_supports_agents_list": AGENTS_LIST_METHOD
+            in self.supported_methods,
+            "current_stage_supports_thread_create": THREAD_CREATE_METHOD
+            in self.supported_methods,
+            "current_stage_supports_thread_get": THREAD_GET_METHOD
+            in self.supported_methods,
+            "current_stage_supports_run_start": RUN_START_METHOD
+            in self.supported_methods,
+            "current_stage_supports_run_stream": RUN_STREAM_METHOD
+            in self.supported_methods,
+            "current_stage_supports_run_cancel": RUN_CANCEL_METHOD
+            in self.supported_methods,
+            "current_stage_supports_capabilities_get": CAPABILITIES_GET_METHOD
+            in self.supported_methods,
+            "current_stage_supports_thinking_capability_get": THINKING_CAPABILITY_GET_METHOD
+            in self.supported_methods,
             "model_configured": self.model_configured,
             "model_environment_keys": list(self.model_environment_keys),
         }
@@ -557,12 +764,36 @@ class RuntimeScaffold(RuntimeContract):
     def _get_agent_toolset_name(self, agent_id: str) -> str:
         return self.agent_toolsets.get(agent_id, self.default_toolset)
 
-    def _get_tool_catalog(self, toolset_name: str) -> tuple[RuntimeToolDirectoryEntry, ...]:
+    def _get_tool_catalog(
+        self,
+        toolset_name: str,
+        *,
+        language: str | None = None,
+        tool_permission_resolver: RuntimeToolPermissionResolver | None = None,
+    ) -> tuple[RuntimeToolDirectoryEntry, ...]:
         try:
-            return self.tool_catalog_by_toolset[toolset_name]
-        except KeyError as exc:  # pragma: no cover - defensive guard
+            catalog = tuple(
+                RuntimeToolDirectoryEntry(**tool_view)
+                for tool_view in self.tool_registry.build_tool_catalog(
+                    toolset_name, language=language
+                )
+            )
+            if tool_permission_resolver is None:
+                return catalog
+            return tuple(
+                entry
+                for entry in catalog
+                if tool_permission_resolver.is_visible(entry.toolId)
+            )
+        except LookupError as exc:  # pragma: no cover - defensive guard
             raise LookupError(f"Unknown toolset '{toolset_name}'.") from exc
 
+    def _is_executable_tool_visible(self, tool_id: str, *, toolset_name: str) -> bool:
+        try:
+            self.tool_registry.resolve_tool(tool_id, toolset_name=toolset_name)
+        except LookupError:
+            return False
+        return True
 
 
 def build_runtime_scaffold(
@@ -572,6 +803,7 @@ def build_runtime_scaffold(
     model_environment_keys: tuple[str, ...] = (),
     agent_registry: AgentRegistry | None = None,
     tool_registry: ToolRegistry | None = None,
+    mcp_catalog_provider: McpCatalogProvider | None = None,
 ) -> RuntimeScaffold:
     resolved_tool_registry = tool_registry or build_default_tool_registry()
     resolved_agent_registry = agent_registry or build_default_agent_registry(
@@ -589,24 +821,29 @@ def build_runtime_scaffold(
             RUN_STREAM_METHOD,
             RUN_CANCEL_METHOD,
             CAPABILITIES_GET_METHOD,
+            GLOBAL_TOOL_CATALOG_GET_METHOD,
             THINKING_CAPABILITY_GET_METHOD,
+            TOOL_APPROVAL_RESOLVE_METHOD,
         ),
         default_agent=resolved_agent_registry.get_default().name,
         agent_directory_version=resolved_agent_registry.directory_version,
         agent_directory=agent_directory,
         bound_agent_views=_build_runtime_bound_agent_views(agent_directory),
         default_toolset=resolved_tool_registry.get_default().name,
-        agent_toolsets=_build_runtime_agent_toolsets(resolved_agent_registry, resolved_tool_registry),
+        agent_toolsets=_build_runtime_agent_toolsets(
+            resolved_agent_registry, resolved_tool_registry
+        ),
         tool_directory_version=resolved_tool_registry.directory_version,
         tool_catalog_by_toolset=_build_runtime_tool_catalogs(resolved_tool_registry),
+        tool_registry=resolved_tool_registry,
         agent_diagnostics_summary=resolved_agent_registry.build_diagnostics_summary(),
         tool_diagnostics_summary=resolved_tool_registry.build_diagnostics_summary(),
         session_store_type=session_store_type,
         model_configured=model_configured,
         model_environment_keys=model_environment_keys,
         transport=dict(DEFAULT_TRANSPORT),
+        mcp_catalog_provider=mcp_catalog_provider,
     )
-
 
 
 def _build_runtime_agent_directory(
@@ -615,10 +852,11 @@ def _build_runtime_agent_directory(
     entries: list[RuntimeAgentDirectoryEntry] = []
     for agent_view in agent_registry.build_directory_view():
         normalized_view = dict(agent_view)
-        normalized_view["recommendedTools"] = tuple(agent_view.get("recommendedTools", ()))
+        normalized_view["recommendedTools"] = tuple(
+            agent_view.get("recommendedTools", ())
+        )
         entries.append(RuntimeAgentDirectoryEntry(**normalized_view))
     return tuple(entries)
-
 
 
 def _build_runtime_bound_agent_views(
@@ -636,7 +874,6 @@ def _build_runtime_bound_agent_views(
     }
 
 
-
 def _build_runtime_agent_toolsets(
     agent_registry: AgentRegistry,
     tool_registry: ToolRegistry,
@@ -646,7 +883,6 @@ def _build_runtime_agent_toolsets(
         agent_id: toolset_name or default_toolset
         for agent_id, toolset_name in agent_registry.build_agent_toolset_map().items()
     }
-
 
 
 def _build_runtime_tool_catalogs(
@@ -661,239 +897,14 @@ def _build_runtime_tool_catalogs(
     }
 
 
-
-def _resolve_policy_thinking_selection(policy: Any) -> RuntimeThinkingSelection | None:
-    resolver = getattr(policy, "resolve_thinking_selection", None)
-    if callable(resolver):
-        return _coerce_runtime_thinking_selection(resolver())
-    return _coerce_runtime_thinking_selection(
-        getattr(policy, "thinkingSelection", None)
-    ) or _coerce_runtime_thinking_selection(getattr(policy, "thinking_selection", None))
-
-
-
-def _resolve_policy_thinking_level_intent(policy: Any) -> ThinkingLevelIntent | None:
-    selection = _resolve_policy_thinking_selection(policy)
-    return None if selection is None else selection.to_legacy_level_intent()
-
-
-
-def _coerce_runtime_thinking_selection(value: Any) -> RuntimeThinkingSelection | None:
-    if isinstance(value, RuntimeThinkingSelection):
-        return value
-    if value is None:
-        return None
-
-    if isinstance(value, dict):
-        series = value.get("series")
-        raw_selection_value = value.get("value")
-    else:
-        series = getattr(value, "series", None)
-        raw_selection_value = getattr(value, "value", None)
-
-    if not isinstance(series, str) or series.strip() == "":
-        return None
-
-    selection_value = _coerce_runtime_thinking_value(raw_selection_value)
-    if selection_value is not None:
-        return RuntimeThinkingSelection(series=series.strip(), value=selection_value)
-
-    if isinstance(value, dict):
-        mode = value.get("mode")
-        level = value.get("level")
-        budget_tokens = value.get("budgetTokens")
-    else:
-        mode = getattr(value, "mode", None)
-        level = getattr(value, "level", None)
-        budget_tokens = getattr(value, "budgetTokens", getattr(value, "budget_tokens", None))
-
-    normalized_mode = mode.strip() if isinstance(mode, str) and mode.strip() != "" else None
-    normalized_level = (
-        cast(ThinkingLevelIntent, level)
-        if isinstance(level, str) and level in _THINKING_LEVEL_VALUES
-        else None
-    )
-    normalized_budget_tokens = (
-        budget_tokens
-        if isinstance(budget_tokens, int) and not isinstance(budget_tokens, bool) and budget_tokens >= 0
-        else None
-    )
-    if normalized_mode == "budget" and normalized_budget_tokens is not None:
-        return RuntimeThinkingSelection(
-            series=series.strip(),
-            value=RuntimeThinkingValue(
-                valueType="budget",
-                mode="budget",
-                budgetTokens=normalized_budget_tokens,
-            ),
-        )
-    if normalized_level is not None:
-        return RuntimeThinkingSelection(
-            series=series.strip(),
-            value=RuntimeThinkingValue(
-                valueType="code",
-                code=normalized_level,
-                labelZh=normalized_level,
-            ),
-        )
-    return None
-
-
-
-def _coerce_runtime_thinking_value(value: Any) -> RuntimeThinkingValue | None:
-    if isinstance(value, RuntimeThinkingValue):
-        return value
-    if isinstance(value, dict):
-        value_type = value.get("valueType")
-        code = value.get("code")
-        mode = value.get("mode")
-        budget_tokens = value.get("budgetTokens")
-        label_zh = value.get("labelZh")
-    else:
-        value_type = getattr(value, "valueType", getattr(value, "value_type", None))
-        code = getattr(value, "code", None)
-        mode = getattr(value, "mode", None)
-        budget_tokens = getattr(value, "budgetTokens", getattr(value, "budget_tokens", None))
-        label_zh = getattr(value, "labelZh", getattr(value, "label_zh", None))
-
-    normalized_label = label_zh.strip() if isinstance(label_zh, str) and label_zh.strip() != "" else None
-    if value_type == "code":
-        if not isinstance(code, str) or code.strip() == "":
-            return None
-        return RuntimeThinkingValue(
-            valueType="code",
-            code=code.strip(),
-            labelZh=normalized_label,
-        )
-    if value_type == "budget":
-        normalized_mode = mode.strip() if isinstance(mode, str) and mode.strip() in _BUDGET_VALUE_MODES else None
-        normalized_budget_tokens = (
-            budget_tokens
-            if isinstance(budget_tokens, int) and not isinstance(budget_tokens, bool) and budget_tokens >= 0
-            else None
-        )
-        if normalized_mode is None:
-            return None
-        if normalized_mode == "budget" and normalized_budget_tokens is None:
-            return None
-        return RuntimeThinkingValue(
-            valueType="budget",
-            mode=normalized_mode,
-            budgetTokens=normalized_budget_tokens,
-            labelZh=normalized_label,
-        )
-    if value_type == "fixed":
-        normalized_code = code.strip() if isinstance(code, str) and code.strip() != "" else "fixed"
-        if normalized_code != "fixed":
-            return None
-        return RuntimeThinkingValue(
-            valueType="fixed",
-            code="fixed",
-            labelZh=normalized_label,
-        )
-    return None
-
-
-
-def _build_runtime_thinking_value_from_legacy(
-    *,
-    mode: str | None,
-    level: ThinkingLevelIntent | None,
-    budget_tokens: int | None,
-    label_zh: str | None,
-) -> RuntimeThinkingValue | None:
-    normalized_label = label_zh.strip() if isinstance(label_zh, str) and label_zh.strip() != "" else None
-    normalized_mode = mode.strip() if isinstance(mode, str) and mode.strip() != "" else None
-    if normalized_mode == "budget":
-        if budget_tokens is None or budget_tokens < 0:
-            return None
-        return RuntimeThinkingValue(
-            valueType="budget",
-            mode="budget",
-            budgetTokens=budget_tokens,
-            labelZh=normalized_label or str(budget_tokens),
-        )
-    if level is not None:
-        return RuntimeThinkingValue(
-            valueType="code",
-            code=level,
-            labelZh=normalized_label or level,
-        )
-    return None
-
-
-
-def _coerce_mapping_dict(value: Any) -> dict[str, Any] | None:
-    return dict(value) if isinstance(value, dict) else None
-
-
-
-def _build_reasoning_suppression_basis(
-    *,
-    capability: dict[str, Any] | None,
-    applied_selection: RuntimeThinkingSelection | None = None,
-    applied_thinking_level: ThinkingLevelIntent | None = None,
-) -> dict[str, Any] | None:
-    if capability is None and applied_selection is None and applied_thinking_level is None:
-        return None
-
-    capability_visibility = capability.get("visibility") if isinstance(capability, dict) else None
-    reasoning_visibility = (
-        capability_visibility.get("reasoning")
-        if isinstance(capability_visibility, dict) and isinstance(capability_visibility.get("reasoning"), str)
-        else "visible"
-    )
-    supports_suppression = (
-        capability_visibility.get("supportsSuppression")
-        if isinstance(capability_visibility, dict)
-        and isinstance(capability_visibility.get("supportsSuppression"), bool)
-        else True
-    )
-    resolved_applied_selection = applied_selection
-    if resolved_applied_selection is None and applied_thinking_level is not None:
-        resolved_applied_selection = RuntimeThinkingSelection.from_legacy_level_intent(applied_thinking_level)
-    suppression_marker = (
-        None
-        if resolved_applied_selection is None
-        else resolved_applied_selection.value.suppression_marker()
-    )
-    should_suppress = False
-    source = "none"
-    reason_code: str | None = None
-    visibility_reason_codes = {
-        "suppressed": "capability_visibility_suppressed",
-        "hidden": "capability_visibility_hidden",
-        "fixed-no-visible-trace": "capability_visibility_fixed_no_visible_trace",
-    }
-    if reasoning_visibility in visibility_reason_codes:
-        should_suppress = True
-        source = "capability-visibility"
-        reason_code = visibility_reason_codes[reasoning_visibility]
-    elif suppression_marker in {"off", "none", "disabled", "false"}:
-        should_suppress = True
-        source = "applied-selection"
-        reason_code = "applied_selection_suppressed"
-
-    return {
-        "shouldSuppress": should_suppress,
-        "source": source,
-        "reasonCode": reason_code,
-        "appliedThinkingSelection": (
-            None if resolved_applied_selection is None else resolved_applied_selection.to_dict()
-        ),
-        "reasoningVisibility": reasoning_visibility,
-        "supportsSuppression": supports_suppression,
-        "capabilitySource": capability.get("source") if isinstance(capability, dict) else None,
-        "capabilitySeries": capability.get("series") if isinstance(capability, dict) else None,
-    }
-
+from ._contracts.thinking import (  # noqa: E402
+    _build_reasoning_suppression_basis,
+    _build_runtime_thinking_value_from_legacy,
+    _coerce_mapping_dict,
+    _coerce_runtime_thinking_selection,
+    _resolve_policy_thinking_selection,
+)
 
 
 def _jsonable(value: Any) -> Any:
-    if isinstance(value, datetime):
-        return value.isoformat(timespec="seconds")
-    if isinstance(value, dict):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_jsonable(item) for item in value]
-    return value
+    return to_jsonable_contract(value)

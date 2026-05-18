@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, Self
+
+from pydantic import Field, model_validator
+
+from .pydantic_contracts import RuntimeContractModel
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeModelRouteRef:
-    route_kind: str
-    profile_id: str
-    model_id: str
+class RuntimeModelRouteRef(RuntimeContractModel):
+    route_kind: str = Field(validation_alias="routeKind")
+    profile_id: str = Field(validation_alias="profileId")
+    model_id: str = Field(validation_alias="modelId")
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -18,17 +21,21 @@ class RuntimeModelRouteRef:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeModelRoute:
-    provider_profile_id: str
-    route_ref: RuntimeModelRouteRef
-    catalog_revision: str | None = None
+class RuntimeModelRoute(RuntimeContractModel):
+    provider_profile_id: str = Field(validation_alias="providerProfileId")
+    route_ref: RuntimeModelRouteRef = Field(validation_alias="routeRef")
+    catalog_revision: str | None = Field(
+        default=None,
+        validation_alias="catalogRevision",
+    )
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_route_ref(self) -> Self:
         if self.route_ref.profile_id != self.provider_profile_id:
             raise ValueError(
                 "RuntimeModelRoute.provider_profile_id must match route_ref.profile_id."
             )
+        return self
 
     @property
     def model_id(self) -> str:
@@ -67,10 +74,16 @@ class ResolvedRuntimeModelRoute:
         )
         object.__setattr__(self, "route_ref", normalized_route_ref)
 
-        normalized_provider_id = _normalize_optional_text(self.provider_id) or _normalize_optional_text(self.provider) or ""
+        normalized_provider_id = (
+            _normalize_optional_text(self.provider_id)
+            or _normalize_optional_text(self.provider)
+            or ""
+        )
         object.__setattr__(self, "provider_id", normalized_provider_id)
 
-        normalized_endpoint_family = _normalize_optional_text(self.endpoint_family) or _resolve_endpoint_family(self.endpoint_type)
+        normalized_endpoint_family = _normalize_optional_text(
+            self.endpoint_family
+        ) or _resolve_endpoint_family(self.endpoint_type)
         object.__setattr__(self, "endpoint_family", normalized_endpoint_family)
 
         normalized_auth_kind = _normalize_optional_text(self.auth_kind)
@@ -83,7 +96,9 @@ class ResolvedRuntimeModelRoute:
 
     def to_resolved_route_dict(self) -> dict[str, object]:
         return {
-            "routeRef": self.route_ref.to_dict() if self.route_ref is not None else {
+            "routeRef": self.route_ref.to_dict()
+            if self.route_ref is not None
+            else {
                 "routeKind": "provider-model",
                 "profileId": self.provider_profile_id,
                 "modelId": self.model_id,
@@ -103,11 +118,15 @@ class ResolvedRuntimeModelRoute:
 
 
 class RuntimeModelRouteResolver(Protocol):
-    async def resolve(self, model_route: RuntimeModelRoute) -> ResolvedRuntimeModelRoute: ...
+    async def resolve(
+        self, model_route: RuntimeModelRoute
+    ) -> ResolvedRuntimeModelRoute: ...
 
 
 class RuntimeModelRouteResolutionError(RuntimeError):
-    def __init__(self, *, code: str, message: str, details: dict[str, object] | None = None) -> None:
+    def __init__(
+        self, *, code: str, message: str, details: dict[str, object] | None = None
+    ) -> None:
         self.code = code
         self.details = dict(details or {})
         super().__init__(message)

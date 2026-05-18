@@ -47,9 +47,13 @@ class BlackboardContentAPI:
             try:
                 response = self.context.get(page_url, label="Sidebar")
                 response.raise_for_status()
-                parsed = self.parse_course_sidebar(response.text, str(response.url), course_id=course_id)
+                parsed = self.parse_course_sidebar(
+                    response.text, str(response.url), course_id=course_id
+                )
             except Exception as ex:
-                self.context.log(f"⚠️ [Blackboard] sidebar解析失败，跳过页面: {page_url} - {ex}")
+                self.context.log(
+                    f"⚠️ [Blackboard] sidebar解析失败，跳过页面: {page_url} - {ex}"
+                )
                 continue
 
             for group, links in parsed.items():
@@ -61,16 +65,22 @@ class BlackboardContentAPI:
                     bucket.append(item)
                     merged_seen_urls.add(item_url)
 
-        self.context.log(f"🔍 [Blackboard] sidebar分组数: {len(merged)}, sidebar seed命中数: {len(merged_seen_urls)}")
+        self.context.log(
+            f"🔍 [Blackboard] sidebar分组数: {len(merged)}, sidebar seed命中数: {len(merged_seen_urls)}"
+        )
         return merged
 
-    def parse_course_sidebar(self, html: str, page_url: str, *, course_id: str) -> dict[str, list[dict[str, str]]]:
+    def parse_course_sidebar(
+        self, html: str, page_url: str, *, course_id: str
+    ) -> dict[str, list[dict[str, str]]]:
         """解析课程左侧导航栏，返回按分组聚合的链接。"""
         if not html:
             return {}
 
         soup = BeautifulSoup(html, "html.parser")
-        sidebar_root = soup.select_one("#courseMenuPalette_contents") or soup.select_one("#courseMenuPalette")
+        sidebar_root = soup.select_one(
+            "#courseMenuPalette_contents"
+        ) or soup.select_one("#courseMenuPalette")
         if not isinstance(sidebar_root, Tag):
             return {}
 
@@ -87,7 +97,9 @@ class BlackboardContentAPI:
 
             if anchor is None:
                 if classes.intersection({"separator", "title", "menudivider"}):
-                    header_text = clean_field(li.get_text(" ", strip=True), max_length=80)
+                    header_text = clean_field(
+                        li.get_text(" ", strip=True), max_length=80
+                    )
                     if header_text:
                         current_group = header_text
                 continue
@@ -100,7 +112,9 @@ class BlackboardContentAPI:
             full_url = self.context.absolute_url(page_url, href)
             normalized_url = urlparse(full_url)._replace(fragment="").geturl()
 
-            if not is_sidebar_seed_candidate(title, normalized_url, course_id, base_url=self.context.base_url):
+            if not is_sidebar_seed_candidate(
+                title, normalized_url, course_id, base_url=self.context.base_url
+            ):
                 continue
 
             bucket = grouped_links.setdefault(current_group, [])
@@ -117,31 +131,21 @@ class BlackboardContentAPI:
         """递归抓取课程内容中的资源链接，返回正式 DTO。"""
         self.context.log(f"🔍 [Blackboard] 开始获取课程资源, course_id={course_id}")
 
+        merged_seed_urls = self._collect_seed_urls(course_id)
+        resources = self._collect_course_resources(course_id, merged_seed_urls)
+        self._normalize_resource_ids(resources)
+
+        self.context.log(f"✅ [Blackboard] 资源抓取完成: 资源数={len(resources)}")
+        return resources
+
+    def _collect_seed_urls(self, course_id: str) -> list[str]:
+        """合并默认入口与 sidebar 中提取出的 seed。"""
         seed_urls = [
             f"{self.context.base_url}/webapps/blackboard/content/listContent.jsp?course_id={course_id}",
             f"{self.context.base_url}/webapps/blackboard/execute/launcher?type=Course&id={course_id}",
         ]
-
-        sidebar_seed_urls: list[str] = []
-        try:
-            sidebar = self.get_course_sidebar(course_id)
-            for group_links in sidebar.values():
-                for item in group_links:
-                    candidate_url = str(item.get("url") or "").strip()
-                    if candidate_url:
-                        sidebar_seed_urls.append(candidate_url)
-        except Exception as ex:
-            self.context.log(f"⚠️ [Blackboard] sidebar seed解析异常，回退默认seed: {ex}")
-            sidebar_seed_urls = []
-
-        merged_seed_urls: list[str] = []
-        seen_seed_urls: set[str] = set()
-        for candidate in seed_urls + sidebar_seed_urls:
-            normalized = urlparse(candidate)._replace(fragment="").geturl()
-            if not normalized or normalized in seen_seed_urls:
-                continue
-            seen_seed_urls.add(normalized)
-            merged_seed_urls.append(normalized)
+        sidebar_seed_urls = self._collect_sidebar_seed_urls(course_id)
+        merged_seed_urls = self._deduplicate_urls(seed_urls + sidebar_seed_urls)
 
         sidebar_seed_added = max(0, len(merged_seed_urls) - len(seed_urls))
         if sidebar_seed_urls:
@@ -151,8 +155,42 @@ class BlackboardContentAPI:
         else:
             self.context.log("🔍 [Blackboard] sidebar seed为空，回退默认seed链路")
 
-        queue: list[tuple[str, str | None]] = [(url, None) for url in merged_seed_urls]
-        queued_urls: set[str] = set(merged_seed_urls)
+        return merged_seed_urls
+
+    def _collect_sidebar_seed_urls(self, course_id: str) -> list[str]:
+        """从 sidebar 中抽取可作为内容抓取入口的 URL。"""
+        try:
+            sidebar = self.get_course_sidebar(course_id)
+        except Exception as ex:
+            self.context.log(f"⚠️ [Blackboard] sidebar seed解析异常，回退默认seed: {ex}")
+            return []
+
+        sidebar_seed_urls: list[str] = []
+        for group_links in sidebar.values():
+            for item in group_links:
+                candidate_url = str(item.get("url") or "").strip()
+                if candidate_url:
+                    sidebar_seed_urls.append(candidate_url)
+        return sidebar_seed_urls
+
+    def _deduplicate_urls(self, candidate_urls: list[str]) -> list[str]:
+        """去重并标准化 URL，保持原始顺序。"""
+        merged_urls: list[str] = []
+        seen_urls: set[str] = set()
+        for candidate in candidate_urls:
+            normalized = urlparse(candidate)._replace(fragment="").geturl()
+            if not normalized or normalized in seen_urls:
+                continue
+            seen_urls.add(normalized)
+            merged_urls.append(normalized)
+        return merged_urls
+
+    def _collect_course_resources(
+        self, course_id: str, seed_urls: list[str]
+    ) -> list[ResourceDTO]:
+        """按队列遍历课程内容页并收集资源。"""
+        queue: list[tuple[str, str | None]] = [(url, None) for url in seed_urls]
+        queued_urls: set[str] = set(seed_urls)
         visited: set[str] = set()
         resources: list[ResourceDTO] = []
         seen_download_urls: set[str] = set()
@@ -165,78 +203,145 @@ class BlackboardContentAPI:
                 continue
 
             visited.add(page_url)
-            self.context.log(f"📄 [Blackboard] 访问内容页 ({len(visited)}/{max_pages}): {page_url}")
+            self.context.log(
+                f"📄 [Blackboard] 访问内容页 ({len(visited)}/{max_pages}): {page_url}"
+            )
 
-            try:
-                response = self.context.get(page_url, label="Contents")
-                response.raise_for_status()
-            except Exception as ex:
-                self.context.log(f"⚠️ [Blackboard] 内容页访问失败: {page_url} - {ex}")
+            soup = self._fetch_content_page_soup(page_url)
+            if soup is None:
                 continue
 
-            soup = BeautifulSoup(response.text, "html.parser")
+            links = list(soup.find_all("a", href=True))
+            self._collect_page_file_resources(
+                links,
+                page_url,
+                course_id=course_id,
+                parent_resource_id=parent_resource_id,
+                resources=resources,
+                seen_download_urls=seen_download_urls,
+            )
+            self._collect_page_containers(
+                links,
+                page_url,
+                course_id=course_id,
+                parent_resource_id=parent_resource_id,
+                resources=resources,
+                seen_download_urls=seen_download_urls,
+                queue=queue,
+                queued_urls=queued_urls,
+                visited=visited,
+            )
 
-            for link in soup.find_all("a", href=True):
-                resource = self.extract_resource(
-                    link,
-                    page_url,
-                    course_id=course_id,
-                    parent_resource_id=parent_resource_id,
-                )
-                if not resource:
-                    continue
+        self.context.log(f"🔍 [Blackboard] 内容抓取访问页面数: {len(visited)}")
+        return resources
 
-                download_url = str(resource.url or "")
-                if not download_url or download_url in seen_download_urls:
-                    continue
+    def _fetch_content_page_soup(self, page_url: str) -> BeautifulSoup | None:
+        """请求并解析单个内容页。"""
+        try:
+            response = self.context.get(page_url, label="Contents")
+            response.raise_for_status()
+        except Exception as ex:
+            self.context.log(f"⚠️ [Blackboard] 内容页访问失败: {page_url} - {ex}")
+            return None
 
-                if not is_valid_resource(
-                    {
-                        "name": resource.title,
-                        "download_url": resource.url,
-                    },
-                    logger=self.context.logger.child("api.scrape_support.resources") if self.context.logger is not None else None,
-                ):
-                    continue
+        return BeautifulSoup(response.text, "html.parser")
 
-                seen_download_urls.add(download_url)
-                resources.append(resource)
+    def _collect_page_file_resources(
+        self,
+        links: list[Tag],
+        page_url: str,
+        *,
+        course_id: str,
+        parent_resource_id: str | None,
+        resources: list[ResourceDTO],
+        seen_download_urls: set[str],
+    ) -> None:
+        """从单页链接中提取文件资源。"""
+        for link in links:
+            resource = self.extract_resource(
+                link,
+                page_url,
+                course_id=course_id,
+                parent_resource_id=parent_resource_id,
+            )
+            if resource is None:
+                continue
 
-            for link in soup.find_all("a", href=True):
-                container = self.extract_content_container(
-                    link,
-                    page_url,
-                    course_id=course_id,
-                    parent_resource_id=parent_resource_id,
-                )
-                if not container:
-                    continue
+            download_url = str(resource.url or "").strip()
+            if not download_url or download_url in seen_download_urls:
+                continue
 
-                child_url = str(container.url or "").strip()
-                child_resource_id = str(container.resource_id or "").strip()
-                if not child_url or not child_resource_id:
-                    continue
+            if not self._is_collectable_resource(resource):
+                continue
 
-                if child_url not in seen_download_urls:
-                    seen_download_urls.add(child_url)
-                    resources.append(container)
+            seen_download_urls.add(download_url)
+            resources.append(resource)
 
-                if child_url in visited or child_url in queued_urls:
-                    continue
+    def _is_collectable_resource(self, resource: ResourceDTO) -> bool:
+        """判断资源是否应进入最终结果。"""
+        return is_valid_resource(
+            {
+                "name": resource.title,
+                "download_url": resource.url,
+            },
+            logger=self.context.logger.child("api.scrape_support.resources")
+            if self.context.logger is not None
+            else None,
+        )
 
-                queue.append((child_url, child_resource_id))
-                queued_urls.add(child_url)
+    def _collect_page_containers(
+        self,
+        links: list[Tag],
+        page_url: str,
+        *,
+        course_id: str,
+        parent_resource_id: str | None,
+        resources: list[ResourceDTO],
+        seen_download_urls: set[str],
+        queue: list[tuple[str, str | None]],
+        queued_urls: set[str],
+        visited: set[str],
+    ) -> None:
+        """从单页链接中提取目录资源，并向队列补充未访问容器。"""
+        for link in links:
+            container = self.extract_content_container(
+                link,
+                page_url,
+                course_id=course_id,
+                parent_resource_id=parent_resource_id,
+            )
+            if container is None:
+                continue
 
+            child_url = str(container.url or "").strip()
+            child_resource_id = str(container.resource_id or "").strip()
+            if not child_url or not child_resource_id:
+                continue
+
+            if child_url not in seen_download_urls:
+                seen_download_urls.add(child_url)
+                resources.append(container)
+
+            if child_url in visited or child_url in queued_urls:
+                continue
+
+            queue.append((child_url, child_resource_id))
+            queued_urls.add(child_url)
+
+    def _normalize_resource_ids(self, resources: list[ResourceDTO]) -> None:
+        """将临时 resource_id 归一化为 Blackboard 真实标识，并同步 parent_id。"""
         old_to_real_id: dict[str, str] = {}
         for resource in resources:
             old_id = str(resource.resource_id or "").strip()
             download_url = str(resource.url or "").strip()
             ids = self.context.extract_ids(download_url)
             real_id = ids.get("xid") or ids.get("rid") or ids.get("content_id")
-            if real_id:
-                resource.resource_id = real_id
-                if old_id:
-                    old_to_real_id[old_id] = real_id
+            if not real_id:
+                continue
+
+            resource.resource_id = real_id
+            if old_id:
+                old_to_real_id[old_id] = real_id
 
         for resource in resources:
             parent_id = str(resource.parent_id or "").strip()
@@ -244,9 +349,6 @@ class BlackboardContentAPI:
                 resource.parent_id = None
                 continue
             resource.parent_id = old_to_real_id.get(parent_id, parent_id)
-
-        self.context.log(f"✅ [Blackboard] 资源抓取完成: 访问页面={len(visited)}, 资源数={len(resources)}")
-        return resources
 
     def extract_content_container(
         self,
@@ -269,7 +371,9 @@ class BlackboardContentAPI:
         if normalized_url == current_page_url:
             return None
 
-        if not is_course_content_page_url(normalized_url, course_id, base_url=self.context.base_url):
+        if not is_course_content_page_url(
+            normalized_url, course_id, base_url=self.context.base_url
+        ):
             return None
 
         parsed = urlparse(normalized_url)
@@ -317,8 +421,13 @@ class BlackboardContentAPI:
         lower_url = full_url.lower()
         lower_path = parsed.path.lower()
 
-        is_download_like = any(token in lower_url for token in ("/bbcswebdav/", "download", "xid=", "attachment"))
-        is_download_like = is_download_like or bool(RESOURCE_FILE_SUFFIX_RE.search(lower_path))
+        is_download_like = any(
+            token in lower_url
+            for token in ("/bbcswebdav/", "download", "xid=", "attachment")
+        )
+        is_download_like = is_download_like or bool(
+            RESOURCE_FILE_SUFFIX_RE.search(lower_path)
+        )
 
         if "listcontent.jsp" in lower_path and "download" not in lower_url:
             return None
@@ -350,6 +459,3 @@ class BlackboardContentAPI:
             parent_id=parent_resource_id,
             source_page=page_url,
         )
-
-
-

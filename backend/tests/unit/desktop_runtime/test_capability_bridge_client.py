@@ -7,6 +7,10 @@ import json
 import httpx
 import pytest
 
+import app.desktop_runtime.capability_bridge_client as capability_bridge_client_module
+from app.desktop_runtime.capability_bridge_protocol import (
+    DesktopCapabilityBridgeResponse as ProtocolDesktopCapabilityBridgeResponse,
+)
 from app.desktop_runtime.capability_bridge_client import (
     HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME,
     DesktopCapabilityBridgeClient,
@@ -14,7 +18,9 @@ from app.desktop_runtime.capability_bridge_client import (
 from app.tooling import HostCapabilityOperationError, ToolInvocationContext
 
 
-def _build_invocation_context(*, tool_id: str = "blackboard.snapshot.sync") -> ToolInvocationContext:
+def _build_invocation_context(
+    *, tool_id: str = "blackboard.snapshot.sync"
+) -> ToolInvocationContext:
     return ToolInvocationContext(
         invocation_id=f"{tool_id}:call-1",
         tool_id=tool_id,
@@ -28,7 +34,9 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     captured_payloads: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured_headers.append(request.headers.get(HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME))
+        captured_headers.append(
+            request.headers.get(HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME)
+        )
         payload = json.loads(request.content.decode("utf-8"))
         captured_payloads.append(payload)
         request_id = payload["requestId"]
@@ -57,7 +65,11 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
             )
         if (capability, operation) == ("workspace", "resolve_path"):
             relative_path = payload["payload"].get("relativePath")
-            suffix = "workspace-root" if relative_path is None else f"workspace-root/{relative_path}"
+            suffix = (
+                "workspace-root"
+                if relative_path is None
+                else f"workspace-root/{relative_path}"
+            )
             return httpx.Response(
                 200,
                 json={
@@ -69,7 +81,11 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
             )
         if (capability, operation) == ("database", "resolve_path"):
             relative_path = payload["payload"].get("relativePath")
-            suffix = "database-root" if relative_path is None else f"database-root/{relative_path}"
+            suffix = (
+                "database-root"
+                if relative_path is None
+                else f"database-root/{relative_path}"
+            )
             return httpx.Response(
                 200,
                 json={
@@ -85,7 +101,9 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                 json={
                     "requestId": request_id,
                     "ok": True,
-                    "result": {"path": f"workspace-root/{payload['payload']['relativePath']}"},
+                    "result": {
+                        "path": f"workspace-root/{payload['payload']['relativePath']}"
+                    },
                 },
                 request=request,
             )
@@ -99,7 +117,9 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                         "artifactId": "artifact-text",
                         "uri": "artifact://desktop/artifact-text",
                         "name": payload["payload"]["name"],
-                        "contentType": payload["payload"].get("contentType", "text/plain"),
+                        "contentType": payload["payload"].get(
+                            "contentType", "text/plain"
+                        ),
                         "metadata": payload["payload"].get("metadata", {}),
                     },
                 },
@@ -115,7 +135,9 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                         "artifactId": "artifact-bytes",
                         "uri": "artifact://desktop/artifact-bytes",
                         "name": payload["payload"]["name"],
-                        "contentType": payload["payload"].get("contentType", "application/octet-stream"),
+                        "contentType": payload["payload"].get(
+                            "contentType", "application/octet-stream"
+                        ),
                         "metadata": payload["payload"].get("metadata", {}),
                     },
                 },
@@ -158,6 +180,27 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
                     "requestId": request_id,
                     "ok": True,
                     "result": {},
+                },
+                request=request,
+            )
+        if (capability, operation) == ("mcp", "call_tool"):
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": request_id,
+                    "ok": True,
+                    "result": {
+                        "ok": True,
+                        "toolId": payload["toolId"],
+                        "serverId": payload["payload"]["serverId"],
+                        "remoteToolName": payload["payload"]["remoteToolName"],
+                        "content": [{"type": "text", "text": "search completed"}],
+                        "structuredContent": {
+                            "echoedArguments": payload["payload"]["arguments"]
+                        },
+                        "snapshotRevision": payload["payload"].get("snapshotRevision"),
+                        "isError": False,
+                    },
                 },
                 request=request,
             )
@@ -230,6 +273,17 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         message="completed",
         data={"artifactCount": 2},
     )
+    mcp_result = asyncio.run(
+        client.call_mcp_tool(
+            context=_build_invocation_context(
+                tool_id="mcp.mcp-stdio-stub.search-campus.00004d8d"
+            ),
+            server_id="mcp-stdio-stub",
+            remote_tool_name="search-campus",
+            arguments={"keyword": "library"},
+            snapshot_revision=8,
+        )
+    )
     asyncio.run(client.aclose())
 
     assert secret_value == "resolved-secret"
@@ -243,6 +297,16 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
     assert bytes_artifact.content_type == "application/octet-stream"
     assert described_artifact.metadata == {"described": True}
     assert state_value == {"count": 1}
+    assert mcp_result == {
+        "ok": True,
+        "toolId": "mcp.mcp-stdio-stub.search-campus.00004d8d",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "content": [{"type": "text", "text": "search completed"}],
+        "structuredContent": {"echoedArguments": {"keyword": "library"}},
+        "snapshotRevision": 8,
+        "isError": False,
+    }
 
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_payloads] == [
@@ -258,11 +322,29 @@ def test_desktop_capability_bridge_client_routes_all_capability_categories() -> 
         ("state", "put_value"),
         ("state", "delete_value"),
         ("event", "emit_event"),
+        ("mcp", "call_tool"),
     ]
-    assert all(item["toolId"] == context.tool_id for item in captured_payloads)
+    assert all(item["toolId"] == context.tool_id for item in captured_payloads[:-1])
+    assert captured_payloads[-1]["toolId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d"
     assert all(item["runId"] == context.run_id for item in captured_payloads)
-    assert all(item["toolCallId"] == context.invocation_id for item in captured_payloads)
-    assert base64.b64decode(captured_payloads[6]["payload"]["contentBase64"]).decode("utf-8") == "payload-bytes"
+    assert all(item["toolCallId"] == context.invocation_id for item in captured_payloads[:-1])
+    assert captured_payloads[-1]["toolCallId"] == "mcp.mcp-stdio-stub.search-campus.00004d8d:call-1"
+    save_bytes_payload = captured_payloads[6]["payload"]
+    assert isinstance(save_bytes_payload, dict)
+    assert (
+        base64.b64decode(save_bytes_payload["contentBase64"]).decode("utf-8")
+        == "payload-bytes"
+    )
+
+
+    mcp_payload = captured_payloads[-1]["payload"]
+    assert mcp_payload == {
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "arguments": {"keyword": "library"},
+        "snapshotRevision": 8,
+    }
+
 
 
 def test_desktop_capability_bridge_client_maps_host_error_payloads() -> None:
@@ -302,11 +384,275 @@ def test_desktop_capability_bridge_client_maps_host_error_payloads() -> None:
     assert exc_info.value.details == {"reason": "todo", "operation": "save_text"}
 
 
-def test_desktop_capability_bridge_client_reports_missing_bootstrap_as_unavailable() -> None:
+def test_desktop_capability_bridge_client_preserves_mcp_first_call_readiness_failures() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "requestId": payload["requestId"],
+                "ok": True,
+                "result": {
+                    "ok": False,
+                    "toolId": payload["toolId"],
+                    "serverId": payload["payload"]["serverId"],
+                    "remoteToolName": payload["payload"]["remoteToolName"],
+                    "snapshotRevision": 12,
+                    "error": {
+                        "code": "server_not_ready",
+                        "message": "The MCP server is not ready to execute tools.",
+                        "retryable": True,
+                        "observedAt": "2026-04-21T12:00:00.000Z",
+                        "details": {
+                            "requestedServerId": payload["payload"]["serverId"],
+                            "requestedRemoteToolName": payload["payload"]["remoteToolName"],
+                            "connectionState": "connected",
+                            "connectorToolCount": 0,
+                            "requestedSnapshotRevision": payload["payload"].get("snapshotRevision"),
+                            "snapshotRevision": 12,
+                        },
+                    },
+                },
+            },
+            request=request,
+        )
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(
+        client.call_mcp_tool(
+            context=_build_invocation_context(
+                tool_id="mcp.missing.tool.11111111"
+            ),
+            server_id="mcp-stdio-stub",
+            remote_tool_name="search-campus",
+            arguments={"keyword": "library"},
+            snapshot_revision=11,
+        )
+    )
+
+    assert result == {
+        "ok": False,
+        "toolId": "mcp.missing.tool.11111111",
+        "serverId": "mcp-stdio-stub",
+        "remoteToolName": "search-campus",
+        "snapshotRevision": 12,
+        "error": {
+            "code": "server_not_ready",
+            "message": "The MCP server is not ready to execute tools.",
+            "retryable": True,
+            "observedAt": "2026-04-21T12:00:00.000Z",
+            "details": {
+                "requestedServerId": "mcp-stdio-stub",
+                "requestedRemoteToolName": "search-campus",
+                "connectionState": "connected",
+                "connectorToolCount": 0,
+                "requestedSnapshotRevision": 11,
+                "snapshotRevision": 12,
+            },
+        },
+    }
+
+
+def test_desktop_capability_bridge_client_wraps_invalid_error_envelope_validation_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _RaisingBridgeResponse:
+        @classmethod
+        def model_validate(cls, value: object) -> object:
+            if isinstance(value, dict) and value.get("ok") is False:
+                ProtocolDesktopCapabilityBridgeResponse.model_validate(
+                    {
+                        "requestId": "request-1",
+                        "ok": False,
+                        "errorCode": "timeout",
+                    }
+                )
+            return ProtocolDesktopCapabilityBridgeResponse.model_validate(value)
+
+    monkeypatch.setattr(
+        capability_bridge_client_module,
+        "DesktopCapabilityBridgeResponse",
+        _RaisingBridgeResponse,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "requestId": payload["requestId"],
+                "ok": False,
+                "errorCode": "timeout",
+                "errorMessage": "Host bridge timed out.",
+                "errorRetryable": True,
+                "details": {"timeoutMs": 5000},
+            },
+            request=request,
+        )
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+
+
+def test_desktop_capability_bridge_client_maps_mcp_timeout_to_structured_timeout() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out while waiting for the MCP bridge")
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(HostCapabilityOperationError) as exc_info:
+        asyncio.run(
+            client.call_mcp_tool(
+                context=_build_invocation_context(
+                    tool_id="mcp.mcp-stdio-stub.search-campus.00004d8d"
+                ),
+                server_id="mcp-stdio-stub",
+                remote_tool_name="search-campus",
+                arguments={"keyword": "library"},
+                snapshot_revision=8,
+            )
+        )
+
+    error = exc_info.value
+    assert error.capability == "mcp"
+    assert error.code == "timeout"
+    assert error.retryable is True
+    assert error.message == (
+        "Desktop capability bridge timed out while waiting for the host response."
+    )
+    assert error.details == {
+        "operation": "call_tool",
+        "transportErrorType": "ReadTimeout",
+    }
+
+    with pytest.raises(HostCapabilityOperationError) as exc_info:
+        asyncio.run(
+            client.save_text(
+                context=_build_invocation_context(),
+                name="report.json",
+                text="{}",
+            )
+        )
+
+    assert exc_info.value.capability == "artifact"
+    assert exc_info.value.code == "temporarily_unavailable"
+    assert exc_info.value.retryable is True
+    assert exc_info.value.details == {
+        "operation": "save_text",
+    }
+
+
+def test_desktop_capability_bridge_client_omits_request_timeout_when_not_overridden() -> (
+    None
+):
+    captured_post_calls: list[dict[str, object]] = []
+
+    class _RecordingAsyncClient:
+        async def post(self, url: str, **kwargs: object) -> httpx.Response:
+            captured_post_calls.append({"url": url, **kwargs})
+            payload = kwargs["json"]
+            assert isinstance(payload, dict)
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": payload["requestId"],
+                    "ok": True,
+                    "result": {"value": "resolved-secret"},
+                },
+                request=httpx.Request("POST", url),
+            )
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+    )
+    client._async_client = _RecordingAsyncClient()  # type: ignore[assignment]
+
+    secret_value = asyncio.run(
+        client.get_secret(context=_build_invocation_context(), name="bb.password")
+    )
+
+    assert secret_value == "resolved-secret"
+    assert len(captured_post_calls) == 1
+    post_call = captured_post_calls[0]
+    assert post_call["url"] == "http://127.0.0.1:45678/host/private/capability-bridge"
+    assert "timeout" not in post_call
+
+
+def test_desktop_capability_bridge_client_preserves_explicit_mcp_timeout_override() -> (
+    None
+):
+    captured_post_calls: list[dict[str, object]] = []
+
+    class _RecordingAsyncClient:
+        async def post(self, url: str, **kwargs: object) -> httpx.Response:
+            captured_post_calls.append({"url": url, **kwargs})
+            payload = kwargs["json"]
+            assert isinstance(payload, dict)
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": payload["requestId"],
+                    "ok": True,
+                    "result": {
+                        "ok": True,
+                        "toolId": payload["toolId"],
+                        "serverId": payload["payload"]["serverId"],
+                        "remoteToolName": payload["payload"]["remoteToolName"],
+                        "content": [],
+                        "structuredContent": {},
+                        "snapshotRevision": payload["payload"].get("snapshotRevision"),
+                        "isError": False,
+                    },
+                },
+                request=httpx.Request("POST", url),
+            )
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+    )
+    client._async_client = _RecordingAsyncClient()  # type: ignore[assignment]
+
+    result = asyncio.run(
+        client.call_mcp_tool(
+            context=_build_invocation_context(
+                tool_id="mcp.mcp-stdio-stub.search-campus.00004d8d"
+            ),
+            server_id="mcp-stdio-stub",
+            remote_tool_name="search-campus",
+            arguments={"keyword": "library"},
+            snapshot_revision=8,
+        )
+    )
+
+    assert result["ok"] is True
+    assert len(captured_post_calls) == 1
+    post_call = captured_post_calls[0]
+    assert post_call["timeout"] == max(client._timeout, 20.0)
+
+
+def test_desktop_capability_bridge_client_reports_missing_bootstrap_as_unavailable() -> (
+    None
+):
     client = DesktopCapabilityBridgeClient(bridge_url=None, bridge_token=None)
 
     with pytest.raises(HostCapabilityOperationError) as exc_info:
-        asyncio.run(client.get_secret(context=_build_invocation_context(), name="bb.password"))
+        asyncio.run(
+            client.get_secret(context=_build_invocation_context(), name="bb.password")
+        )
 
     assert exc_info.value.capability == "secret"
     assert exc_info.value.code == "temporarily_unavailable"

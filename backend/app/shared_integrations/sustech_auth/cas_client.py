@@ -104,11 +104,17 @@ class CASClient:
         final_path = urlparse(final_url).path or "/"
         lowered_body = (response.text or "").lower()
         redirect_chain = [str(item.url) for item in response.history] + [final_url]
-        has_login_form = 'name="username"' in lowered_body and 'name="password"' in lowered_body
+        has_login_form = (
+            'name="username"' in lowered_body and 'name="password"' in lowered_body
+        )
         has_execution = 'name="execution"' in lowered_body
-        hit_authentication_require = any("/authentication/require" in item for item in redirect_chain)
+        hit_authentication_require = any(
+            "/authentication/require" in item for item in redirect_chain
+        )
         hit_session_invalid = "/session/invalid" in final_path
-        invalid_credentials = self._contains_invalid_credential_markers(response.text or "")
+        invalid_credentials = self._contains_invalid_credential_markers(
+            response.text or ""
+        )
         success = (
             service_domain in final_url
             and not has_login_form
@@ -119,7 +125,9 @@ class CASClient:
         if not success:
             if invalid_credentials:
                 self.last_login_failure_reason = "invalid_credentials"
-                self.last_login_failure_message = "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。"
+                self.last_login_failure_message = (
+                    "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。"
+                )
             else:
                 self.last_login_failure_reason = "login_failed"
                 self.last_login_failure_message = "CAS 登录失败"

@@ -134,7 +134,7 @@ export function createSelectedAgent(): AgentType {
     hint: '默认使用所有工具',
     status: 'active',
     icon: ((() => null) as unknown) as AgentType['icon'],
-    recommendedTools: ['tool.file-convert'],
+    recommendedTools: ['tool.fs.read'],
   }
 }
 
@@ -177,11 +177,11 @@ export function createSessionShell(overrides: SessionShellOverrides = {}): Assis
       capabilitiesVersion: 'cap-v12',
       allAvailableTools: [
         {
-          toolId: 'tool.file-convert',
+          toolId: 'tool.fs.read',
           kind: 'builtin',
           availability: 'available',
-          displayName: '文件转换',
-          description: 'DOCX/PDF/PPTX 转换工具',
+          displayName: '读取文件',
+          description: '读取项目内文件内容。',
         },
         {
           toolId: 'tool.remote-search',
@@ -191,8 +191,8 @@ export function createSessionShell(overrides: SessionShellOverrides = {}): Assis
           description: '访问外部搜索服务',
         },
       ],
-      recommendedToolsForAgent: ['tool.file-convert'],
-      defaultEnabledTools: ['tool.file-convert'],
+      recommendedToolsForAgent: ['tool.fs.read'],
+      defaultEnabledTools: ['tool.fs.read'],
       toolSelectionMode: 'recommendation-only',
       ...overrides.capabilities,
     },

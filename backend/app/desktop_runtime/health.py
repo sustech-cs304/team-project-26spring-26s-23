@@ -6,7 +6,12 @@ import platform
 from pathlib import Path
 
 from .config import DesktopRuntimeConfig, LOCAL_TOKEN_HEADER_NAME, get_backend_version
-from .contracts import DiagnosticsContract, HealthContract, ReadinessContract, VersionContract
+from .contracts import (
+    DiagnosticsContract,
+    HealthContract,
+    ReadinessContract,
+    VersionContract,
+)
 from .lifecycle import RuntimeLifecycleManager
 
 DESKTOP_RUNTIME_SERVICE_NAME = "sustech-copilot-desktop-runtime"

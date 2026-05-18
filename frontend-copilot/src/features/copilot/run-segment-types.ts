@@ -1,4 +1,5 @@
 import type {
+  RuntimeInlineFormField,
   RuntimeModelRoute,
   RuntimeResolvedModelRoute,
   RuntimeToolEventPhase,
@@ -17,9 +18,10 @@ export interface CopilotRunFailureSummary {
   details: Record<string, unknown>
 }
 
-export type CopilotRunSegmentKind = 'assistant' | 'reasoning' | 'tool' | 'diagnostic' | 'terminal'
+export type CopilotRunSegmentKind = 'assistant' | 'reasoning' | 'tool' | 'inline-form' | 'diagnostic' | 'terminal'
 export type CopilotRunSegmentStatus = 'pending' | 'streaming' | 'completed' | 'failed' | 'cancelled'
 export type CopilotToolSegmentPhase = RuntimeToolEventPhase | 'cancelled'
+export type CopilotInlineFormSegmentState = 'pending' | 'submitted' | 'expired'
 
 interface CopilotRunSegmentBase {
   id: string
@@ -49,6 +51,15 @@ export interface CopilotReasoningSegment extends CopilotRunSegmentBase {
   isCollapsedByDefault: true
 }
 
+export interface CopilotToolSegmentApproval {
+  mode: 'allow' | 'ask' | 'delay' | 'deny' | null
+  approvalMethod: 'accept_reject' | 'password' | null
+  riskLevel: 'safe' | 'moderate' | 'high' | null
+  timeoutAt: string | null
+  timeoutSeconds: number | null
+  timeoutAction: 'approve' | 'deny' | null
+}
+
 export interface CopilotToolSegment extends CopilotRunSegmentBase {
   kind: 'tool'
   toolCallId: string
@@ -59,6 +70,22 @@ export interface CopilotToolSegment extends CopilotRunSegmentBase {
   inputSummary: string | null
   resultSummary: string | null
   errorSummary: string | null
+  approval?: CopilotToolSegmentApproval | null
+}
+
+export interface CopilotInlineFormSegment extends CopilotRunSegmentBase {
+  kind: 'inline-form'
+  toolCallId: string
+  toolId: string
+  formId: string
+  title: string
+  summary: string
+  description: string | null
+  submitLabel: string
+  fields: RuntimeInlineFormField[]
+  formState: CopilotInlineFormSegmentState
+  formValues: Record<string, string | number | boolean>
+  submittedPayload: Record<string, unknown> | null
 }
 
 export interface CopilotDiagnosticSegment extends CopilotRunSegmentBase {
@@ -82,5 +109,6 @@ export type CopilotRunSegment =
   | CopilotAssistantSegment
   | CopilotReasoningSegment
   | CopilotToolSegment
+  | CopilotInlineFormSegment
   | CopilotDiagnosticSegment
   | CopilotTerminalSegment

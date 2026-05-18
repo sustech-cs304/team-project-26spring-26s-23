@@ -17,14 +17,14 @@ from .request_mappers import ensure_runtime_request_id, get_request_state_text
 _RUNTIME_ERROR_LOGGER = logging.getLogger("uvicorn.error")
 
 
-
-def stream_runtime_run_events(events: AsyncIterable[RuntimeRunEvent]) -> StreamingResponse:
+def stream_runtime_run_events(
+    events: AsyncIterable[RuntimeRunEvent],
+) -> StreamingResponse:
     return StreamingResponse(
         encode_runtime_run_events(events),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )
-
 
 
 def handle_unexpected_run_start_exception(
@@ -34,7 +34,10 @@ def handle_unexpected_run_start_exception(
     exc: Exception,
 ) -> JSONResponse:
     request_id = ensure_runtime_request_id(request)
-    runtime_method = get_request_state_text(request, "copilot_runtime_requested_method") or RUN_START_METHOD
+    runtime_method = (
+        get_request_state_text(request, "copilot_runtime_requested_method")
+        or RUN_START_METHOD
+    )
     thread_id = get_request_state_text(request, "copilot_runtime_thread_id") or ""
     agent_id = get_request_state_text(request, "copilot_runtime_agent_id") or ""
     run_id = get_request_state_text(request, "copilot_runtime_run_id") or ""
@@ -81,7 +84,6 @@ def handle_unexpected_run_start_exception(
     )
 
 
-
 def log_run_start_stage(
     request: Request,
     event_name: str,
@@ -89,7 +91,9 @@ def log_run_start_stage(
     exc: Exception | None = None,
 ) -> None:
     exception_summary = summarize_exception(exc) if exc is not None else None
-    request_debug_enabled = getattr(request.state, "copilot_runtime_debug_mode_enabled", None)
+    request_debug_enabled = getattr(
+        request.state, "copilot_runtime_debug_mode_enabled", None
+    )
     log_runtime_chain_debug(
         event_name,
         enabled=request_debug_enabled,
@@ -97,7 +101,10 @@ def log_run_start_stage(
         httpMethod=request.method,
         path=request.url.path,
         origin=request.headers.get("origin"),
-        runtimeMethod=get_request_state_text(request, "copilot_runtime_requested_method") or RUN_START_METHOD,
+        runtimeMethod=get_request_state_text(
+            request, "copilot_runtime_requested_method"
+        )
+        or RUN_START_METHOD,
         threadId=get_request_state_text(request, "copilot_runtime_thread_id"),
         agentId=get_request_state_text(request, "copilot_runtime_agent_id"),
         runId=get_request_state_text(request, "copilot_runtime_run_id"),
@@ -111,9 +118,10 @@ def log_run_start_stage(
     )
 
 
-
 def build_run_start_failed_event_name(phase: str) -> str:
-    normalized_phase = phase.strip() if isinstance(phase, str) and phase.strip() != "" else "unknown"
+    normalized_phase = (
+        phase.strip() if isinstance(phase, str) and phase.strip() != "" else "unknown"
+    )
     return f"run_start.{normalized_phase}.failed"
 
 

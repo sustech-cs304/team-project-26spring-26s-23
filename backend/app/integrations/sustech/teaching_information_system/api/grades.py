@@ -26,8 +26,13 @@ from .constants import (
     _SCORE_KEYS,
     _TERM_KEYS,
 )
-from .dto import TISGradeRecord, TISHomepageProfile, TISMenuEntry, TISProbeResult
-from .fetch_helpers import _contains_keyword, _extract_response_auth_markers, _response_chain_urls, _same_host
+from .dto import TISGradeRecord, TISHomepageProfile, TISProbeResult
+from .fetch_helpers import (
+    _contains_keyword,
+    _extract_response_auth_markers,
+    _response_chain_urls,
+    _same_host,
+)
 
 
 def _first_non_empty(mapping: dict[str, Any], candidates: Sequence[str]) -> str | None:
@@ -48,7 +53,9 @@ def _first_non_empty(mapping: dict[str, Any], candidates: Sequence[str]) -> str 
     return None
 
 
-def _pick_by_header_tokens(mapping: dict[str, Any], tokens: Iterable[str]) -> str | None:
+def _pick_by_header_tokens(
+    mapping: dict[str, Any], tokens: Iterable[str]
+) -> str | None:
     for key, value in mapping.items():
         lowered_key = str(key).lower()
         if any(str(token).lower() in lowered_key for token in tokens):
@@ -74,7 +81,12 @@ def _dedupe_grade_records(records: Sequence[TISGradeRecord]) -> list[TISGradeRec
     deduped: list[TISGradeRecord] = []
     seen: set[tuple[str, str, str, str]] = set()
     for record in records:
-        key = (record.course_name, record.score, record.course_code or "", record.term or "")
+        key = (
+            record.course_name,
+            record.score,
+            record.course_code or "",
+            record.term or "",
+        )
         if key in seen:
             continue
         seen.add(key)
@@ -89,7 +101,9 @@ def _merge_probe_records(probes: Sequence[TISProbeResult]) -> list[TISGradeRecor
     return _dedupe_grade_records(merged)
 
 
-def _normalize_candidate_url(candidate: str, *, page_url: str, base_url: str) -> str | None:
+def _normalize_candidate_url(
+    candidate: str, *, page_url: str, base_url: str
+) -> str | None:
     text = _clean_text(candidate)
     if not text or text.startswith("javascript:"):
         return None
@@ -102,18 +116,24 @@ def _normalize_candidate_url(candidate: str, *, page_url: str, base_url: str) ->
     return None
 
 
-def build_grade_candidate_urls(homepage: TISHomepageProfile, *, base_url: str = _DEFAULT_TIS_BASE_URL) -> list[str]:
+def build_grade_candidate_urls(
+    homepage: TISHomepageProfile, *, base_url: str = _DEFAULT_TIS_BASE_URL
+) -> list[str]:
     base_candidates = list(homepage.base_urls) or [base_url]
     explicit_candidates = list(homepage.grade_related_endpoints)
 
     for menu_entry in homepage.menu_entries:
-        combined = " ".join(filter(None, [menu_entry.text, menu_entry.href, menu_entry.onclick]))
+        combined = " ".join(
+            filter(None, [menu_entry.text, menu_entry.href, menu_entry.onclick])
+        )
         if menu_entry.href and _contains_keyword(combined, _GRADE_MENU_KEYWORDS):
             explicit_candidates.append(menu_entry.href)
 
     resolved: list[str] = []
     for item in explicit_candidates:
-        normalized = _normalize_candidate_url(item, page_url=homepage.page_url, base_url=base_url)
+        normalized = _normalize_candidate_url(
+            item, page_url=homepage.page_url, base_url=base_url
+        )
         if normalized:
             resolved.append(normalized)
 
@@ -122,10 +142,14 @@ def build_grade_candidate_urls(homepage: TISHomepageProfile, *, base_url: str = 
         for path in _DEFAULT_GRADE_PATH_CANDIDATES:
             resolved.append(urljoin(f"{normalized_root}/", path.lstrip("/")))
 
-    return _dedupe_preserve_order(url for url in resolved if _same_host(url, base_url=base_url))
+    return _dedupe_preserve_order(
+        url for url in resolved if _same_host(url, base_url=base_url)
+    )
 
 
-def _build_real_grade_query_payload(*, pylx: str = "1", current: int = 1, page_size: int = 20) -> dict[str, Any]:
+def _build_real_grade_query_payload(
+    *, pylx: str = "1", current: int = 1, page_size: int = 20
+) -> dict[str, Any]:
     return {
         "xn": None,
         "xq": None,
@@ -146,7 +170,9 @@ def _build_tis_probe_result(
     record_count: int = 0,
 ) -> TISProbeResult:
     content_type = str(response.headers.get("content-type") or "").lower()
-    initial_request = response.history[0].request if response.history else response.request
+    initial_request = (
+        response.history[0].request if response.history else response.request
+    )
     return TISProbeResult(
         url=str(response.url),
         method=str(response.request.method),
@@ -162,11 +188,24 @@ def _build_tis_probe_result(
         redirect_count=len(response.history),
         request_headers={
             key: str(initial_request.headers.get(key) or "")
-            for key in ("RoleCode", "Referer", "Content-Type", "X-Requested-With", "Accept", "Origin")
+            for key in (
+                "RoleCode",
+                "Referer",
+                "Content-Type",
+                "X-Requested-With",
+                "Accept",
+                "Origin",
+            )
             if initial_request.headers.get(key)
         },
-        request_payload_keys=sorted(request_payload.keys()) if request_payload is not None else [],
-        request_payload={str(key): _jsonable(value) for key, value in request_payload.items()} if request_payload is not None else {},
+        request_payload_keys=sorted(request_payload.keys())
+        if request_payload is not None
+        else [],
+        request_payload={
+            str(key): _jsonable(value) for key, value in request_payload.items()
+        }
+        if request_payload is not None
+        else {},
     )
 
 
@@ -175,13 +214,21 @@ def _extract_grade_json_debug_payload(payload: Any) -> dict[str, Any]:
         return {"payload_type": type(payload).__name__}
     content = payload.get("content")
     list_node = content.get("list") if isinstance(content, dict) else None
-    sample_record = list_node[0] if isinstance(list_node, list) and list_node and isinstance(list_node[0], dict) else None
+    sample_record = (
+        list_node[0]
+        if isinstance(list_node, list) and list_node and isinstance(list_node[0], dict)
+        else None
+    )
     return {
         "payload_type": "dict",
         "root_keys": sorted(str(key) for key in payload.keys())[:20],
-        "content_keys": sorted(str(key) for key in content.keys())[:20] if isinstance(content, dict) else [],
+        "content_keys": sorted(str(key) for key in content.keys())[:20]
+        if isinstance(content, dict)
+        else [],
         "list_length": len(list_node) if isinstance(list_node, list) else None,
-        "sample_record_keys": sorted(str(key) for key in sample_record.keys())[:30] if isinstance(sample_record, dict) else [],
+        "sample_record_keys": sorted(str(key) for key in sample_record.keys())[:30]
+        if isinstance(sample_record, dict)
+        else [],
     }
 
 
@@ -226,10 +273,16 @@ def extract_grade_records_from_html(html: str) -> list[TISGradeRecord]:
         rows = table.select("tr")
         if len(rows) < 2:
             continue
-        headers = [_clean_text(cell.get_text(" ", strip=True)).lower() for cell in rows[0].find_all(["th", "td"])]
+        headers = [
+            _clean_text(cell.get_text(" ", strip=True)).lower()
+            for cell in rows[0].find_all(["th", "td"])
+        ]
         if not headers:
             continue
-        has_grade_signal = any(_contains_keyword(header, _GRADE_MENU_KEYWORDS + _COURSE_NAME_KEYS) for header in headers)
+        has_grade_signal = any(
+            _contains_keyword(header, _GRADE_MENU_KEYWORDS + _COURSE_NAME_KEYS)
+            for header in headers
+        )
         if not has_grade_signal:
             continue
 
@@ -241,8 +294,12 @@ def extract_grade_records_from_html(html: str) -> list[TISGradeRecord]:
             for idx, cell in enumerate(cells):
                 header = headers[idx] if idx < len(headers) else f"column_{idx}"
                 row_map[header] = _clean_text(cell.get_text(" ", strip=True))
-            course_name = _first_non_empty(row_map, _COURSE_NAME_KEYS) or _pick_by_header_tokens(row_map, ("课程", "course", "名称", "name"))
-            score = _first_non_empty(row_map, _SCORE_KEYS) or _pick_by_header_tokens(row_map, ("成绩", "score", "grade"))
+            course_name = _first_non_empty(
+                row_map, _COURSE_NAME_KEYS
+            ) or _pick_by_header_tokens(row_map, ("课程", "course", "名称", "name"))
+            score = _first_non_empty(row_map, _SCORE_KEYS) or _pick_by_header_tokens(
+                row_map, ("成绩", "score", "grade")
+            )
             if not course_name or not score:
                 continue
             records.append(
@@ -266,7 +323,9 @@ def probe_grade_candidates(
     max_probe_count: int = 12,
 ) -> list[TISProbeResult]:
     probes: list[TISProbeResult] = []
-    candidate_urls = build_grade_candidate_urls(homepage, base_url=tis_client.config.base_url)
+    candidate_urls = build_grade_candidate_urls(
+        homepage, base_url=tis_client.config.base_url
+    )
     seen_requests: set[tuple[str, str]] = set()
 
     def _append_probe_result(
@@ -281,7 +340,9 @@ def probe_grade_candidates(
         preview = _clean_text(response.text, max_length=500)
         json_debug_payload: dict[str, Any] | None = None
         redirect_chain = _response_chain_urls(response)
-        auth_markers = _extract_response_auth_markers(response, base_url=tis_client.config.base_url)
+        auth_markers = _extract_response_auth_markers(
+            response, base_url=tis_client.config.base_url
+        )
 
         if is_json:
             try:
@@ -289,14 +350,23 @@ def probe_grade_candidates(
             except json.JSONDecodeError as ex:
                 payload = None
                 if logger is not None:
-                    logger.warning("⚠ TIS JSON 响应解码失败", payload={"url": str(response.url), "probe_label": probe_label, "error": str(ex)})
+                    logger.warning(
+                        "⚠ TIS JSON 响应解码失败",
+                        payload={
+                            "url": str(response.url),
+                            "probe_label": probe_label,
+                            "error": str(ex),
+                        },
+                    )
             if payload is not None:
                 grade_records = extract_grade_records_from_json(payload)
                 json_debug_payload = _extract_grade_json_debug_payload(payload)
         else:
             grade_records = extract_grade_records_from_html(response.text)
 
-        initial_request = response.history[0].request if response.history else response.request
+        initial_request = (
+            response.history[0].request if response.history else response.request
+        )
 
         if logger is not None:
             info_payload: dict[str, Any] = {
@@ -314,14 +384,37 @@ def probe_grade_candidates(
                 info_payload["request_payload_keys"] = sorted(request_payload.keys())
             logger.info("ℹ TIS 候选接口探测完成", payload=info_payload)
             if response.history:
-                logger.debug("ℹ TIS 候选接口重定向链", payload={"probe_label": probe_label, "requested_url": str(initial_request.url), "redirect_chain": redirect_chain})
-            if auth_markers["is_root_homepage"] or auth_markers["is_cas_login"] or auth_markers["has_login_form"]:
+                logger.debug(
+                    "ℹ TIS 候选接口重定向链",
+                    payload={
+                        "probe_label": probe_label,
+                        "requested_url": str(initial_request.url),
+                        "redirect_chain": redirect_chain,
+                    },
+                )
+            if (
+                auth_markers["is_root_homepage"]
+                or auth_markers["is_cas_login"]
+                or auth_markers["has_login_form"]
+            ):
                 logger.warning(
                     "⚠ TIS 候选接口出现认证态或根首页回退信号",
-                    payload={"probe_label": probe_label, "requested_url": str(initial_request.url), "redirect_chain": redirect_chain, **auth_markers},
+                    payload={
+                        "probe_label": probe_label,
+                        "requested_url": str(initial_request.url),
+                        "redirect_chain": redirect_chain,
+                        **auth_markers,
+                    },
                 )
             if json_debug_payload is not None:
-                logger.debug("ℹ TIS JSON 成绩解析信号", payload={"url": str(response.url), "probe_label": probe_label, **json_debug_payload})
+                logger.debug(
+                    "ℹ TIS JSON 成绩解析信号",
+                    payload={
+                        "url": str(response.url),
+                        "probe_label": probe_label,
+                        **json_debug_payload,
+                    },
+                )
 
         probes.append(
             TISProbeResult(
@@ -339,11 +432,24 @@ def probe_grade_candidates(
                 redirect_count=len(response.history),
                 request_headers={
                     key: str(initial_request.headers.get(key) or "")
-                    for key in ("RoleCode", "Referer", "Content-Type", "X-Requested-With", "Accept", "Origin")
+                    for key in (
+                        "RoleCode",
+                        "Referer",
+                        "Content-Type",
+                        "X-Requested-With",
+                        "Accept",
+                        "Origin",
+                    )
                     if initial_request.headers.get(key)
                 },
-                request_payload_keys=sorted(request_payload.keys()) if request_payload is not None else [],
-                request_payload={str(key): _jsonable(value) for key, value in request_payload.items()} if request_payload is not None else {},
+                request_payload_keys=sorted(request_payload.keys())
+                if request_payload is not None
+                else [],
+                request_payload={
+                    str(key): _jsonable(value) for key, value in request_payload.items()
+                }
+                if request_payload is not None
+                else {},
             )
         )
 
@@ -356,12 +462,19 @@ def probe_grade_candidates(
             response = tis_client.probe(candidate_url)
         except Exception as ex:
             if logger is not None:
-                logger.warning("⚠ TIS 候选接口访问失败", payload={"url": candidate_url, "error": str(ex)})
+                logger.warning(
+                    "⚠ TIS 候选接口访问失败",
+                    payload={"url": candidate_url, "error": str(ex)},
+                )
             continue
         _append_probe_result(response, probe_label="homepage-candidate")
 
-    grade_page_url = urljoin(tis_client.config.base_url, _DEFAULT_TIS_PERSONAL_GRADES_PAGE_PATH)
-    grade_api_url = urljoin(tis_client.config.base_url, _DEFAULT_TIS_PERSONAL_GRADES_API_PATH)
+    grade_page_url = urljoin(
+        tis_client.config.base_url, _DEFAULT_TIS_PERSONAL_GRADES_PAGE_PATH
+    )
+    grade_api_url = urljoin(
+        tis_client.config.base_url, _DEFAULT_TIS_PERSONAL_GRADES_API_PATH
+    )
     request_payload = _build_real_grade_query_payload(pylx=tis_client.pylx or "1")
 
     try:
@@ -375,7 +488,10 @@ def probe_grade_candidates(
         _append_probe_result(page_response, probe_label="har-grade-page")
     except Exception as ex:
         if logger is not None:
-            logger.warning("⚠ HAR 定位到的成绩页面访问失败", payload={"url": grade_page_url, "error": str(ex)})
+            logger.warning(
+                "⚠ HAR 定位到的成绩页面访问失败",
+                payload={"url": grade_page_url, "error": str(ex)},
+            )
 
     try:
         api_response = tis_client.probe(
@@ -389,10 +505,15 @@ def probe_grade_candidates(
                 "Referer": grade_page_url,
             },
         )
-        _append_probe_result(api_response, probe_label="har-grade-api", request_payload=request_payload)
+        _append_probe_result(
+            api_response, probe_label="har-grade-api", request_payload=request_payload
+        )
     except Exception as ex:
         if logger is not None:
-            logger.warning("⚠ HAR 定位到的成绩 JSON 接口访问失败", payload={"url": grade_api_url, "error": str(ex)})
+            logger.warning(
+                "⚠ HAR 定位到的成绩 JSON 接口访问失败",
+                payload={"url": grade_api_url, "error": str(ex)},
+            )
 
     return probes
 

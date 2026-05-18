@@ -5,6 +5,7 @@ import { act, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../../electron/settings-workspace/schema'
 import type { RuntimeToolDirectoryEntry } from '../chat-contract'
 import { ToolPicker } from './ToolPicker'
 
@@ -37,24 +38,20 @@ describe('ToolPicker', () => {
       { title: 'SUSTech TIS', count: '1', expanded: 'true' },
     ])
 
-    const fileOption = rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement
+    const fileOption = rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement
     const catalogOption = rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement
     const gradesOption = rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement
 
-    expect(fileOption.textContent).toContain('文件转换')
-    expect(fileOption.textContent).toContain('转换常见办公文档')
+    expect(fileOption.textContent).toContain('读取文件')
+    expect(fileOption.textContent).toContain('读取本地文本与文档内容')
     expect(catalogOption.textContent).toContain('课程目录搜索')
     expect(catalogOption.textContent).toContain('搜索 Blackboard 课程目录')
     expect(gradesOption.textContent).toContain('成绩获取')
     expect(gradesOption.textContent).toContain('获取个人成绩记录')
 
-    expect(panel.textContent).not.toContain('tool.file-convert')
+    expect(panel.textContent).not.toContain('tool.fs.read')
     expect(panel.textContent).not.toContain('blackboard.course_catalog.search')
     expect(panel.textContent).not.toContain('tis.personal_grades.fetch')
-    expect(panel.textContent).not.toContain('File Convert')
-    expect(panel.textContent).not.toContain('Course Catalog Search')
-    expect(panel.textContent).not.toContain('Personal Grades Fetch')
-    expect(panel.textContent).not.toContain('Convert office files into other formats with a long English description')
     expect(panel.textContent).not.toContain('Search Blackboard course catalog with a long English description')
     expect(panel.textContent).not.toContain('Fetch personal grades from TIS with a long English description')
     expect(panel.textContent).not.toContain('builtin')
@@ -71,8 +68,8 @@ describe('ToolPicker', () => {
     const selectedCheck = fileOption.querySelector('.copilot-tool-picker__option-check')
     const unselectedCheck = catalogOption.querySelector('.copilot-tool-picker__option-check')
 
-    expect(fileName?.textContent).toBe('文件转换')
-    expect(fileDescription?.textContent).toBe('转换常见办公文档')
+    expect(fileName?.textContent).toBe('读取文件')
+    expect(fileDescription?.textContent).toBe('读取本地文本与文档内容')
     expect(catalogDescription?.textContent).toBe('搜索 Blackboard 课程目录')
     expect(selectedCheck?.textContent).toBe('✓')
     expect(unselectedCheck?.textContent).toBe('+')
@@ -122,13 +119,13 @@ describe('ToolPicker', () => {
     expect(readGroupSummaries(panel)).toEqual([{ title: 'SUSTech Blackboard', count: '1', expanded: 'true' }])
     expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).not.toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-blackboard.calendar.refresh')).toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-tis.personal_grades.fetch')).toBeNull()
 
-    await setFormControlValue(searchInput, 'tool.file-convert')
+    await setFormControlValue(searchInput, 'tool.fs.read')
 
     expect(readGroupSummaries(panel)).toEqual([{ title: 'Candue 内建', count: '1', expanded: 'true' }])
-    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).not.toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).not.toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-tis.personal_grades.fetch')).toBeNull()
 
@@ -147,7 +144,7 @@ describe('ToolPicker', () => {
     await clickElement(trigger)
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
 
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
@@ -155,14 +152,14 @@ describe('ToolPicker', () => {
 
     expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).not.toBeNull()
     expect(rendered.queryByTestId('chat-tool-option-blackboard.calendar.refresh')).toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-tool.file-convert')).toBeNull()
+    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).toBeNull()
 
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-tool-picker-select-all'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
-      'tool.file-convert|blackboard.course_catalog.search|blackboard.calendar.refresh|tis.personal_grades.fetch',
+      'tool.fs.read|blackboard.course_catalog.search|blackboard.calendar.refresh|tis.personal_grades.fetch',
     )
-    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
@@ -172,18 +169,18 @@ describe('ToolPicker', () => {
     expect(trigger.textContent).toContain('未启用工具')
     expect(trigger.getAttribute('aria-label')).toBe('工具：未启用工具')
     expect(trigger.title).toBe('工具：未启用工具')
-    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
+    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
     expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
 
     await clickElement(rendered.getByTestId('chat-tool-picker-select-recommended'))
-    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.file-convert|blackboard.course_catalog.search')
-    expect((rendered.getByTestId('chat-tool-option-tool.file-convert') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.fs.read|blackboard.course_catalog.search')
+    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect((rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
 
     await clickElement(rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch'))
     expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
-      'tool.file-convert|blackboard.course_catalog.search|tis.personal_grades.fetch',
+      'tool.fs.read|blackboard.course_catalog.search|tis.personal_grades.fetch',
     )
     expect((rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
     expect(trigger.textContent).toContain('启用 3 项工具')
@@ -192,17 +189,102 @@ describe('ToolPicker', () => {
 
     rendered.unmount()
   })
+
+  it('keeps denied tools focusable, blocks fresh selection, and still allows deselection', async () => {
+    const rendered = renderWithRoot(
+      <ToolPickerHarness
+        initialSelectedToolIds={['tool.fs.read', 'blackboard.calendar.refresh']}
+        toolPermissionPolicy={{
+          version: 1,
+          defaultMode: 'ask',
+          toolPermissions: {
+            'blackboard.calendar.refresh': { mode: 'deny' },
+          },
+        }}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    const deniedOption = rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement
+    const normalOption = rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement
+    const blockedOption = rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement
+
+    expect(deniedOption.disabled).toBe(false)
+    expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
+    expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(deniedOption.textContent).toContain('已禁用')
+    expect(deniedOption.textContent).toContain('当前策略：总是关闭')
+    expect(normalOption.disabled).toBe(false)
+
+    await clickElement(deniedOption)
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.fs.read')
+
+    await clickElement(normalOption)
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
+      'tool.fs.read|blackboard.course_catalog.search',
+    )
+
+    expect(blockedOption.getAttribute('aria-disabled')).toBe('true')
+
+    await clickElement(blockedOption)
+    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
+      'tool.fs.read|blackboard.course_catalog.search',
+    )
+
+    rendered.unmount()
+  })
+
+  it('renders mcp readable names and group titles consistently with permissions view semantics', async () => {
+    const rendered = renderWithRoot(
+      <ToolPickerHarness
+        tools={[
+          {
+            toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
+            kind: 'mcp',
+            availability: 'available',
+            displayName: null,
+            description: null,
+            serverId: 'mcp-stdio-stub',
+            remoteToolName: 'search-campus',
+            mcpServerName: 'stdio stub server',
+            group: {
+              id: 'mcp.server.mcp-stdio-stub',
+              label: 'stdio stub server',
+              labelZh: 'stdio stub server',
+              labelEn: 'stdio stub server',
+              order: 100,
+              sourceKind: 'mcp-server',
+            },
+          } as RuntimeToolDirectoryEntry,
+        ]}
+        initialSelectedToolIds={[]}
+        recommendedToolIds={[]}
+      />,
+    )
+
+    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+
+    expect(readGroupSummaries(rendered.getByTestId('chat-tool-picker-panel'))).toEqual([
+      { title: 'stdio stub server', count: '1', expanded: 'true' },
+    ])
+    expect(rendered.getByTestId('chat-tool-option-mcp.mcp-stdio-stub.search-campus.00004d8d').textContent).toContain('stdio stub server / Search Campus')
+
+    rendered.unmount()
+  })
 })
 
 interface ToolPickerHarnessProps {
   initialSelectedToolIds?: string[]
   recommendedToolIds?: string[]
+  toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   tools?: RuntimeToolDirectoryEntry[]
 }
 
 function ToolPickerHarness({
-  initialSelectedToolIds = ['tool.file-convert'],
-  recommendedToolIds = ['tool.file-convert', 'blackboard.course_catalog.search'],
+  initialSelectedToolIds = ['tool.fs.read'],
+  recommendedToolIds = ['tool.fs.read', 'blackboard.course_catalog.search'],
+  toolPermissionPolicy = null,
   tools = createTools(),
 }: ToolPickerHarnessProps) {
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>(initialSelectedToolIds)
@@ -213,6 +295,7 @@ function ToolPickerHarness({
         tools={tools}
         selectedToolIds={selectedToolIds}
         recommendedToolIds={recommendedToolIds}
+        toolPermissionPolicy={toolPermissionPolicy}
         onChangeToolIds={setSelectedToolIds}
       />
       <output data-testid="chat-tool-picker-state">{selectedToolIds.join('|')}</output>
@@ -223,32 +306,32 @@ function ToolPickerHarness({
 function createTools(): RuntimeToolDirectoryEntry[] {
   return [
     {
-      toolId: 'tool.file-convert',
+      toolId: 'tool.fs.read',
       kind: 'builtin',
       availability: 'available',
-      displayName: 'File Convert',
-      description: 'Convert office files into other formats with a long English description',
+      displayName: '读取文件',
+      description: '读取本地文本与文档内容',
     },
     {
       toolId: 'blackboard.course_catalog.search',
       kind: 'external',
       availability: 'available',
-      displayName: 'Course Catalog Search',
-      description: 'Search Blackboard course catalog with a long English description',
+      displayName: '课程目录搜索',
+      description: '搜索 Blackboard 课程目录',
     },
     {
       toolId: 'blackboard.calendar.refresh',
       kind: 'external',
       availability: 'disabled-by-global-setting',
-      displayName: 'Calendar Refresh',
-      description: 'Refresh Blackboard course calendar with a long English description',
+      displayName: '日历刷新',
+      description: '刷新 Blackboard 课程日历',
     },
     {
       toolId: 'tis.personal_grades.fetch',
       kind: 'external',
       availability: 'unavailable',
-      displayName: 'Personal Grades Fetch',
-      description: 'Fetch personal grades from TIS with a long English description',
+      displayName: '成绩获取',
+      description: '获取个人成绩记录',
     },
   ]
 }

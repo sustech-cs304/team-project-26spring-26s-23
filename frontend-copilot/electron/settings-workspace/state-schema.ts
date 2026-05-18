@@ -14,6 +14,25 @@ import { asRecord, normalizeBooleanStringGroup, normalizeNonEmptyString, normali
 
 export const SETTINGS_WORKSPACE_STATE_DOCUMENT_VERSION = 2 as const
 
+export type LegacyToolPermissionMode = 'manual' | 'trusted' | 'strict'
+export type ToolPermissionPolicyMode = 'allow' | 'ask' | 'deny' | 'delay'
+export type ToolPermissionPolicySource = 'user' | 'migrated'
+
+export interface SettingsWorkspaceToolPermissionPolicyEntry {
+  mode: ToolPermissionPolicyMode
+  timeoutAction?: 'approve' | 'deny'
+  timeoutSeconds?: number
+  source?: ToolPermissionPolicySource
+  updatedAt?: string
+}
+
+export interface SettingsWorkspaceToolPermissionPolicyState {
+  version: 1
+  migrationSourceMode?: LegacyToolPermissionMode
+  defaultMode: ToolPermissionPolicyMode
+  toolPermissions: Record<string, SettingsWorkspaceToolPermissionPolicyEntry>
+}
+
 export type SettingsWorkspaceStateSource = 'stored' | 'initialized-defaults'
 
 export interface SettingsWorkspaceStoredDefaultModelRouting {
@@ -51,6 +70,7 @@ export interface SettingsWorkspaceStateValues {
   mcp: {
     mcpAutoDiscoveryEnabled: boolean
     toolPermissionMode: string
+    toolPermissionPolicy: SettingsWorkspaceToolPermissionPolicyState
   }
   search: {
     searchEngine: string
@@ -115,6 +135,7 @@ const DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES: SettingsWorkspaceStateValues = {
   mcp: {
     mcpAutoDiscoveryEnabled: true,
     toolPermissionMode: 'manual',
+    toolPermissionPolicy: createDefaultToolPermissionPolicyState('ask'),
   },
   search: {
     searchEngine: 'google',
@@ -163,13 +184,15 @@ export function normalizeSettingsWorkspaceStateValues(input: unknown): SettingsW
   const defaults = DEFAULT_SETTINGS_WORKSPACE_STATE_VALUES
   const providerProfiles = normalizeStoredProviderProfiles(record.providerProfiles)
 
+  const normalizedMcp = normalizeMcpState(record.mcp, defaults.mcp)
+
   return {
     sustech: normalizeBooleanStringGroup(record.sustech, defaults.sustech),
     providerProfiles,
     defaultModelRouting: normalizeStoredDefaultModelRouting(record.defaultModelRouting, providerProfiles),
     general: normalizeBooleanStringGroup(record.general, defaults.general),
     data: normalizeBooleanStringGroup(record.data, defaults.data),
-    mcp: normalizeBooleanStringGroup(record.mcp, defaults.mcp),
+    mcp: normalizedMcp,
     search: normalizeStringGroup(record.search, defaults.search),
     memory: normalizeBooleanStringGroup(record.memory, defaults.memory),
     api: normalizeBooleanStringGroup(record.api, defaults.api),
@@ -214,7 +237,10 @@ function cloneSettingsWorkspaceStateValues(values: SettingsWorkspaceStateValues)
     defaultModelRouting: cloneStoredDefaultModelRouting(values.defaultModelRouting),
     general: { ...values.general },
     data: { ...values.data },
-    mcp: { ...values.mcp },
+    mcp: {
+      ...values.mcp,
+      toolPermissionPolicy: cloneToolPermissionPolicyState(values.mcp.toolPermissionPolicy),
+    },
     search: { ...values.search },
     memory: { ...values.memory },
     api: { ...values.api },
@@ -327,4 +353,185 @@ function cloneModelRouteRef(routeRef: ModelRouteRef | null): ModelRouteRef | nul
       profileId: routeRef.profileId,
       modelId: routeRef.modelId,
     }
+}
+
+function normalizeMcpState(
+  input: unknown,
+  defaults: SettingsWorkspaceStateValues['mcp'],
+): SettingsWorkspaceStateValues['mcp'] {
+  const record = asRecord(input)
+  const legacyMode = normalizeLegacyToolPermissionMode(record.toolPermissionMode)
+  const toolPermissionPolicy = normalizeToolPermissionPolicyState(record.toolPermissionPolicy, legacyMode)
+
+  return {
+    mcpAutoDiscoveryEnabled: typeof record.mcpAutoDiscoveryEnabled === 'boolean'
+      ? record.mcpAutoDiscoveryEnabled
+      : defaults.mcpAutoDiscoveryEnabled,
+    toolPermissionMode: legacyModeToStoredValue(toolPermissionPolicy.defaultMode),
+    toolPermissionPolicy,
+  }
+}
+
+function createDefaultToolPermissionPolicyState(
+  defaultMode: ToolPermissionPolicyMode,
+): SettingsWorkspaceToolPermissionPolicyState {
+  return {
+    version: 1,
+    defaultMode,
+    toolPermissions: {},
+  }
+}
+
+function cloneToolPermissionPolicyState(
+  state: SettingsWorkspaceToolPermissionPolicyState,
+): SettingsWorkspaceToolPermissionPolicyState {
+  return {
+    version: state.version,
+    migrationSourceMode: state.migrationSourceMode,
+    defaultMode: state.defaultMode,
+    toolPermissions: Object.fromEntries(
+      Object.entries(state.toolPermissions).map(([toolId, entry]) => [toolId, { ...entry }]),
+    ),
+  }
+}
+
+function normalizeToolPermissionPolicyState(
+  input: unknown,
+  legacyMode: LegacyToolPermissionMode,
+): SettingsWorkspaceToolPermissionPolicyState {
+  const record = asRecord(input)
+  const version = record.version === 1 ? 1 : null
+  const defaultMode = normalizeToolPermissionPolicyMode(record.defaultMode)
+
+  if (version === 1 && defaultMode !== null) {
+    return {
+      version: 1,
+      migrationSourceMode: normalizeLegacyToolPermissionModeOptional(record.migrationSourceMode) ?? undefined,
+      defaultMode,
+      toolPermissions: normalizeToolPermissionPolicyEntries(record.toolPermissions),
+    }
+  }
+
+  return {
+    version: 1,
+    migrationSourceMode: legacyMode,
+    defaultMode: migrateLegacyToolPermissionMode(legacyMode),
+    toolPermissions: {},
+  }
+}
+
+function normalizeToolPermissionPolicyEntries(
+  input: unknown,
+): Record<string, SettingsWorkspaceToolPermissionPolicyEntry> {
+  const record = asRecord(input)
+  const entries = Object.entries(record).flatMap(([toolId, rawEntry]) => {
+    const entryRecord = asRecord(rawEntry)
+    const mode = normalizeToolPermissionPolicyMode(entryRecord.mode)
+    if (mode === null) {
+      return []
+    }
+
+    const normalizedEntry: SettingsWorkspaceToolPermissionPolicyEntry = { mode }
+    const timeoutAction = normalizeToolPermissionTimeoutAction(entryRecord.timeoutAction)
+    const timeoutSeconds = normalizeToolPermissionTimeoutSeconds(entryRecord.timeoutSeconds)
+    const source = normalizeToolPermissionPolicySource(entryRecord.source)
+    const updatedAt = normalizeNonEmptyString(entryRecord.updatedAt, '')
+
+    if (timeoutAction !== null) {
+      normalizedEntry.timeoutAction = timeoutAction
+    }
+    if (timeoutSeconds !== null) {
+      normalizedEntry.timeoutSeconds = timeoutSeconds
+    }
+    if (source !== null) {
+      normalizedEntry.source = source
+    }
+    if (updatedAt !== '') {
+      normalizedEntry.updatedAt = updatedAt
+    }
+
+    return [[toolId, normalizedEntry]]
+  })
+
+  return Object.fromEntries(entries)
+}
+
+function normalizeLegacyToolPermissionMode(input: unknown): LegacyToolPermissionMode {
+  return normalizeLegacyToolPermissionModeOptional(input) ?? 'manual'
+}
+
+function normalizeLegacyToolPermissionModeOptional(input: unknown): LegacyToolPermissionMode | null {
+  switch (normalizeNonEmptyString(input, '')) {
+    case 'manual':
+    case 'trusted':
+    case 'strict':
+      return input as LegacyToolPermissionMode
+    default:
+      return null
+  }
+}
+
+function normalizeToolPermissionPolicyMode(input: unknown): ToolPermissionPolicyMode | null {
+  switch (normalizeNonEmptyString(input, '')) {
+    case 'allow':
+    case 'ask':
+    case 'deny':
+    case 'delay':
+      return input as ToolPermissionPolicyMode
+    default:
+      return null
+  }
+}
+
+function normalizeToolPermissionTimeoutAction(input: unknown): 'approve' | 'deny' | null {
+  switch (normalizeNonEmptyString(input, '')) {
+    case 'approve':
+    case 'deny':
+      return input as 'approve' | 'deny'
+    default:
+      return null
+  }
+}
+
+function normalizeToolPermissionTimeoutSeconds(input: unknown): number | null {
+  if (typeof input !== 'number' || !Number.isFinite(input)) {
+    return null
+  }
+  const normalized = Math.trunc(input)
+  return normalized > 0 ? normalized : null
+}
+
+function normalizeToolPermissionPolicySource(input: unknown): ToolPermissionPolicySource | null {
+  switch (normalizeNonEmptyString(input, '')) {
+    case 'user':
+    case 'migrated':
+      return input as ToolPermissionPolicySource
+    default:
+      return null
+  }
+}
+
+function migrateLegacyToolPermissionMode(mode: LegacyToolPermissionMode): ToolPermissionPolicyMode {
+  switch (mode) {
+    case 'trusted':
+      return 'allow'
+    case 'strict':
+      return 'deny'
+    case 'manual':
+    default:
+      return 'ask'
+  }
+}
+
+function legacyModeToStoredValue(mode: ToolPermissionPolicyMode): LegacyToolPermissionMode {
+  switch (mode) {
+    case 'allow':
+      return 'trusted'
+    case 'deny':
+    case 'delay':
+      return 'strict'
+    case 'ask':
+    default:
+      return 'manual'
+  }
 }

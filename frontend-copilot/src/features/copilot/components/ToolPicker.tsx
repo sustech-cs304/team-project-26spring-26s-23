@@ -1,9 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
+import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../../electron/settings-workspace/schema'
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import type { RuntimeToolDirectoryEntry } from '../chat-contract'
 import { resolveCopilotToolPresentation } from '../tool-presentation'
 import {
+  buildCopilotToolViewModels,
   filterCopilotTools,
   groupCopilotTools,
   invertToolSelection,
@@ -17,6 +19,7 @@ interface ToolPickerProps {
   tools: RuntimeToolDirectoryEntry[]
   selectedToolIds: string[]
   recommendedToolIds: string[]
+  toolPermissionPolicy?: SettingsWorkspaceToolPermissionPolicyState | null
   onChangeToolIds: (toolIds: string[]) => void
   disabled?: boolean
 }
@@ -26,6 +29,7 @@ export function ToolPicker({
   tools,
   selectedToolIds,
   recommendedToolIds,
+  toolPermissionPolicy = null,
   onChangeToolIds,
   disabled = false,
 }: ToolPickerProps) {
@@ -41,9 +45,20 @@ export function ToolPicker({
     [recommendedToolIds, tools],
   )
   const filteredTools = useMemo(() => filterCopilotTools({ tools, query: searchQuery }), [searchQuery, tools])
+  const filteredToolViewModels = useMemo(
+    () => buildCopilotToolViewModels({ tools: filteredTools, policy: toolPermissionPolicy }),
+    [filteredTools, toolPermissionPolicy],
+  )
   const groupedTools = useMemo(
-    () => groupCopilotTools({ tools: filteredTools, recommendedToolIds }),
-    [filteredTools, recommendedToolIds],
+    () => groupCopilotTools({
+      tools: filteredToolViewModels.map((entry) => entry.tool),
+      recommendedToolIds,
+    }),
+    [filteredToolViewModels, recommendedToolIds],
+  )
+  const toolViewModelById = useMemo(
+    () => new Map(filteredToolViewModels.map((entry) => [entry.tool.toolId, entry] as const)),
+    [filteredToolViewModels],
   )
   const isSearching = searchQuery.trim() !== ''
   const selectedToolSet = useMemo(() => new Set(selectedToolIds), [selectedToolIds])
@@ -173,7 +188,7 @@ export function ToolPicker({
               type="button"
               className="copilot-model-picker__tag copilot-model-picker__tag--all"
               onClick={() => {
-                onChangeToolIds(selectAllToolIds(tools))
+                onChangeToolIds(selectAllToolIds({ tools, policy: toolPermissionPolicy }))
               }}
               data-testid="chat-tool-picker-select-all"
             >
@@ -183,7 +198,7 @@ export function ToolPicker({
               type="button"
               className="copilot-model-picker__tag copilot-model-picker__tag--neutral"
               onClick={() => {
-                onChangeToolIds(invertToolSelection(tools, selectedToolIds))
+                onChangeToolIds(invertToolSelection({ tools, selectedToolIds, policy: toolPermissionPolicy }))
               }}
               data-testid="chat-tool-picker-invert"
             >
@@ -193,7 +208,7 @@ export function ToolPicker({
               type="button"
               className="copilot-model-picker__tag copilot-model-picker__tag--tools"
               onClick={() => {
-                onChangeToolIds(pickRecommendedToolIds({ tools, recommendedToolIds }))
+                onChangeToolIds(pickRecommendedToolIds({ tools, recommendedToolIds, policy: toolPermissionPolicy }))
               }}
               data-testid="chat-tool-picker-select-recommended"
             >
@@ -266,16 +281,25 @@ export function ToolPicker({
                           {group.tools.map((tool) => {
                             const isSelected = selectedToolSet.has(tool.toolId)
                             const presentation = resolveCopilotToolPresentation(tool)
+                            const disabledByPolicy = toolViewModelById.get(tool.toolId)?.disabled ?? false
+                            const blockedByPolicy = disabledByPolicy && !isSelected
+                            const optionTitle = blockedByPolicy ? '该工具已被设置为总是关闭，需在能力中心重新开启。' : undefined
 
                             return isSelected
                               ? (
                                   <button
-                                    key={tool.toolId}
-                                    type="button"
-                                    className="copilot-model-picker__option copilot-tool-picker__option copilot-model-picker__option--selected copilot-tool-picker__option--selected"
-                                    aria-pressed="true"
-                                    onClick={() => {
-                                      onChangeToolIds(toggleToolIdInSelection(selectedToolIds, tool.toolId))
+                                     key={tool.toolId}
+                                     type="button"
+                                     className={`copilot-model-picker__option copilot-tool-picker__option copilot-model-picker__option--selected copilot-tool-picker__option--selected${disabledByPolicy ? ' copilot-tool-picker__option--disabled' : ''}`}
+                                     aria-pressed="true"
+                                     aria-disabled={blockedByPolicy ? 'true' : undefined}
+                                     title={optionTitle}
+                                     onClick={() => {
+                                        onChangeToolIds(toggleToolIdInSelection({
+                                        selectedToolIds,
+                                        toolId: tool.toolId,
+                                        policy: toolPermissionPolicy,
+                                      }))
                                     }}
                                     data-testid={`chat-tool-option-${tool.toolId}`}
                                   >
@@ -283,19 +307,29 @@ export function ToolPicker({
                                       ✓
                                     </span>
                                     <span className="copilot-model-picker__option-body">
-                                      <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                      <span className="copilot-tool-picker__option-name-row">
+                                        <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                        {disabledByPolicy ? <span className="copilot-tool-picker__option-status copilot-tool-picker__option-status--disabled">{copy.toolPicker.disabledBadge}</span> : null}
+                                      </span>
                                       <span className="copilot-tool-picker__option-description">{presentation.description}</span>
+                                      {disabledByPolicy ? <span className="copilot-tool-picker__option-policy-hint">{copy.toolPicker.disabledHint}</span> : null}
                                     </span>
                                   </button>
                                 )
                               : (
                                   <button
-                                    key={tool.toolId}
-                                    type="button"
-                                    className="copilot-model-picker__option copilot-tool-picker__option"
-                                    aria-pressed="false"
-                                    onClick={() => {
-                                      onChangeToolIds(toggleToolIdInSelection(selectedToolIds, tool.toolId))
+                                     key={tool.toolId}
+                                     type="button"
+                                     className={`copilot-model-picker__option copilot-tool-picker__option${disabledByPolicy ? ' copilot-tool-picker__option--disabled' : ''}`}
+                                     aria-pressed="false"
+                                     aria-disabled={blockedByPolicy ? 'true' : undefined}
+                                     title={optionTitle}
+                                     onClick={() => {
+                                        onChangeToolIds(toggleToolIdInSelection({
+                                        selectedToolIds,
+                                        toolId: tool.toolId,
+                                        policy: toolPermissionPolicy,
+                                      }))
                                     }}
                                     data-testid={`chat-tool-option-${tool.toolId}`}
                                   >
@@ -303,8 +337,12 @@ export function ToolPicker({
                                       +
                                     </span>
                                     <span className="copilot-model-picker__option-body">
-                                      <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                      <span className="copilot-tool-picker__option-name-row">
+                                        <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
+                                        {disabledByPolicy ? <span className="copilot-tool-picker__option-status copilot-tool-picker__option-status--disabled">{copy.toolPicker.disabledBadge}</span> : null}
+                                      </span>
                                       <span className="copilot-tool-picker__option-description">{presentation.description}</span>
+                                      {disabledByPolicy ? <span className="copilot-tool-picker__option-policy-hint">{copy.toolPicker.disabledHint}</span> : null}
                                     </span>
                                   </button>
                                 )

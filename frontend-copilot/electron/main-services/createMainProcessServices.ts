@@ -3,6 +3,7 @@ import type {
   MainProcessServices,
 } from './MainProcessServiceTypes'
 import { createMainProcessServiceAccessors } from './MainProcessServiceAccessors'
+import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 
 export function createMainProcessServices(
   options: CreateMainProcessServicesOptions,
@@ -16,6 +17,9 @@ export function createMainProcessServices(
     },
     async applyConfigCenterPublicPatch(patch) {
       return await accessors.getUnifiedConfigService().applyPublicPatch(patch)
+    },
+    async loadToolCatalog() {
+      return await accessors.getToolCatalogService().load()
     },
     async loadSettingsWorkspaceState() {
       return await accessors.getSettingsWorkspaceService().loadState()
@@ -40,6 +44,51 @@ export function createMainProcessServices(
     },
     async clearSettingsWorkspaceSustechCasSecret() {
       return await accessors.getSettingsWorkspaceService().clearSustechCasSecret()
+    },
+    async loadMcpRegistry(request) {
+      return await accessors.getMcpRegistryService().loadRegistry(request)
+    },
+    async loadSkillRegistry(request) {
+      return await accessors.getSkillRegistryService().loadRegistry(request)
+    },
+    async importSkill(request) {
+      return await accessors.getSkillRegistryService().importSkill(request)
+    },
+    async selectAndImportSkill() {
+      return await accessors.getSkillRegistryService().selectAndImportSkill()
+    },
+    async deleteSkill(skillId) {
+      return await accessors.getSkillRegistryService().deleteSkill(skillId)
+    },
+    async setSkillEnabled(request) {
+      return await accessors.getSkillRegistryService().setSkillEnabled(request)
+    },
+    async refreshSkills(request) {
+      return await accessors.getSkillRegistryService().refreshSkills(request)
+    },
+    async loadManagedRuntime() {
+      return await accessors.getManagedRuntimeService().load()
+    },
+    async installOrRepairManagedRuntime(reason?: ManagedRuntimeActionReason) {
+      return await accessors.getManagedRuntimeService().installOrRepair(reason)
+    },
+    async saveMcpServer(draft) {
+      return await accessors.getMcpRegistryService().saveServer(draft)
+    },
+    async deleteMcpServer(serverId) {
+      return await accessors.getMcpRegistryService().deleteServer(serverId)
+    },
+    async setMcpServerEnabled(request) {
+      return await accessors.getMcpRegistryService().setServerEnabled(request)
+    },
+    async testMcpConnection(request) {
+      return await accessors.getMcpRegistryService().testConnection(request)
+    },
+    async refreshMcpCatalog(request) {
+      return await accessors.getMcpRegistryService().refreshCatalog(request)
+    },
+    async warmupEnabledMcpServersOnStartup() {
+      await accessors.getMcpRegistryService().warmupEnabledServersOnStartup()
     },
     async listCopilotHistoryThreads() {
       return await copilotHistoryService.listThreads()

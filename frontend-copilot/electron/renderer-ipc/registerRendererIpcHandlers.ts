@@ -61,6 +61,54 @@ import {
   type DesktopNotificationRequest,
 } from '../desktop-notification'
 import { BOOTSTRAP_WINDOW_READY_CHANNEL } from '../bootstrap-window'
+import {
+  MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+  MANAGED_RUNTIME_LOAD_CHANNEL,
+  type ManagedRuntimeLoadResponse,
+} from '../managed-runtime/ipc'
+import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
+import {
+  MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+  MCP_REGISTRY_LOAD_CHANNEL,
+  MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+  MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+  MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+  MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+  type McpDeleteServerResult,
+  type McpRefreshCatalogRequest,
+  type McpRefreshCatalogResult,
+  type McpRegistryLoadRequest,
+  type McpRegistryLoadResult,
+  type McpSaveServerResult,
+  type McpSetServerEnabledRequest,
+  type McpSetServerEnabledResult,
+  type McpTestConnectionRequest,
+  type McpTestConnectionResult,
+} from '../mcp-registry/ipc'
+import type { McpServerDraft } from '../mcp-registry/types'
+import {
+  SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+  SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_LOAD_CHANNEL,
+  SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
+  SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+  type SkillDeleteResult,
+  type SkillImportRequest,
+  type SkillImportResult,
+  type SkillRefreshRequest,
+  type SkillRefreshResult,
+  type SkillRegistryLoadRequest,
+  type SkillSelectAndImportResult,
+  type SkillRegistryLoadResult,
+  type SkillSetEnabledRequest,
+  type SkillSetEnabledResult,
+} from '../skill-registry/ipc'
+import {
+  TOOL_CATALOG_LOAD_CHANNEL,
+  type ToolCatalogLoadRequest,
+  type ToolCatalogLoadResult,
+} from '../tool-catalog/ipc'
 import type { RendererIpcHandlers } from './RendererIpcHandlers'
 
 export type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
@@ -76,6 +124,20 @@ const RENDERER_IPC_CHANNELS = [
   SETTINGS_WORKSPACE_SECRETS_CLEAR_PROVIDER_API_KEY_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_SAVE_SUSTECH_CAS_CHANNEL,
   SETTINGS_WORKSPACE_SECRETS_CLEAR_SUSTECH_CAS_CHANNEL,
+  MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+  MANAGED_RUNTIME_LOAD_CHANNEL,
+  MCP_REGISTRY_LOAD_CHANNEL,
+  MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+  MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+  MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+  MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+  MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+  SKILL_REGISTRY_LOAD_CHANNEL,
+  SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+  SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+  SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+  SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
   COPILOT_HISTORY_LIST_THREADS_CHANNEL,
   COPILOT_HISTORY_GET_THREAD_DETAIL_CHANNEL,
   COPILOT_HISTORY_GET_RUN_REPLAY_CHANNEL,
@@ -84,6 +146,7 @@ const RENDERER_IPC_CHANNELS = [
   COPILOT_HISTORY_DELETE_THREAD_CHANNEL,
   COPILOT_HISTORY_BACKUP_DATABASE_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
+  TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
@@ -171,6 +234,104 @@ export function registerRendererIpcHandlers(
     },
   )
 
+  ipcMain.handle(
+    MANAGED_RUNTIME_LOAD_CHANNEL,
+    async (): Promise<ManagedRuntimeLoadResponse> => {
+      return await handlers.loadManagedRuntime()
+    },
+  )
+
+  ipcMain.handle(
+    MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
+    async (_event, reason?: ManagedRuntimeActionReason): Promise<ManagedRuntimeLoadResponse> => {
+      return await handlers.installOrRepairManagedRuntime(reason)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_LOAD_CHANNEL,
+    async (_event, request?: McpRegistryLoadRequest): Promise<McpRegistryLoadResult> => {
+      return await handlers.loadMcpRegistry(request)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_SAVE_SERVER_CHANNEL,
+    async (_event, draft: McpServerDraft): Promise<McpSaveServerResult> => {
+      return await handlers.saveMcpServer(draft)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_DELETE_SERVER_CHANNEL,
+    async (_event, serverId: string): Promise<McpDeleteServerResult> => {
+      return await handlers.deleteMcpServer(serverId)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_SET_SERVER_ENABLED_CHANNEL,
+    async (_event, request: McpSetServerEnabledRequest): Promise<McpSetServerEnabledResult> => {
+      return await handlers.setMcpServerEnabled(request)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_TEST_CONNECTION_CHANNEL,
+    async (_event, request: McpTestConnectionRequest): Promise<McpTestConnectionResult> => {
+      return await handlers.testMcpConnection(request)
+    },
+  )
+
+  ipcMain.handle(
+    MCP_REGISTRY_REFRESH_CATALOG_CHANNEL,
+    async (_event, request?: McpRefreshCatalogRequest): Promise<McpRefreshCatalogResult> => {
+      return await handlers.refreshMcpCatalog(request)
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_LOAD_CHANNEL,
+    async (_event, request?: SkillRegistryLoadRequest): Promise<SkillRegistryLoadResult> => {
+      return await handlers.loadSkillRegistry(request)
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_IMPORT_SKILL_CHANNEL,
+    async (_event, request: SkillImportRequest): Promise<SkillImportResult> => {
+      return await handlers.importSkill(request)
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_SELECT_AND_IMPORT_SKILL_CHANNEL,
+    async (): Promise<SkillSelectAndImportResult> => {
+      return await handlers.selectAndImportSkill()
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_DELETE_SKILL_CHANNEL,
+    async (_event, skillId: string): Promise<SkillDeleteResult> => {
+      return await handlers.deleteSkill(skillId)
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_SET_SKILL_ENABLED_CHANNEL,
+    async (_event, request: SkillSetEnabledRequest): Promise<SkillSetEnabledResult> => {
+      return await handlers.setSkillEnabled(request)
+    },
+  )
+
+  ipcMain.handle(
+    SKILL_REGISTRY_REFRESH_SKILLS_CHANNEL,
+    async (_event, request?: SkillRefreshRequest): Promise<SkillRefreshResult> => {
+      return await handlers.refreshSkills(request)
+    },
+  )
+
   ipcMain.handle(COPILOT_HISTORY_LIST_THREADS_CHANNEL, async (): Promise<CopilotHistoryListThreadsResult> => {
     return await handlers.listCopilotHistoryThreads()
   })
@@ -237,6 +398,10 @@ export function registerRendererIpcHandlers(
       return await handlers.restoreCopilotHistoryDatabase(request)
     },
   )
+
+  ipcMain.handle(TOOL_CATALOG_LOAD_CHANNEL, async (_event, request?: ToolCatalogLoadRequest): Promise<ToolCatalogLoadResult> => {
+    return await handlers.loadToolCatalog(request)
+  })
 
   ipcMain.handle(COPILOT_RUNTIME_LOAD_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
     return await handlers.loadCopilotRuntime()

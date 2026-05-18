@@ -204,6 +204,7 @@ function ComposerHarness() {
         sendStatus="idle"
         canCancel
         sendDisabledReason={null}
+        controlsLockedReason={null}
         composerInputRef={createRef<HTMLTextAreaElement>()}
         composerHeight={160}
         onResizeStart={() => undefined}

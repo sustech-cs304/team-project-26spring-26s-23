@@ -6,6 +6,10 @@ import {
   CONFIG_CENTER_PUBLIC_SNAPSHOT_UPDATED_CHANNEL,
   type ConfigCenterPublicSnapshot,
 } from './config-center/public-snapshot'
+import { MCP_REGISTRY_SUBSCRIPTION_CHANNEL } from './mcp-registry/ipc'
+import type { McpRegistrySubscriptionEvent } from './mcp-registry/types'
+import { SKILL_REGISTRY_SUBSCRIPTION_CHANNEL } from './skill-registry/ipc'
+import type { SkillRegistrySubscriptionEvent } from './skill-registry/types'
 import type {
   CopilotHostedRuntimeFailureSummary,
   CopilotRuntimeLoadResult,
@@ -79,10 +83,14 @@ const mainRuntimeLogger = createMainRuntimeLogger({
 
 const mainProcessServices = createMainProcessServices({
   prepareRuntimePaths: prepareApplicationRuntimePaths,
+  userDataPath: app.getPath('userData'),
+  ensureHostedBackendService,
   appendMainRuntimeLog(level, message, context) {
     return mainRuntimeLogger.appendMainRuntimeLog(level, message, context)
   },
   publishConfigCenterPublicSnapshotUpdate,
+  publishMcpRegistryEvent,
+  publishSkillRegistryEvent,
   createCopilotHistoryService() {
     return createElectronCopilotHistoryService({
       ensureHostedBackendService,
@@ -447,6 +455,26 @@ function publishConfigCenterPublicSnapshotUpdate(snapshot: ConfigCenterPublicSna
   }
 }
 
+function publishMcpRegistryEvent(event: McpRegistrySubscriptionEvent): void {
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    if (browserWindow.isDestroyed()) {
+      continue
+    }
+
+    browserWindow.webContents.send(MCP_REGISTRY_SUBSCRIPTION_CHANNEL, event)
+  }
+}
+
+function publishSkillRegistryEvent(event: SkillRegistrySubscriptionEvent): void {
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    if (browserWindow.isDestroyed()) {
+      continue
+    }
+
+    browserWindow.webContents.send(SKILL_REGISTRY_SUBSCRIPTION_CHANNEL, event)
+  }
+}
+
 function ensureWindowsNotificationIdentityConfigured(): void {
   if (process.platform !== 'win32') {
     return
@@ -619,6 +647,7 @@ void app.whenReady()
     })
     void startHostedBackend()
     createWindow()
+    void mainProcessServices.warmupEnabledMcpServersOnStartup()
   })
   .catch((error) => {
     const message = '[desktop-runtime] Failed to bootstrap the Electron main process.'

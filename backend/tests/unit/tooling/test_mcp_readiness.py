@@ -167,12 +167,13 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
     reports = assess_default_contract_mcp_readiness()
 
     assert MCP_SUPPORTED_INPUT_SCHEMA_FORMATS == ("json-schema",)
-    assert len(reports) == 8
+    assert len(reports) == 9
     by_tool_id = {report.tool_id: report for report in reports}
     assert set(by_tool_id) == {
         "blackboard.course_catalog.search",
         "blackboard.calendar.refresh",
         "blackboard.snapshot.sync",
+        "blackboard.course_resources.sync",
         "blackboard.sql.query",
         "tis.personal_grades.fetch",
         "tis.credit_gpa.fetch",
@@ -276,6 +277,8 @@ def test_canonical_sustech_integration_roots_are_importable() -> None:
     blackboard = importlib.import_module("app.integrations.sustech.blackboard")
     tis = importlib.import_module("app.integrations.sustech.teaching_information_system")
 
+    assert blackboard.__file__ is not None
+    assert tis.__file__ is not None
     assert Path(blackboard.__file__).as_posix().endswith(
         "app/integrations/sustech/blackboard/__init__.py"
     )
@@ -294,11 +297,22 @@ def test_canonical_sustech_integration_roots_are_importable() -> None:
 
 
 def test_legacy_sustech_root_packages_are_not_valid_import_targets() -> None:
-    assert importlib.util.find_spec("app.blackboard") is None
-    assert importlib.util.find_spec("app.teaching_information_system") is None
+    blackboard_spec = importlib.util.find_spec("app.blackboard")
+    tis_spec = importlib.util.find_spec("app.teaching_information_system")
+
+    assert blackboard_spec is not None
+    assert tis_spec is not None
+    assert blackboard_spec.origin is None
+    assert tis_spec.origin is None
+
+    blackboard = importlib.import_module("app.blackboard")
+    tis = importlib.import_module("app.teaching_information_system")
+
+    assert not hasattr(blackboard, "get_blackboard_tool_contracts")
+    assert not hasattr(tis, "get_tis_tool_contracts")
 
     with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("app.blackboard")
+        importlib.import_module("app.blackboard.facade")
 
     with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("app.teaching_information_system")
+        importlib.import_module("app.teaching_information_system.facade")

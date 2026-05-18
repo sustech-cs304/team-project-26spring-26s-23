@@ -32,6 +32,34 @@ import type {
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import type { CopilotRuntimeLoadResult } from '../copilot-runtime'
 import type { DesktopNotificationRequest } from '../desktop-notification'
+import type { ManagedRuntimeLoadResponse } from '../managed-runtime/ipc'
+import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
+import type {
+  McpDeleteServerResult,
+  McpRefreshCatalogRequest,
+  McpRefreshCatalogResult,
+  McpRegistryLoadRequest,
+  McpRegistryLoadResult,
+  McpSaveServerResult,
+  McpSetServerEnabledRequest,
+  McpSetServerEnabledResult,
+  McpTestConnectionRequest,
+  McpTestConnectionResult,
+} from '../mcp-registry/ipc'
+import type { McpServerDraft } from '../mcp-registry/types'
+import type {
+  SkillDeleteResult,
+  SkillImportRequest,
+  SkillImportResult,
+  SkillRefreshRequest,
+  SkillSelectAndImportResult,
+  SkillRefreshResult,
+  SkillRegistryLoadRequest,
+  SkillRegistryLoadResult,
+  SkillSetEnabledRequest,
+  SkillSetEnabledResult,
+} from '../skill-registry/ipc'
+import type { ToolCatalogLoadRequest, ToolCatalogLoadResult } from '../tool-catalog/ipc'
 
 export interface RendererIpcHandlers {
   loadConfigCenterPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
@@ -52,6 +80,20 @@ export interface RendererIpcHandlers {
     request: SettingsWorkspaceSaveSustechCasPasswordRequest,
   ) => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
   clearSettingsWorkspaceSustechCasSecret: () => Promise<SettingsWorkspaceSustechCasSecretMutationResult>
+  loadMcpRegistry: (request?: McpRegistryLoadRequest) => Promise<McpRegistryLoadResult>
+  loadSkillRegistry: (request?: SkillRegistryLoadRequest) => Promise<SkillRegistryLoadResult>
+  importSkill: (request: SkillImportRequest) => Promise<SkillImportResult>
+  selectAndImportSkill: () => Promise<SkillSelectAndImportResult>
+  deleteSkill: (skillId: string) => Promise<SkillDeleteResult>
+  setSkillEnabled: (request: SkillSetEnabledRequest) => Promise<SkillSetEnabledResult>
+  refreshSkills: (request?: SkillRefreshRequest) => Promise<SkillRefreshResult>
+  loadManagedRuntime: () => Promise<ManagedRuntimeLoadResponse>
+  installOrRepairManagedRuntime: (reason?: ManagedRuntimeActionReason) => Promise<ManagedRuntimeLoadResponse>
+  saveMcpServer: (draft: McpServerDraft) => Promise<McpSaveServerResult>
+  deleteMcpServer: (serverId: string) => Promise<McpDeleteServerResult>
+  setMcpServerEnabled: (request: McpSetServerEnabledRequest) => Promise<McpSetServerEnabledResult>
+  testMcpConnection: (request: McpTestConnectionRequest) => Promise<McpTestConnectionResult>
+  refreshMcpCatalog: (request?: McpRefreshCatalogRequest) => Promise<McpRefreshCatalogResult>
   listCopilotHistoryThreads: () => Promise<CopilotHistoryListThreadsResult>
   getCopilotHistoryThreadDetail: (threadId: string) => Promise<CopilotHistoryThreadDetailResult>
   getCopilotHistoryRunReplay: (runId: string) => Promise<CopilotHistoryRunReplayResult>
@@ -70,6 +112,7 @@ export interface RendererIpcHandlers {
   restoreCopilotHistoryDatabase: (
     request: CopilotHistoryRestoreDatabaseRequest,
   ) => Promise<CopilotHistoryDatabaseRestoreResult>
+  loadToolCatalog: (request?: ToolCatalogLoadRequest) => Promise<ToolCatalogLoadResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   notifyDesktopNotification: (request: DesktopNotificationRequest) => Promise<void>

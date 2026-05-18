@@ -50,4 +50,3 @@ class BlackboardCourseAPI:
             html_to_parse = response.text
 
         return self.parser.parse_courses_html(html_to_parse)
-

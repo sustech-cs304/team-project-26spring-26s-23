@@ -10,7 +10,6 @@ from ..config import DesktopRuntimeConfig
 from ..security import require_local_token
 
 
-
 def build_history_router() -> APIRouter:
     router = APIRouter()
 
@@ -22,7 +21,9 @@ def build_history_router() -> APIRouter:
         return service.list_threads().to_dict()
 
     @router.get("/history/threads/{thread_id}")
-    def get_history_thread_detail(thread_id: str, request: Request) -> dict[str, object]:
+    def get_history_thread_detail(
+        thread_id: str, request: Request
+    ) -> dict[str, object]:
         runtime_config = _get_runtime_config(request)
         require_local_token(request, runtime_config)
         service = _get_history_query_service(request)
@@ -151,7 +152,9 @@ def build_history_router() -> APIRouter:
         runtime_config = _get_runtime_config(request)
         require_local_token(request, runtime_config)
         service = _get_history_query_service(request)
-        target_path = _coerce_optional_text(None if payload is None else payload.get("targetPath"))
+        target_path = _coerce_optional_text(
+            None if payload is None else payload.get("targetPath")
+        )
         try:
             return service.backup_database(target_path=target_path).to_dict()
         except ValueError as exc:
@@ -196,10 +199,8 @@ def build_history_router() -> APIRouter:
     return router
 
 
-
 def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
     return request.app.state.runtime_config  # type: ignore[return-value]
-
 
 
 def _get_history_query_service(request: Request) -> PersistedChatQueryService:

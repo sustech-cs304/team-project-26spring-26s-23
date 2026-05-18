@@ -21,9 +21,20 @@ from app.integrations.sustech.teaching_information_system.api.dto import (
     TISSelectedCourseRecord,
 )
 
-from .models import Base, TISCreditGPASummaryModel, TISCreditGPATermModel, TISCreditGPAYearModel, TISPersonalGrade, TISSelectedCourse
+from .models import (
+    Base,
+    TISCreditGPASummaryModel,
+    TISCreditGPATermModel,
+    TISCreditGPAYearModel,
+    TISPersonalGrade,
+    TISSelectedCourse,
+)
 from .results import TISSyncStats
-from .sync_operations import sync_credit_gpa, sync_personal_grades, sync_selected_courses
+from .sync_operations import (
+    sync_credit_gpa,
+    sync_personal_grades,
+    sync_selected_courses,
+)
 
 
 @dataclass(slots=True)
@@ -58,15 +69,21 @@ class TISDatabaseManager:
 
     DEFAULT_DB_RELATIVE_PATH = _DEFAULT_TIS_DB_RELATIVE_PATH
 
-    def __init__(self, db_path: str | Path | None = None, *, reset_schema: bool = False) -> None:
-        self.db_path = Path(db_path) if db_path is not None else resolve_default_tis_db_path()
+    def __init__(
+        self, db_path: str | Path | None = None, *, reset_schema: bool = False
+    ) -> None:
+        self.db_path = (
+            Path(db_path) if db_path is not None else resolve_default_tis_db_path()
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         if reset_schema and self.db_path.exists():
             self.db_path.unlink()
 
         self.engine = create_engine(f"sqlite:///{self.db_path.as_posix()}", future=True)
         self._enable_sqlite_foreign_keys()
-        self.SessionLocal = sessionmaker(bind=self.engine, expire_on_commit=False, class_=Session)
+        self.SessionLocal = sessionmaker(
+            bind=self.engine, expire_on_commit=False, class_=Session
+        )
         self.create_tables()
 
     def _enable_sqlite_foreign_keys(self) -> None:
@@ -102,7 +119,9 @@ class TISDatabaseManager:
             size_bytes=self.db_path.stat().st_size if exists else 0,
         )
 
-    def sync_personal_grades(self, owner_key: str, grade_records: list[TISGradeRecord]) -> TISSyncStats:
+    def sync_personal_grades(
+        self, owner_key: str, grade_records: list[TISGradeRecord]
+    ) -> TISSyncStats:
         with self.session_scope() as session:
             return sync_personal_grades(session, owner_key, grade_records)
 
@@ -114,7 +133,9 @@ class TISDatabaseManager:
         year_records: list[TISCreditGPAYearRecord],
     ) -> dict[str, TISSyncStats]:
         with self.session_scope() as session:
-            return sync_credit_gpa(session, owner_key, summary, term_records, year_records)
+            return sync_credit_gpa(
+                session, owner_key, summary, term_records, year_records
+            )
 
     def sync_selected_courses(
         self,
@@ -123,7 +144,9 @@ class TISDatabaseManager:
         course_records: list[TISSelectedCourseRecord],
     ) -> TISSyncStats:
         with self.session_scope() as session:
-            return sync_selected_courses(session, owner_key, semester_id, course_records)
+            return sync_selected_courses(
+                session, owner_key, semester_id, course_records
+            )
 
     def get_table_counts(self) -> dict[str, dict[str, int]]:
         result: dict[str, dict[str, int]] = {}
@@ -135,15 +158,16 @@ class TISDatabaseManager:
                 "credit_gpa_years": TISCreditGPAYearModel,
                 "selected_courses": TISSelectedCourse,
             }.items():
-                total = session.execute(select(func.count()).select_from(model)).scalar_one()
-                active = (
-                    session.execute(
-                        select(func.count()).select_from(model).where(model.is_deleted.is_(False))
-                    ).scalar_one()
-                )
+                total = session.execute(
+                    select(func.count()).select_from(model)
+                ).scalar_one()
+                active = session.execute(
+                    select(func.count())
+                    .select_from(model)
+                    .where(model.is_deleted.is_(False))
+                ).scalar_one()
                 result[name] = {"total": total, "active": active}
         return result
 
 
 __all__ = ["TISDatabaseDescription", "TISDatabaseManager"]
-

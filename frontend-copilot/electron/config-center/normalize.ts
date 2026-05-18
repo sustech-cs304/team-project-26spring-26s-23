@@ -47,6 +47,16 @@ export function normalizeUnifiedConfigDomainDocument<TDomain extends UnifiedConf
           model: UNIFIED_CONFIG_FIELD_REGISTRY.model.normalize(values.model),
         },
       ) as UnifiedConfigDomainDocument<TDomain>
+
+    case UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL:
+      return createUnifiedConfigDomainDocument(
+        UNIFIED_CONFIG_DOMAIN_KEYS.GENERAL,
+        {
+          language: typeof values.language === 'string' && values.language.trim() !== ''
+            ? values.language.trim()
+            : 'zh-CN',
+        },
+      ) as UnifiedConfigDomainDocument<TDomain>
   }
 
   throw new Error(`Unsupported unified config domain: ${String(domain)}`)

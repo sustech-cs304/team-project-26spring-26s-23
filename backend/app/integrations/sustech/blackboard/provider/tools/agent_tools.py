@@ -156,4 +156,3 @@ __all__ = [
     "sync_blackboard_course_resources",
     "sync_blackboard_snapshot",
 ]
-

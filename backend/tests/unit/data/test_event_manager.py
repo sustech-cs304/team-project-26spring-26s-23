@@ -1,9 +1,16 @@
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-from app.event_manager.data.db_manager import DatabaseManager
+import app.event_manager.data.db_manager as db_manager_module
+from app.desktop_runtime.config import ENV_DATABASE_DIR
+from app.event_manager.data.db_manager import (
+    DatabaseManager,
+    resolve_default_event_manager_db_path,
+)
 from app.event_manager.data.dto import CourseEvent
+from app.event_manager.data.models import CourseEventModel
 
 
 def _make_course_event(**overrides) -> CourseEvent:
@@ -23,8 +30,84 @@ def _make_course_event(**overrides) -> CourseEvent:
     return CourseEvent(**payload)
 
 
+def _get_course_event_model(
+    db_manager: db_manager_module.DatabaseManager, course_event_id: int
+) -> CourseEventModel:
+    session = db_manager.SessionLocal()
+    try:
+        course_event_model = session.get(CourseEventModel, course_event_id)
+        assert course_event_model is not None
+        return course_event_model
+    finally:
+        session.close()
+
+
+_DEFAULT_RELATIVE_PATH = DatabaseManager.DEFAULT_DB_RELATIVE_PATH
+
+
+
+def test_resolve_default_event_manager_db_path_prefers_explicit_database_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ENV_DATABASE_DIR, str(tmp_path / "env-db"))
+
+    resolved = resolve_default_event_manager_db_path(tmp_path / "explicit-db")
+
+    assert resolved == tmp_path / "explicit-db" / _DEFAULT_RELATIVE_PATH
+
+
+
+def test_resolve_default_event_manager_db_path_uses_runtime_database_dir_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_database_dir = tmp_path / "runtime-db"
+    monkeypatch.setenv(ENV_DATABASE_DIR, str(runtime_database_dir))
+
+    resolved = resolve_default_event_manager_db_path()
+
+    assert resolved == runtime_database_dir / _DEFAULT_RELATIVE_PATH
+
+
+
+def test_resolve_default_event_manager_db_path_falls_back_to_repo_relative_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv(ENV_DATABASE_DIR, raising=False)
+    monkeypatch.setattr(
+        db_manager_module,
+        "_DEFAULT_REPO_EVENT_MANAGER_DB_PATH",
+        tmp_path / "repo-default-data" / "sustech.db",
+    )
+
+    resolved = resolve_default_event_manager_db_path()
+
+    assert resolved == tmp_path / "repo-default-data" / "sustech.db"
+
+
+def test_database_manager_uses_repo_relative_default_when_runtime_database_dir_env_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv(ENV_DATABASE_DIR, raising=False)
+    monkeypatch.setattr(
+        db_manager_module,
+        "_DEFAULT_REPO_EVENT_MANAGER_DB_PATH",
+        tmp_path / "repo-default-data" / "sustech.db",
+    )
+
+    db_manager = DatabaseManager(reset_schema=True)
+    db_manager.engine.dispose()
+
+    assert db_manager.db_path == tmp_path / "repo-default-data" / "sustech.db"
+
+
 def test_course_event(tmp_path: Path):
-    db_manager = DatabaseManager(tmp_path / "event_manager.db", reset_schema=True)
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
     event1 = _make_course_event()
     assert db_manager.upsert_course_event(event1)
     assert event1.id is not None
@@ -58,7 +141,9 @@ def test_course_event(tmp_path: Path):
 
 
 def test_upsert_course_event_backfills_course_group_id(tmp_path: Path):
-    db_manager = DatabaseManager(tmp_path / "event_manager.db", reset_schema=True)
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
     event = _make_course_event(course_group_id=None)
 
     assert db_manager.upsert_course_event(event)
@@ -71,8 +156,55 @@ def test_upsert_course_event_backfills_course_group_id(tmp_path: Path):
     assert persisted_event.course_group_id == event.id
 
 
+def test_upsert_course_event_uses_naive_utc_timestamps_on_insert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
+    expected_now = datetime(2026, 4, 19, 17, 0, 0, 123456)
+    monkeypatch.setattr(db_manager_module, "_utc_now_naive", lambda: expected_now)
+
+    event = _make_course_event(course_group_id=42)
+    assert db_manager.upsert_course_event(event)
+
+    assert event.id is not None
+    persisted_event = _get_course_event_model(db_manager, event.id)
+    assert persisted_event.created_at == expected_now
+    assert persisted_event.updated_at == expected_now
+    assert persisted_event.created_at.tzinfo is None
+    assert persisted_event.updated_at.tzinfo is None
+
+
+def test_upsert_course_event_uses_naive_utc_timestamps_on_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
+    created_at = datetime(2026, 4, 19, 17, 0, 0, 123456)
+    updated_at = datetime(2026, 4, 19, 17, 5, 0, 654321)
+    monkeypatch.setattr(db_manager_module, "_utc_now_naive", lambda: created_at)
+
+    event = _make_course_event()
+    assert db_manager.upsert_course_event(event)
+
+    monkeypatch.setattr(db_manager_module, "_utc_now_naive", lambda: updated_at)
+    event.week_day = 7
+    assert db_manager.upsert_course_event(event)
+
+    assert event.id is not None
+    persisted_event = _get_course_event_model(db_manager, event.id)
+    assert persisted_event.created_at == created_at
+    assert persisted_event.updated_at == updated_at
+    assert persisted_event.created_at.tzinfo is None
+    assert persisted_event.updated_at.tzinfo is None
+
+
 def test_reschedule_course_can_cancel_single_week_only(tmp_path: Path):
-    db_manager = DatabaseManager(tmp_path / "event_manager.db", reset_schema=True)
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
     old_event = _make_course_event()
     assert db_manager.upsert_course_event(old_event)
 
@@ -85,7 +217,9 @@ def test_reschedule_course_can_cancel_single_week_only(tmp_path: Path):
 
 
 def test_reschedule_course_creates_new_event_in_same_group(tmp_path: Path):
-    db_manager = DatabaseManager(tmp_path / "event_manager.db", reset_schema=True)
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
     old_event = _make_course_event()
     assert db_manager.upsert_course_event(old_event)
 
@@ -131,14 +265,18 @@ def test_reschedule_course_rejects_invalid_arguments(
     old_week: int,
     new_event: CourseEvent | None,
 ):
-    db_manager = DatabaseManager(tmp_path / "event_manager.db", reset_schema=True)
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
 
     with pytest.raises(ValueError):
         db_manager.reschedule_course(old_event, old_week, new_event)
 
 
 def test_delete_course_event_delete_group_soft_deletes_whole_group(tmp_path: Path):
-    db_manager = DatabaseManager(tmp_path / "event_manager.db", reset_schema=True)
+    db_manager = db_manager_module.DatabaseManager(
+        tmp_path / "event_manager.db", reset_schema=True
+    )
     event1 = _make_course_event()
     assert db_manager.upsert_course_event(event1)
 

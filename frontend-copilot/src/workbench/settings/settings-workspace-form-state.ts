@@ -1,4 +1,7 @@
-import type { SettingsWorkspaceEditableState } from '../../../electron/settings-workspace/schema'
+import type {
+  SettingsWorkspaceEditableState,
+  SettingsWorkspaceToolPermissionPolicyState,
+} from '../../../electron/settings-workspace/schema'
 import type { ModelRouteRef, ProviderProfile } from '../types'
 
 import { initialProviderProfiles } from './config'
@@ -26,6 +29,7 @@ export interface SettingsWorkspaceFormState {
   launchSyncEnabled: boolean
   mcpAutoDiscoveryEnabled: boolean
   toolPermissionMode: string
+  toolPermissionPolicy: SettingsWorkspaceToolPermissionPolicyState
   searchEngine: string
   searchResultCount: string
   compressionMode: string
@@ -61,6 +65,11 @@ const INITIAL_SETTINGS_WORKSPACE_FORM_STATE: SettingsWorkspaceFormState = {
   launchSyncEnabled: true,
   mcpAutoDiscoveryEnabled: true,
   toolPermissionMode: 'manual',
+  toolPermissionPolicy: {
+    version: 1,
+    defaultMode: 'ask',
+    toolPermissions: {},
+  },
   searchEngine: 'google',
   searchResultCount: '8',
   compressionMode: 'summary',
@@ -101,6 +110,7 @@ export function createSettingsWorkspaceFormStateFromEditableState(
     launchSyncEnabled: state.data.launchSyncEnabled,
     mcpAutoDiscoveryEnabled: state.mcp.mcpAutoDiscoveryEnabled,
     toolPermissionMode: state.mcp.toolPermissionMode,
+    toolPermissionPolicy: state.mcp.toolPermissionPolicy,
     searchEngine: state.search.searchEngine,
     searchResultCount: state.search.searchResultCount,
     compressionMode: state.search.compressionMode,

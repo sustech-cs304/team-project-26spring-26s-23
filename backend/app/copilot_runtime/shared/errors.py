@@ -17,20 +17,18 @@ from ..errors import (
     build_run_not_found_error,
     build_runtime_operation_error,
     build_session_not_found_error,
+    build_tool_approval_not_found_error,
     build_thread_not_found_error,
 )
 from ..protocol import RuntimeProtocolError
-
 
 
 def error_response(status_code: int, error: RuntimeErrorResponse) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=error.to_dict())
 
 
-
 def protocol_error_response(exc: RuntimeProtocolError) -> JSONResponse:
     return error_response(exc.status_code, exc.error)
-
 
 
 def agent_not_found_response(
@@ -49,7 +47,6 @@ def agent_not_found_response(
     )
 
 
-
 def thread_not_found_response(
     *,
     thread_id: str,
@@ -64,7 +61,6 @@ def thread_not_found_response(
             requested_method=requested_method,
         ),
     )
-
 
 
 def run_not_found_response(
@@ -83,7 +79,6 @@ def run_not_found_response(
     )
 
 
-
 def session_not_found_response(
     *,
     session_id: str,
@@ -99,6 +94,23 @@ def session_not_found_response(
         ),
     )
 
+
+def tool_approval_not_found_response(
+    *,
+    run_id: str,
+    tool_call_id: str,
+    scaffold: RuntimeScaffold,
+    requested_method: str,
+) -> JSONResponse:
+    return error_response(
+        status.HTTP_404_NOT_FOUND,
+        build_tool_approval_not_found_error(
+            run_id=run_id,
+            tool_call_id=tool_call_id,
+            scaffold=scaffold,
+            requested_method=requested_method,
+        ),
+    )
 
 
 def runtime_operation_conflict_response(
@@ -121,7 +133,6 @@ def runtime_operation_conflict_response(
     )
 
 
-
 def agent_execution_failed_response(
     *,
     message: str,
@@ -138,7 +149,6 @@ def agent_execution_failed_response(
     )
 
 
-
 def method_not_implemented_response(
     *,
     requested_method: str,
@@ -151,7 +161,6 @@ def method_not_implemented_response(
             scaffold=scaffold,
         ),
     )
-
 
 
 def internal_server_error_response(
@@ -180,5 +189,6 @@ __all__ = [
     "run_not_found_response",
     "runtime_operation_conflict_response",
     "session_not_found_response",
+    "tool_approval_not_found_response",
     "thread_not_found_response",
 ]

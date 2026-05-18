@@ -25,7 +25,6 @@ ENV_CHAT_DATABASE_PATH = "COPILOT_RUNTIME_CHAT_DATABASE_PATH"
 ENV_DESKTOP_DATABASE_DIR = "COPILOT_DESKTOP_RUNTIME_DATABASE_DIR"
 
 
-
 def resolve_chat_database_path(
     *,
     runtime_config: DesktopRuntimeConfig | None = None,
@@ -44,9 +43,13 @@ def resolve_chat_database_path(
         elif runtime_config is not None:
             candidate = runtime_config.database_dir / DEFAULT_CHAT_DATABASE_FILE_NAME
         else:
-            configured_database_dir = _normalize_optional_text(env_map.get(ENV_DESKTOP_DATABASE_DIR))
+            configured_database_dir = _normalize_optional_text(
+                env_map.get(ENV_DESKTOP_DATABASE_DIR)
+            )
             if configured_database_dir is not None:
-                candidate = Path(configured_database_dir) / DEFAULT_CHAT_DATABASE_FILE_NAME
+                candidate = (
+                    Path(configured_database_dir) / DEFAULT_CHAT_DATABASE_FILE_NAME
+                )
             else:
                 from app.desktop_runtime.config import BACKEND_DIR
 
@@ -61,16 +64,13 @@ def resolve_chat_database_path(
     return resolved
 
 
-
 def build_sqlite_database_url(db_path: str | Path) -> str:
     resolved_db_path = Path(db_path).resolve()
     return f"sqlite:///{resolved_db_path.as_posix()}"
 
 
-
 def get_default_alembic_ini_path() -> Path:
     return Path(__file__).resolve().parents[3] / "alembic.ini"
-
 
 
 def create_alembic_config(
@@ -78,12 +78,15 @@ def create_alembic_config(
     db_path: str | Path,
     alembic_ini_path: str | Path | None = None,
 ) -> Config:
-    ini_path = Path(alembic_ini_path) if alembic_ini_path is not None else get_default_alembic_ini_path()
+    ini_path = (
+        Path(alembic_ini_path)
+        if alembic_ini_path is not None
+        else get_default_alembic_ini_path()
+    )
     config = Config(str(ini_path))
     config.set_main_option("sqlalchemy.url", build_sqlite_database_url(db_path))
     config.attributes["configure_logger"] = False
     return config
-
 
 
 def upgrade_database(
@@ -93,9 +96,10 @@ def upgrade_database(
     revision: str = "head",
 ) -> None:
     resolved_db_path = resolve_chat_database_path(db_path=db_path)
-    config = create_alembic_config(db_path=resolved_db_path, alembic_ini_path=alembic_ini_path)
+    config = create_alembic_config(
+        db_path=resolved_db_path, alembic_ini_path=alembic_ini_path
+    )
     command.upgrade(config, revision)
-
 
 
 def create_sqlite_engine(*, db_path: str | Path, echo: bool = False) -> Engine:
@@ -111,7 +115,6 @@ def create_sqlite_engine(*, db_path: str | Path, echo: bool = False) -> Engine:
     )
     _install_sqlite_pragmas(engine)
     return engine
-
 
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:
@@ -131,7 +134,6 @@ def session_scope(session_factory: sessionmaker[Session]) -> Iterator[Session]:
         session.close()
 
 
-
 def initialize_database(engine: Engine) -> None:
     """Open a connection so SQLite file creation and PRAGMA hooks occur eagerly."""
 
@@ -139,12 +141,10 @@ def initialize_database(engine: Engine) -> None:
         connection.execute(text("SELECT 1"))
 
 
-
 def get_target_metadata():
     from . import models as _models  # noqa: F401
 
     return Base.metadata
-
 
 
 def _install_sqlite_pragmas(engine: Engine) -> None:
@@ -157,7 +157,6 @@ def _install_sqlite_pragmas(engine: Engine) -> None:
         cursor.execute("PRAGMA journal_mode=WAL;")
         cursor.execute("PRAGMA synchronous=NORMAL;")
         cursor.close()
-
 
 
 def _normalize_optional_text(value: object | None) -> str | None:
