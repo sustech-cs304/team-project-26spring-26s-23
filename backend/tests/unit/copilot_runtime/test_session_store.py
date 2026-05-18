@@ -171,7 +171,7 @@ def test_completed_run_projects_structured_user_payload_into_model_history() -> 
     ]
 
 
-def test_failed_and_cancelled_runs_do_not_project_messages() -> None:
+def test_failed_and_cancelled_runs_project_user_and_interrupted_assistant_drafts() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
 
@@ -186,9 +186,27 @@ def test_failed_and_cancelled_runs_do_not_project_messages() -> None:
         request=_build_stored_run_input(user_text="follow up"),
     )
 
+    store.record_run_event(
+        "run-failed",
+        event_type="text_delta",
+        payload={"delta": "partial failed draft"},
+        sequence=1,
+    )
     store.mark_run_failed(
         "run-failed",
         metadata={"terminal_event": "run_failed", "terminal_payload": {"code": "boom"}},
+    )
+    store.record_run_event(
+        "run-cancelled",
+        event_type="text_delta",
+        payload={"delta": "partial"},
+        sequence=1,
+    )
+    store.record_run_event(
+        "run-cancelled",
+        event_type="text_delta",
+        payload={"delta": " cancelled draft"},
+        sequence=2,
     )
     store.mark_run_cancelled(
         "run-cancelled",
@@ -198,7 +216,12 @@ def test_failed_and_cancelled_runs_do_not_project_messages() -> None:
     assert failed_run.status == "failed"
     assert cancelled_run.status == "cancelled"
     assert store.get_latest_run_for_thread("thread-1") is cancelled_run
-    assert store.list_messages("thread-1") == ()
+    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
+        ("user", "follow up"),
+        ("assistant", "partial cancelled draft"),
+        ("user", "hello"),
+        ("assistant", "partial failed draft"),
+    ]
 
 
 def test_awaiting_user_input_failed_run_projects_structured_user_payload() -> None:

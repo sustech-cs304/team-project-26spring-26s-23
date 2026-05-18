@@ -1395,7 +1395,7 @@ def test_stream_events_tool_failure_can_be_followed_by_true_non_tool_fatal_failu
 
 
 
-def test_stream_events_cancelled_run_discards_draft_and_does_not_archive() -> None:
+def test_stream_events_cancelled_run_projects_interrupted_draft_into_history() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _CancellingExecutor(deltas=["partial"], output="unused")
@@ -1424,7 +1424,7 @@ def test_stream_events_cancelled_run_discards_draft_and_does_not_archive() -> No
 
 
 
-def test_stream_events_client_disconnect_cancels_run_and_does_not_archive() -> None:
+def test_stream_events_client_disconnect_projects_interrupted_draft_into_history() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
     executor = _StreamingExecutor(deltas=["partial", "late"], output="partial late")
