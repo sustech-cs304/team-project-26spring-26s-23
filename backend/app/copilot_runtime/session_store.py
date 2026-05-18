@@ -118,11 +118,38 @@ class RuntimeRunRecord:
             self.request.message_content,
             self.request.message_structured_payload,
         )
-        projected_assistant_text = _resolve_projected_assistant_text(self)
-        if projected_user_text is None or projected_assistant_text is None:
+        if projected_user_text is None:
             return ()
 
+        projected_assistant_text = _resolve_projected_assistant_text(self)
+
+        if self.status == "completed":
+            if projected_assistant_text is None:
+                return ()
+            return (
+                RuntimeTextMessage(
+                    role=self.request.message_role,
+                    content=projected_user_text,
+                    created_at=self.created_at,
+                ),
+                RuntimeTextMessage(
+                    role="assistant",
+                    content=projected_assistant_text,
+                    created_at=self.terminal_at or self.updated_at,
+                ),
+            )
+
+        # failed or cancelled: always retain the user message.
+        # Append the assistant message only when a draft / prompt can be recovered.
         assistant_created_at = self.terminal_at or self.updated_at
+        if projected_assistant_text is None:
+            return (
+                RuntimeTextMessage(
+                    role=self.request.message_role,
+                    content=projected_user_text,
+                    created_at=self.created_at,
+                ),
+            )
         return (
             RuntimeTextMessage(
                 role=self.request.message_role,
@@ -451,12 +478,10 @@ def _resolve_projected_assistant_text(run: RuntimeRunRecord) -> str | None:
     if run.status not in {"failed", "cancelled"}:
         return None
 
-    interrupted_assistant_text = _resolve_interrupted_assistant_text(run)
-    if interrupted_assistant_text is not None:
-        return interrupted_assistant_text
     if _is_awaiting_user_input_run(run):
         return _normalize_projected_text(_resolve_awaiting_user_input_assistant_text(run))
-    return None
+
+    return _resolve_interrupted_assistant_text(run)
 
 
 def _resolve_interrupted_assistant_text(run: RuntimeRunRecord) -> str | None:

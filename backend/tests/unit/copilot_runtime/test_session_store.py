@@ -232,6 +232,40 @@ def test_failed_and_cancelled_runs_project_user_and_interrupted_assistant_drafts
     )
 
 
+def test_failed_and_cancelled_runs_without_draft_still_project_user_message() -> None:
+    """Failing / cancelling before any text_delta must not discard the user input."""
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+
+    # Failed run without any text_delta (e.g. model start error)
+    store.create_run(
+        thread_id="thread-1",
+        run_id="run-immediate-fail",
+        request=_build_stored_run_input(user_text="hello"),
+    )
+    store.mark_run_failed(
+        "run-immediate-fail",
+        metadata={"terminal_event": "run_failed", "terminal_payload": {"code": "boom"}},
+    )
+
+    # Cancelled run without any text_delta (e.g. cancel before first token)
+    store.create_run(
+        thread_id="thread-1",
+        run_id="run-immediate-cancel",
+        request=_build_stored_run_input(user_text="follow up"),
+    )
+    store.mark_run_cancelled(
+        "run-immediate-cancel",
+        metadata={"terminal_event": "run_cancelled", "terminal_payload": {"reason": "cancelled"}},
+    )
+
+    messages = store.list_messages("thread-1")
+    roles_and_contents = [(message.role, message.content) for message in messages]
+    assert len(messages) == 2
+    assert ("user", "hello") in roles_and_contents
+    assert ("user", "follow up") in roles_and_contents
+
+
 def test_awaiting_user_input_failed_run_projects_structured_user_payload() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
