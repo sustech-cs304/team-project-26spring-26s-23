@@ -102,7 +102,7 @@ describe('SettingsWorkspace structure', () => {
     expect(sustechHtml).not.toContain('自动下载 Blackboard 文件')
     expect(sustechHtml).not.toContain('下载文件大小限制')
     expect(externalSourceHtml).toContain('WakeUP 课程群同步')
-    expect(externalSourceHtml).toContain('WakeUP 分享链接')
+    expect(externalSourceHtml).toContain('导入 .ics 文件')
   })
 
   it('removes safe search and mcp sandbox toggles from their sections', () => {
