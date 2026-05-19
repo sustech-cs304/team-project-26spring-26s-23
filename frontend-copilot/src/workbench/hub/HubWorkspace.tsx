@@ -23,9 +23,10 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
     const controller = new AbortController()
     let active = true
 
+    let actualRuntimeUrl = 'http://127.0.0.1:8765'
     if (bootstrap) {
       if (bootstrap.state.status === 'ready' || bootstrap.state.status === 'degraded') {
-        // no-op, component can proceed
+        actualRuntimeUrl = bootstrap.state.runtimeUrl
       } else {
         return
       }
@@ -35,9 +36,34 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       setIsLoading(true)
       setError(null)
       try {
-        const response = await window.timelineDatabase.loadEvents()
+        const localResponse = await window.timelineDatabase.loadEvents()
+        const combinedEvents = [...(localResponse.items || [])]
+
+        try {
+          const apiResponse = await fetch(`${actualRuntimeUrl}/calendar/events`, {
+            signal: controller.signal,
+          })
+          if (apiResponse.ok) {
+            const data = await apiResponse.json()
+            if (data.items && data.items.length > 0) {
+              const localIds = new Set(combinedEvents.map(e => String(e.id)))
+              for (const remoteEvent of data.items) {
+                if (!localIds.has(String(remoteEvent.id))) {
+                  combinedEvents.push(remoteEvent)
+                }
+              }
+            }
+          } else {
+            console.warn(`[Sync] Calendar API responded with status ${apiResponse.status}`)
+          }
+        } catch (fetchErr: unknown) {
+          if (!controller.signal.aborted) {
+            console.warn('[Sync] Failed to fetch backend calendar events:', fetchErr)
+          }
+        }
+
         if (active) {
-          setEvents(response.items || [])
+          setEvents(combinedEvents)
         }
       } catch (err: unknown) {
         if (active) {
