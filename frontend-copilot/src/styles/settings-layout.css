@@ -35,8 +35,8 @@
 
 .settings-section-keepalive-panel--active {
   z-index: 2;
-  animation: settings-curtain-rise var(--anim-duration-slow) var(--easing-enter),
-             settings-section-fade-in var(--anim-duration-fast) var(--easing-enter);
+  animation: settings-curtain-rise var(--anim-duration-slow) var(--easing-enter) both,
+             settings-section-fade-in var(--anim-duration-fast) var(--easing-enter) both;
 }
 
 .settings-section-keepalive-panel--exiting {

@@ -23,16 +23,28 @@ function readAnimDurationMs(varName: string, fallback: number): number {
 }
 
 /* ── Animation timing constants (mirrors tokens.css) ── */
+const _animCache = new Map<string, number>()
+
+function readAnimDurationMsCached(varName: string, fallback: number): number {
+  const cached = _animCache.get(varName)
+  if (cached !== undefined) {
+    return cached
+  }
+  const value = readAnimDurationMs(varName, fallback)
+  _animCache.set(varName, value)
+  return value
+}
+
 export const ANIM = {
-  DURATION_FEEDBACK: readAnimDurationMs('--anim-duration-feedback', 110),
-  DURATION_FAST: readAnimDurationMs('--anim-duration-fast', 130),
-  DURATION_STANDARD: readAnimDurationMs('--anim-duration-standard', 165),
-  DURATION_SLOW: readAnimDurationMs('--anim-duration-slow', 180),
-  DURATION_EMPHASIS: readAnimDurationMs('--anim-duration-emphasis', 220),
-  DURATION_SPIN: readAnimDurationMs('--anim-duration-spin', 900),
-  DURATION_SHIMMER: readAnimDurationMs('--anim-duration-shimmer', 2500),
-  STAGGER_EACH: readAnimDurationMs('--stagger-step-each', 28),
-  STAGGER_MAX: readAnimDurationMs('--stagger-step-max', 224),
+  get DURATION_FEEDBACK() { return readAnimDurationMsCached('--anim-duration-feedback', 110) },
+  get DURATION_FAST() { return readAnimDurationMsCached('--anim-duration-fast', 130) },
+  get DURATION_STANDARD() { return readAnimDurationMsCached('--anim-duration-standard', 165) },
+  get DURATION_SLOW() { return readAnimDurationMsCached('--anim-duration-slow', 180) },
+  get DURATION_EMPHASIS() { return readAnimDurationMsCached('--anim-duration-emphasis', 220) },
+  get DURATION_SPIN() { return readAnimDurationMsCached('--anim-duration-spin', 900) },
+  get DURATION_SHIMMER() { return readAnimDurationMsCached('--anim-duration-shimmer', 2500) },
+  get STAGGER_EACH() { return readAnimDurationMsCached('--stagger-step-each', 28) },
+  get STAGGER_MAX() { return readAnimDurationMsCached('--stagger-step-max', 224) },
 } as const
 
 /* ── GSAP helpers ── */
@@ -66,6 +78,7 @@ export function useStaggerListEnter({
 
       if (!enabled) {
         gsap.set(elements, { opacity: 1, y: 0 })
+        previousCountRef.current = elements.length
         return
       }
 
@@ -86,7 +99,7 @@ export function useStaggerListEnter({
         },
       )
     },
-    { scope, dependencies: [enabled] },
+    { scope, dependencies: [enabled, scope.current?.querySelectorAll(selector).length ?? 0] },
   )
 
   useEffect(() => {
@@ -96,17 +109,4 @@ export function useStaggerListEnter({
   }, [])
 }
 
-/**
- * Conditionally execute GSAP animation or snap to final state.
- */
-export function animateIfEnabled(
-  enabled: boolean,
-  animateFn: () => gsap.core.Tween | gsap.core.Timeline | void,
-  snapFn: () => void,
-) {
-  if (enabled) {
-    animateFn()
-  } else {
-    snapFn()
-  }
-}
+

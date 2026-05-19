@@ -29,9 +29,11 @@ vi.mock('gsap', () => {
     for (const el of elements) {
       if (typeof (el as Record<string, unknown>)?.style !== 'object' || el === null || el === undefined) continue
       const style = (el as HTMLElement).style
-      if (vars.x !== undefined) style.transform = `translateX(${vars.x}px)`
-      if (vars.y !== undefined) style.transform = `translateY(${vars.y}px)`
-      if (vars.scale !== undefined) style.transform = `scale(${vars.scale})`
+      const transforms: string[] = []
+      if (vars.x !== undefined) transforms.push(`translateX(${vars.x}px)`)
+      if (vars.y !== undefined) transforms.push(`translateY(${vars.y}px)`)
+      if (vars.scale !== undefined) transforms.push(`scale(${vars.scale})`)
+      if (transforms.length > 0) style.transform = transforms.join(' ')
       if (vars.opacity !== undefined) style.opacity = String(vars.opacity)
     }
   }

@@ -264,11 +264,6 @@
   }
 }
 
-@keyframes error-backdrop-enter {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 @media (max-width: 720px) {
   .error-detail-overlay {
     padding: 0.85rem;

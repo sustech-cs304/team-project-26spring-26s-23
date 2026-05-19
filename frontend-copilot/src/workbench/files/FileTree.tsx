@@ -237,9 +237,21 @@ function FileTreeChildren({
   children: ReactNode
 }) {
   const childrenRef = useRef<HTMLDivElement>(null)
+  const initialMountRef = useRef(true)
 
   useGSAP(() => {
     if (!childrenRef.current) return
+
+    if (initialMountRef.current) {
+      initialMountRef.current = false
+      if (!expanded) {
+        gsap.set(childrenRef.current, { height: 0, opacity: 0 })
+        return
+      }
+      gsap.set(childrenRef.current, { height: 'auto', opacity: 1 })
+      return
+    }
+
     if (expanded) {
       gsap.fromTo(childrenRef.current,
         { height: 0, opacity: 0 },
@@ -254,6 +266,7 @@ function FileTreeChildren({
     <div
       ref={childrenRef}
       className={`file-tree__children${expanded ? ' file-tree__children--expanded' : ''}`}
+      style={{ overflow: 'hidden' }}
     >
       {children}
     </div>

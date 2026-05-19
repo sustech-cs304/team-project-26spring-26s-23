@@ -1253,11 +1253,17 @@ function ResourceTreeRow({
       )
     }
     if (percentRef.current && downloadState.progressPercent != null) {
-      gsap.to(percentRef.current, {
-        innerText: downloadState.progressPercent.toFixed(1),
+      const counter = { value: Number.parseFloat(percentRef.current.textContent ?? '0') || 0 }
+      gsap.to(counter, {
+        value: downloadState.progressPercent,
         duration: 0.35,
-        snap: { innerText: 0.5 },
         ease: 'power2.out',
+        overwrite: 'auto',
+        onUpdate: () => {
+          if (percentRef.current) {
+            percentRef.current.textContent = `${counter.value.toFixed(1)}%`
+          }
+        },
       })
     }
   }, { dependencies: [downloadState.progressPercent, downloadState.state] })
