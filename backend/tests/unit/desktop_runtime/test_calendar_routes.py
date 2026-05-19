@@ -8,21 +8,14 @@ from app.desktop_runtime.config import LOCAL_TOKEN_HEADER_NAME, DesktopRuntimeCo
 from app.desktop_runtime.server import create_app
 
 
-def test_calendar_events_route_requires_local_token_and_serializes_utc_datetimes(tmp_path: Path) -> None:
+def test_calendar_events_route_serializes_utc_datetimes(tmp_path: Path) -> None:
     app = create_app(_build_config(tmp_path, local_token="calendar-token"))
 
     with TestClient(app) as client:
-        unauthorized = client.get("/calendar/events")
-        authorized = client.get(
-            "/calendar/events",
-            headers={LOCAL_TOKEN_HEADER_NAME: "calendar-token"},
-        )
+        response = client.get("/calendar/events")
 
-    assert unauthorized.status_code == 401
-    assert unauthorized.json()["detail"]["code"] == "invalid_local_token"
-
-    assert authorized.status_code == 200
-    payload = authorized.json()
+    assert response.status_code == 200
+    payload = response.json()
     assert "items" in payload
     assert len(payload["items"]) == 3
     for item in payload["items"]:

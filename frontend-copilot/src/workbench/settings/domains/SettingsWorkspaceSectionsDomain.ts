@@ -283,9 +283,17 @@ export function useSettingsWorkspaceSectionsDomain({
 
   const activeProviderPreviewModelId = activeProviderDetail.availableModels[0]?.modelId ?? null
 
+  let runtimeBaseUrl = 'http://127.0.0.1:8765'
+  if (bootstrap) {
+    if (bootstrap.state.status === 'ready' || bootstrap.state.status === 'degraded') {
+      runtimeBaseUrl = bootstrap.state.runtimeUrl
+    }
+  }
+
   const sideflows = useSettingsWorkspaceSideflows({
     hydratedCasPasswordValue: casPasswordValue,
     wakeupShareLink: formState.wakeupShareLink,
+    runtimeBaseUrl,
   })
   const {
     casPasswordDraft,

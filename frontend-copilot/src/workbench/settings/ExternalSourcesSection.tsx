@@ -1,10 +1,11 @@
-import { Link2, X } from 'lucide-react'
+import { X } from 'lucide-react'
+import { useRef } from 'react'
 
 import { getExternalSourcesCopy } from '../locale'
 
 export type WakeupDialogState =
-  | { status: 'failure' }
-  | { status: 'success' }
+  | { status: 'failure'; error?: string }
+  | { status: 'success'; parsed: number }
   | null
 
 export interface ExternalSourcesSectionDomain {
@@ -28,10 +29,10 @@ export function ExternalSourcesSection({ externalSources, language }: ExternalSo
     onWakeupShareLinkChange,
     onWakeupLinkParse,
     onWakeupDialogClose,
-    onWakeupConflictChoice,
   } = externalSources
 
   const copy = getExternalSourcesCopy(language)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
 
   return (
     <div className="settings-page">
@@ -43,34 +44,46 @@ export function ExternalSourcesSection({ externalSources, language }: ExternalSo
         </div>
 
         <div className="settings-stack">
-          <label className="form-field form-field--full">
-            <span className="form-field__meta">
-              <span className="form-field__label">{copy.linkLabel}</span>
-            </span>
-            <span className="text-input-shell">
-              <input
-                data-testid="wakeup-share-link-input"
-                className="text-input text-input-shell__input"
-                type="text"
-                value={wakeupShareLink}
-                placeholder={copy.linkPlaceholder}
-                onChange={(event) => onWakeupShareLinkChange(event.target.value)}
-              />
-              <span className="text-input-shell__actions">
-                <button
-                  type="button"
-                  className="icon-button icon-button--compact"
-                  data-testid="wakeup-parse-button"
-                  aria-label={copy.parseLinkAriaLabel}
-                  onClick={() => {
+          <div className="settings-stack">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".ics,text/calendar"
+              style={{ display: 'none' }}
+              aria-label={copy.importIcsAriaLabel}
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (!file) {
+                  return
+                }
+                const reader = new FileReader()
+                reader.onload = () => {
+                  const text = typeof reader.result === 'string' ? reader.result : ''
+                  onWakeupShareLinkChange(text)
+                  window.setTimeout(() => {
                     void onWakeupLinkParse()
-                  }}
-                >
-                  <Link2 size={14} />
-                </button>
-              </span>
-            </span>
-          </label>
+                  }, 0)
+                  event.target.value = ''
+                }
+                reader.onerror = () => {
+                  event.target.value = ''
+                }
+                reader.readAsText(file)
+              }}
+            />
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                importInputRef.current?.click()
+              }}
+            >
+              {copy.importIcsButton}
+            </button>
+          </div>
+          <p className="settings-card__hint">
+            {wakeupShareLink.trim().startsWith('BEGIN:VCALENDAR') ? '已加载 .ics 内容' : '未选择 .ics 文件'}
+          </p>
         </div>
       </section>
 
@@ -99,19 +112,14 @@ export function ExternalSourcesSection({ externalSources, language }: ExternalSo
 
             <div className="model-editor-modal__body">
               {wakeupDialogState.status === 'failure' ? (
-                <p data-testid="wakeup-parse-failure">{copy.parseFailureText}</p>
+                <p data-testid="wakeup-parse-failure">
+                  {copy.parseFailureText}
+                  {wakeupDialogState.error ? `：${wakeupDialogState.error}` : ''}
+                </p>
               ) : (
                 <div className="settings-stack" data-testid="wakeup-parse-success">
-                  <button type="button" className="secondary-button" onClick={onWakeupConflictChoice}>
-                    {copy.keepWakeupButton}
-                  </button>
-                  <button type="button" className="secondary-button" onClick={onWakeupConflictChoice}>
-                    {copy.keepTisButton}
-                  </button>
-                  <button type="button" className="primary-button" onClick={onWakeupConflictChoice}>
-                    {copy.smartResolveButton}
-                  </button>
-                  <button type="button" className="ghost-button" onClick={onWakeupDialogClose}>
+                  <p>{`已导入 ${wakeupDialogState.parsed} 条事件`}</p>
+                  <button type="button" className="primary-button" onClick={onWakeupDialogClose}>
                     {copy.cancelButton}
                   </button>
                 </div>

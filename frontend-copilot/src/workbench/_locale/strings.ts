@@ -371,6 +371,8 @@ const externalSourcesCopy: Record<WorkbenchLanguage, {
   title: string
   linkLabel: string
   linkPlaceholder: string
+  importIcsButton: string
+  importIcsAriaLabel: string
   parseLinkAriaLabel: string
   dialogAriaLabel: string
   dialogTitle: string
@@ -384,7 +386,9 @@ const externalSourcesCopy: Record<WorkbenchLanguage, {
   'zh-CN': {
     title: 'WakeUP 课程群同步',
     linkLabel: 'WakeUP 分享链接',
-    linkPlaceholder: '输入 WakeUP 分享链接',
+    linkPlaceholder: '输入 WakeUP 分享链接或导入 .ics',
+    importIcsButton: '导入 .ics 文件',
+    importIcsAriaLabel: '导入 WakeUP .ics 文件',
     parseLinkAriaLabel: '解析链接',
     dialogAriaLabel: 'WakeUP 链接解析',
     dialogTitle: '解析链接',
@@ -398,7 +402,9 @@ const externalSourcesCopy: Record<WorkbenchLanguage, {
   'en-US': {
     title: 'WakeUP Course Sync',
     linkLabel: 'WakeUP Share Link',
-    linkPlaceholder: 'Enter WakeUP share link',
+    linkPlaceholder: 'Enter WakeUP share link or import .ics',
+    importIcsButton: 'Import .ics file',
+    importIcsAriaLabel: 'Import WakeUP .ics file',
     parseLinkAriaLabel: 'Parse link',
     dialogAriaLabel: 'WakeUP link parsing',
     dialogTitle: 'Parse Link',
