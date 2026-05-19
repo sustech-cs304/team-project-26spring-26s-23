@@ -21,7 +21,7 @@ export function McpServersPanel({
   onTestConnection,
 }: McpServersPanelProps) {
   const listRef = useRef<HTMLDivElement>(null)
-  useStaggerListEnter({ scope: listRef, selector: '.mcp-server-row:not(.mcp-server-row--empty)' })
+  useStaggerListEnter({ scope: listRef, selector: '.mcp-server-row:not(.mcp-server-row--empty)', itemCount: servers.length })
 
   return (
     <section className="capabilities-surface capabilities-surface--mcp">

@@ -29,7 +29,7 @@ export function ToolPermissionsPanel({
 }: ToolPermissionsPanelProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<ToolPermissionGroupId, boolean>>(initialCollapsedGroups)
   const listRef = useRef<HTMLDivElement>(null)
-  useStaggerListEnter({ scope: listRef, selector: '.tool-permission-row' })
+  useStaggerListEnter({ scope: listRef, selector: '.tool-permission-row', itemCount: tools.length })
 
   const groupedTools = useMemo(() => {
     const groups = new Map<string, {

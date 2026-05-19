@@ -1239,11 +1239,12 @@ function ResourceTreeRow({
 
   const progressRef = useRef<HTMLSpanElement>(null)
   const percentRef = useRef<HTMLSpanElement>(null)
+  const prevPercentRef = useRef(0)
 
   useGSAP(() => {
     if (progressRef.current && downloadState.progressPercent != null) {
       gsap.fromTo(progressRef.current,
-        { width: `${Math.max(0, (downloadState.progressPercent ?? 0) - 1)}%` },
+        { width: `${prevPercentRef.current}%` },
         {
           width: `${downloadState.progressPercent}%`,
           duration: 0.35,
@@ -1251,6 +1252,7 @@ function ResourceTreeRow({
           overwrite: 'auto',
         },
       )
+      prevPercentRef.current = downloadState.progressPercent
     }
     if (percentRef.current && downloadState.progressPercent != null) {
       const counter = { value: Number.parseFloat(percentRef.current.textContent ?? '0') || 0 }
@@ -1431,11 +1433,12 @@ function AssignmentAttachmentRow({
 
   const attachmentProgressRef = useRef<HTMLSpanElement>(null)
   const attachmentPercentRef = useRef<HTMLSpanElement>(null)
+  const attachmentPrevPercentRef = useRef(0)
 
   useGSAP(() => {
     if (attachmentProgressRef.current && downloadState.progressPercent != null) {
       gsap.fromTo(attachmentProgressRef.current,
-        { width: `${Math.max(0, (downloadState.progressPercent ?? 0) - 1)}%` },
+        { width: `${attachmentPrevPercentRef.current}%` },
         {
           width: `${downloadState.progressPercent}%`,
           duration: 0.35,
@@ -1443,13 +1446,20 @@ function AssignmentAttachmentRow({
           overwrite: 'auto',
         },
       )
+      attachmentPrevPercentRef.current = downloadState.progressPercent
     }
     if (attachmentPercentRef.current && downloadState.progressPercent != null) {
-      gsap.to(attachmentPercentRef.current, {
-        innerText: downloadState.progressPercent.toFixed(1),
+      const counter = { value: Number.parseFloat(attachmentPercentRef.current.textContent ?? '0') || 0 }
+      gsap.to(counter, {
+        value: downloadState.progressPercent,
         duration: 0.35,
-        snap: { innerText: 0.5 },
         ease: 'power2.out',
+        overwrite: 'auto',
+        onUpdate: () => {
+          if (attachmentPercentRef.current) {
+            attachmentPercentRef.current.textContent = `${counter.value.toFixed(1)}%`
+          }
+        },
       })
     }
   }, { dependencies: [downloadState.progressPercent, downloadState.state] })

@@ -70,7 +70,6 @@ export function CopilotMessagesShell({
 }: CopilotMessagesShellProps) {
   const copy = getCopilotChatCopy(language)
   const messageListRef = useRef<HTMLDivElement>(null)
-  useStaggerListEnter({ scope: messageListRef, selector: '.copilot-chat__message' })
   const visibleConversation = useMemo(
     () => buildVisibleConversation({
       conversation,
@@ -78,6 +77,11 @@ export function CopilotMessagesShell({
     }),
     [conversation, transientError],
   )
+  useStaggerListEnter({
+    scope: messageListRef,
+    selector: '.copilot-chat__message',
+    itemCount: visibleConversation.length,
+  })
   const renderedAssistantPlaceholder = useAssistantPlaceholderState(assistantPlaceholder)
 
   return (

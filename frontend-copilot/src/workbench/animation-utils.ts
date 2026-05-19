@@ -54,17 +54,18 @@ export interface UseStaggerListEnterOptions {
   enabled?: boolean
   scope: RefObject<HTMLElement | null>
   selector: string
+  itemCount?: number
 }
 
 /**
  * Reusable hook for staggered list item entrance animations.
- * Replaces the pattern of inline style={{ animationDelay: ... }} on every row
- * or the CSS nth-child animation-delay grid.
+ * Only newly inserted items are animated; existing items are left untouched.
  */
 export function useStaggerListEnter({
   enabled = true,
   scope,
   selector,
+  itemCount,
 }: UseStaggerListEnterOptions) {
   const previousCountRef = useRef(0)
 
@@ -82,13 +83,15 @@ export function useStaggerListEnter({
         return
       }
 
-      const isNewItems = elements.length > previousCountRef.current
+      const countDelta = elements.length - previousCountRef.current
       previousCountRef.current = elements.length
 
-      if (!isNewItems) return
+      if (countDelta <= 0) return
+
+      const newElements = Array.from(elements).slice(-countDelta)
 
       gsap.fromTo(
-        elements,
+        newElements,
         { opacity: 0, y: 7 },
         {
           opacity: 1,
@@ -99,7 +102,7 @@ export function useStaggerListEnter({
         },
       )
     },
-    { scope, dependencies: [enabled, scope.current?.querySelectorAll(selector).length ?? 0] },
+    { scope, dependencies: [enabled, itemCount ?? scope.current?.querySelectorAll(selector).length ?? 0] },
   )
 
   useEffect(() => {

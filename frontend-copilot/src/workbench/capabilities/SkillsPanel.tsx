@@ -26,7 +26,7 @@ export function SkillsPanel({
 }: SkillsPanelProps) {
   const [expandedSkillId, setExpandedSkillId] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  useStaggerListEnter({ scope: listRef, selector: '.skill-row:not(.skill-row--empty)' })
+  useStaggerListEnter({ scope: listRef, selector: '.skill-row:not(.skill-row--empty)', itemCount: skills.length })
 
   return (
     <section className="capabilities-surface capabilities-surface--skills">
