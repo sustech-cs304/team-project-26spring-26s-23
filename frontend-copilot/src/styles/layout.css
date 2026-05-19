@@ -54,13 +54,13 @@
 .workbench-view--active {
   z-index: 2;
   pointer-events: auto;
-  animation: workbench-view-fade-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: workbench-view-fade-in var(--anim-duration-slow) var(--easing-enter) both;
 }
 
 .workbench-view--exiting {
   z-index: 1;
   pointer-events: none;
-  animation: workbench-view-fade-out 160ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: workbench-view-fade-out var(--anim-duration-standard) var(--easing-exit) both;
 }
 
 @keyframes workbench-view-fade-in {
@@ -98,11 +98,11 @@
   color: var(--text-secondary);
   line-height: 0;
   transition:
-    color 0.18s ease,
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.18s ease;
+    color var(--transition-duration-standard) var(--easing-standard),
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    border-color var(--transition-duration-standard) var(--easing-standard),
+    box-shadow var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .rail-button:hover {
@@ -299,9 +299,9 @@
   -webkit-user-select: none;
   user-select: none;
   transition:
-    background-color 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    color var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .assistant-card:hover,

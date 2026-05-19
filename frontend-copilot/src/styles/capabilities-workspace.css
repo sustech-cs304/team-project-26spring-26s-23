@@ -30,8 +30,8 @@
   color: inherit;
   text-align: left;
   transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .capabilities-nav-item:hover {
@@ -170,7 +170,7 @@
 }
 
 .managed-runtime-status-button__spinner {
-  animation: capabilities-managed-runtime-spin 1s linear infinite;
+  animation: capabilities-managed-runtime-spin var(--anim-duration-spin) var(--easing-linear) infinite;
 }
 
 .managed-runtime-status-panel {
@@ -350,13 +350,13 @@
 
 .capabilities-section-view--active {
   z-index: 2;
-  animation: capabilities-section-fade-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: capabilities-section-fade-in var(--anim-duration-slow) var(--easing-enter) both;
 }
 
 .capabilities-section-view--exiting {
   z-index: 1;
   pointer-events: none;
-  animation: capabilities-section-fade-out 160ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: capabilities-section-fade-out var(--anim-duration-standard) var(--easing-exit) both;
 }
 
 @keyframes capabilities-section-fade-in {
@@ -386,7 +386,7 @@
 .tool-permission-row,
 .mcp-server-row,
 .skill-row {
-  animation: capabilities-list-row-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: capabilities-list-row-enter var(--anim-duration-standard) var(--easing-enter) both;
 }
 
 :root[data-animations='disabled'] .tool-permission-row,
@@ -493,7 +493,7 @@
 
 .tool-permission-group__chevron {
   color: var(--text-muted);
-  transition: transform 0.18s ease;
+  transition: transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .tool-permission-group__chevron--collapsed {
@@ -517,7 +517,7 @@
 .tool-permission-group__body {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows 0.22s cubic-bezier(0.25, 1, 0.5, 1);
+  transition: grid-template-rows var(--transition-duration-slow) var(--easing-emphasized);
 }
 
 .tool-permission-group__body--collapsed {
@@ -537,7 +537,7 @@
   border: none;
   border-top: 1px solid var(--list-divider);
   background: transparent;
-  transition: background-color 0.18s ease;
+  transition: background-color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .tool-permission-row:hover {
@@ -613,7 +613,7 @@
   height: calc(100% - 4px);
   border-radius: 6px;
   background: var(--surface-bg);
-  transition: transform 0.24s cubic-bezier(0.25, 1, 0.5, 1);
+  transition: transform var(--transition-duration-glide) var(--easing-emphasized);
   will-change: transform;
 }
 
@@ -627,7 +627,7 @@
   font-size: 0.76rem;
   font-weight: 600;
   white-space: nowrap;
-  transition: color 0.18s ease;
+  transition: color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .tool-permission-segmented__item:hover {
@@ -687,8 +687,8 @@
   grid-template-rows: 0fr;
   opacity: 0;
   transition:
-    grid-template-rows 0.26s cubic-bezier(0.25, 1, 0.5, 1),
-    opacity 0.18s ease;
+    grid-template-rows var(--transition-duration-glide) var(--easing-emphasized),
+    opacity var(--transition-duration-standard) var(--easing-standard);
 }
 
 .tool-permission-delay-shell--open {
@@ -723,8 +723,8 @@
   font-weight: 600;
   text-align: center;
   transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .tool-permission-delay-action:hover:not(:disabled) {
@@ -808,7 +808,7 @@
   padding: 0.88rem 1rem;
   border-top: 1px solid var(--list-divider);
   background: transparent;
-  transition: background-color 0.18s ease;
+  transition: background-color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .mcp-server-row:hover {
@@ -897,7 +897,7 @@
 }
 
 .mcp-server-activity__icon {
-  animation: mcp-server-activity-spin 0.9s linear infinite;
+  animation: mcp-server-activity-spin var(--anim-duration-spin) var(--easing-linear) infinite;
 }
 
 .mcp-server-row__message {
@@ -930,6 +930,29 @@
     transform: rotate(360deg);
   }
 }
+
+@keyframes server-message-slide-in {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    max-height: 4rem;
+    transform: translateY(0);
+  }
+}
+
+.mcp-server-row__message,
+.skill-row__message {
+  animation: server-message-slide-in var(--anim-duration-fast) var(--easing-enter) both;
+  overflow: hidden;
+}
+
+/* NOTE: Exit animation is intentionally absent because these elements
+   are conditionally rendered and removed from DOM on state change.
+   A two-state render pattern would be needed for exit transitions. */
 
 .mcp-server-row__details {
   grid-area: details;
@@ -996,7 +1019,7 @@
   height: 20px;
   border-radius: 999px;
   background: var(--danger-soft);
-  transition: background-color 0.18s ease;
+  transition: background-color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .mcp-server-toggle__thumb {
@@ -1007,8 +1030,8 @@
   border-radius: 50%;
   background: var(--danger-text);
   transition:
-    transform 0.18s ease,
-    background-color 0.18s ease;
+    transform var(--transition-duration-standard) var(--easing-standard),
+    background-color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .mcp-server-toggle--on .mcp-server-toggle__track {
@@ -1032,8 +1055,8 @@
   background: transparent;
   color: var(--text-muted);
   transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .mcp-server-action-icon:hover {
@@ -1090,7 +1113,7 @@
   padding: 0.98rem 1rem;
   border-top: 1px solid var(--list-divider);
   background: transparent;
-  transition: background-color 0.18s ease;
+  transition: background-color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .skill-row:hover {
@@ -1165,7 +1188,7 @@
 }
 
 .skill-activity__icon {
-  animation: mcp-server-activity-spin 0.9s linear infinite;
+  animation: mcp-server-activity-spin var(--anim-duration-spin) var(--easing-linear) infinite;
 }
 
 .skill-row__actions {
@@ -1383,7 +1406,7 @@
   background: var(--modal-bg);
   box-shadow: var(--modal-shadow);
   overflow: hidden;
-  animation: capabilities-dialog-enter 0.18s cubic-bezier(0.25, 1, 0.5, 1);
+  animation: capabilities-dialog-enter var(--anim-duration-slow) var(--easing-emphasized);
 }
 
 .capabilities-dialog__header {
@@ -1427,8 +1450,8 @@
   background: var(--surface-subtle);
   color: var(--text-secondary);
   transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .capabilities-dialog__close:hover {
@@ -1503,8 +1526,8 @@
   background: var(--surface-subtle);
   color: var(--text-secondary);
   transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .capabilities-dialog__segmented-button--active {

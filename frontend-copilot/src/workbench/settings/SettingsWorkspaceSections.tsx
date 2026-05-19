@@ -20,6 +20,7 @@ import { ProviderProfilesSection } from './ProviderProfilesSection'
 import { SearchSettingsSection } from './SearchSettingsSection'
 import type { ProviderProfilesSectionDomain } from './ProviderProfilesSectionDomain'
 import { SustechInfoSection, type SustechInfoSectionDomain } from './SustechInfoSection'
+import { ANIM } from '../animation-utils'
 
 interface SettingsWorkspaceMiscSectionDomains {
   general: ComponentProps<typeof GeneralSettingsSection>
@@ -60,7 +61,7 @@ const sectionRenderers: Record<SettingsSection, SectionRenderer> = {
   ),
 }
 
-const SETTINGS_SECTION_FADE_OUT_MS = 110
+const SETTINGS_SECTION_FADE_OUT_MS = ANIM.DURATION_FEEDBACK
 
 export function SettingsWorkspaceSections({ activeSection, ...sectionDomains }: SettingsWorkspaceSectionsProps) {
   const [visitedSections, setVisitedSections] = useState<Set<SettingsSection>>(

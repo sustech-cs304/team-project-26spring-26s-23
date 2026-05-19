@@ -5,6 +5,8 @@ import {
   type ReactNode,
 } from 'react'
 
+import { ANIM } from '../../../workbench/animation-utils'
+
 interface StageState {
   key: string
   node: ReactNode
@@ -30,7 +32,7 @@ interface CrossFadeProps {
 export function CrossFade({
   children,
   transitionKey,
-  duration = 160,
+  duration = ANIM.DURATION_STANDARD,
   className,
 }: CrossFadeProps) {
   const [exitingStage, setExitingStage] = useState<StageState | null>(null)
