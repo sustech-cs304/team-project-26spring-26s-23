@@ -26,6 +26,7 @@ import remarkGfm from 'remark-gfm'
 import type { WorkbenchLanguage } from '../_locale/types'
 import { ContextMenu } from '../files/ContextMenu'
 import type { ContextMenuItem } from '../files/context-menu-items'
+import { ANIM } from '../animation-utils'
 
 interface Course {
   id: number
@@ -238,7 +239,7 @@ const TAB_CONFIG: { key: DetailTab; labelZh: string; labelEn: string; icon: type
   { key: 'resources', labelZh: '资源', labelEn: 'Resources', icon: FolderOpen },
 ]
 
-const DETAIL_TAB_FADE_OUT_MS = 110
+const DETAIL_TAB_FADE_OUT_MS = ANIM.DURATION_FEEDBACK
 
 interface DetailTabState {
   items: DataItem[]

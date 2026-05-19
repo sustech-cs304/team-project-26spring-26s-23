@@ -12,7 +12,7 @@
   padding: 1rem;
   color: var(--text-secondary);
   line-height: 1.65;
-  animation: settings-item-enter 165ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: settings-item-enter var(--anim-duration-standard) var(--easing-enter) both;
 }
 
 .model-list-row {
@@ -24,9 +24,9 @@
   border-bottom: 1px solid var(--list-divider);
   background: var(--list-bg);
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    transform 0.18s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    border-color var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .model-list-row:last-child {
@@ -91,10 +91,10 @@
   font-size: 0.8rem;
   font-weight: 600;
   transition:
-    border-color 0.18s ease,
-    background-color 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s ease;
+    border-color var(--transition-duration-standard) var(--easing-standard),
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    color var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .model-capability-button {
@@ -221,7 +221,7 @@
   background: var(--backdrop-bg);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
-  animation: settings-backdrop-enter 160ms ease both;
+  animation: settings-backdrop-enter var(--anim-duration-standard) var(--easing-standard) both;
 }
 
 .model-editor-modal {
@@ -235,7 +235,7 @@
   border-radius: 16px;
   background: var(--modal-bg);
   box-shadow: var(--shadow-lg);
-  animation: settings-modal-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: settings-modal-enter var(--anim-duration-slow) var(--easing-enter) both;
 }
 
 @keyframes settings-backdrop-enter {
@@ -333,7 +333,7 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--surface-muted);
-  animation: panel-fade-in 0.2s ease-out forwards;
+  animation: panel-fade-in var(--anim-duration-slow) var(--easing-standard) forwards;
 }
 
 @keyframes panel-fade-in {
@@ -409,7 +409,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.58rem;
-  animation: section-fade-in 0.15s ease-out forwards;
+  animation: section-fade-in var(--anim-duration-fast) var(--easing-standard) forwards;
 }
 
 @keyframes section-fade-in {

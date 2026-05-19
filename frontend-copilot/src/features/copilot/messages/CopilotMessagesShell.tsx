@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { ANIM } from '../../../workbench/animation-utils'
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import { ModelPickerIcon } from '../components/ModelPicker'
 import type { CopilotTransientErrorState } from '../copilot-chat-helpers'
@@ -27,7 +28,7 @@ import {
 
 import { renderAssistantMarkdownMessageBody } from './assistant-markdown'
 
-const assistantPlaceholderExitMs = 180
+const assistantPlaceholderExitMs = ANIM.DURATION_SLOW
 
 export interface CopilotMessagesShellProps {
   language?: string
@@ -201,7 +202,8 @@ function MessageListItem({
   onOpenErrorDetail: CopilotMessagesShellProps['onOpenErrorDetail']
 }) {
   const detailRows = buildDetailRows()
-  const enterDelay = Math.min(index * 35, 300)
+  // aligned with --stagger-step-each / --stagger-step-max
+  const enterDelay = Math.min(index * ANIM.STAGGER_EACH, ANIM.STAGGER_MAX)
 
   return (
     <article

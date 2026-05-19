@@ -134,7 +134,7 @@
   border-bottom: 1px solid var(--border-color);
   background: linear-gradient(90deg, transparent 0%, rgba(148, 163, 184, 0.08) 50%, transparent 100%);
   background-size: 200% 100%;
-  animation: copilot-panel__history-skeleton-shimmer 2.5s ease-in-out infinite;
+  animation: copilot-panel__history-skeleton-shimmer var(--anim-duration-shimmer) var(--easing-in-out) infinite;
   opacity: 0.6;
   flex-shrink: 0;
 }
@@ -197,7 +197,7 @@
   border-radius: 4px;
   background: linear-gradient(90deg, var(--surface-muted) 0%, rgba(148, 163, 184, 0.12) 50%, var(--surface-muted) 100%);
   background-size: 200% 100%;
-  animation: copilot-panel__history-skeleton-shimmer 2.5s ease-in-out infinite;
+  animation: copilot-panel__history-skeleton-shimmer var(--anim-duration-shimmer) var(--easing-in-out) infinite;
 }
 
 .copilot-panel__history-skeleton-line--short {
@@ -284,7 +284,7 @@
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
-  transition: opacity 0.16s ease, transform 0.16s ease;
+  transition: opacity var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .copilot-panel__button:hover:not(:disabled) {
@@ -380,20 +380,20 @@
 }
 
 .copilot-panel__enter {
-  animation: copilot-panel-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: copilot-panel-fade-in var(--anim-duration-slow) var(--easing-enter) both;
 }
 
 .copilot-panel__exit {
-  animation: copilot-panel-fade-out 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: copilot-panel-fade-out var(--anim-duration-fast) var(--easing-exit) both;
   pointer-events: none;
 }
 
 .copilot-panel__enter--delay-1 {
-  animation-delay: 50ms;
+  animation-delay: var(--stagger-step-each);
 }
 
 .copilot-panel__enter--delay-2 {
-  animation-delay: 100ms;
+  animation-delay: calc(var(--stagger-step-each) * 2);
 }
 
 /* ── CrossFade transition wrapper ── */
@@ -409,11 +409,11 @@
 }
 
 .cross-fade__stage--entering {
-  animation: copilot-panel-fade-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: copilot-panel-fade-in var(--anim-duration-standard) var(--easing-enter) both;
 }
 
 .cross-fade__stage--exiting {
-  animation: copilot-panel-fade-out 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: copilot-panel-fade-out var(--anim-duration-fast) var(--easing-exit) both;
 }
 
 /* ── Chat workspace transition wrapper ── */

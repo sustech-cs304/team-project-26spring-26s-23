@@ -19,9 +19,9 @@
   opacity: 0;
   transform: translateY(-10px);
   transition:
-    grid-template-rows 0.24s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.18s ease,
-    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+    grid-template-rows var(--transition-duration-glide) var(--easing-slide),
+    opacity var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-glide) var(--easing-slide);
 }
 
 .sustech-sync-panel-slot > * {
@@ -41,7 +41,7 @@
   min-height: 0;
   overflow: hidden;
   transform: translateY(0);
-  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform var(--transition-duration-glide) var(--easing-slide);
 }
 
 .sustech-data-browser-slot--shifted {
@@ -57,8 +57,8 @@
 .sustech-course-browser__detail-pane,
 .sustech-course-detail__summary {
   transition:
-    background-color 0.18s ease,
-    transform 0.18s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .sustech-workspace .settings-card:hover,
@@ -85,13 +85,13 @@
 
 .sustech-module-keepalive-panel--active {
   z-index: 2;
-  animation: sustech-module-fade-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: sustech-module-fade-in var(--anim-duration-fast) var(--easing-enter) both;
 }
 
 .sustech-module-keepalive-panel--exiting {
   z-index: 1;
   pointer-events: none;
-  animation: sustech-module-fade-out 120ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: sustech-module-fade-out var(--anim-duration-feedback) var(--easing-exit) both;
 }
 
 .sustech-module-keepalive-panel--exiting .sustech-course-item,
@@ -243,7 +243,7 @@
   font-size: 0.74rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease, transform 0.18s ease;
+  transition: background-color var(--transition-duration-standard) var(--easing-standard), border-color var(--transition-duration-standard) var(--easing-standard), opacity var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .sustech-sync-cancel-button:hover:not(:disabled) {
@@ -297,7 +297,7 @@
     var(--accent-strong) 100%
   );
   background-size: 200% 100%;
-  animation: sustech-shimmer 1.6s ease-in-out infinite;
+  animation: sustech-shimmer var(--anim-duration-shimmer) var(--easing-in-out) infinite;
 }
 
 @keyframes sustech-shimmer {
@@ -372,7 +372,7 @@
   color: var(--text-muted);
   border: 1px solid var(--border-muted);
   opacity: 0.55;
-  transition: opacity 0.2s, border-color 0.2s, color 0.2s;
+  transition: opacity var(--transition-duration-slow) var(--easing-standard), border-color var(--transition-duration-slow) var(--easing-standard), color var(--transition-duration-slow) var(--easing-standard);
 }
 
 .sustech-progress-stage--active {
@@ -405,7 +405,7 @@
 }
 
 .sustech-sync-spin {
-  animation: sustech-spin 1s linear infinite;
+  animation: sustech-spin var(--anim-duration-spin) var(--easing-linear) infinite;
 }
 
 @keyframes sustech-spin {
@@ -574,7 +574,7 @@
   font: inherit;
   font-size: 0.86rem;
   outline: none;
-  transition: border-color 0.16s ease, background-color 0.16s ease;
+  transition: border-color var(--transition-duration-standard) var(--easing-standard), background-color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .sustech-course-search__input::placeholder {
@@ -618,8 +618,8 @@
   text-align: left;
   font: inherit;
   color: var(--text-primary);
-  animation: sustech-list-item-enter 165ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
-  transition: background-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+  animation: sustech-list-item-enter var(--anim-duration-standard) var(--easing-enter) backwards;
+  transition: background-color var(--transition-duration-standard) var(--easing-standard), color var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .sustech-course-item:hover,
@@ -791,12 +791,12 @@
 }
 
 .sustech-detail-toolbar--active {
-  animation: sustech-detail-tab-fade-in 130ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: sustech-detail-tab-fade-in var(--anim-duration-fast) var(--easing-enter) both;
 }
 
 .sustech-detail-toolbar--exiting {
   pointer-events: none;
-  animation: sustech-detail-tab-fade-out 110ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: sustech-detail-tab-fade-out var(--anim-duration-feedback) var(--easing-exit) both;
 }
 
 .sustech-detail-toolbar__spacer {
@@ -838,9 +838,9 @@
   font-weight: 600;
   cursor: pointer;
   transition:
-    border-color 0.16s ease,
-    background-color 0.16s ease,
-    transform 0.16s ease;
+    border-color var(--transition-duration-standard) var(--easing-standard),
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .sustech-detail-filter__trigger:hover {
@@ -872,7 +872,7 @@
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
-  transition: transform 0.16s ease, color 0.16s ease;
+  transition: transform var(--transition-duration-standard) var(--easing-standard), color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .sustech-detail-filter__trigger--open .sustech-detail-filter__trigger-icon,
@@ -902,8 +902,8 @@
   transform: translateY(-6px) scale(0.98);
   transform-origin: top right;
   transition:
-    opacity 0.18s ease,
-    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-slow) var(--easing-slide),
     visibility 0s linear 0.2s;
 }
 
@@ -913,8 +913,8 @@
   pointer-events: auto;
   transform: translateY(0) scale(1);
   transition:
-    opacity 0.18s ease,
-    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-slow) var(--easing-slide),
     visibility 0s linear 0s;
 }
 
@@ -933,7 +933,7 @@
   font-weight: 600;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.14s ease, color 0.14s ease, transform 0.14s ease;
+  transition: background-color var(--transition-duration-fast) var(--easing-standard), color var(--transition-duration-fast) var(--easing-standard), transform var(--transition-duration-fast) var(--easing-standard);
 }
 
 .sustech-detail-filter__option:hover {
@@ -961,8 +961,8 @@
   font: inherit;
   -webkit-user-select: none;
   user-select: none;
-  animation: sustech-list-item-enter 165ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
-  transition: color 0.18s ease, transform 0.18s ease;
+  animation: sustech-list-item-enter var(--anim-duration-standard) var(--easing-enter) backwards;
+  transition: color var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .sustech-detail-tab::after {
@@ -976,7 +976,7 @@
   opacity: 0;
   transform: scaleX(0.5);
   transform-origin: center;
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition: opacity var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard);
   content: '';
 }
 
@@ -1016,13 +1016,13 @@
 
 .sustech-detail-keepalive-panel--active {
   z-index: 2;
-  animation: sustech-detail-tab-fade-in 130ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: sustech-detail-tab-fade-in var(--anim-duration-fast) var(--easing-enter) both;
 }
 
 .sustech-detail-keepalive-panel--exiting {
   z-index: 1;
   pointer-events: none;
-  animation: sustech-detail-tab-fade-out 110ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: sustech-detail-tab-fade-out var(--anim-duration-feedback) var(--easing-exit) both;
 }
 
 .sustech-detail-keepalive-panel--exiting .sustech-detail-item {
@@ -1056,8 +1056,8 @@
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-bg) 98%, transparent);
   font-size: 0.86rem;
-  animation: sustech-list-item-enter 165ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
-  transition: background-color 0.16s ease, color 0.16s ease, transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  animation: sustech-list-item-enter var(--anim-duration-standard) var(--easing-enter) backwards;
+  transition: background-color var(--transition-duration-standard) var(--easing-standard), color var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard), border-color var(--transition-duration-standard) var(--easing-standard), box-shadow var(--transition-duration-standard) var(--easing-standard);
 }
 
 .sustech-detail-item:hover {
@@ -1110,25 +1110,25 @@
 .sustech-course-list .sustech-course-item:nth-of-type(2),
 .sustech-detail-list .sustech-detail-item:nth-of-type(2),
 .sustech-detail-tabs .sustech-detail-tab:nth-of-type(2) {
-  animation-delay: 24ms;
+  animation-delay: var(--stagger-step-each);
 }
 
 .sustech-course-list .sustech-course-item:nth-of-type(3),
 .sustech-detail-list .sustech-detail-item:nth-of-type(3),
 .sustech-detail-tabs .sustech-detail-tab:nth-of-type(3) {
-  animation-delay: 48ms;
+  animation-delay: calc(var(--stagger-step-each) * 2);
 }
 
 .sustech-course-list .sustech-course-item:nth-of-type(4),
 .sustech-detail-list .sustech-detail-item:nth-of-type(4),
 .sustech-detail-tabs .sustech-detail-tab:nth-of-type(4) {
-  animation-delay: 72ms;
+  animation-delay: calc(var(--stagger-step-each) * 3);
 }
 
 .sustech-course-list .sustech-course-item:nth-of-type(n+5),
 .sustech-detail-list .sustech-detail-item:nth-of-type(n+5),
 .sustech-detail-tabs .sustech-detail-tab:nth-of-type(n+5) {
-  animation-delay: 96ms;
+  animation-delay: calc(var(--stagger-step-each) * 4);
 }
 
 .sustech-detail-item--resources[class*="sustech-detail-item--depth-"]::before {
@@ -1418,10 +1418,10 @@
   flex-shrink: 0;
   opacity: 1;
   transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease,
-    opacity 140ms ease;
+    background-color var(--transition-duration-fast) var(--easing-standard),
+    border-color var(--transition-duration-fast) var(--easing-standard),
+    color var(--transition-duration-fast) var(--easing-standard),
+    opacity var(--transition-duration-fast) var(--easing-standard);
 }
 
 .sustech-download-button:hover:not(:disabled) {

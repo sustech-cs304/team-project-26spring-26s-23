@@ -19,6 +19,8 @@ import {
 } from 'react'
 import { ArrowUp, FileText, Image as ImageIcon, Lightbulb, Paperclip, Square, X } from 'lucide-react'
 
+import { ANIM } from '../../../workbench/animation-utils'
+
 import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../../electron/settings-workspace/state-schema'
 import type { CopilotComposerAttachmentsState } from '../attachments/types'
 import { useComposerAttachments } from '../attachments/useComposerAttachments'
@@ -143,7 +145,7 @@ export function CopilotComposerShell({
       attachmentActions.closePanel()
       setAttachmentPanelClosing(false)
       attachmentPanelCloseTimerRef.current = null
-    }, 130)
+    }, ANIM.DURATION_FAST)
   }, [attachmentActions, attachments.panelOpen])
 
   const requestCloseAttachmentPreview = useCallback(() => {
@@ -333,7 +335,7 @@ export function CopilotComposerShell({
   const handleImagePreviewWheel = (event: ReactWheelEvent<HTMLImageElement>) => {
     event.preventDefault()
     event.stopPropagation()
-    event.currentTarget.style.transition = 'transform 115ms cubic-bezier(0.2, 0, 0, 1)'
+    event.currentTarget.style.transition = `transform ${ANIM.DURATION_FEEDBACK}ms cubic-bezier(0.2, 0, 0, 1)`
 
     const currentRect = event.currentTarget.getBoundingClientRect()
     const naturalSize = imagePreviewNaturalSizeRef.current

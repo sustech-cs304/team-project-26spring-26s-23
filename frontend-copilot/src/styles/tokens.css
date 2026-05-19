@@ -94,6 +94,36 @@
   --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 12px;
+
+  /* ── Animation Timing ── */
+  --anim-duration-feedback: 110ms;
+  --anim-duration-fast: 130ms;
+  --anim-duration-standard: 165ms;
+  --anim-duration-slow: 180ms;
+  --anim-duration-emphasis: 220ms;
+  --anim-duration-spin: 900ms;
+  --anim-duration-shimmer: 2.5s;
+
+  /* ── Transition Timing ── */
+  --transition-duration-fast: 120ms;
+  --transition-duration-standard: 180ms;
+  --transition-duration-slow: 220ms;
+  --transition-duration-glide: 240ms;
+
+  /* ── Animation Easing ── */
+  --easing-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --easing-exit: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-emphasized: cubic-bezier(0.25, 1, 0.5, 1);
+  --easing-slide: cubic-bezier(0.22, 1, 0.36, 1);
+  --easing-slider: cubic-bezier(0.2, 0, 0, 1);
+  --easing-standard: ease;
+  --easing-out: ease-out;
+  --easing-in-out: ease-in-out;
+  --easing-linear: linear;
+
+  /* ── Stagger ── */
+  --stagger-step-each: 28ms;
+  --stagger-step-max: 224ms;
 }
 
 :root[data-theme='dark'],
