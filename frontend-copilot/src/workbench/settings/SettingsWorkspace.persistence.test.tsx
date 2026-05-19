@@ -289,9 +289,15 @@ describe('SettingsWorkspace persistence', () => {
         public readAsText(file: Blob) {
           void file.text().then((text) => {
             this.result = text
-            this.onload?.call(this as unknown as FileReader, new ProgressEvent('load'))
+            this.onload?.call(
+              this as unknown as FileReader,
+              new ProgressEvent('load') as ProgressEvent<FileReader>,
+            )
           }, () => {
-            this.onerror?.call(this as unknown as FileReader, new ProgressEvent('error'))
+            this.onerror?.call(
+              this as unknown as FileReader,
+              new ProgressEvent('error') as ProgressEvent<FileReader>,
+            )
           })
         }
       }
