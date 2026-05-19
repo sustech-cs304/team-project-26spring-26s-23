@@ -45,7 +45,14 @@
   transition:
     border-color var(--transition-duration-standard) var(--easing-standard),
     background-color var(--transition-duration-standard) var(--easing-standard),
-    color var(--transition-duration-standard) var(--easing-standard);
+    color var(--transition-duration-standard) var(--easing-standard),
+    transform 0.25s var(--easing-spring);
+}
+
+.primary-button:active,
+.secondary-button:active {
+  transform: scale(0.96);
+  transition: transform 0.08s var(--easing-standard);
 }
 
 .primary-button {
@@ -357,7 +364,7 @@
   border-radius: 999px;
   background: var(--toggle-thumb-bg);
   box-shadow: var(--shadow-sm);
-  transition: transform var(--transition-duration-slow) var(--easing-standard);
+  transition: transform var(--transition-duration-slow) var(--easing-spring);
 }
 
 .toggle-row--checked .toggle-row__track {

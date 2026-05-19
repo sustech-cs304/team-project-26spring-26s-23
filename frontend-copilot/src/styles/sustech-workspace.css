@@ -298,6 +298,7 @@
   );
   background-size: 200% 100%;
   animation: sustech-shimmer var(--anim-duration-shimmer) var(--easing-in-out) infinite;
+  transition: width 0.3s var(--easing-spring);
 }
 
 @keyframes sustech-shimmer {
@@ -328,20 +329,22 @@
 @keyframes sustech-detail-tab-fade-in {
   from {
     opacity: 0;
+    transform: translateX(8px);
   }
-
   to {
     opacity: 1;
+    transform: translateX(0);
   }
 }
 
 @keyframes sustech-detail-tab-fade-out {
   from {
     opacity: 1;
+    transform: translateX(0);
   }
-
   to {
     opacity: 0;
+    transform: translateX(-8px);
   }
 }
 
@@ -1633,6 +1636,17 @@
   margin-left: 0.6rem;
   color: var(--text-muted);
   font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.sustech-resource-tree__percent {
+  position: relative;
+  z-index: 1;
+  margin-left: 0.5rem;
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 

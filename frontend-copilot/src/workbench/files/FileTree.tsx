@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, type ReactNode } from 'react'
 import {
   ChevronRight,
   File,
@@ -6,6 +6,7 @@ import {
   FolderOpen,
 } from 'lucide-react'
 import type { VisibleTreeNode } from './types'
+import { useGSAP, gsap } from '../animation-utils'
 
 interface FileTreeProps {
   visibleTree: VisibleTreeNode[]
@@ -228,6 +229,37 @@ function FileTreeRow({
   )
 }
 
+function FileTreeChildren({
+  expanded,
+  children,
+}: {
+  expanded: boolean
+  children: ReactNode
+}) {
+  const childrenRef = useRef<HTMLDivElement>(null)
+
+  useGSAP(() => {
+    if (!childrenRef.current) return
+    if (expanded) {
+      gsap.fromTo(childrenRef.current,
+        { height: 0, opacity: 0 },
+        { height: 'auto', opacity: 1, duration: 0.22, ease: 'power3.out' }
+      )
+    } else {
+      gsap.to(childrenRef.current, { height: 0, opacity: 0, duration: 0.15, ease: 'power3.in' })
+    }
+  }, { dependencies: [expanded] })
+
+  return (
+    <div
+      ref={childrenRef}
+      className={`file-tree__children${expanded ? ' file-tree__children--expanded' : ''}`}
+    >
+      {children}
+    </div>
+  )
+}
+
 export function FileTree({
   visibleTree,
   selectedPaths,
@@ -282,11 +314,9 @@ export function FileTree({
       return (
         <div key={node.entry.path}>
           {renderRow(node)}
-          <div
-            className={`file-tree__children${isExpanded ? ' file-tree__children--expanded' : ''}`}
-          >
+          <FileTreeChildren expanded={isExpanded}>
             {group.children.map((child) => renderGroup(child))}
-          </div>
+          </FileTreeChildren>
         </div>
       )
     }

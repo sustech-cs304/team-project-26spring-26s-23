@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import {
   type ToolPermissionDelayAction,
@@ -7,7 +7,7 @@ import {
   type ToolPermissionMode,
   type ToolPermissionRecord,
 } from './capabilities-demo'
-import { resolveCapabilitiesListItemEnterDelayMs } from './capabilities-list-animation'
+import { useStaggerListEnter } from '../animation-utils'
 import { ToolPermissionRow } from './ToolPermissionRow'
 
 interface ToolPermissionsPanelProps {
@@ -28,6 +28,8 @@ export function ToolPermissionsPanel({
   onDelaySecondsChange,
 }: ToolPermissionsPanelProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<ToolPermissionGroupId, boolean>>(initialCollapsedGroups)
+  const listRef = useRef<HTMLDivElement>(null)
+  useStaggerListEnter({ scope: listRef, selector: '.tool-permission-row' })
 
   const groupedTools = useMemo(() => {
     const groups = new Map<string, {
@@ -70,20 +72,6 @@ export function ToolPermissionsPanel({
       })
   }, [tools])
 
-  const toolEnterDelayById = useMemo(() => {
-    const delays = new Map<string, number>()
-    let rowIndex = 0
-
-    groupedTools.forEach((group) => {
-      group.tools.forEach((tool) => {
-        delays.set(tool.id, resolveCapabilitiesListItemEnterDelayMs(rowIndex))
-        rowIndex += 1
-      })
-    })
-
-    return delays
-  }, [groupedTools])
-
   const handleToggleGroup = (groupId: ToolPermissionGroupId) => {
     setCollapsedGroups((previous) => ({
       ...previous,
@@ -102,7 +90,7 @@ export function ToolPermissionsPanel({
   }
 
   return (
-    <div className="tool-permission-groups" aria-label="工具权限列表">
+    <div className="tool-permission-groups" aria-label="工具权限列表" ref={listRef}>
       {statusMessage ? (
         <div className="tool-permission-empty-state" role="status">{statusMessage}</div>
       ) : null}
@@ -136,7 +124,6 @@ export function ToolPermissionsPanel({
                   <ToolPermissionRow
                     key={tool.id}
                     tool={tool}
-                    enterDelayMs={toolEnterDelayById.get(tool.id) ?? 0}
                     onModeChange={onModeChange}
                     onDelayActionChange={onDelayActionChange}
                     onDelaySecondsChange={onDelaySecondsChange}

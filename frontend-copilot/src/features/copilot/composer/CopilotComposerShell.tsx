@@ -19,7 +19,7 @@ import {
 } from 'react'
 import { ArrowUp, FileText, Image as ImageIcon, Lightbulb, Paperclip, Square, X } from 'lucide-react'
 
-import { ANIM } from '../../../workbench/animation-utils'
+import { gsap, ANIM } from '../../../workbench/animation-utils'
 
 import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../../electron/settings-workspace/state-schema'
 import type { CopilotComposerAttachmentsState } from '../attachments/types'
@@ -118,7 +118,6 @@ export function CopilotComposerShell({
     offsetY: 0,
     scale: 1,
   })
-  const imagePreviewFrameRef = useRef<number | null>(null)
   const attachmentPanelId = useId()
   const [attachmentPanelClosing, setAttachmentPanelClosing] = useState(false)
   const attachmentPanelVisible = attachments.panelOpen || attachmentPanelClosing
@@ -169,9 +168,6 @@ export function CopilotComposerShell({
   useEffect(() => () => {
     if (attachmentPanelCloseTimerRef.current !== null) {
       window.clearTimeout(attachmentPanelCloseTimerRef.current)
-    }
-    if (imagePreviewFrameRef.current !== null) {
-      window.cancelAnimationFrame(imagePreviewFrameRef.current)
     }
   }, [])
 
@@ -251,28 +247,6 @@ export function CopilotComposerShell({
     imagePreviewTransformRef.current = { offsetX: 0, offsetY: 0, scale: 1 }
   }, [attachments.preview.kind, attachments.preview.open, attachments.preview.previewUrl])
 
-  const writeImagePreviewTransform = () => {
-    const image = imagePreviewRef.current
-    if (image === null) {
-      return
-    }
-
-    const { offsetX, offsetY, scale } = imagePreviewTransformRef.current
-    image.style.transform = `translate3d(${offsetX}px, ${offsetY}px, 0) scale(${scale})`
-  }
-
-  const updateImagePreviewTransform = (nextTransform: { offsetX: number; offsetY: number; scale: number }) => {
-    imagePreviewTransformRef.current = nextTransform
-    if (imagePreviewFrameRef.current !== null) {
-      return
-    }
-
-    imagePreviewFrameRef.current = window.requestAnimationFrame(() => {
-      imagePreviewFrameRef.current = null
-      writeImagePreviewTransform()
-    })
-  }
-
   const handleImagePreviewLoad = (event: SyntheticEvent<HTMLImageElement>) => {
     const image = event.currentTarget
     const naturalWidth = image.naturalWidth || image.width
@@ -288,7 +262,7 @@ export function CopilotComposerShell({
       offsetY: 0,
       scale: Number.isFinite(initialScale) ? initialScale : 1,
     }
-    writeImagePreviewTransform()
+    gsap.set(image, { x: 0, y: 0, scale: initialScale })
   }
 
   const handleImagePreviewPointerDown = (event: ReactPointerEvent<HTMLImageElement>) => {
@@ -302,7 +276,7 @@ export function CopilotComposerShell({
       startOffsetX: currentTransform.offsetX,
       startOffsetY: currentTransform.offsetY,
     }
-    event.currentTarget.style.transition = 'none'
+    gsap.killTweensOf(event.currentTarget)
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
@@ -313,11 +287,14 @@ export function CopilotComposerShell({
     }
 
     event.preventDefault()
-    updateImagePreviewTransform({
+    const nextOffsetX = dragState.startOffsetX + event.clientX - dragState.startClientX
+    const nextOffsetY = dragState.startOffsetY + event.clientY - dragState.startClientY
+    imagePreviewTransformRef.current = {
       ...imagePreviewTransformRef.current,
-      offsetX: dragState.startOffsetX + event.clientX - dragState.startClientX,
-      offsetY: dragState.startOffsetY + event.clientY - dragState.startClientY,
-    })
+      offsetX: nextOffsetX,
+      offsetY: nextOffsetY,
+    }
+    gsap.set(event.currentTarget, { x: nextOffsetX, y: nextOffsetY })
   }
 
   const handleImagePreviewPointerEnd = (event: ReactPointerEvent<HTMLImageElement>) => {
@@ -328,25 +305,21 @@ export function CopilotComposerShell({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
-    event.currentTarget.style.transition = ''
     imagePreviewDragRef.current = null
   }
 
   const handleImagePreviewWheel = (event: ReactWheelEvent<HTMLImageElement>) => {
     event.preventDefault()
     event.stopPropagation()
-    event.currentTarget.style.transition = `transform ${ANIM.DURATION_FEEDBACK}ms cubic-bezier(0.2, 0, 0, 1)`
 
-    const currentRect = event.currentTarget.getBoundingClientRect()
-    const naturalSize = imagePreviewNaturalSizeRef.current
     const currentTransform = imagePreviewTransformRef.current
     const currentScale = currentTransform.scale
     const wheelFactor = Math.exp(-event.deltaY * 0.0016)
     const nextScale = clamp(currentScale * wheelFactor, 0.08, 8)
-    if (Math.abs(nextScale - currentScale) < 0.0001) {
-      return
-    }
+    if (Math.abs(nextScale - currentScale) < 0.0001) return
 
+    const currentRect = event.currentTarget.getBoundingClientRect()
+    const naturalSize = imagePreviewNaturalSizeRef.current
     const naturalWidth = naturalSize?.width ?? currentRect.width / Math.max(currentScale, 0.0001)
     const naturalHeight = naturalSize?.height ?? currentRect.height / Math.max(currentScale, 0.0001)
     const imageCenterX = currentRect.left + currentRect.width / 2
@@ -355,11 +328,19 @@ export function CopilotComposerShell({
     const pointerFromCenterY = event.clientY - imageCenterY
     const scaleRatio = nextScale / currentScale
 
-    updateImagePreviewTransform({
-      offsetX: currentTransform.offsetX + pointerFromCenterX * (1 - scaleRatio),
-      offsetY: currentTransform.offsetY + pointerFromCenterY * (1 - scaleRatio),
+    const nextOffsetX = currentTransform.offsetX + pointerFromCenterX * (1 - scaleRatio)
+    const nextOffsetY = currentTransform.offsetY + pointerFromCenterY * (1 - scaleRatio)
+
+    gsap.to(event.currentTarget, {
+      x: nextOffsetX,
+      y: nextOffsetY,
       scale: nextScale,
+      duration: ANIM.DURATION_FEEDBACK / 1000,
+      ease: 'power2.out',
+      overwrite: 'auto',
     })
+
+    imagePreviewTransformRef.current = { offsetX: nextOffsetX, offsetY: nextOffsetY, scale: nextScale }
 
     if (naturalWidth <= 0 || naturalHeight <= 0) {
       imagePreviewNaturalSizeRef.current = null

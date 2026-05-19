@@ -284,7 +284,7 @@
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
-  transition: opacity var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard);
+  transition: transform 0.2s var(--easing-spring), opacity var(--transition-duration-standard) var(--easing-standard);
 }
 
 .copilot-panel__button:hover:not(:disabled) {

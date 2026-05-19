@@ -7,6 +7,7 @@ import {
   getThinkingBudgetProgressFromTokens,
   getThinkingBudgetTokensFromProgress,
 } from '../workbench/thinking-display'
+import { useGSAP, gsap } from '../workbench/animation-utils'
 
 export interface ThinkingPillOption {
   key: string
@@ -233,6 +234,18 @@ export function ThinkingBudgetSlider({
   onBudgetTokensChange,
 }: ThinkingBudgetSliderProps) {
   const progress = getThinkingBudgetProgressFromTokens(budgetTokens)
+  const trackFillRef = useRef<HTMLDivElement>(null)
+
+  useGSAP(() => {
+    if (trackFillRef.current) {
+      gsap.to(trackFillRef.current, {
+        width: `${progress}%`,
+        duration: 0.2,
+        ease: 'power2.out',
+      })
+    }
+  }, { dependencies: [progress] })
+
   const handleRangeChange: ChangeEventHandler<HTMLInputElement> = (event) => {
     onBudgetTokensChange(getThinkingBudgetTokensFromProgress(Number.parseFloat(event.currentTarget.value)))
   }
@@ -258,7 +271,7 @@ export function ThinkingBudgetSlider({
       <div className="thinking-budget-slider__body">
         <div className="thinking-budget-slider__track-bounds" aria-hidden="true">
           <div className="thinking-budget-slider__track-bg" />
-          <div className="thinking-budget-slider__track-fill" style={{ width: `${progress}%` }} />
+          <div ref={trackFillRef} className="thinking-budget-slider__track-fill" style={{ width: `${progress}%` }} />
 
           {THINKING_BUDGET_FIXED_ANCHORS.map((anchor, index) => {
             const anchorProgress = THINKING_BUDGET_FIXED_ANCHOR_PROGRESS[index]

@@ -1,6 +1,7 @@
+import { useRef } from 'react'
 import { LoaderCircle, Trash2 } from 'lucide-react'
 
-import { resolveCapabilitiesListItemEnterDelayMs } from './capabilities-list-animation'
+import { useStaggerListEnter } from '../animation-utils'
 import type { McpRegistryServerViewModel } from './mcp-registry-view-model'
 import { resolveMcpConnectionStateLabel } from './mcp-registry-view-model'
 
@@ -19,15 +20,18 @@ export function McpServersPanel({
   onDelete,
   onTestConnection,
 }: McpServersPanelProps) {
+  const listRef = useRef<HTMLDivElement>(null)
+  useStaggerListEnter({ scope: listRef, selector: '.mcp-server-row:not(.mcp-server-row--empty)' })
+
   return (
     <section className="capabilities-surface capabilities-surface--mcp">
       {statusMessage ? (
         <p className="capabilities-surface__status" aria-live="polite">{statusMessage}</p>
       ) : null}
 
-      <div className="mcp-server-list">
+      <div className="mcp-server-list" ref={listRef}>
         {servers.length === 0 ? (
-          <article className="mcp-server-row mcp-server-row--empty" style={{ animationDelay: '0ms' }}>
+          <article className="mcp-server-row mcp-server-row--empty">
             <div className="mcp-server-row__meta">
               <h3 className="mcp-server-row__title">还没有可用的服务器</h3>
               <p className="mcp-server-row__description">点击右上角“新增 MCP 服务器”，手动填写，或从已有配置直接导入。</p>
@@ -35,11 +39,10 @@ export function McpServersPanel({
           </article>
         ) : null}
 
-        {servers.map((server, index) => (
+        {servers.map((server) => (
           <article
             key={server.serverId}
             className={`mcp-server-row mcp-server-row--${server.connectionState}${server.busy ? ' mcp-server-row--busy' : ''}`}
-            style={{ animationDelay: `${resolveCapabilitiesListItemEnterDelayMs(index)}ms` }}
           >
             <div className="mcp-server-row__meta">
               <div className="mcp-server-row__title-line">

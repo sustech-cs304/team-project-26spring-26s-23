@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ANIM } from '../../../workbench/animation-utils'
+import { ANIM, useStaggerListEnter } from '../../../workbench/animation-utils'
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import { ModelPickerIcon } from '../components/ModelPicker'
 import type { CopilotTransientErrorState } from '../copilot-chat-helpers'
@@ -69,6 +69,8 @@ export function CopilotMessagesShell({
   emptyState = null,
 }: CopilotMessagesShellProps) {
   const copy = getCopilotChatCopy(language)
+  const messageListRef = useRef<HTMLDivElement>(null)
+  useStaggerListEnter({ scope: messageListRef, selector: '.copilot-chat__message' })
   const visibleConversation = useMemo(
     () => buildVisibleConversation({
       conversation,
@@ -81,6 +83,7 @@ export function CopilotMessagesShell({
   return (
     <div
       className="copilot-chat__stream copilot-chat__stream--scrollbarless"
+      ref={messageListRef}
       data-testid="chat-message-scroll-region"
       data-scrollbar-visibility="hidden"
     >
@@ -202,9 +205,6 @@ function MessageListItem({
   onOpenErrorDetail: CopilotMessagesShellProps['onOpenErrorDetail']
 }) {
   const detailRows = buildDetailRows()
-  // aligned with --stagger-step-each / --stagger-step-max
-  const enterDelay = Math.min(index * ANIM.STAGGER_EACH, ANIM.STAGGER_MAX)
-
   return (
     <article
       className={[
@@ -213,7 +213,6 @@ function MessageListItem({
         turn.status ? `copilot-chat__message--${turn.status}` : '',
       ].filter((className) => className !== '').join(' ')}
       data-testid={`chat-message-${turn.kind}-${index}`}
-      style={{ animationDelay: `${enterDelay}ms` }}
     >
       {turn.kind === 'inline-form'
         ? (

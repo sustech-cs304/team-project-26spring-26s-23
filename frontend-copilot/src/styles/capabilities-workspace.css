@@ -931,6 +931,29 @@
   }
 }
 
+@keyframes server-message-slide-in {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    max-height: 4rem;
+    transform: translateY(0);
+  }
+}
+
+.mcp-server-row__message,
+.skill-row__message {
+  animation: server-message-slide-in var(--anim-duration-fast) var(--easing-enter) both;
+  overflow: hidden;
+}
+
+/* NOTE: Exit animation is intentionally absent because these elements
+   are conditionally rendered and removed from DOM on state change.
+   A two-state render pattern would be needed for exit transitions. */
+
 .mcp-server-row__details {
   grid-area: details;
   display: grid;

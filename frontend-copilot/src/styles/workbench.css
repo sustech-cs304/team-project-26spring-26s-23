@@ -8,7 +8,7 @@
   border: 1px dashed color-mix(in srgb, var(--accent-strong) 55%, transparent);
   background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
   opacity: 0.92;
-  animation: topic-drop-gap-enter var(--anim-duration-slow) var(--easing-standard);
+  animation: topic-drop-gap-enter var(--anim-duration-slow) var(--easing-spring);
   transition: height var(--transition-duration-standard) var(--easing-standard), opacity var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard);
 }
 
@@ -132,7 +132,7 @@
   border: 1px solid var(--border-color);
   background: var(--surface-bg);
   box-shadow: var(--shadow-md);
-  animation: session-context-menu-enter var(--anim-duration-slow) var(--easing-standard);
+  animation: session-context-menu-enter var(--anim-duration-slow) var(--easing-spring);
   transform-origin: top left;
 }
 

@@ -26,7 +26,7 @@ import remarkGfm from 'remark-gfm'
 import type { WorkbenchLanguage } from '../_locale/types'
 import { ContextMenu } from '../files/ContextMenu'
 import type { ContextMenuItem } from '../files/context-menu-items'
-import { ANIM } from '../animation-utils'
+import { ANIM, gsap, useGSAP } from '../animation-utils'
 
 interface Course {
   id: number
@@ -1237,6 +1237,31 @@ function ResourceTreeRow({
   const actionState = resourceUrl ? resourceDownloadActionByUrl[resourceUrl] ?? null : null
   const downloadButtonTitle = resolveDownloadButtonTitle(downloadState.state, isEnglish)
 
+  const progressRef = useRef<HTMLSpanElement>(null)
+  const percentRef = useRef<HTMLSpanElement>(null)
+
+  useGSAP(() => {
+    if (progressRef.current && downloadState.progressPercent != null) {
+      gsap.fromTo(progressRef.current,
+        { width: `${Math.max(0, (downloadState.progressPercent ?? 0) - 1)}%` },
+        {
+          width: `${downloadState.progressPercent}%`,
+          duration: 0.35,
+          ease: 'power2.out',
+          overwrite: 'auto',
+        },
+      )
+    }
+    if (percentRef.current && downloadState.progressPercent != null) {
+      gsap.to(percentRef.current, {
+        innerText: downloadState.progressPercent.toFixed(1),
+        duration: 0.35,
+        snap: { innerText: 0.5 },
+        ease: 'power2.out',
+      })
+    }
+  }, { dependencies: [downloadState.progressPercent, downloadState.state] })
+
   const rowClassNames = [
     'file-tree__row sustech-resource-tree__row',
     isDirectory ? 'sustech-resource-tree__row--directory' : 'sustech-resource-tree__row--file',
@@ -1265,11 +1290,15 @@ function ResourceTreeRow({
     >
       {!isDirectory && downloadState.state === 'downloading' && (
         <span
+          ref={progressRef}
           className="sustech-resource-tree__progress"
           data-testid={`blackboard-resource-progress-${resourceId}`}
           style={{ width: `${downloadState.progressPercent ?? 0}%` }}
           aria-hidden="true"
         />
+      )}
+      {!isDirectory && downloadState.state === 'downloading' && downloadState.progressPercent != null && (
+        <span ref={percentRef} className="sustech-resource-tree__percent">0%</span>
       )}
       {isDirectory ? (
         <button
@@ -1394,6 +1423,31 @@ function AssignmentAttachmentRow({
     download_failed: false,
   })
 
+  const attachmentProgressRef = useRef<HTMLSpanElement>(null)
+  const attachmentPercentRef = useRef<HTMLSpanElement>(null)
+
+  useGSAP(() => {
+    if (attachmentProgressRef.current && downloadState.progressPercent != null) {
+      gsap.fromTo(attachmentProgressRef.current,
+        { width: `${Math.max(0, (downloadState.progressPercent ?? 0) - 1)}%` },
+        {
+          width: `${downloadState.progressPercent}%`,
+          duration: 0.35,
+          ease: 'power2.out',
+          overwrite: 'auto',
+        },
+      )
+    }
+    if (attachmentPercentRef.current && downloadState.progressPercent != null) {
+      gsap.to(attachmentPercentRef.current, {
+        innerText: downloadState.progressPercent.toFixed(1),
+        duration: 0.35,
+        snap: { innerText: 0.5 },
+        ease: 'power2.out',
+      })
+    }
+  }, { dependencies: [downloadState.progressPercent, downloadState.state] })
+
   return (
     <div
       key={attachmentKey}
@@ -1407,11 +1461,15 @@ function AssignmentAttachmentRow({
     >
       {downloadState.state === 'downloading' && (
         <span
+          ref={attachmentProgressRef}
           className="sustech-resource-tree__progress"
           data-testid={`blackboard-assignment-attachment-progress-${attachment.resource_id ?? attachmentIndex}`}
           style={{ width: `${downloadState.progressPercent ?? 0}%` }}
           aria-hidden="true"
         />
+      )}
+      {downloadState.state === 'downloading' && downloadState.progressPercent != null && (
+        <span ref={attachmentPercentRef} className="sustech-resource-tree__percent">0%</span>
       )}
       <span className="file-tree__expand file-tree__expand--spacer" />
       <span className={`file-tree__icon sustech-resource-tree__icon sustech-resource-tree__icon--${kind}`} aria-hidden="true">

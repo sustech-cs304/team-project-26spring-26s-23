@@ -208,13 +208,9 @@
 /* 子节点容器：展开/收起动画 */
 .file-tree__children {
   overflow: hidden;
-  max-height: 0;
-  transition: max-height var(--transition-duration-slow) var(--easing-standard);
 }
 
 .file-tree__children--expanded {
-  /* 使用足够大的 max-height 来容纳子节点（每个子节点 32px + 间距） */
-  max-height: 2000px;
 }
 
 .file-tree__icon {
@@ -367,13 +363,20 @@
 @keyframes file-toast-enter {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(8px);
+    transform: translateX(-50%) translateY(12px) scale(0.95);
+  }
+  60% {
+    transform: translateX(-50%) translateY(-2px) scale(1.01);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(-50%) translateY(0) scale(1);
   }
 }
+
+/* NOTE: No exit animation is defined for .file-toast. Toasts are
+   conditionally rendered and removed from DOM on dismissal, so an
+   exit transition would require a two-state render pattern. */
 
 /* 右键菜单 */
 .file-context-menu {
@@ -386,7 +389,7 @@
   border-radius: var(--radius-md);
   background: var(--modal-bg);
   box-shadow: var(--modal-shadow);
-  animation: file-context-menu-enter var(--anim-duration-feedback) var(--easing-standard);
+  animation: file-context-menu-enter var(--anim-duration-feedback) var(--easing-spring);
 }
 
 .file-context-menu__item {

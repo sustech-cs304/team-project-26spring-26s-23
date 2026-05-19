@@ -1,3 +1,9 @@
+import gsap from 'gsap'
+import { useGSAP } from '@gsap/react'
+import { useEffect, useRef, type RefObject } from 'react'
+
+gsap.registerPlugin(useGSAP)
+
 /* ── CSS variable reader ── */
 function readAnimDurationMs(varName: string, fallback: number): number {
   if (typeof document === 'undefined' || typeof getComputedStyle === 'undefined') {
@@ -28,3 +34,79 @@ export const ANIM = {
   STAGGER_EACH: readAnimDurationMs('--stagger-step-each', 28),
   STAGGER_MAX: readAnimDurationMs('--stagger-step-max', 224),
 } as const
+
+/* ── GSAP helpers ── */
+export { gsap, useGSAP }
+
+export interface UseStaggerListEnterOptions {
+  enabled?: boolean
+  scope: RefObject<HTMLElement | null>
+  selector: string
+}
+
+/**
+ * Reusable hook for staggered list item entrance animations.
+ * Replaces the pattern of inline style={{ animationDelay: ... }} on every row
+ * or the CSS nth-child animation-delay grid.
+ */
+export function useStaggerListEnter({
+  enabled = true,
+  scope,
+  selector,
+}: UseStaggerListEnterOptions) {
+  const previousCountRef = useRef(0)
+
+  useGSAP(
+    () => {
+      const container = scope.current
+      if (!container) return
+
+      const elements = container.querySelectorAll(selector)
+      if (elements.length === 0) return
+
+      if (!enabled) {
+        gsap.set(elements, { opacity: 1, y: 0 })
+        return
+      }
+
+      const isNewItems = elements.length > previousCountRef.current
+      previousCountRef.current = elements.length
+
+      if (!isNewItems) return
+
+      gsap.fromTo(
+        elements,
+        { opacity: 0, y: 7 },
+        {
+          opacity: 1,
+          y: 0,
+          duration: ANIM.DURATION_STANDARD / 1000,
+          ease: 'power2.out',
+          stagger: { amount: ANIM.STAGGER_MAX / 1000 },
+        },
+      )
+    },
+    { scope, dependencies: [enabled] },
+  )
+
+  useEffect(() => {
+    return () => {
+      previousCountRef.current = 0
+    }
+  }, [])
+}
+
+/**
+ * Conditionally execute GSAP animation or snap to final state.
+ */
+export function animateIfEnabled(
+  enabled: boolean,
+  animateFn: () => gsap.core.Tween | gsap.core.Timeline | void,
+  snapFn: () => void,
+) {
+  if (enabled) {
+    animateFn()
+  } else {
+    snapFn()
+  }
+}

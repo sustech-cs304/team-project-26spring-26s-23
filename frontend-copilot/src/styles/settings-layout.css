@@ -35,7 +35,8 @@
 
 .settings-section-keepalive-panel--active {
   z-index: 2;
-  animation: settings-section-fade-in var(--anim-duration-fast) var(--easing-enter) both;
+  animation: settings-curtain-rise var(--anim-duration-slow) var(--easing-enter),
+             settings-section-fade-in var(--anim-duration-fast) var(--easing-enter);
 }
 
 .settings-section-keepalive-panel--exiting {
@@ -111,6 +112,16 @@
   animation-delay: calc(var(--stagger-step-each) * 3);
 }
 
+.settings-nav-list__item {
+  animation: settings-nav-slide-in var(--anim-duration-slow) var(--easing-enter) both;
+}
+.settings-nav-list__item:nth-child(1) { animation-delay: 0ms; }
+.settings-nav-list__item:nth-child(2) { animation-delay: var(--stagger-step-each); }
+.settings-nav-list__item:nth-child(3) { animation-delay: calc(var(--stagger-step-each) * 2); }
+.settings-nav-list__item:nth-child(4) { animation-delay: calc(var(--stagger-step-each) * 3); }
+.settings-nav-list__item:nth-child(5) { animation-delay: calc(var(--stagger-step-each) * 4); }
+.settings-nav-list__item:nth-child(n+6) { animation-delay: calc(var(--stagger-step-each) * 5); }
+
 .settings-nav-list > li:nth-child(n+5),
 .settings-card:nth-child(n+5),
 .provider-list__item:nth-child(n+5),
@@ -167,6 +178,26 @@
   }
 }
 
+@keyframes settings-nav-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes settings-curtain-rise {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0% 0);
+  }
+}
+
 .settings-page--split {
   display: grid;
   grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
@@ -177,9 +208,21 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+@keyframes settings-detail-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .settings-detail-column {
   display: flex;
   flex-direction: column;
   gap: 1rem;
   min-width: 0;
+  animation: settings-detail-slide-in var(--anim-duration-slow) var(--easing-enter) both;
 }

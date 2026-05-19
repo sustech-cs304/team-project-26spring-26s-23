@@ -1,3 +1,5 @@
+@import './styles/tokens.css';
+
 :root {
   font-family: Inter, 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   line-height: 1.5;
@@ -122,6 +124,11 @@ body {
   border-color: rgba(217, 119, 6, 0.2);
 }
 
+.startup-shell__card--error,
+.startup-shell__card--warning {
+  animation: startup-card-enter 0.3s var(--easing-enter) both;
+}
+
 .startup-shell__card--error {
   border-color: rgba(220, 38, 38, 0.24);
   box-shadow: 0 18px 50px rgba(127, 29, 29, 0.1);
@@ -176,7 +183,7 @@ body {
   color: var(--startup-shell-primary-action-text);
   font-size: 14px;
   font-weight: 600;
-  transition: opacity var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard), background-color var(--transition-duration-standard) var(--easing-standard);
+  transition: transform 0.2s var(--easing-spring), opacity var(--transition-duration-standard) var(--easing-standard), background-color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .startup-shell__button:hover:not(:disabled) {
@@ -209,6 +216,11 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+@keyframes startup-card-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 a {
