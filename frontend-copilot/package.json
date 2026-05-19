@@ -22,6 +22,7 @@
     "test": "node ./scripts/run-vitest.mjs"
   },
   "dependencies": {
+    "better-sqlite3": "^12.10.0",
     "frappe-gantt": "^1.2.2",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.577.0",
@@ -37,6 +38,7 @@
     "turndown": "^7.2.4"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
     "@types/turndown": "^5.0.6",

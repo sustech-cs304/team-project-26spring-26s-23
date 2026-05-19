@@ -31,7 +31,15 @@ export function getCalendarEvents(): UnifiedCalendarEvent[] {
     is_all_day: Boolean(row.is_all_day),
     location: row.location,
     status: row.status,
-    metadata_payload: row.metadata_payload ? JSON.parse(row.metadata_payload) : null,
+    metadata_payload: (() => {
+      if (!row.metadata_payload) return null
+      try {
+        return JSON.parse(row.metadata_payload)
+      } catch (err) {
+        console.warn('Failed to parse metadata_payload:', err, row.metadata_payload)
+        return null
+      }
+    })(),
     progress: row.progress,
   }))
 }

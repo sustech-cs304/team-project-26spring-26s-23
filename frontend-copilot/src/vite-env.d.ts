@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
 
 interface Window {
-  timelineDatabase: import('../../electron/preload/timeline-database.preload').TimelineDatabaseApi
+  timelineDatabase: import('../electron/renderer-ipc/timeline-database.ipc').TimelineDatabaseApi
 }
