@@ -237,6 +237,15 @@ async function retryCopilotRuntime(): Promise<CopilotRuntimeLoadResult> {
   }
 }
 
+async function getCopilotRuntimeLocalToken(): Promise<string | null> {
+  try {
+    const service = await ensureHostedBackendService()
+    return service.getLocalToken()
+  } catch {
+    return null
+  }
+}
+
 async function ensureHostModelRouteBridge(): Promise<HostModelRouteBridge> {
   if (hostModelRouteBridge !== null) {
     return hostModelRouteBridge
@@ -714,6 +723,7 @@ void app.whenReady()
       services: mainProcessServices,
       loadCopilotRuntime,
       retryCopilotRuntime,
+      getCopilotRuntimeLocalToken,
       notifyDesktopNotification,
       loadDesktopWindowState,
       minimizeDesktopWindow,

@@ -41,6 +41,7 @@ import {
 } from '../settings-workspace/ipc'
 import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
+  COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
   type CopilotRuntimeApi,
 } from '../copilot-runtime'
@@ -136,6 +137,7 @@ function buildCopilotRuntimeApi(ipcRenderer: IpcRendererLike): CopilotRuntimeApi
   return {
     load() { return ipcRenderer.invoke(COPILOT_RUNTIME_LOAD_CHANNEL) },
     retry() { return ipcRenderer.invoke(COPILOT_RUNTIME_RETRY_CHANNEL) },
+    getLocalToken() { return ipcRenderer.invoke(COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL) },
   }
 }
 

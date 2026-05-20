@@ -36,3 +36,12 @@ export async function retryCopilotRuntime(): Promise<CopilotRendererRuntimeRetry
 
   return api.retry()
 }
+
+export async function loadCopilotRuntimeLocalToken(): Promise<string | null> {
+  const api = getCopilotRuntimeApi()
+  if (!api) {
+    return null
+  }
+
+  return await api.getLocalToken()
+}

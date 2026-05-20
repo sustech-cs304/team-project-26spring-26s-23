@@ -12,7 +12,10 @@ def test_calendar_events_route_serializes_utc_datetimes(tmp_path: Path) -> None:
     app = create_app(_build_config(tmp_path, local_token="calendar-token"))
 
     with TestClient(app) as client:
-        response = client.get("/calendar/events")
+        response = client.get(
+            "/calendar/events",
+            headers={LOCAL_TOKEN_HEADER_NAME: "calendar-token"},
+        )
 
     assert response.status_code == 200
     payload = response.json()

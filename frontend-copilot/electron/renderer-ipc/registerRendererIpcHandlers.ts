@@ -53,6 +53,7 @@ import {
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
+  COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
   type CopilotRuntimeLoadResult,
 } from '../copilot-runtime'
@@ -208,6 +209,7 @@ const RENDERER_IPC_CHANNELS = [
   TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
+  COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL,
   ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
   ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
   ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
@@ -515,6 +517,10 @@ function registerToolAndRuntimeHandlers(ipcMain: IpcMainLike, handlers: Renderer
 
   ipcMain.handle(COPILOT_RUNTIME_RETRY_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
     return await handlers.retryCopilotRuntime()
+  })
+
+  ipcMain.handle(COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL, async (): Promise<string | null> => {
+    return await handlers.getCopilotRuntimeLocalToken()
   })
 }
 

@@ -371,7 +371,7 @@ function createToolCatalogFixtures(): Pick<RendererIpcHandlers, 'loadToolCatalog
 }
 
 function createCopilotRuntimeFixtures(): Pick<RendererIpcHandlers,
-  'loadCopilotRuntime' | 'retryCopilotRuntime'> {
+  'loadCopilotRuntime' | 'retryCopilotRuntime' | 'getCopilotRuntimeLocalToken'> {
   return {
     loadCopilotRuntime: vi.fn(async (): Promise<CopilotRuntimeLoadResult> => ({
       ok: true,
@@ -381,6 +381,7 @@ function createCopilotRuntimeFixtures(): Pick<RendererIpcHandlers,
       ok: true,
       snapshot: createCopilotRuntimeSnapshotFixture('starting', null),
     })),
+    getCopilotRuntimeLocalToken: vi.fn(async () => 'runtime-token'),
   }
 }
 

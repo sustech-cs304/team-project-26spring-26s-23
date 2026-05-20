@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+import { loadCopilotRuntimeLocalToken } from '../../features/copilot/runtime'
+
 import type { WakeupDialogState } from './ExternalSourcesSection'
 import {
   clearSettingsWorkspaceSustechCasPassword,
@@ -124,10 +126,12 @@ export async function resolveWakeupIcsImportResult(
   }
 
   try {
+    const localToken = await loadCopilotRuntimeLocalToken()
     const response = await fetch(`${runtimeBaseUrl}/api/wakeup/import/ics`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        ...(localToken ? { 'X-Local-Token': localToken } : {}),
       },
       body: JSON.stringify({
         icsText: normalizedValue,

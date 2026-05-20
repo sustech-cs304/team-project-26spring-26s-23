@@ -19,7 +19,7 @@ import {
   COPILOT_HISTORY_RENAME_THREAD_CHANNEL,
   COPILOT_HISTORY_RESTORE_DATABASE_CHANNEL,
 } from './copilot-history'
-import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
+import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
 import {
   MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
   MANAGED_RUNTIME_LOAD_CHANNEL,
@@ -120,6 +120,7 @@ const EXPECTED_REMOVE_CHANNELS = [
   TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
+  COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL,
   ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
   ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
   ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
@@ -185,6 +186,7 @@ const EXPECTED_HANDLE_CHANNELS = [
   TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
+  COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL,
   ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
   ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
   ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
@@ -335,6 +337,7 @@ describe('registerRendererIpcHandlers', () => {
     )
     await expect(getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_LOAD_CHANNEL)()).resolves.toEqual(await handlers.loadCopilotRuntime())
     await expect(getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_RETRY_CHANNEL)()).resolves.toEqual(await handlers.retryCopilotRuntime())
+    await expect(getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL)()).resolves.toEqual(await handlers.getCopilotRuntimeLocalToken())
   })
 
   it('wires attachment manager handlers', async () => {
@@ -426,6 +429,7 @@ describe('registerRendererIpcHandlers', () => {
       services,
       loadCopilotRuntime: rendererHandlers.loadCopilotRuntime,
       retryCopilotRuntime: rendererHandlers.retryCopilotRuntime,
+      getCopilotRuntimeLocalToken: rendererHandlers.getCopilotRuntimeLocalToken,
       notifyDesktopNotification: rendererHandlers.notifyDesktopNotification,
       loadDesktopWindowState: rendererHandlers.loadDesktopWindowState,
       minimizeDesktopWindow: rendererHandlers.minimizeDesktopWindow,

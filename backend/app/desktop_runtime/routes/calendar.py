@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.desktop_runtime.config import DesktopRuntimeConfig
+from app.desktop_runtime.security import require_local_token
 from app.event_manager.data.db_manager import (
     DatabaseManager as EventDatabaseManager,
     resolve_default_event_manager_db_path,
@@ -32,6 +33,7 @@ def build_calendar_router() -> APIRouter:
     @router.get("/events")
     def list_calendar_events(request: Request) -> dict[str, list[dict[str, Any]]]:
         runtime_config = _get_runtime_config(request)
+        require_local_token(request, runtime_config)
 
         db = EventDatabaseManager(
             resolve_default_event_manager_db_path(runtime_config.database_dir)

@@ -113,7 +113,6 @@ class WakeupCalendarICSParser:
         if freq != "WEEKLY":
             return [(start_at, end_at)]
 
-        interval = 1
         try:
             interval = int(rrule.get("INTERVAL") or 1)
         except (TypeError, ValueError):
@@ -132,10 +131,14 @@ class WakeupCalendarICSParser:
         occurrences: list[tuple[datetime, datetime | None]] = []
         current = start_at
         produced = 0
+        max_occurrences = 512
+
         while True:
             if count is not None and produced >= count:
                 break
             if until is not None and current > until:
+                break
+            if count is None and until is None and produced >= max_occurrences:
                 break
             if current not in exdates:
                 current_end = current + duration if duration is not None else None

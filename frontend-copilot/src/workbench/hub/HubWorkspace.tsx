@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
+import { loadCopilotRuntimeLocalToken } from '../../features/copilot/runtime'
 import { getHubWorkspaceContent, type WorkbenchLanguage } from '../locale'
 import type { HubWorkspaceView } from '../types'
 import { CalendarGanttView } from './components/CalendarGanttView'
@@ -47,8 +48,10 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       setIsLoading(true)
       setError(null)
       try {
+        const localToken = await loadCopilotRuntimeLocalToken()
         const response = await fetch(`${actualRuntimeUrl}/calendar/events`, {
           signal: controller.signal,
+          headers: localToken ? { 'X-Local-Token': localToken } : undefined,
         })
         if (!response.ok) {
           const errText = await response.text().catch(() => 'No text')

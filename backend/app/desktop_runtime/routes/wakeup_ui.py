@@ -5,6 +5,8 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Request
 
+from app.desktop_runtime.config import DesktopRuntimeConfig
+from app.desktop_runtime.security import require_local_token
 from app.event_manager.data.db_manager import DatabaseManager, resolve_default_event_manager_db_path
 from app.integrations.wakeup.api import WakeupCalendarICSParser
 
@@ -19,6 +21,13 @@ def _get_event_db_manager(request: Request | None = None) -> DatabaseManager:
     return DatabaseManager()
 
 
+def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
+    config = getattr(request.app.state, "runtime_config", None)
+    if not isinstance(config, DesktopRuntimeConfig):
+        raise RuntimeError("Desktop runtime config is not available on app.state.runtime_config")
+    return config
+
+
 def build_wakeup_ui_router() -> APIRouter:
     router = APIRouter(prefix="/api/wakeup")
 
@@ -28,6 +37,9 @@ def build_wakeup_ui_router() -> APIRouter:
         body: dict[str, Any] = Body(default={}),
     ) -> dict[str, Any]:
         try:
+            runtime_config = _get_runtime_config(request)
+            require_local_token(request, runtime_config)
+
             ics_text = str(body.get("icsText") or "").strip() if isinstance(body, dict) else ""
             if not ics_text:
                 raise ValueError("icsText is required")
@@ -48,9 +60,13 @@ def build_wakeup_ui_router() -> APIRouter:
 
     @router.post("/parse/ics")
     def parse_ics(
+        request: Request,
         body: dict[str, Any] = Body(default={}),
     ) -> dict[str, Any]:
         try:
+            runtime_config = _get_runtime_config(request)
+            require_local_token(request, runtime_config)
+
             ics_text = str(body.get("icsText") or "").strip() if isinstance(body, dict) else ""
             if not ics_text:
                 raise ValueError("icsText is required")

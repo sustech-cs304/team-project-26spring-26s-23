@@ -147,6 +147,7 @@ export interface RendererIpcHandlers {
   loadToolCatalog: (request?: ToolCatalogLoadRequest) => Promise<ToolCatalogLoadResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
+  getCopilotRuntimeLocalToken: () => Promise<string | null>
   readClipboardAttachmentData: () => Promise<ReadClipboardAttachmentDataResult>
   writeAttachmentTempFile: (request: WriteAttachmentTempFileRequest) => Promise<WriteAttachmentTempFileResult>
   readAttachmentPreview: (request: ReadAttachmentPreviewRequest) => Promise<ReadAttachmentPreviewResult>
