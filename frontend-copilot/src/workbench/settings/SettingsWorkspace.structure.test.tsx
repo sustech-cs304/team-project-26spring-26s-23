@@ -122,7 +122,15 @@ describe('SettingsWorkspace structure', () => {
   it('raises an open form field above following settings controls so select menus are not obscured', () => {
     const controlsCss = readFileSync(join(process.cwd(), 'src/styles/controls.css'), 'utf8')
 
-    expect(controlsCss).toMatch(/\.form-field--open\s*\{\s*z-index:\s*30;\s*\}/)
-    expect(controlsCss).toMatch(/\.select-dropdown\s*\{[\s\S]*?z-index:\s*20;/)
+    const openFormFieldMatch = controlsCss.match(
+      /\.form-field--open\s*\{[\s\S]*?\bz-index:\s*(\d+)\s*;[\s\S]*?\}/,
+    )
+    const selectDropdownMatch = controlsCss.match(
+      /\.select-dropdown\s*\{[\s\S]*?\bz-index:\s*(\d+)\s*;[\s\S]*?\}/,
+    )
+
+    expect(openFormFieldMatch).not.toBeNull()
+    expect(selectDropdownMatch).not.toBeNull()
+    expect(Number(openFormFieldMatch?.[1])).toBeGreaterThan(Number(selectDropdownMatch?.[1]))
   })
 })
