@@ -53,15 +53,9 @@ export function getTimelineDatabase(): Database.Database {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TRIGGER IF NOT EXISTS update_timeline_events_updated_at
-    AFTER UPDATE ON timeline_events
-    FOR EACH ROW
-    WHEN NEW.updated_at = OLD.updated_at
-    BEGIN
-      UPDATE timeline_events
-      SET updated_at = CURRENT_TIMESTAMP
-      WHERE id = NEW.id;
-    END;
+    -- updated_at is managed via DEFAULT CURRENT_TIMESTAMP on INSERT.
+    -- UPDATE statements should explicitly SET updated_at = CURRENT_TIMESTAMP
+    -- rather than relying on a self-UPDATE trigger that risks recursive loops.
   `)
 
   return dbInstance

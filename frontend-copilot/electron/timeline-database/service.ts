@@ -1,30 +1,19 @@
+import type { AddTimelineEventInput, UnifiedCalendarEvent } from './ipc'
 import { getTimelineDatabase } from './database'
 import type { TimelineEventRow } from './database'
-
-// Keep in sync with src/workbench/hub/calendar-types.ts:UnifiedCalendarEvent
-export type CalendarEventStatus = 'not_started' | 'in_progress' | 'completed'
-
-export interface UnifiedCalendarEvent {
-  id: string | number
-  source: string
-  source_id: string | null
-  title: string
-  description: string | null
-  start_time: string
-  end_time: string | null
-  is_all_day: boolean
-  location: string | null
-  status: CalendarEventStatus | string
-  metadata_payload?: Record<string, unknown> | null
-  progress?: number
-}
 
 // ISO-8601 subset accepted for start_time / end_time
 const ISO_8601_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/
 
-const VALID_STATUS_VALUES: ReadonlySet<string> = new Set(['not_started', 'in_progress', 'completed'])
+function parseTimeMs(value: string): number {
+  const ts = Date.parse(value)
+  if (Number.isNaN(ts)) {
+    throw new Error(`Cannot parse time value: ${value}`)
+  }
+  return ts
+}
 
-function validateCalendarEventInput(event: Omit<UnifiedCalendarEvent, 'id'>): void {
+function validateCalendarEventInput(event: AddTimelineEventInput): void {
   const errors: string[] = []
 
   if (typeof event.source !== 'string' || event.source.trim().length === 0) {
@@ -36,21 +25,26 @@ function validateCalendarEventInput(event: Omit<UnifiedCalendarEvent, 'id'>): vo
   if (typeof event.start_time !== 'string' || !ISO_8601_RE.test(event.start_time)) {
     errors.push('start_time must be a valid ISO-8601 string')
   }
-  if (event.end_time != null && (typeof event.end_time !== 'string' || !ISO_8601_RE.test(event.end_time))) {
-    errors.push('end_time must be a valid ISO-8601 string when provided')
+  if (event.end_time != null) {
+    if (typeof event.end_time !== 'string' || !ISO_8601_RE.test(event.end_time)) {
+      errors.push('end_time must be a valid ISO-8601 string when provided')
+    } else {
+      try {
+        const startMs = parseTimeMs(event.start_time)
+        const endMs = parseTimeMs(event.end_time)
+        if (endMs <= startMs) {
+          errors.push('end_time must be later than start_time')
+        }
+      } catch {
+        // parse failure is already caught by the ISO-8601 check above
+      }
+    }
   }
   if (typeof event.is_all_day !== 'boolean') {
     errors.push('is_all_day must be a boolean')
   }
   if (event.status !== undefined && typeof event.status !== 'string') {
     errors.push('status must be a string when provided')
-  }
-  if (
-    typeof event.status === 'string' &&
-    event.status.trim().length > 0 &&
-    !VALID_STATUS_VALUES.has(event.status)
-  ) {
-    errors.push(`status must be one of: ${[...VALID_STATUS_VALUES].join(', ')}`)
   }
 
   if (errors.length > 0) {
@@ -91,7 +85,7 @@ export function getCalendarEvents(): UnifiedCalendarEvent[] {
   return rows.map(row => mapRowToCalendarEvent(row))
 }
 
-export function addCalendarEvent(event: Omit<UnifiedCalendarEvent, 'id' | 'status'> & { status?: UnifiedCalendarEvent['status'] }): number {
+export function addCalendarEvent(event: AddTimelineEventInput): number {
   validateCalendarEventInput(event)
 
   const db = getTimelineDatabase()
