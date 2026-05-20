@@ -16,6 +16,8 @@ export interface UnifiedCalendarEvent {
   progress?: number
 }
 
+const VALID_STATUS_VALUES = new Set(['not_started', 'in_progress', 'completed'])
+
 function validateCalendarEventInput(event: Omit<UnifiedCalendarEvent, 'id'>): void {
   const errors: string[] = []
 
@@ -30,6 +32,16 @@ function validateCalendarEventInput(event: Omit<UnifiedCalendarEvent, 'id'>): vo
   }
   if (typeof event.is_all_day !== 'boolean') {
     errors.push('is_all_day must be a boolean')
+  }
+  if (event.status !== undefined && typeof event.status !== 'string') {
+    errors.push('status must be a string when provided')
+  }
+  if (
+    typeof event.status === 'string' &&
+    event.status.trim().length > 0 &&
+    !VALID_STATUS_VALUES.has(event.status)
+  ) {
+    errors.push(`status must be one of: ${[...VALID_STATUS_VALUES].join(', ')}`)
   }
 
   if (errors.length > 0) {
@@ -87,14 +99,16 @@ export function addCalendarEvent(event: Omit<UnifiedCalendarEvent, 'id'>): numbe
 
   const info = stmt.run({
     source: event.source,
-    source_id: event.source_id,
+    source_id: event.source_id ?? null,
     title: event.title,
-    description: event.description,
+    description: event.description ?? null,
     start_time: event.start_time,
-    end_time: event.end_time,
+    end_time: event.end_time ?? null,
     is_all_day: event.is_all_day ? 1 : 0,
-    location: event.location,
-    status: event.status,
+    location: event.location ?? null,
+    // Use the database default 'not_started' when status is missing or empty,
+    // preventing NOT NULL constraint violations from undefined/null values.
+    status: (event.status && event.status.trim().length > 0) ? event.status : 'not_started',
     metadata_payload: event.metadata_payload ? JSON.stringify(event.metadata_payload) : null,
     progress: event.progress ?? 0,
   })

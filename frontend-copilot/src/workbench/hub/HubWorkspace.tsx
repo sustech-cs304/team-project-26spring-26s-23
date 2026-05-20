@@ -13,6 +13,13 @@ interface HubWorkspaceProps {
   bootstrap?: CopilotBootstrapController
 }
 
+function buildCompositeKey(event: { source: string; source_id: string | null }): string {
+  // Use a single unified placeholder for null source_id so that the same event
+  // cached locally without a source_id is correctly identified as a duplicate
+  // when re-fetched from the remote API.
+  return `${String(event.source)}:${String(event.source_id ?? '_null_')}`
+}
+
 export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspaceProps) {
   const content = getHubWorkspaceContent(language, view)
   const [events, setEvents] = useState<UnifiedCalendarEvent[]>([])
@@ -35,14 +42,25 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       setIsLoading(true)
       setError(null)
       try {
-        const localResponse = await window.timelineDatabase.loadEvents()
+        // Guard against environments where the preload bridge is not injected
+        // (e.g. running in a plain browser during dev, or preload injection failure).
+        const timelineDb = window.timelineDatabase
+        let localResponse: { items: UnifiedCalendarEvent[] }
+        if (timelineDb && typeof timelineDb.loadEvents === 'function') {
+          localResponse = await timelineDb.loadEvents()
+        } else {
+          console.warn(
+            '[Sync] timelineDatabase bridge is unavailable; falling back to remote calendar events only.',
+          )
+          localResponse = { items: [] }
+        }
         const combinedEvents = [...(localResponse.items || [])]
 
         // Build a composite dedup key from source + source_id to avoid
         // collisions between local auto-increment ids and remote numeric ids.
-        const localKeys = new Set(
-          combinedEvents.map(e => `${String(e.source)}:${String(e.source_id ?? '_local_')}`),
-        )
+        // Unified placeholder `_null_` ensures the same event cached locally
+        // without a source_id is correctly recognized when re-fetched.
+        const localKeys = new Set(combinedEvents.map(e => buildCompositeKey(e)))
 
         let remoteFailed = false
         try {
@@ -51,8 +69,7 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
             const data = await apiResponse.json()
             if (data.items && data.items.length > 0) {
               for (const remoteEvent of data.items) {
-                const remoteKey = `${String(remoteEvent.source)}:${String(remoteEvent.source_id ?? '_remote_')}`
-                if (!localKeys.has(remoteKey)) {
+                if (!localKeys.has(buildCompositeKey(remoteEvent))) {
                   combinedEvents.push(remoteEvent)
                 }
               }
@@ -66,8 +83,6 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
           remoteFailed = true
         }
 
-        // If the remote API failed and we have no local data, surface an error
-        // so the user knows the view may be incomplete.
         if (remoteFailed && combinedEvents.length === 0) {
           throw new Error(
             '无法加载日历事件：本地无缓存数据且远端 API 请求失败，请检查网络连接或后端服务状态。',

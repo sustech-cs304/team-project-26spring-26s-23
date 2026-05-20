@@ -56,6 +56,7 @@ export function getTimelineDatabase(): Database.Database {
     CREATE TRIGGER IF NOT EXISTS update_timeline_events_updated_at
     AFTER UPDATE ON timeline_events
     FOR EACH ROW
+    WHEN NEW.updated_at = OLD.updated_at
     BEGIN
       UPDATE timeline_events
       SET updated_at = CURRENT_TIMESTAMP
