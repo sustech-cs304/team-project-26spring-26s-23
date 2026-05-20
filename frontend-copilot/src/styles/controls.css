@@ -107,6 +107,10 @@
   height: 100%;
 }
 
+.form-field--open {
+  z-index: 30;
+}
+
 .form-field--full {
   grid-column: 1 / -1;
 }

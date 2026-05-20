@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
@@ -115,5 +117,12 @@ describe('SettingsWorkspace structure', () => {
 
     expect(searchHtml).not.toContain('启用安全搜索')
     expect(mcpHtml).not.toContain('启用沙箱保护')
+  })
+
+  it('raises an open form field above following settings controls so select menus are not obscured', () => {
+    const controlsCss = readFileSync(join(process.cwd(), 'src/styles/controls.css'), 'utf8')
+
+    expect(controlsCss).toMatch(/\.form-field--open\s*\{\s*z-index:\s*30;\s*\}/)
+    expect(controlsCss).toMatch(/\.select-dropdown\s*\{[\s\S]*?z-index:\s*20;/)
   })
 })
