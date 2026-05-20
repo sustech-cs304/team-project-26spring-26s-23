@@ -4,6 +4,23 @@ import Database from 'better-sqlite3'
 
 let dbInstance: Database.Database | null = null
 
+export interface TimelineEventRow {
+  id: number
+  source: string
+  source_id: string | null
+  title: string
+  description: string | null
+  start_time: string
+  end_time: string | null
+  is_all_day: number
+  location: string | null
+  status: string
+  metadata_payload: string | null
+  progress: number | null
+  created_at: string
+  updated_at: string
+}
+
 export function getTimelineDatabase(): Database.Database {
   if (dbInstance) {
     return dbInstance
@@ -13,6 +30,9 @@ export function getTimelineDatabase(): Database.Database {
   const dbPath = path.join(userDataPath, 'timeline.db')
 
   dbInstance = new Database(dbPath)
+
+  // Enable WAL mode for better concurrent read performance
+  dbInstance.pragma('journal_mode = WAL')
 
   // Initialize schema
   dbInstance.exec(`
@@ -44,4 +64,16 @@ export function getTimelineDatabase(): Database.Database {
   `)
 
   return dbInstance
+}
+
+export function closeTimelineDatabase(): void {
+  if (dbInstance) {
+    try {
+      dbInstance.close()
+    } catch (err) {
+      console.warn('[timeline-database] Error closing database:', err)
+    } finally {
+      dbInstance = null
+    }
+  }
 }

@@ -20,7 +20,6 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const controller = new AbortController()
     let active = true
 
     let actualRuntimeUrl = 'http://127.0.0.1:8765'
@@ -39,27 +38,40 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
         const localResponse = await window.timelineDatabase.loadEvents()
         const combinedEvents = [...(localResponse.items || [])]
 
+        // Build a composite dedup key from source + source_id to avoid
+        // collisions between local auto-increment ids and remote numeric ids.
+        const localKeys = new Set(
+          combinedEvents.map(e => `${String(e.source)}:${String(e.source_id ?? '_local_')}`),
+        )
+
+        let remoteFailed = false
         try {
-          const apiResponse = await fetch(`${actualRuntimeUrl}/calendar/events`, {
-            signal: controller.signal,
-          })
+          const apiResponse = await fetch(`${actualRuntimeUrl}/calendar/events`)
           if (apiResponse.ok) {
             const data = await apiResponse.json()
             if (data.items && data.items.length > 0) {
-              const localIds = new Set(combinedEvents.map(e => String(e.id)))
               for (const remoteEvent of data.items) {
-                if (!localIds.has(String(remoteEvent.id))) {
+                const remoteKey = `${String(remoteEvent.source)}:${String(remoteEvent.source_id ?? '_remote_')}`
+                if (!localKeys.has(remoteKey)) {
                   combinedEvents.push(remoteEvent)
                 }
               }
             }
           } else {
             console.warn(`[Sync] Calendar API responded with status ${apiResponse.status}`)
+            remoteFailed = true
           }
         } catch (fetchErr: unknown) {
-          if (!controller.signal.aborted) {
-            console.warn('[Sync] Failed to fetch backend calendar events:', fetchErr)
-          }
+          console.warn('[Sync] Failed to fetch backend calendar events:', fetchErr)
+          remoteFailed = true
+        }
+
+        // If the remote API failed and we have no local data, surface an error
+        // so the user knows the view may be incomplete.
+        if (remoteFailed && combinedEvents.length === 0) {
+          throw new Error(
+            '无法加载日历事件：本地无缓存数据且远端 API 请求失败，请检查网络连接或后端服务状态。',
+          )
         }
 
         if (active) {
@@ -79,7 +91,6 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
 
     return () => {
       active = false
-      controller.abort()
     }
   }, [bootstrap])
 
@@ -120,7 +131,9 @@ function CalendarDebugPanel({ events, error, isLoading }: {
         后端原始事件数据 Debug (Error: {error || 'None'})
       </summary>
       <div className="calendar-debug-panel__body">
-        {isLoading ? (
+        {error ? (
+          <p style={{ color: 'red' }}>错误: {error}</p>
+        ) : isLoading ? (
           <p>Loading events...</p>
         ) : events.length === 0 ? (
           <p>No events found.</p>

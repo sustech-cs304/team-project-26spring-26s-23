@@ -172,6 +172,11 @@ import {
   TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
   TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
 } from './timeline-database.ipc'
+import type {
+  AddTimelineEventRequest,
+  AddTimelineEventResult,
+  LoadTimelineEventsResult,
+} from '../timeline-database/ipc'
 import type { RendererIpcHandlers } from './RendererIpcHandlers'
 
 export type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
@@ -698,14 +703,14 @@ function registerFileManagerHandlers(ipcMain: IpcMainLike, handlers: RendererIpc
 function registerTimelineDatabaseHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(
     TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
-    async (): Promise<any> => {
+    async (): Promise<LoadTimelineEventsResult> => {
       return await handlers.loadTimelineEvents()
     },
   )
 
   ipcMain.handle(
     TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
-    async (_event, request: any): Promise<any> => {
+    async (_event, request: AddTimelineEventRequest): Promise<AddTimelineEventResult> => {
       return await handlers.addTimelineEvent(request)
     },
   )
