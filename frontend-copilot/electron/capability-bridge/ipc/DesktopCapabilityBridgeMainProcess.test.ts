@@ -104,10 +104,30 @@ describe('createElectronDesktopCapabilityBridgeService - routing', () => {
 
     const appendLog = vi.fn()
     const settingsWorkspaceService = createSettingsWorkspaceServiceStub()
+    const capturePage = vi.fn(async () => ({
+      toPNG: () => Buffer.from('browser-image', 'utf8'),
+    }))
+    const browserWindow = {
+      isDestroyed: () => false,
+      isVisible: () => false,
+      show: vi.fn(),
+      hide: vi.fn(),
+      once: vi.fn(),
+      getTitle: () => 'CanDue Browser',
+      loadURL: vi.fn(async () => undefined),
+      webContents: {
+        isDestroyed: () => false,
+        getURL: () => 'https://example.com/',
+        getTitle: () => 'Example Domain',
+        capturePage,
+      },
+    } as unknown as Electron.BrowserWindow
+    const createBrowserWindow = vi.fn(() => browserWindow)
     const service = createElectronDesktopCapabilityBridgeService({
       prepareRuntimePaths: async () => fixture.hostedPaths,
       appendLog,
       getSettingsWorkspaceService: () => settingsWorkspaceService,
+      createBrowserWindow,
     })
 
     await expect(service.handleRequest(buildRequest({
@@ -328,7 +348,13 @@ describe('createElectronDesktopCapabilityBridgeService - routing', () => {
     await expect(readJsonFile(bridgePaths.stateFile)).resolves.toMatchObject({
       version: 1,
       values: {
-        tool: { 'blackboard.snapshot.sync': { session: { count: 1 } } },
+        tool: {
+          'blackboard.snapshot.sync': {
+            session: {
+              count: 1,
+            },
+          },
+        },
       },
     })
 

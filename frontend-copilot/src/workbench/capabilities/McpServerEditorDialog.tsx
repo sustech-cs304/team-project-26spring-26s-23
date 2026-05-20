@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
+import { useGSAP, gsap } from '../animation-utils'
 
 import type {
   McpServerDraft,
@@ -52,6 +53,12 @@ export function McpServerEditorDialog({
 }: McpServerEditorDialogProps) {
   const firstInputRef = useRef<HTMLInputElement | null>(null)
   const importTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const backdropRef = useRef<HTMLDivElement>(null)
+  useGSAP(() => {
+    if (backdropRef.current) {
+      gsap.from(backdropRef.current, { opacity: 0, duration: 0.2 })
+    }
+  }, { scope: backdropRef })
   const [step, setStep] = useState<EditorStep>('form')
   const [formState, setFormState] = useState<McpServerFormState>(() => parseEditorValueToFormState(value))
   const [importValue, setImportValue] = useState('')
@@ -121,7 +128,7 @@ export function McpServerEditorDialog({
   }
 
   return (
-    <div className="capabilities-dialog-backdrop" role="presentation" onClick={onClose}>
+    <div ref={backdropRef} className="capabilities-dialog-backdrop" role="presentation" onClick={onClose}>
       <section
         className="capabilities-dialog"
         role="dialog"

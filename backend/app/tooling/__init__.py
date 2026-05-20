@@ -1,5 +1,17 @@
 """Foundation package for runtime-agnostic tooling contracts, host abstractions, and MCP-readiness helpers."""
 
+from .browser_tools import (
+    BROWSER_TOOL_CONTRACTS,
+    BrowserCloseTabTool,
+    BrowserExecuteTool,
+    BrowserListTabsTool,
+    BrowserOpenTool,
+    BrowserResetTool,
+    BrowserScreenshotTool,
+    BrowserSnapshotTool,
+    BrowserSwitchTabTool,
+    get_browser_tool_contracts,
+)
 from .contract import (
     HOST_CAPABILITY_NAMES,
     NORMALIZED_TOOL_ERROR_CODES,
@@ -19,9 +31,12 @@ from .contract import (
 )
 from .host_capabilities import (
     ArtifactStore,
+    BrowserController,
     DatabaseResolver,
     EventSink,
     HostArtifact,
+    HostBrowserPage,
+    HostBrowserScreenshot,
     HostCapabilityOperationError,
     HostEvent,
     MissingHostCapabilityError,
@@ -44,11 +59,23 @@ from .mcp_adapter import (
 
 __all__ = [
     "ArtifactStore",
+    "BROWSER_TOOL_CONTRACTS",
+    "BrowserCloseTabTool",
+    "BrowserController",
+    "BrowserExecuteTool",
+    "BrowserListTabsTool",
+    "BrowserOpenTool",
+    "BrowserResetTool",
+    "BrowserScreenshotTool",
+    "BrowserSnapshotTool",
+    "BrowserSwitchTabTool",
     "DEFAULT_MCP_DIRECT_HOST_CAPABILITIES",
     "DatabaseResolver",
     "EventSink",
     "HOST_CAPABILITY_NAMES",
     "HostArtifact",
+    "HostBrowserPage",
+    "HostBrowserScreenshot",
     "HostCapabilityName",
     "HostCapabilityOperationError",
     "HostCapabilityRequirement",
@@ -78,4 +105,5 @@ __all__ = [
     "assess_default_contract_mcp_readiness",
     "assess_mcp_tool_readiness",
     "build_mcp_tool_descriptor",
+    "get_browser_tool_contracts",
 ]

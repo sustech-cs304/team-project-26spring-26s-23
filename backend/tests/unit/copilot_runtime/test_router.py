@@ -271,10 +271,10 @@ def test_root_post_thread_get_returns_bound_agent_recommendations_and_tool_catal
 
     assert response.status_code == 200
     assert payload == scaffold.build_thread_get_response(thread=thread).to_dict()
-    assert payload["recommendedTools"] == ["tool.file-convert"]
+    assert payload["recommendedTools"] == ["tool.fs.read"]
     assert payload["toolSelectionMode"] == "recommendation-only"
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" in tool_ids
+    assert "tool.fs.read" in tool_ids
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
     assert payload["latestRunId"] is None
     assert scaffold.tool_registry.get_default().name == "default"
@@ -708,7 +708,7 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
             json=_build_run_start_request(
                 thread_id="thread-1",
                 model="gpt-4.1",
-                enabled_tools=["tool.file-convert"],
+                enabled_tools=["tool.fs.read"],
                 debug_mode_enabled=True,
                 request_options={"temperature": 0.2},
             ),
@@ -811,7 +811,7 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
     }
     assert events[2]["payload"]["delta"] == TEST_MODEL_REPLY
     assert completed["resolvedModelId"] == "gpt-4.1"
-    assert completed["resolvedToolIds"] == ["tool.file-convert"]
+    assert completed["resolvedToolIds"] == ["tool.fs.read"]
     assert completed["requestOptions"] == {"temperature": 0.2}
     assert executor.calls == [
         {
@@ -819,7 +819,7 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
             "user_prompt": "Hello",
             "message_history": [],
             "resolved_model_id": "gpt-4.1",
-            "enabled_tools": ["tool.file-convert"],
+            "enabled_tools": ["tool.fs.read"],
             "debug_enabled": True,
             "request_options": {"temperature": 0.2},
         }
@@ -1143,11 +1143,11 @@ def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool
 
     assert response.status_code == 200
     assert payload == scaffold.build_capabilities_response(thread=thread).to_dict()
-    assert payload["recommendedTools"] == ["tool.file-convert"]
+    assert payload["recommendedTools"] == ["tool.fs.read"]
     assert scaffold.tool_registry.get_default().name == "default"
     assert payload["toolSelectionMode"] == "recommendation-only"
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" in tool_ids
+    assert "tool.fs.read" in tool_ids
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
 
 
@@ -1165,7 +1165,7 @@ def test_root_post_capabilities_get_routes_tool_permission_policy_to_bridge_cata
                 tool_permission_policy={
                     "schemaVersion": 1,
                     "defaultMode": "allow",
-                    "toolModes": {"tool.file-convert": "deny"},
+                    "toolModes": {"tool.fs.read": "deny"},
                 },
             ),
         )
@@ -1174,7 +1174,7 @@ def test_root_post_capabilities_get_routes_tool_permission_policy_to_bridge_cata
 
     assert response.status_code == 200
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" not in tool_ids
+    assert "tool.fs.read" not in tool_ids
     assert "tool.weather-current" in tool_ids
     assert payload["recommendedTools"] == []
 
@@ -1189,13 +1189,13 @@ def test_scaffold_capabilities_response_filters_denied_tools_from_catalog() -> N
             RuntimeToolPermissionPolicy(
                 schemaVersion=1,
                 defaultMode="allow",
-                toolModes={"tool.file-convert": "deny"},
+                toolModes={"tool.fs.read": "deny"},
             )
         ),
     ).to_dict()
 
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" not in tool_ids
+    assert "tool.fs.read" not in tool_ids
     assert "tool.weather-current" in tool_ids
     assert payload["recommendedTools"] == []
 
@@ -1231,7 +1231,7 @@ def test_root_post_global_tool_catalog_get_returns_default_toolset_catalog() -> 
     assert payload["directoryVersion"] == "tools-v1"
     assert payload["defaultToolset"] == "default"
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" in tool_ids
+    assert "tool.fs.read" in tool_ids
 
 
 def test_root_post_thinking_capability_get_returns_verified_unsupported_snapshot_for_catalog_only_provider() -> (
@@ -1483,7 +1483,7 @@ def _build_app_with_secondary_agent() -> tuple[
                 default=True,
                 toolset_name=tool_registry.get_default().name,
                 executor_factory=lambda: executor,
-                recommended_tools=("tool.file-convert",),
+                recommended_tools=("tool.fs.read",),
             ),
             AgentDescriptor(
                 name="secondary",
@@ -1699,7 +1699,7 @@ def test_root_post_tool_approval_resolve_approved_routes_to_coordinator() -> Non
         bridge._approval_coordinator.create_request(
             run_id="run-approved",
             tool_call_id="call-approved",
-            tool_id="tool.file-convert",
+            tool_id="tool.fs.read",
             mode="ask",
         )
 
@@ -1719,7 +1719,7 @@ def test_root_post_tool_approval_resolve_approved_routes_to_coordinator() -> Non
     assert payload["decision"] == "approved"
     assert payload["status"] == "approved"
     assert payload["details"] == {
-        "toolId": "tool.file-convert",
+        "toolId": "tool.fs.read",
         "mode": "ask",
     }
 
@@ -1735,7 +1735,7 @@ def test_root_post_tool_approval_resolve_rejected_routes_to_coordinator() -> Non
         bridge._approval_coordinator.create_request(
             run_id="run-rejected",
             tool_call_id="call-rejected",
-            tool_id="tool.file-convert",
+            tool_id="tool.fs.read",
             mode="ask",
         )
 
@@ -1755,7 +1755,7 @@ def test_root_post_tool_approval_resolve_rejected_routes_to_coordinator() -> Non
     assert payload["decision"] == "rejected"
     assert payload["status"] == "rejected"
     assert payload["details"] == {
-        "toolId": "tool.file-convert",
+        "toolId": "tool.fs.read",
         "mode": "ask",
     }
 
@@ -1797,7 +1797,7 @@ def test_root_post_tool_approval_resolve_duplicate_decision_returns_stable_error
         bridge._approval_coordinator.create_request(
             run_id="run-dup",
             tool_call_id="call-dup",
-            tool_id="tool.file-convert",
+            tool_id="tool.fs.read",
             mode="ask",
         )
 

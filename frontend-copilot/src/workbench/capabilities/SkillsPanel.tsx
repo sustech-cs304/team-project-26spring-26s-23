@@ -1,14 +1,15 @@
 import { ChevronDown, Eye, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import type { SkillValidationIssue } from '../../../electron/skill-registry/types'
-import { resolveCapabilitiesListItemEnterDelayMs } from './capabilities-list-animation'
+import { useStaggerListEnter } from '../animation-utils'
 import type { SkillRegistrySkillViewModel } from './skill-registry-view-model'
 
 interface SkillsPanelProps {
   skills: readonly SkillRegistrySkillViewModel[]
+  statusMessage?: string | null
   importValidationErrors: readonly SkillValidationIssue[]
   onToggleEnabled: (skillId: string) => Promise<void>
   onDelete: (skillId: string) => Promise<void>
@@ -17,15 +18,21 @@ interface SkillsPanelProps {
 
 export function SkillsPanel({
   skills,
+  statusMessage,
   importValidationErrors,
   onToggleEnabled,
   onDelete,
   onRefresh,
 }: SkillsPanelProps) {
   const [expandedSkillId, setExpandedSkillId] = useState<string | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  useStaggerListEnter({ scope: listRef, selector: '.skill-row:not(.skill-row--empty)', itemCount: skills.length })
 
   return (
     <section className="capabilities-surface capabilities-surface--skills">
+      {statusMessage ? (
+        <p className="capabilities-surface__status" aria-live="polite">{statusMessage}</p>
+      ) : null}
       {importValidationErrors.length > 0 ? (
         <ValidationIssueList
           title="导入遇到问题"
@@ -34,9 +41,9 @@ export function SkillsPanel({
         />
       ) : null}
 
-      <div className="skill-list">
+      <div className="skill-list" ref={listRef}>
         {skills.length === 0 ? (
-          <article className="skill-row skill-row--empty" style={{ animationDelay: '0ms' }}>
+          <article className="skill-row skill-row--empty">
             <div className="skill-row__meta">
               <h3 className="skill-row__title">还没有 Skills</h3>
               <p className="skill-row__description">
@@ -46,11 +53,10 @@ export function SkillsPanel({
           </article>
         ) : null}
 
-        {skills.map((skill, index) => (
+        {skills.map((skill) => (
           <SkillRow
             key={skill.skillId}
             skill={skill}
-            index={index}
             expanded={expandedSkillId === skill.skillId}
             onToggleExpand={() => setExpandedSkillId(expandedSkillId === skill.skillId ? null : skill.skillId)}
             onToggleEnabled={onToggleEnabled}
@@ -65,7 +71,6 @@ export function SkillsPanel({
 
 function SkillRow({
   skill,
-  index,
   expanded,
   onToggleExpand,
   onToggleEnabled,
@@ -73,7 +78,6 @@ function SkillRow({
   onRefresh,
 }: {
   skill: SkillRegistrySkillViewModel
-  index: number
   expanded: boolean
   onToggleExpand: () => void
   onToggleEnabled: (skillId: string) => Promise<void>
@@ -83,7 +87,6 @@ function SkillRow({
   return (
     <article
       className={`skill-row skill-row--${skill.status}${skill.enabled ? ' skill-row--enabled' : ' skill-row--disabled'}${skill.busy ? ' skill-row--busy' : ''}`}
-      style={{ animationDelay: `${resolveCapabilitiesListItemEnterDelayMs(index)}ms` }}
     >
       <div className="skill-row__meta">
         <div className="skill-row__title-line">

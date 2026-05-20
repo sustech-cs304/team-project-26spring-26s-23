@@ -16,6 +16,7 @@ import {
   loadAnimationsEnabledPreference,
   subscribeToAnimationsEnabledPreferenceUpdates,
 } from './workbench/animation-config'
+import { ANIM } from './workbench/animation-utils'
 import {
   loadThemeModePreference,
   persistThemeModePreference,
@@ -37,7 +38,7 @@ function logStartupTrace(stage: string, data: Record<string, unknown> = {}) {
 logStartupTrace('module-evaluated')
 
 const ALL_WORKSPACE_VIEWS: WorkspaceView[] = ['assistant', 'capabilities', 'files', 'sustech', 'developer', 'settings']
-const WORKBENCH_WORKSPACE_TRANSITION_MS = 180
+const WORKBENCH_WORKSPACE_TRANSITION_MS = ANIM.DURATION_SLOW
 
 const AssistantWorkspace = lazy(async () => {
   const startedAt = performance.now()

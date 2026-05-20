@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, LoaderCircle, Wrench } from 'lucide-react'
 
+import { ANIM } from '../animation-utils'
 import type { ManagedRuntimeStatus } from '../../../electron/managed-runtime/types'
 import type { ManagedRuntimeStatusViewModel } from './managed-runtime-view-model'
 
@@ -93,7 +94,7 @@ function usePanelAnimation(
     setPanelVisible(false)
     const timeout = window.setTimeout(() => {
       setRenderPanel(false)
-    }, 140)
+    }, ANIM.DURATION_FAST)
 
     return () => window.clearTimeout(timeout)
   }, [open, setRenderPanel, setPanelVisible])

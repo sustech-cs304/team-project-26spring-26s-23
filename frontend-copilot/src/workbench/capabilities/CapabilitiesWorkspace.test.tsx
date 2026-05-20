@@ -710,11 +710,6 @@ describe('CapabilitiesWorkspace', () => {
         expect(rendered.container.textContent).toContain('写入文件')
         expect(rendered.container.textContent).toContain('浏览器自动化')
         expect(getToolRow(rendered.container, '读取文件').textContent).toContain(LABEL_TOOL_READ)
-        expect(
-          Array.from(rendered.container.querySelectorAll<HTMLElement>(SELECTOR_TOOL_PERMISSION_ROW))
-            .slice(0, 3)
-            .map((row) => row.style.animationDelay),
-        ).toEqual(['0ms', '28ms', '56ms'])
         expect(getExactButton(getToolRow(rendered.container, '读取文件'), '自动批准').className).toContain(
           'tool-permission-segmented__item--active',
         )
@@ -735,11 +730,6 @@ describe('CapabilitiesWorkspace', () => {
           'capabilities-section-view--active',
         )
         expect(rendered.container.querySelector('.mcp-server-row')).toBeTruthy()
-        expect(
-          Array.from(rendered.container.querySelectorAll<HTMLElement>(`[data-capabilities-section="${LABEL_MCP_SERVERS}"] .mcp-server-row`))
-            .slice(0, 2)
-            .map((row) => row.style.animationDelay),
-        ).toEqual(['0ms', '28ms'])
         expect(rendered.container.textContent).toContain('MCP 服务器')
         expect(rendered.container.textContent).toContain(LABEL_STDIO_STUB_SERVER)
         expect(rendered.container.textContent).toContain('http sse stub server')
@@ -1863,11 +1853,6 @@ describe('CapabilitiesWorkspace', () => {
       expect(rendered.container.textContent).not.toContain('Snapshot rev')
       expect(rendered.container.textContent).not.toContain('Skills 管理')
       expect(rendered.container.querySelector('.skills-header')).toBeNull()
-      expect(
-        Array.from(rendered.container.querySelectorAll<HTMLElement>('[data-capabilities-section="skills"] .skill-row'))
-          .slice(0, 3)
-          .map((row) => row.style.animationDelay),
-      ).toEqual(['0ms', '28ms', '56ms'])
       expect(getSkillRow(rendered.container, '清晰文档写作').textContent).not.toContain('校验通过')
       expect(getSkillRow(rendered.container, '清晰文档写作').textContent).not.toContain('已开启')
       expect(getSkillRow(rendered.container, '清晰文档写作').textContent).toContain('documentation')

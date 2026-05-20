@@ -173,10 +173,18 @@ class SQLiteSessionStore(RuntimeSessionStore):
 
     def list_runs(self, thread_id: str) -> tuple[RuntimeRunRecord, ...]:
         with run_lifecycle_transaction(self._session_factory) as repositories:
-            return tuple(
-                repositories.runs.to_runtime_record(run_model)
-                for run_model in repositories.runs.list_for_thread(thread_id)
-            )
+            run_models = repositories.runs.list_for_thread(thread_id)
+            run_ids = tuple(run_model.id for run_model in run_models)
+            events_by_run = repositories.events.list_for_runs_batch(run_ids)
+            runtime_runs: list[RuntimeRunRecord] = []
+            for run_model in run_models:
+                runtime_run = repositories.runs.to_runtime_record(run_model)
+                runtime_run.event_log = [
+                    repositories.events.to_runtime_record(event_model)
+                    for event_model in events_by_run.get(run_model.id, ())
+                ]
+                runtime_runs.append(runtime_run)
+            return tuple(runtime_runs)
 
     def list_run_events(self, run_id: str) -> tuple[RuntimeRunEventRecord, ...]:
         with run_lifecycle_transaction(self._session_factory) as repositories:

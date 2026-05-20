@@ -57,8 +57,8 @@
   -webkit-user-select: none;
   user-select: none;
   transition:
-    background-color 0.14s ease,
-    color 0.14s ease;
+    background-color var(--transition-duration-fast) var(--easing-standard),
+    color var(--transition-duration-fast) var(--easing-standard);
 }
 
 .copilot-tool-picker__group-toggle:hover {
@@ -96,8 +96,8 @@
   color: var(--text-muted);
   font-size: 0.78rem;
   transition:
-    transform 0.14s ease,
-    color 0.14s ease;
+    transform var(--transition-duration-fast) var(--easing-standard),
+    color var(--transition-duration-fast) var(--easing-standard);
 }
 
 .copilot-tool-picker__group-caret[data-expanded='false'] {
