@@ -13,6 +13,24 @@ interface HubWorkspaceProps {
   bootstrap?: CopilotBootstrapController
 }
 
+/**
+ * Build a stable composite key for deduplication.
+ * When source_id is available we use source:source_id; otherwise we degrade
+ * to source + title + start_time so that multiple local events from the same
+ * source without source_id are not collapsed into a single key.
+ */
+function buildCompositeKey(event: {
+  source: string
+  source_id: string | null
+  title?: string
+  start_time?: string
+}): string {
+  if (event.source_id != null && String(event.source_id).trim().length > 0) {
+    return `${String(event.source)}:${String(event.source_id)}`
+  }
+  return `${String(event.source)}:${String(event.title ?? '')}:${String(event.start_time ?? '')}`
+}
+
 export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspaceProps) {
   const content = getHubWorkspaceContent(language, view)
   const [events, setEvents] = useState<UnifiedCalendarEvent[]>([])
@@ -36,21 +54,65 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       setIsLoading(true)
       setError(null)
       try {
-        const response = await fetch(`${actualRuntimeUrl}/calendar/events`, {
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          const errText = await response.text().catch(() => 'No text')
-          throw new Error(`Failed to fetch events: ${response.status} ${response.statusText} ${errText}`)
+        const timelineDb = window.timelineDatabase
+        let localResponse: { items: UnifiedCalendarEvent[] }
+        if (timelineDb && typeof timelineDb.loadEvents === 'function') {
+          localResponse = await timelineDb.loadEvents()
+        } else {
+          console.warn(
+            '[Sync] timelineDatabase bridge is unavailable; falling back to remote calendar events only.',
+          )
+          localResponse = { items: [] }
         }
-        const data = await response.json()
+        const combinedEvents = [...(localResponse.items || [])]
+
+        const localKeys = new Set(combinedEvents.map(e => buildCompositeKey(e)))
+
+        let remoteFailed = false
+        try {
+          const apiResponse = await fetch(`${actualRuntimeUrl}/calendar/events`, {
+            signal: controller.signal,
+          })
+          if (apiResponse.ok) {
+            const data = await apiResponse.json()
+            if (data.items && data.items.length > 0) {
+              for (const remoteEvent of data.items) {
+                if (!localKeys.has(buildCompositeKey(remoteEvent))) {
+                  combinedEvents.push(remoteEvent)
+                }
+              }
+            }
+          } else {
+            console.warn(`[Sync] Calendar API responded with status ${apiResponse.status}`)
+            remoteFailed = true
+          }
+        } catch (fetchErr: unknown) {
+          if (!controller.signal.aborted) {
+            console.warn('[Sync] Failed to fetch backend calendar events:', fetchErr)
+          }
+          remoteFailed = true
+        }
+
+        if (remoteFailed && combinedEvents.length === 0) {
+          throw new Error(
+            '无法加载日历事件：本地无缓存数据且远端 API 请求失败，请检查网络连接或后端服务状态。',
+          )
+        }
+
+        // Re-sort the merged list chronologically so the UI always renders in
+        // correct time order regardless of the order local vs remote events were appended.
+        combinedEvents.sort((a, b) => {
+          const aTime = new Date(a.start_time).getTime()
+          const bTime = new Date(b.start_time).getTime()
+          if (aTime !== bTime) return aTime - bTime
+          // Stable tie-breaker: use title then source
+          return (a.title ?? '').localeCompare(b.title ?? '') || String(a.source).localeCompare(String(b.source))
+        })
+
         if (active) {
-          setEvents(data.items || [])
+          setEvents(combinedEvents)
         }
       } catch (err: unknown) {
-        if (controller.signal.aborted) {
-          return
-        }
         if (active) {
           setError(err instanceof Error ? err.message : String(err))
         }
@@ -105,7 +167,9 @@ function CalendarDebugPanel({ events, error, isLoading }: {
         后端原始事件数据 Debug (Error: {error || 'None'})
       </summary>
       <div className="calendar-debug-panel__body">
-        {isLoading ? (
+        {error ? (
+          <p style={{ color: 'red' }}>错误: {error}</p>
+        ) : isLoading ? (
           <p>Loading events...</p>
         ) : events.length === 0 ? (
           <p>No events found.</p>

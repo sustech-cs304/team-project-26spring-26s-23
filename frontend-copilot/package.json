@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "generate:icons": "node ./scripts/generate-icons.mjs",
+    "postinstall": "electron-builder install-app-deps",
     "prebuild": "npm run generate:icons && cd ../backend && uv sync && cd ../frontend-copilot",
     "typecheck": "npm run typecheck:check",
     "typecheck:check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
@@ -22,6 +23,7 @@
     "test": "node ./scripts/run-vitest.mjs"
   },
   "dependencies": {
+    "better-sqlite3": "^12.10.0",
     "@gsap/react": "^2.1.2",
     "frappe-gantt": "^1.2.2",
     "gsap": "^3.15.0",
@@ -39,6 +41,7 @@
     "turndown": "^7.2.4"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
     "@types/turndown": "^5.0.6",

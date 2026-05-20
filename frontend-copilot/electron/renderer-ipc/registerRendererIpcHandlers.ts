@@ -168,6 +168,15 @@ import {
   type UnwatchDirectoriesRequest,
   type WatchDirectoriesRequest,
 } from '../file-manager/ipc'
+import {
+  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+  TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+} from './timeline-database.ipc'
+import type {
+  AddTimelineEventRequest,
+  AddTimelineEventResult,
+  LoadTimelineEventsResult,
+} from '../timeline-database/ipc'
 import type { RendererIpcHandlers } from './RendererIpcHandlers'
 
 export type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
@@ -235,6 +244,8 @@ const RENDERER_IPC_CHANNELS = [
   FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
   FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
   FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+  TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
 ] as const
 
 export function registerRendererIpcHandlers(
@@ -254,6 +265,7 @@ export function registerRendererIpcHandlers(
   registerAttachmentManagerHandlers(ipcMain, handlers)
   registerDesktopNotificationAndWindowHandlers(ipcMain, handlers)
   registerFileManagerHandlers(ipcMain, handlers)
+  registerTimelineDatabaseHandlers(ipcMain, handlers)
 }
 
 function registerConfigAndSettingsHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
@@ -684,6 +696,22 @@ function registerFileManagerHandlers(ipcMain: IpcMainLike, handlers: RendererIpc
     FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
     async (_event, request: CopyTextToClipboardRequest): Promise<FileOperationResult> => {
       return await handlers.copyTextToClipboard(request)
+    },
+  )
+}
+
+function registerTimelineDatabaseHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
+  ipcMain.handle(
+    TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+    async (): Promise<LoadTimelineEventsResult> => {
+      return await handlers.loadTimelineEvents()
+    },
+  )
+
+  ipcMain.handle(
+    TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+    async (_event, request: AddTimelineEventRequest): Promise<AddTimelineEventResult> => {
+      return await handlers.addTimelineEvent(request)
     },
   )
 }

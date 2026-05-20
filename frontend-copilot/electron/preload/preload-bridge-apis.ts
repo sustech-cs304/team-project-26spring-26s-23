@@ -108,6 +108,11 @@ import {
   type DirectoryChangedEvent,
   type FileManagerApi,
 } from '../file-manager/ipc'
+import {
+  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+  TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+  type TimelineDatabaseApi,
+} from '../renderer-ipc/timeline-database.ipc'
 
 export interface PreloadBridgeApis {
   copilotRuntime: CopilotRuntimeApi
@@ -128,6 +133,7 @@ export interface PreloadBridgeApis {
   windowControls: DesktopWindowControlsApi
   bootstrapWindow: BootstrapWindowApi
   fileManager: FileManagerApi
+  timelineDatabase: TimelineDatabaseApi
 }
 
 type IpcRendererLike = Pick<IpcRenderer, 'invoke' | 'on' | 'off'>
@@ -287,6 +293,13 @@ function buildFileManagerApi(ipcRenderer: IpcRendererLike): FileManagerApi {
   }
 }
 
+function buildTimelineDatabaseApi(ipcRenderer: IpcRendererLike): TimelineDatabaseApi {
+  return {
+    loadEvents() { return ipcRenderer.invoke(TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL) },
+    addEvent(request) { return ipcRenderer.invoke(TIMELINE_DATABASE_ADD_EVENT_CHANNEL, request) },
+  }
+}
+
 export function createPreloadBridgeApis(
   ipcRenderer: IpcRendererLike,
   helpers: {
@@ -312,5 +325,6 @@ export function createPreloadBridgeApis(
     windowControls: buildWindowControlsApi(ipcRenderer),
     bootstrapWindow: buildBootstrapWindowApi(ipcRenderer),
     fileManager: buildFileManagerApi(ipcRenderer),
+    timelineDatabase: buildTimelineDatabaseApi(ipcRenderer),
   }
 }

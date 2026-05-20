@@ -112,6 +112,10 @@ const hoisted = vi.hoisted(() => {
   }
 })
 
+vi.mock('better-sqlite3', () => ({
+  default: vi.fn(),
+}))
+
 vi.mock('./config-center/main-process', () => ({
   createElectronUnifiedConfigService: hoisted.createElectronUnifiedConfigService,
 }))
