@@ -13,11 +13,22 @@ interface HubWorkspaceProps {
   bootstrap?: CopilotBootstrapController
 }
 
-function buildCompositeKey(event: { source: string; source_id: string | null }): string {
-  // Use a single unified placeholder for null source_id so that the same event
-  // cached locally without a source_id is correctly identified as a duplicate
-  // when re-fetched from the remote API.
-  return `${String(event.source)}:${String(event.source_id ?? '_null_')}`
+/**
+ * Build a stable composite key for deduplication.
+ * When source_id is available we use source:source_id; otherwise we degrade
+ * to source + title + start_time so that multiple local events from the same
+ * source without source_id are not collapsed into a single key.
+ */
+function buildCompositeKey(event: {
+  source: string
+  source_id: string | null
+  title?: string
+  start_time?: string
+}): string {
+  if (event.source_id != null && String(event.source_id).trim().length > 0) {
+    return `${String(event.source)}:${String(event.source_id)}`
+  }
+  return `${String(event.source)}:${String(event.title ?? '')}:${String(event.start_time ?? '')}`
 }
 
 export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspaceProps) {
@@ -27,6 +38,7 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
     let active = true
 
     let actualRuntimeUrl = 'http://127.0.0.1:8765'
@@ -42,8 +54,6 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       setIsLoading(true)
       setError(null)
       try {
-        // Guard against environments where the preload bridge is not injected
-        // (e.g. running in a plain browser during dev, or preload injection failure).
         const timelineDb = window.timelineDatabase
         let localResponse: { items: UnifiedCalendarEvent[] }
         if (timelineDb && typeof timelineDb.loadEvents === 'function') {
@@ -56,15 +66,13 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
         }
         const combinedEvents = [...(localResponse.items || [])]
 
-        // Build a composite dedup key from source + source_id to avoid
-        // collisions between local auto-increment ids and remote numeric ids.
-        // Unified placeholder `_null_` ensures the same event cached locally
-        // without a source_id is correctly recognized when re-fetched.
         const localKeys = new Set(combinedEvents.map(e => buildCompositeKey(e)))
 
         let remoteFailed = false
         try {
-          const apiResponse = await fetch(`${actualRuntimeUrl}/calendar/events`)
+          const apiResponse = await fetch(`${actualRuntimeUrl}/calendar/events`, {
+            signal: controller.signal,
+          })
           if (apiResponse.ok) {
             const data = await apiResponse.json()
             if (data.items && data.items.length > 0) {
@@ -79,7 +87,9 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
             remoteFailed = true
           }
         } catch (fetchErr: unknown) {
-          console.warn('[Sync] Failed to fetch backend calendar events:', fetchErr)
+          if (!controller.signal.aborted) {
+            console.warn('[Sync] Failed to fetch backend calendar events:', fetchErr)
+          }
           remoteFailed = true
         }
 
@@ -88,6 +98,16 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
             '无法加载日历事件：本地无缓存数据且远端 API 请求失败，请检查网络连接或后端服务状态。',
           )
         }
+
+        // Re-sort the merged list chronologically so the UI always renders in
+        // correct time order regardless of the order local vs remote events were appended.
+        combinedEvents.sort((a, b) => {
+          const aTime = new Date(a.start_time).getTime()
+          const bTime = new Date(b.start_time).getTime()
+          if (aTime !== bTime) return aTime - bTime
+          // Stable tie-breaker: use title then source
+          return (a.title ?? '').localeCompare(b.title ?? '') || String(a.source).localeCompare(String(b.source))
+        })
 
         if (active) {
           setEvents(combinedEvents)
@@ -106,6 +126,7 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
 
     return () => {
       active = false
+      controller.abort()
     }
   }, [bootstrap])
 

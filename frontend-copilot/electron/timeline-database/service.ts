@@ -1,6 +1,9 @@
 import { getTimelineDatabase } from './database'
 import type { TimelineEventRow } from './database'
 
+// Keep in sync with src/workbench/hub/calendar-types.ts:UnifiedCalendarEvent
+export type CalendarEventStatus = 'not_started' | 'in_progress' | 'completed'
+
 export interface UnifiedCalendarEvent {
   id: string | number
   source: string
@@ -11,12 +14,15 @@ export interface UnifiedCalendarEvent {
   end_time: string | null
   is_all_day: boolean
   location: string | null
-  status: string
+  status: CalendarEventStatus | string
   metadata_payload?: Record<string, unknown> | null
   progress?: number
 }
 
-const VALID_STATUS_VALUES = new Set(['not_started', 'in_progress', 'completed'])
+// ISO-8601 subset accepted for start_time / end_time
+const ISO_8601_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/
+
+const VALID_STATUS_VALUES: ReadonlySet<string> = new Set(['not_started', 'in_progress', 'completed'])
 
 function validateCalendarEventInput(event: Omit<UnifiedCalendarEvent, 'id'>): void {
   const errors: string[] = []
@@ -27,8 +33,11 @@ function validateCalendarEventInput(event: Omit<UnifiedCalendarEvent, 'id'>): vo
   if (typeof event.title !== 'string' || event.title.trim().length === 0) {
     errors.push('title must be a non-empty string')
   }
-  if (typeof event.start_time !== 'string' || event.start_time.trim().length === 0) {
-    errors.push('start_time must be a non-empty string')
+  if (typeof event.start_time !== 'string' || !ISO_8601_RE.test(event.start_time)) {
+    errors.push('start_time must be a valid ISO-8601 string')
+  }
+  if (event.end_time != null && (typeof event.end_time !== 'string' || !ISO_8601_RE.test(event.end_time))) {
+    errors.push('end_time must be a valid ISO-8601 string when provided')
   }
   if (typeof event.is_all_day !== 'boolean') {
     errors.push('is_all_day must be a boolean')
@@ -82,7 +91,7 @@ export function getCalendarEvents(): UnifiedCalendarEvent[] {
   return rows.map(row => mapRowToCalendarEvent(row))
 }
 
-export function addCalendarEvent(event: Omit<UnifiedCalendarEvent, 'id'>): number {
+export function addCalendarEvent(event: Omit<UnifiedCalendarEvent, 'id' | 'status'> & { status?: UnifiedCalendarEvent['status'] }): number {
   validateCalendarEventInput(event)
 
   const db = getTimelineDatabase()
@@ -106,9 +115,7 @@ export function addCalendarEvent(event: Omit<UnifiedCalendarEvent, 'id'>): numbe
     end_time: event.end_time ?? null,
     is_all_day: event.is_all_day ? 1 : 0,
     location: event.location ?? null,
-    // Use the database default 'not_started' when status is missing or empty,
-    // preventing NOT NULL constraint violations from undefined/null values.
-    status: (event.status && event.status.trim().length > 0) ? event.status : 'not_started',
+    status: (event.status && String(event.status).trim().length > 0) ? event.status : 'not_started',
     metadata_payload: event.metadata_payload ? JSON.stringify(event.metadata_payload) : null,
     progress: event.progress ?? 0,
   })
