@@ -1,3 +1,5 @@
+@import './styles/tokens.css';
+
 :root {
   font-family: Inter, 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   line-height: 1.5;
@@ -95,7 +97,7 @@ body {
   border-radius: 999px;
   border: 3px solid var(--startup-shell-spinner-track);
   border-top-color: var(--startup-shell-spinner-accent);
-  animation: startup-loading-spin 0.9s linear infinite;
+  animation: startup-loading-spin var(--anim-duration-spin) var(--easing-linear) infinite;
 }
 
 .startup-loading__message {
@@ -120,6 +122,11 @@ body {
 
 .startup-shell__card--warning {
   border-color: rgba(217, 119, 6, 0.2);
+}
+
+.startup-shell__card--error,
+.startup-shell__card--warning {
+  animation: startup-card-enter 0.3s var(--easing-enter) both;
 }
 
 .startup-shell__card--error {
@@ -176,7 +183,7 @@ body {
   color: var(--startup-shell-primary-action-text);
   font-size: 14px;
   font-weight: 600;
-  transition: opacity 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+  transition: transform 0.2s var(--easing-spring), opacity var(--transition-duration-standard) var(--easing-standard), background-color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .startup-shell__button:hover:not(:disabled) {
@@ -209,6 +216,11 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+@keyframes startup-card-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 a {
@@ -288,8 +300,8 @@ a {
   color: var(--text-secondary, #4d5b70);
   background: transparent;
   transition:
-    background-color 120ms ease,
-    color 120ms ease;
+    background-color var(--transition-duration-fast) var(--easing-standard),
+    color var(--transition-duration-fast) var(--easing-standard);
   -webkit-app-region: no-drag;
 }
 

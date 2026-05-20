@@ -10,6 +10,7 @@ import {
 } from '../inline-form'
 import type { CopilotInlineFormMessageItem } from '../run-segment-view-model'
 import type { RuntimeInlineFormFieldOption } from '../thread-run-contract'
+import { useGSAP, gsap } from '../../../workbench/animation-utils'
 
 interface InlineFormMessageCardProps {
   turn: CopilotInlineFormMessageItem
@@ -358,8 +359,23 @@ function InlineFormSelectControl({
   onChange: (value: string) => void
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [renderPopover, setRenderPopover] = useState(false)
   const [open, setOpen] = useState(false)
   const selectedLabel = options.find((option) => option.value === value)?.label ?? null
+
+  useGSAP(() => {
+    if (!popoverRef.current) return
+    if (open) {
+      gsap.from(popoverRef.current, { scale: 0.85, opacity: 0, duration: 0.2, ease: 'back.out(1.7)' })
+    } else {
+      gsap.to(popoverRef.current, { scale: 0.85, opacity: 0, duration: 0.14, ease: 'power3.in', onComplete: () => setRenderPopover(false) })
+    }
+  }, { dependencies: [open], revertOnUpdate: true })
+
+  const closePopover = useCallback(() => {
+    setOpen(false)
+  }, [])
 
   useEffect(() => {
     if (!open) {
@@ -370,12 +386,12 @@ function InlineFormSelectControl({
       if (rootRef.current?.contains(event.target as Node)) {
         return
       }
-      setOpen(false)
+      closePopover()
     }
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setOpen(false)
+        closePopover()
       }
     }
 
@@ -385,7 +401,7 @@ function InlineFormSelectControl({
       window.removeEventListener('mousedown', handlePointerDown)
       window.removeEventListener('keydown', handleEscape)
     }
-  }, [open])
+  }, [open, closePopover])
 
   return (
     <div
@@ -407,7 +423,12 @@ function InlineFormSelectControl({
           if (disabled) {
             return
           }
-          setOpen((current) => !current)
+          if (!open) {
+            setRenderPopover(true)
+            setOpen(true)
+          } else {
+            closePopover()
+          }
         }}
       >
         <span
@@ -420,8 +441,8 @@ function InlineFormSelectControl({
         </span>
         <span className="copilot-chat__inline-form-select-icon" aria-hidden="true">▾</span>
       </button>
-      {open && (
-        <div className="copilot-chat__inline-form-select-popover" role="listbox" aria-labelledby={id}>
+      {renderPopover && (
+        <div className="copilot-chat__inline-form-select-popover" ref={popoverRef} role="listbox" aria-labelledby={id}>
           <button
             type="button"
             className={[
@@ -432,7 +453,7 @@ function InlineFormSelectControl({
             aria-selected={value === ''}
             onClick={() => {
               onChange('')
-              setOpen(false)
+              closePopover()
             }}
           >
             {placeholder}
@@ -449,7 +470,7 @@ function InlineFormSelectControl({
               aria-selected={value === option.value}
               onClick={() => {
                 onChange(option.value)
-                setOpen(false)
+                closePopover()
               }}
             >
               {option.label}

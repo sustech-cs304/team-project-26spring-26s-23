@@ -96,6 +96,8 @@ export function registerMainProcessIpcHandlers(
     openEntryWithSystem: services.openEntryWithSystem,
     revealEntryInFolder: services.revealEntryInFolder,
     copyTextToClipboard: services.copyTextToClipboard,
+    loadTimelineEvents: services.loadTimelineEvents,
+    addTimelineEvent: services.addTimelineEvent,
     notifyDesktopNotification,
     loadDesktopWindowState,
     minimizeDesktopWindow,

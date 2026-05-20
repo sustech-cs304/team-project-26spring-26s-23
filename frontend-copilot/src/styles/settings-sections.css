@@ -5,8 +5,8 @@
   box-shadow: none;
   overflow: hidden;
   transition:
-    background-color 0.18s ease,
-    transform 0.18s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .settings-card:hover,

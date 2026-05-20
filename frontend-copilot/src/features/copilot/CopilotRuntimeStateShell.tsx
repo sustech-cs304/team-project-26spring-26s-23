@@ -1,4 +1,6 @@
 import { type ReactNode } from 'react'
+
+import { ANIM } from '../../workbench/animation-utils'
 import { CrossFade } from './components/CrossFade'
 import { NotConnectedNotice } from './components/NotConnectedNotice'
 import {
@@ -127,7 +129,7 @@ export function CopilotRuntimeStateShell({
   }
 
   return (
-    <CrossFade transitionKey={state.status} duration={160}>
+    <CrossFade transitionKey={state.status} duration={ANIM.DURATION_STANDARD}>
       {content}
     </CrossFade>
   )

@@ -104,6 +104,7 @@ import type {
   UnwatchDirectoriesRequest,
   WatchDirectoriesRequest,
 } from '../file-manager/ipc'
+import type { LoadTimelineEventsResult, AddTimelineEventRequest, AddTimelineEventResult } from '../timeline-database/ipc'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
 
@@ -216,4 +217,6 @@ export interface MainProcessServices {
   openEntryWithSystem: (request: OpenEntryWithSystemRequest) => Promise<FileOperationResult>
   revealEntryInFolder: (request: RevealEntryInFolderRequest) => Promise<FileOperationResult>
   copyTextToClipboard: (request: CopyTextToClipboardRequest) => Promise<FileOperationResult>
+  loadTimelineEvents: () => Promise<LoadTimelineEventsResult>
+  addTimelineEvent: (request: AddTimelineEventRequest) => Promise<AddTimelineEventResult>
 }

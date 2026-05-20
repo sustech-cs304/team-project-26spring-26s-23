@@ -9,6 +9,7 @@ import type { ElectronAttachmentService } from '../attachment-service/service'
 import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import { createElectronFileManagerService } from '../file-manager/service'
 import type { ElectronFileManagerService } from '../file-manager/service'
+import { getCalendarEvents, addCalendarEvent } from '../timeline-database/service'
 
 // ===== Builder functions for service API groups =====
 
@@ -235,6 +236,19 @@ function buildFileManagerApiBridge(fileManagerService: ElectronFileManagerServic
   }
 }
 
+function buildTimelineDatabaseApi() {
+  return {
+    async loadTimelineEvents() {
+      const items = getCalendarEvents()
+      return { items }
+    },
+    async addTimelineEvent(request: Parameters<MainProcessServices['addTimelineEvent']>[0]) {
+      const id = addCalendarEvent(request.event)
+      return { id }
+    },
+  }
+}
+
 // ===== Main factory function =====
 
 export function createMainProcessServices(
@@ -266,5 +280,6 @@ export function createMainProcessServices(
     ...buildCopilotHistoryApi(copilotHistoryService),
     ...buildAttachmentApi(attachmentService),
     ...buildFileManagerApiBridge(fileManagerService),
+    ...buildTimelineDatabaseApi(),
   }
 }

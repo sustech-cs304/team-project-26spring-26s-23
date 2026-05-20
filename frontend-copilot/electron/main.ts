@@ -34,6 +34,7 @@ import {
   createDefaultDesktopWindowState,
   type DesktopWindowState,
 } from './window-controls'
+import { closeTimelineDatabase } from './timeline-database/database'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -424,6 +425,12 @@ async function stopHostedBackend(): Promise<void> {
     await stopHostModelRouteBridge()
   } catch (error) {
     logHostedBackendFailure('Host model route bridge shutdown threw an unexpected error.', null, error)
+  }
+
+  try {
+    closeTimelineDatabase()
+  } catch (error) {
+    logHostedBackendFailure('Timeline database shutdown threw an unexpected error.', null, error)
   }
 }
 

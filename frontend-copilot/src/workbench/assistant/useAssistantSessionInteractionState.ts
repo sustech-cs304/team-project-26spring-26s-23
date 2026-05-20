@@ -12,6 +12,7 @@ import {
 } from 'react'
 
 import type { AssistantSessionShell } from '../types'
+import { gsap } from '../animation-utils'
 import type {
   AssistantSessionContextMenuState,
   AssistantSessionDragState,
@@ -75,14 +76,13 @@ function useAssistantSessionDragHandlers({
     sessionId: string; startX: number; startY: number; pointerOffsetX: number; pointerOffsetY: number
   } | null>(null)
   const sessionPointerCleanupRef = useRef<(() => void) | null>(null)
-  const sessionDragGhostFrameRef = useRef<number | null>(null)
   const suppressSessionClickRef = useRef(false)
+  const ghostLiftedRef = useRef(false)
 
   useEffect(() => { sessionDragStateRef.current = sessionDragState }, [sessionDragState])
 
   useEffect(() => () => {
     sessionPointerCleanupRef.current?.()
-    if (sessionDragGhostFrameRef.current !== null) { cancelAnimationFrame(sessionDragGhostFrameRef.current) }
   }, [])
 
   useEffect(() => {
@@ -91,18 +91,6 @@ function useAssistantSessionDragHandlers({
     window.addEventListener('blur', onBlur)
     return () => { window.removeEventListener('blur', onBlur) }
   }, [sessionDragState])
-
-  const scheduleSessionDragGhostPosition = useCallback((
-    pointerX: number, pointerY: number, pointerOffsetX: number, pointerOffsetY: number,
-  ) => {
-    if (sessionDragGhostFrameRef.current !== null) { cancelAnimationFrame(sessionDragGhostFrameRef.current) }
-    sessionDragGhostFrameRef.current = requestAnimationFrame(() => {
-      if (sessionDragGhostRef.current !== null) {
-        sessionDragGhostRef.current.style.transform = `translate3d(${pointerX - pointerOffsetX}px, ${pointerY - pointerOffsetY}px, 0)`
-      }
-      sessionDragGhostFrameRef.current = null
-    })
-  }, [])
 
   const handleSessionPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => {
     if (event.button !== 0) { return }
@@ -133,7 +121,14 @@ function useAssistantSessionDragHandlers({
 
       suppressSessionClickRef.current = true
       document.body.style.userSelect = 'none'
-      scheduleSessionDragGhostPosition(moveEvent.clientX, moveEvent.clientY, pending.pointerOffsetX, pending.pointerOffsetY)
+      if (!ghostLiftedRef.current && sessionDragGhostRef.current) {
+        ghostLiftedRef.current = true
+        gsap.from(sessionDragGhostRef.current, { scale: 0.8, opacity: 0, duration: 0.18, ease: 'back.out(2)' })
+      }
+      gsap.set(sessionDragGhostRef.current, {
+        x: moveEvent.clientX - pending.pointerOffsetX,
+        y: moveEvent.clientY - pending.pointerOffsetY,
+      })
 
       const listElement = sessionListRef.current
       const nextPreviewIndex = listElement === null
@@ -144,6 +139,7 @@ function useAssistantSessionDragHandlers({
     }
 
     const handlePointerUp = () => {
+      ghostLiftedRef.current = false
       const dragSnapshot = sessionDragStateRef.current
       if (dragSnapshot !== null) {
         setSessionListState((current) => moveAssistantSessionShellToIndex(current, dragSnapshot.draggingSessionId, dragSnapshot.previewIndex))
@@ -157,7 +153,7 @@ function useAssistantSessionDragHandlers({
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
     window.addEventListener('pointercancel', handlePointerUp)
-  }, [scheduleSessionDragGhostPosition, setSessionListState])
+  }, [setSessionListState])
 
   return { sessionDragState, sessionListRef, sessionDragGhostRef, suppressSessionClickRef, handleSessionPointerDown }
 }

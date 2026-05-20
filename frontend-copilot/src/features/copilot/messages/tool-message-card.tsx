@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type ComponentType } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { AlertTriangle, CircleSlash, Wrench } from 'lucide-react'
 
+import { gsap, useGSAP } from '../../../workbench/animation-utils'
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import { CONTROLLED_INLINE_FORM_TOOL_ID } from '../inline-form'
 import type { CopilotErrorDetailSource } from '../error-detail-overlay-view-model'
@@ -29,6 +30,7 @@ export function ToolMessageCard({
   language,
 }: ToolMessageCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const [renderPanel, setRenderPanel] = useState(false)
   const [inputExpanded, setInputExpanded] = useState(false)
   const [approvalPendingDecision, setApprovalPendingDecision] = useState<'approved' | 'rejected' | null>(null)
   const [approvalError, setApprovalError] = useState<string | null>(null)
@@ -36,6 +38,48 @@ export function ToolMessageCard({
   const contentSections = buildToolContentSections(turn)
   const inputSummary = hasNonEmptyValue(turn.inputSummary) ? turn.inputSummary : null
   const panelId = `chat-message-tool-panel-${turn.id}`
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useGSAP(() => {
+    const panel = panelRef.current
+    if (!panel) return
+
+    gsap.killTweensOf(panel)
+
+    if (expanded && renderPanel) {
+      gsap.fromTo(panel,
+        { height: 0, opacity: 0 },
+        {
+          height: 'auto',
+          opacity: 1,
+          duration: 0.22,
+          ease: 'power3.out',
+          onComplete: () => {
+            if (panelRef.current) {
+              gsap.set(panelRef.current, { clearProps: 'height' })
+            }
+          },
+        },
+      )
+      return
+    }
+
+    if (!expanded && renderPanel) {
+      gsap.to(panel, {
+        height: 0,
+        opacity: 0,
+        duration: 0.15,
+        ease: 'power3.in',
+        onComplete: () => {
+          setRenderPanel(false)
+          if (panelRef.current) {
+            gsap.set(panelRef.current, { clearProps: 'height' })
+          }
+        },
+      })
+    }
+  }, { dependencies: [expanded, renderPanel] })
+
   const inputPanelId = `chat-message-tool-input-panel-${turn.id}`
   const approval = turn.approval ?? null
   const errorDetail = resolveMessageErrorDetailSource(turn)
@@ -93,7 +137,14 @@ export function ToolMessageCard({
           index={index}
           expanded={expanded}
           panelId={panelId}
-          onToggle={() => setExpanded((current) => !current)}
+          onToggle={() => {
+            if (expanded) {
+              setExpanded(false)
+            } else {
+              setRenderPanel(true)
+              setExpanded(true)
+            }
+          }}
         />
         {renderToolErrorDetailButton({ turn, index, errorDetail, onOpenErrorDetail, copy })}
       </div>
@@ -111,8 +162,8 @@ export function ToolMessageCard({
           void handleResolveApproval('rejected')
         },
       })}
-      {expanded && (
-        <div className="copilot-chat__tool-panel" id={panelId} data-testid={`chat-message-tool-panel-${index}`}>
+      {renderPanel && (
+        <div ref={panelRef} className="copilot-chat__tool-panel" id={panelId} data-testid={`chat-message-tool-panel-${index}`}>
           {contentSections.map((section, sectionIndex) => (
             <ToolContentSection
               key={`${turn.id}:${section.label}:${sectionIndex}`}

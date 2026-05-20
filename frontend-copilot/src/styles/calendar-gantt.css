@@ -282,7 +282,7 @@
   font-size: 0.82rem;
   cursor: pointer;
   text-align: center;
-  transition: background 140ms ease, border-color 140ms ease;
+  transition: background var(--transition-duration-fast) var(--easing-standard), border-color var(--transition-duration-fast) var(--easing-standard);
 }
 
 .kanban-column__add-btn:hover {
@@ -299,7 +299,7 @@
   padding: 0.5rem 0.6rem;
   border-radius: 4px;
   background: var(--vscode-editorWidget-background, var(--surface-subtle));
-  transition: background 140ms ease;
+  transition: background var(--transition-duration-fast) var(--easing-standard);
 }
 
 .kanban-card:hover {
