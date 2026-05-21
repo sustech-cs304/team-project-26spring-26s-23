@@ -684,8 +684,9 @@ function createDynamicMcpGroupCatalogLoadResult(): ToolCatalogLoadResult {
 describe('CapabilitiesWorkspace', () => {
   // eslint-disable-next-line max-lines-per-function
   describe('tool permissions', () => {
-    describe('rendering', () => {
-      it('renders persisted tool permissions and secondary navigation switch with real tool ids', async () => {
+    // eslint-disable-next-line max-lines-per-function
+    describe('tool catalog reload after registry events', () => {
+      it('applies registry snapshot subscriptions and reloads the tool catalog when snapshotRevision changes', async () => {
         mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
         mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
         mockedSaveSettingsWorkspaceState.mockResolvedValue({
@@ -696,98 +697,335 @@ describe('CapabilitiesWorkspace', () => {
         const rendered = renderWithRoot(<CapabilitiesWorkspace />)
         await waitForNextFrame()
 
-        expect(rendered.container.querySelector('.capabilities-workspace')).toBeTruthy()
-        expect(rendered.container.querySelector('.capabilities-panel')).toBeTruthy()
-        expect(rendered.container.querySelector('.capabilities-main')).toBeTruthy()
-        expect(rendered.container.querySelector('.capabilities-main__content')).toBeTruthy()
-        expect(rendered.container.querySelector('[aria-label="工具权限列表"]')).toBeTruthy()
-        expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_GROUP).length).toBe(2)
-        expect(rendered.container.textContent).toContain('内置基础工具')
-        expect(rendered.container.textContent).toContain('MCP 工具')
-        expect(rendered.container.textContent).toContain('能力中心')
-        expect(rendered.container.textContent).toContain('工具权限')
-        expect(rendered.container.textContent).toContain('读取文件')
-        expect(rendered.container.textContent).toContain('写入文件')
-        expect(rendered.container.textContent).toContain('浏览器自动化')
-        expect(getToolRow(rendered.container, '读取文件').textContent).toContain(LABEL_TOOL_READ)
-        expect(getExactButton(getToolRow(rendered.container, '读取文件'), '自动批准').className).toContain(
-          'tool-permission-segmented__item--active',
-        )
-        expect(getExactButton(getToolRow(rendered.container, '联网抓取'), '总是关闭').className).toContain(
-          'tool-permission-segmented__item--active',
-        )
+        if (activeMcpRegistryListener === null) {
+          throw new Error('Expected MCP registry subscription listener to be registered.')
+        }
 
+        await act(async () => {
+          activeMcpRegistryListener?.({
+            kind: 'snapshot',
+            registryRevision: 7,
+            snapshotRevision: 11,
+            servers: [connectedStdioServer],
+            states: [connectedStdioState],
+          })
+          await Promise.resolve()
+        })
+
+        await waitForNextFrame()
+        await waitForNextFrame()
         await clickElement(getNavButton(rendered.container, LABEL_MCP_SERVERS))
+
+        expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+        expect(getServerRow(rendered.container, LABEL_STDIO_STUB_SERVER).textContent).toContain('已就绪')
+        expect(getServerRow(rendered.container, LABEL_STDIO_STUB_SERVER).textContent).toContain('2026-04-21 12:00:00Z')
+
+        rendered.unmount()
+        expect(activeMcpRegistryListener).toBeNull()
+      })
+
+      it('reloads the tool catalog after a snapshot event and automatically shows new MCP tools in permissions without manual refresh', async () => {
+        mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+        mockedLoadToolCatalog
+          .mockResolvedValueOnce(createToolCatalogLoadResult({ directoryVersion: 'tools-v1' }))
+          .mockResolvedValueOnce(createDynamicMcpGroupCatalogLoadResult())
+        mockedSaveSettingsWorkspaceState.mockResolvedValue({
+          ok: true,
+          state: createLoadResult().state,
+        })
+
+        const rendered = renderWithRoot(<CapabilitiesWorkspace />)
         await waitForNextFrame()
 
-        const toolPermissionsList = rendered.container.querySelector('[aria-label="工具权限列表"]')
-        expect(toolPermissionsList).toBeTruthy()
-        const toolPermissionsSection = toolPermissionsList!.closest('[data-capabilities-section="tool-permissions"]')
-        expect(toolPermissionsSection).toBeTruthy()
-        expect(toolPermissionsSection!.className).toContain('capabilities-section-view--exiting')
-        expect(toolPermissionsSection!.getAttribute('aria-hidden')).toBe('true')
-        expect(rendered.container.querySelector(`[data-capabilities-section="${LABEL_MCP_SERVERS}"]`)?.className).toContain(
-          'capabilities-section-view--active',
-        )
-        expect(rendered.container.querySelector('.mcp-server-row')).toBeTruthy()
-        expect(rendered.container.textContent).toContain('MCP 服务器')
-        expect(rendered.container.textContent).toContain(LABEL_STDIO_STUB_SERVER)
-        expect(rendered.container.textContent).toContain('http sse stub server')
-        expect(rendered.container.textContent).toContain('测试连接')
-        expect(rendered.container.textContent).not.toContain('刷新工具列表')
-        expect(mockedLoadMcpRegistry).toHaveBeenCalledWith({ includeDisabled: true })
-        expect(rendered.container.textContent).toContain(DESC_CN_003)
-        expect(rendered.container.textContent).not.toContain('录入新的 MCP registry 草稿')
+        if (activeMcpRegistryListener === null) {
+          throw new Error('Expected MCP registry subscription listener to be registered.')
+        }
+
+        await act(async () => {
+          activeMcpRegistryListener?.({
+            kind: 'snapshot',
+            registryRevision: 7,
+            snapshotRevision: 10,
+            servers: [connectedStdioServer],
+            states: [connectedStdioState],
+          })
+          await Promise.resolve()
+        })
+
+        await waitForNextFrame()
+        await waitForNextFrame()
+
+        expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+        expect(rendered.container.textContent).toContain(LABEL_FILESYSTEM_MCP)
+        expect(rendered.container.textContent).toContain('读取文本文件')
 
         rendered.unmount()
       })
 
-      it('keeps visited capability sections mounted and preserves internal state after transition exit', async () => {
+      it('reloads the tool catalog after saving an enabled server without requiring a synthetic snapshot event', async () => {
         mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
-        mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+        mockedLoadToolCatalog
+          .mockResolvedValueOnce(createToolCatalogLoadResult({ directoryVersion: 'tools-v1' }))
+          .mockResolvedValueOnce(createDynamicMcpGroupCatalogLoadResult())
+        mockedSaveSettingsWorkspaceState.mockResolvedValue({
+          ok: true,
+          state: createLoadResult().state,
+        })
+        mockedSaveMcpServer.mockResolvedValue(createMcpSaveServerSuccessFixture({
+          snapshotRevision: 9,
+          server: {
+            serverId: 'filesystem',
+            displayName: LABEL_FILESYSTEM_MCP,
+          },
+          state: {
+            connectionState: 'connected',
+            toolCount: 1,
+            lastHandshakeAt: LABEL_2026_21T12,
+            lastCatalogSyncAt: LABEL_2026_21T12,
+          },
+        }))
 
         const rendered = renderWithRoot(<CapabilitiesWorkspace />)
         await waitForNextFrame()
-        await clickElement(getNavButton(rendered.container, 'skills'))
         await waitForNextFrame()
 
-        await clickElement(
-          getSkillRow(rendered.container, '清晰文档写作')
-            .querySelector('button[aria-label="查看 清晰文档写作 详情"]') as HTMLButtonElement,
-        )
-        expect(getSkillRow(rendered.container, '清晰文档写作').querySelector('.skill-row__details-panel')).toBeTruthy()
+        await clickElement(getNavButton(document.body, LABEL_MCP_SERVERS))
+        await waitForNextFrame()
+        await clickElement(getExactButton(document.body, DESC_CN_003))
+        await waitForNextFrame()
 
-        vi.useFakeTimers()
-        try {
-          await clickElement(getNavButton(rendered.container, LABEL_MCP_SERVERS))
+        const dialog = getDialog(document.body)
+        await clickElement(getExactButton(dialog, DESC_CN_013))
 
-          const exitingSkillsSection = rendered.container.querySelector('[data-capabilities-section="skills"]') as HTMLElement
-          expect(exitingSkillsSection.className).toContain('capabilities-section-view--exiting')
-          expect(exitingSkillsSection.hidden).toBe(false)
+        const textarea = dialog.querySelector(DESC_CN_016) as HTMLTextAreaElement
+        await setFormControlValue(textarea, JSON.stringify({
+          mcpServers: {
+            filesystem: {
+              command: 'npx',
+              args: ['@modelcontextprotocol/server-filesystem'],
+            },
+          },
+        }, null, 2))
+        await clickElement(getExactButton(dialog, '解析配置'))
+        await clickElement(getExactButton(dialog, '保存服务器'))
 
-          await advanceTimersByTime(200)
+        await waitForNextFrame()
+        await waitForNextFrame()
 
-          expect(exitingSkillsSection.hidden).toBe(true)
-          expect(exitingSkillsSection.getAttribute('aria-hidden')).toBe('true')
-          expect(getSkillRow(rendered.container, '清晰文档写作').querySelector('.skill-row__details-panel')).toBeTruthy()
+        expect(mockedSaveMcpServer).toHaveBeenCalledWith(expect.objectContaining({
+          serverId: 'filesystem',
+          displayName: 'filesystem',
+          transportConfig: expect.objectContaining({
+            kind: 'stdio',
+            command: 'npx',
+            args: ['@modelcontextprotocol/server-filesystem'],
+          }),
+        }))
+        expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+        expect(mockedLoadToolCatalog.mock.calls).toEqual([
+          [null],
+          [null],
+        ])
 
-          await clickElement(getNavButton(rendered.container, 'skills'))
+        await clickElement(getNavButton(document.body, 'tool-permissions'))
+        await waitForNextFrame()
 
-          const activeSkillsSection = rendered.container.querySelector('[data-capabilities-section="skills"]') as HTMLElement
-          expect(activeSkillsSection.hidden).toBe(false)
-          expect(activeSkillsSection.className).toContain('capabilities-section-view--active')
-          expect(getSkillRow(rendered.container, '清晰文档写作').querySelector('.skill-row__details-panel')).toBeTruthy()
-        } finally {
-          rendered.unmount()
-          vi.useRealTimers()
+        const tpContainer = rendered.container.querySelector('[aria-label="工具权限列表"]')
+        expect(tpContainer).toBeTruthy()
+        expect(tpContainer!.closest('[hidden]')).toBeNull()
+        expect(tpContainer!.textContent).toContain(LABEL_FILESYSTEM_MCP)
+        expect(tpContainer!.textContent).toContain('读取文本文件')
+
+        rendered.unmount()
+      })
+
+      it('reloads the tool catalog when the registry publishes a catalog event with a new snapshot revision', async () => {
+        mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+        mockedLoadToolCatalog
+          .mockResolvedValueOnce(createToolCatalogLoadResult({ directoryVersion: 'tools-v1' }))
+          .mockResolvedValueOnce(createDynamicMcpGroupCatalogLoadResult())
+        mockedSaveSettingsWorkspaceState.mockResolvedValue({
+          ok: true,
+          state: createLoadResult().state,
+        })
+
+        const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+        await waitForNextFrame()
+
+        if (activeMcpRegistryListener === null) {
+          throw new Error('Expected MCP registry subscription listener to be registered.')
         }
+
+        await act(async () => {
+          activeMcpRegistryListener?.({
+            kind: 'catalog',
+            registryRevision: 7,
+            snapshotRevision: 11,
+            serverId: connectedStdioServer.serverId,
+            refreshedServerIds: [connectedStdioServer.serverId],
+          })
+          await Promise.resolve()
+        })
+
+        await waitForNextFrame()
+        await waitForNextFrame()
+
+        expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+        expect(rendered.container.textContent).toContain(LABEL_FILESYSTEM_MCP)
+        expect(rendered.container.textContent).toContain('读取文本文件')
+
+        rendered.unmount()
+      })
+
+      it('reloads the tool catalog after a successful connection test without requiring a manual refresh button', async () => {
+        mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+        mockedLoadToolCatalog
+          .mockResolvedValueOnce(createToolCatalogLoadResult())
+          .mockResolvedValueOnce(createDynamicMcpGroupCatalogLoadResult())
+        mockedSaveSettingsWorkspaceState.mockResolvedValue({
+          ok: true,
+          state: createLoadResult().state,
+        })
+
+        const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+        await waitForNextFrame()
+        await clickElement(getNavButton(rendered.container, LABEL_MCP_SERVERS))
+        await clickElement(getExactButton(getServerRow(rendered.container, LABEL_STDIO_STUB_SERVER), '测试连接'))
+
+        await act(async () => {
+          activeMcpRegistryListener?.({
+            kind: 'snapshot',
+            registryRevision: 8,
+            snapshotRevision: 12,
+            servers: [connectedStdioServer],
+            states: [connectedStdioState],
+          })
+          await Promise.resolve()
+        })
+
+        await waitForNextFrame()
+        await waitForNextFrame()
+        await clickElement(getNavButton(rendered.container, 'tool-permissions'))
+
+        expect(mockedTestMcpConnection).toHaveBeenCalledWith({ serverId: connectedStdioServer.serverId })
+        expect(mockedLoadToolCatalog).toHaveBeenCalledTimes(2)
+        expect(rendered.container.textContent).toContain(LABEL_FILESYSTEM_MCP)
+        expect(rendered.container.textContent).toContain('读取文本文件')
+        expect(rendered.container.textContent).not.toContain('MCP 工具')
+        expect(rendered.container.textContent).not.toContain('刷新工具列表')
       })
     })
-
-    describe('group rendering', () => {
-      it('renders mixed builtin, blackboard, tis and dynamic MCP groups in runtime order without filtering unknown group ids', async () => {
+    describe('catalog fallback', () => {
+      it('falls back to a built-in catalog with an explicit status message when loading the runtime tool catalog fails', async () => {
         mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
-        mockedLoadToolCatalog.mockResolvedValue(createDynamicMcpGroupCatalogLoadResult())
+        mockedLoadToolCatalog.mockResolvedValue({
+          ok: false,
+          error: 'Hosted backend runtime URL is unavailable.',
+        })
+        mockedSaveSettingsWorkspaceState.mockResolvedValue({
+          ok: true,
+          state: createLoadResult().state,
+        })
+
+        const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+        await waitForNextFrame()
+
+        expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_ROW).length).toBe(5)
+        expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_GROUP).length).toBe(2)
+        expect(rendered.container.textContent).toContain('Hosted backend runtime tool catalog is temporarily unavailable. Using built-in fallback catalog.')
+        expect(rendered.container.textContent).toContain('内置基础工具')
+        expect(rendered.container.textContent).toContain('MCP 工具')
+        expect(rendered.container.textContent).toContain('读取文件')
+        expect(rendered.container.textContent).toContain('联网抓取')
+
+        rendered.unmount()
+      })
+
+      it('falls back when the runtime tool catalog returns an incomplete directory', async () => {
+        mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+        mockedLoadToolCatalog.mockResolvedValue({
+          ok: true,
+          directoryVersion: 'tools-v1',
+          tools: [
+            {
+              toolId: LABEL_TOOL_READ,
+              kind: 'builtin',
+              availability: 'available',
+              displayName: '读取文件',
+              description: DESC_CN_011,
+            },
+            {
+              toolId: '',
+              kind: 'builtin',
+              availability: 'available',
+              displayName: null,
+              description: '无效工具项。',
+            },
+          ],
+        })
+        mockedSaveSettingsWorkspaceState.mockResolvedValue({
+          ok: true,
+          state: createLoadResult().state,
+        })
+
+        const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+        await waitForNextFrame()
+
+        expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_ROW).length).toBe(1)
+        expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_GROUP).length).toBe(1)
+        expect(rendered.container.textContent).toContain('Hosted backend returned an incomplete tool catalog. Invalid entries were dropped while keeping valid tools visible.')
+        expect(rendered.container.textContent).toContain('读取文件')
+        expect(rendered.container.textContent).not.toContain('浏览器自动化')
+
+        rendered.unmount()
+      })
+
+      it('keeps valid mcp tools visible when the runtime catalog includes one broken entry', async () => {
+        mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
+        mockedLoadToolCatalog.mockResolvedValue({
+          ok: true,
+          directoryVersion: 'tools-v-mixed-mcp',
+          warnings: ['Hosted backend returned incomplete tool catalog entries. Invalid entries were dropped. Dropped 1 entry.'],
+          tools: [
+            {
+              toolId: LABEL_TOOL_READ,
+              kind: 'builtin',
+              availability: 'available',
+              displayName: '读取文件',
+              description: DESC_CN_011,
+              group: {
+                id: LABEL_BUILTIN_CORE,
+                label: '内置基础工具',
+                labelZh: '内置基础工具',
+                labelEn: LABEL_BUILT_CORE,
+                order: 0,
+                sourceKind: 'builtin',
+              },
+            },
+            {
+              toolId: 'mcp.server.filesystem.read_text_file',
+              kind: 'external',
+              availability: 'available',
+              displayName: '读取文本文件',
+              description: '从 filesystem MCP 读取文本文件。',
+              group: {
+                id: 'mcp.server.filesystem',
+                label: LABEL_FILESYSTEM_MCP,
+                labelZh: LABEL_FILESYSTEM_MCP,
+                labelEn: LABEL_FILESYSTEM_MCP,
+                order: 100,
+                sourceKind: LABEL_MCP_SERVER,
+              },
+            },
+            {
+              toolId: '',
+              kind: 'external',
+              availability: 'available',
+              displayName: null,
+              description: '无效工具项。',
+            },
+          ] as RuntimeToolDirectoryEntry[],
+        })
         mockedSaveSettingsWorkspaceState.mockResolvedValue({
           ok: true,
           state: createLoadResult().state,
@@ -799,41 +1037,66 @@ describe('CapabilitiesWorkspace', () => {
         const groupLabels = Array.from(rendered.container.querySelectorAll('.tool-permission-group__label'))
           .map((element) => element.textContent?.trim())
 
-        expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_GROUP).length).toBe(4)
-        expect(groupLabels).toEqual(['内置基础工具', DESC_CN_009, 'TIS 工具', LABEL_FILESYSTEM_MCP])
+        expect(rendered.container.textContent).toContain('Hosted backend returned an incomplete tool catalog. Invalid entries were dropped while keeping valid tools visible.')
         expect(rendered.container.textContent).toContain('读取文本文件')
-        expect(rendered.container.textContent).toContain('课程目录搜索')
-        expect(rendered.container.textContent).toContain('成绩查询')
+        expect(rendered.container.textContent).toContain(LABEL_FILESYSTEM_MCP)
+        expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_ROW).length).toBe(2)
+        expect(groupLabels).toEqual(['内置基础工具', LABEL_FILESYSTEM_MCP])
+        expect(rendered.container.textContent).not.toContain('浏览器自动化')
+
+        rendered.unmount()
+      })
+    })
+    describe('permission policy', () => {
+      it('merges and saves tool permission policy updates without dropping unrelated settings fields', async () => {
+        const loadResult = createLoadResult()
+        mockedLoadSettingsWorkspaceState.mockResolvedValue(loadResult)
+        mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
+        mockedSaveSettingsWorkspaceState.mockResolvedValue({
+          ok: true,
+          state: loadResult.state,
+        })
+
+        const rendered = renderWithRoot(<CapabilitiesWorkspace />)
+        await waitForNextFrame()
+
+        await clickElement(getExactButton(getToolRow(rendered.container, '写入文件'), '总是关闭'))
+
+        expect(mockedSaveSettingsWorkspaceState).toHaveBeenCalledTimes(1)
+        const saveInput = mockedSaveSettingsWorkspaceState.mock.calls[0]?.[0] as SettingsWorkspaceStateSaveInput
+
+        expect(saveInput.providerProfiles).toHaveLength(loadResult.state.providerProfiles.length)
+        expect(saveInput.providerProfiles[0]?.profileId).toBe('openrouter')
+        expect(saveInput.general.language).toBe('en-US')
+        expect(saveInput.mcp.toolPermissionMode).toBe('strict')
+        expect(saveInput.mcp.toolPermissionPolicy).toEqual({
+          version: 1,
+            defaultMode: 'deny',
+            toolPermissions: {
+            [LABEL_TOOL_READ]: {
+              mode: 'allow',
+              source: 'user',
+              updatedAt: LABEL_2026_17T00,
+            },
+            'tool.fs.edit': {
+              mode: 'ask',
+              source: 'user',
+              updatedAt: LABEL_2026_17T00,
+            },
+            'mcp--puppeteer--puppeteer_navigate': {
+              mode: 'ask',
+              source: 'user',
+              updatedAt: LABEL_2026_17T00,
+            },
+          },
+        })
 
         rendered.unmount()
       })
 
-      it('renders readable mcp names in permissions view using the same presentation mapping as chat picker', async () => {
+      it('switches segmented approval modes and expands then collapses the delay settings shell', async () => {
         mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
-        mockedLoadToolCatalog.mockResolvedValue({
-          ok: true,
-          directoryVersion: 'tools-v-readable-mcp',
-          tools: [
-            {
-              toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-              kind: 'external',
-              availability: 'available',
-              displayName: null,
-              description: null,
-              serverId: 'mcp-stdio-stub',
-              remoteToolName: 'search-campus',
-              mcpServerName: LABEL_STDIO_STUB_SERVER,
-              group: {
-                id: 'mcp.server.mcp-stdio-stub',
-                label: LABEL_STDIO_STUB_SERVER,
-                labelZh: LABEL_STDIO_STUB_SERVER,
-                labelEn: LABEL_STDIO_STUB_SERVER,
-                order: 100,
-                sourceKind: LABEL_MCP_SERVER,
-              },
-            } as RuntimeToolDirectoryEntry,
-          ],
-        })
+        mockedLoadToolCatalog.mockResolvedValue(createToolCatalogLoadResult())
         mockedSaveSettingsWorkspaceState.mockResolvedValue({
           ok: true,
           state: createLoadResult().state,
@@ -842,33 +1105,60 @@ describe('CapabilitiesWorkspace', () => {
         const rendered = renderWithRoot(<CapabilitiesWorkspace />)
         await waitForNextFrame()
 
-        expect(rendered.container.textContent).toContain(LABEL_STDIO_STUB_SERVER)
-        expect(getToolRow(rendered.container, 'stdio stub server / Search Campus')).toBeTruthy()
+        expect(getToolRow(rendered.container, '读取文件').className).not.toContain('tool-permission-row--expanded')
 
-        rendered.unmount()
-      })
+        await clickElement(getExactButton(getToolRow(rendered.container, '读取文件'), '延迟处理'))
 
-      it('renders hosted backend builtin and contract tools instead of collapsing to the empty state', async () => {
-        mockedLoadSettingsWorkspaceState.mockResolvedValue(createLoadResult())
-        mockedLoadToolCatalog.mockResolvedValue(createHostedCatalogOnlyLoadResult())
-        mockedSaveSettingsWorkspaceState.mockResolvedValue({
-          ok: true,
-          state: createLoadResult().state,
+        const expandedRow = getToolRow(rendered.container, '读取文件')
+        const secondsInput = expandedRow.querySelector(DESC_CN_018)
+
+        if (!(secondsInput instanceof HTMLInputElement)) {
+          throw new Error('Missing delay seconds input')
+        }
+
+        expect(expandedRow.className).toContain('tool-permission-row--expanded')
+        expect(expandedRow.querySelector('.tool-permission-segmented')?.className).toContain('tool-permission-segmented--delay')
+        expect(expandedRow.querySelector('.tool-permission-delay-shell')?.className).toContain('tool-permission-delay-shell--open')
+        expect(getExactButton(expandedRow, '超时自动批准').className).toContain('tool-permission-delay-action--active')
+
+        await clickElement(getExactButton(expandedRow, '超时自动禁止'))
+
+        expect(getExactButton(getToolRow(rendered.container, '读取文件'), '超时自动禁止').className).toContain(
+          'tool-permission-delay-action--active',
+        )
+
+        await setFormControlValue(
+          getToolRow(rendered.container, '读取文件').querySelector(DESC_CN_018) as HTMLInputElement,
+          '27',
+        )
+
+        expect((getToolRow(rendered.container, '读取文件').querySelector(DESC_CN_018) as HTMLInputElement).value).toBe('27')
+
+        expect(mockedSaveSettingsWorkspaceState).toHaveBeenCalled()
+        const lastSaveCall = mockedSaveSettingsWorkspaceState.mock.calls[mockedSaveSettingsWorkspaceState.mock.calls.length - 1]
+        const saveInput = lastSaveCall?.[0] as SettingsWorkspaceStateSaveInput
+        expect(saveInput.mcp.toolPermissionPolicy.toolPermissions[LABEL_TOOL_READ]).toEqual({
+          mode: 'delay',
+          timeoutAction: 'deny',
+          timeoutSeconds: 27,
+          source: 'user',
+          updatedAt: LABEL_2026_17T00,
         })
 
-        const rendered = renderWithRoot(<CapabilitiesWorkspace />)
-        await waitForNextFrame()
+        await clickElement(getExactButton(getToolRow(rendered.container, '读取文件'), '总是关闭'))
 
-        expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_ROW).length).toBe(4)
-        expect(rendered.container.textContent).toContain('课程目录搜索')
-        expect(rendered.container.textContent).toContain('成绩查询')
-        expect(rendered.container.textContent).toContain('校园活动')
-        expect(rendered.container.textContent).not.toContain('尚未从运行时获取到可展示的工具目录。')
-        expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_GROUP).length).toBe(4)
-        expect(rendered.container.textContent).toContain('内置基础工具')
-        expect(rendered.container.textContent).toContain(DESC_CN_009)
-        expect(rendered.container.textContent).toContain('TIS 工具')
-        expect(rendered.container.textContent).toContain('MCP 工具')
+        const collapsedRow = getToolRow(rendered.container, '读取文件')
+        const collapsedInput = collapsedRow.querySelector(DESC_CN_018)
+
+        if (!(collapsedInput instanceof HTMLInputElement)) {
+          throw new Error('Missing collapsed delay seconds input')
+        }
+
+        expect(collapsedRow.className).not.toContain('tool-permission-row--expanded')
+        expect(collapsedRow.querySelector('.tool-permission-delay-shell')?.className).not.toContain('tool-permission-delay-shell--open')
+        expect(collapsedInput.disabled).toBe(true)
+        expect(getExactButton(collapsedRow, '超时自动批准').disabled).toBe(true)
+        expect(getExactButton(collapsedRow, '超时自动禁止').disabled).toBe(true)
 
         rendered.unmount()
       })

@@ -455,11 +455,33 @@ def _build_tool_execution_event(
     return RuntimeExecutionEvent(type=event_type, payload=tool_event.to_payload())
 
 
-
-def test_stream_events_success_projects_completed_assistant_message_without_archiving_store() -> None:
+def test_stream_events_emits_tool_started_completed_before_terminal_success() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
-    executor = _StreamingExecutor(deltas=["Hello", " world"], output="Hello world")
+    tool_events = [
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="started",
+            title="调用天气工具",
+            summary="正在获取 Shenzhen 的天气。",
+            input_summary='{"location": "Shenzhen"}',
+        ),
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="completed",
+            title="天气工具已返回结果",
+            summary="Shenzhen：晴 / 24°C / 湿度 60%",
+            input_summary='{"location": "Shenzhen"}',
+            result_summary="Shenzhen：晴 / 24°C / 湿度 60%",
+        ),
+    ]
+    executor = _StreamingExecutor(
+        deltas=["Weather answer"],
+        output="Weather answer",
+        tool_events=tool_events,
+    )
     registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
@@ -473,12 +495,401 @@ def test_stream_events_success_projects_completed_assistant_message_without_arch
         model_route_resolver=_ResolvedRouteResolver(),
     )
 
-    events = asyncio.run(_collect_events(orchestrator, _build_request(thread_id="thread-1", debug_mode_enabled=True)))
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(thread_id="thread-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
 
-    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "text_delta", "run_completed"]
-    assert [event.sequence for event in events] == [1, 2, 3, 4, 5]
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "tool_event",
+        "text_delta",
+        "run_completed",
+    ]
     _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
-    assert events[-1].payload["assistantText"] == "Hello world"
+    assert events[2].payload["phase"] == "started"
+    assert events[3].payload["phase"] == "completed"
+    assert events[3].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
+    assert events[-1].payload["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
+
+
+
+def test_stream_events_emits_waiting_approval_tool_event_without_unsupported_error() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_events = [
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="started",
+            title="调用天气工具",
+            summary="正在获取 Shenzhen 的天气。",
+            input_summary='{"location": "Shenzhen"}',
+        ),
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="waiting_approval",
+            title="工具等待审批",
+            summary="工具调用正在等待审批决议。",
+            input_summary='{"location": "Shenzhen"}',
+            approval={
+                "mode": "ask",
+                "timeoutSeconds": None,
+                "timeoutAction": None,
+            },
+        ),
+        RuntimeToolLifecycleEvent(
+            tool_call_id="tool.weather-current:call-1",
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="completed",
+            title="天气工具已返回结果",
+            summary="Shenzhen：晴 / 24°C / 湿度 60%",
+            input_summary='{"location": "Shenzhen"}',
+            result_summary="Shenzhen：晴 / 24°C / 湿度 60%",
+        ),
+    ]
+    executor = _StreamingExecutor(
+        deltas=["Weather answer"],
+        output="Weather answer",
+        tool_events=tool_events,
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(thread_id="thread-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "tool_event",
+        "tool_event",
+        "text_delta",
+        "run_completed",
+    ]
+    tool_event_payloads = [event.payload for event in events if event.type == "tool_event"]
+    assert [payload["phase"] for payload in tool_event_payloads] == [
+        "started",
+        "waiting_approval",
+        "completed",
+    ]
+    assert tool_event_payloads[1]["approval"] == {
+        "mode": "ask",
+        "timeoutSeconds": None,
+        "timeoutAction": None,
+    }
+    assert events[-1].payload["assistantText"] == "Weather answer"
+
+
+def test_stream_events_delay_timeout_auto_approve_continues_tool_execution() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_registry = build_default_tool_registry()
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    executor = PydanticAIAgentExecutor(
+        model=TestModel(call_tools=["weather_current"], custom_output_text="Weather answer", seed=0),
+        tool_registry=tool_registry,
+        approval_coordinator=approval_coordinator,
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=tool_registry,
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                thread_id="thread-1",
+                enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                tool_permission_policy=RuntimeToolPermissionPolicy(
+                    schemaVersion=1,
+                    defaultMode="allow",
+                    toolModes={WEATHER_CURRENT_TOOL_ID: "delay"},
+                    toolTimeoutSeconds={WEATHER_CURRENT_TOOL_ID: 1},
+                    toolTimeoutActions={WEATHER_CURRENT_TOOL_ID: "approve"},
+                ),
+            ),
+        )
+    )
+
+    tool_event_payloads = [event.payload for event in events if event.type == "tool_event"]
+    assert [payload["phase"] for payload in tool_event_payloads] == [
+        "started",
+        "waiting_approval",
+        "completed",
+    ]
+    assert tool_event_payloads[1]["approval"] == {
+        "mode": "delay",
+        "timeoutAt": tool_event_payloads[1]["approval"]["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "approve",
+    }
+    assert isinstance(tool_event_payloads[1]["approval"]["timeoutAt"], str)
+    assert any(event.type == "text_delta" for event in events)
+    assert events[-1].type == "run_completed"
+    assert events[-1].payload["assistantText"] == "Weather answer"
+    assert approval_coordinator.snapshot() == ()
+
+
+def test_stream_events_delay_timeout_auto_deny_reinjects_failure_result() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_registry = build_default_tool_registry()
+    approval_coordinator = RuntimeToolApprovalCoordinator()
+    executor = PydanticAIAgentExecutor(
+        model=TestModel(call_tools=["weather_current"], custom_output_text="Weather answer", seed=0),
+        tool_registry=tool_registry,
+        approval_coordinator=approval_coordinator,
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=tool_registry,
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                thread_id="thread-1",
+                enabled_tools=(WEATHER_CURRENT_TOOL_ID,),
+                tool_permission_policy=RuntimeToolPermissionPolicy(
+                    schemaVersion=1,
+                    defaultMode="allow",
+                    toolModes={WEATHER_CURRENT_TOOL_ID: "delay"},
+                    toolTimeoutSeconds={WEATHER_CURRENT_TOOL_ID: 1},
+                    toolTimeoutActions={WEATHER_CURRENT_TOOL_ID: "deny"},
+                ),
+            ),
+        )
+    )
+
+    tool_event_payloads = [event.payload for event in events if event.type == "tool_event"]
+    assert [payload["phase"] for payload in tool_event_payloads] == [
+        "started",
+        "waiting_approval",
+        "failed",
+    ]
+    assert tool_event_payloads[1]["approval"] == {
+        "mode": "delay",
+        "timeoutAt": tool_event_payloads[1]["approval"]["timeoutAt"],
+        "timeoutSeconds": 1,
+        "timeoutAction": "deny",
+    }
+    assert tool_event_payloads[2]["errorSummary"] == "Tool approval timed out and was automatically rejected."
+    assert any(event.type == "text_delta" for event in events)
+    assert events[-1].type == "run_completed"
+    assert events[-1].payload["assistantText"] == "Weather answer"
+    assert approval_coordinator.snapshot() == ()
+
+
+
+def test_stream_events_filters_denied_tools_from_enabled_tools() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    executor = _StreamingExecutor(deltas=["Hello world"], output="Hello world")
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    request = _build_request(
+        thread_id="thread-1",
+        enabled_tools=("tool.fs.read",),
+        tool_permission_policy=RuntimeToolPermissionPolicy(
+            schemaVersion=1,
+            defaultMode="allow",
+            toolModes={WEATHER_CURRENT_TOOL_ID: "deny"},
+        ),
+    )
+    events = asyncio.run(_collect_events(orchestrator, request))
+
+    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
+    assert executor.calls[0]["enabled_tools"] == ["tool.fs.read"]
+    assert not any(WEATHER_CURRENT_TOOL_ID in call["enabled_tools"] for call in executor.calls)
+
+
+
+def test_stream_events_projects_raw_tool_call_diagnostics_and_tool_events() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_call_id = "tool.weather-current:call-1"
+    executor = _EventStreamingExecutor(
+        events=[
+            RuntimeExecutionEvent(
+                type="assistant_segment_started",
+                payload={"segmentId": "run-test:assistant-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_delta",
+                payload={
+                    "segmentId": "run-test:assistant-segment-1",
+                    "delta": "我先查一下。",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_completed",
+                payload={"segmentId": "run-test:assistant-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="diagnostic",
+                payload={
+                    "code": "raw_tool_call_observed",
+                    "message": "Observed provider tool call in raw collector.",
+                    "details": {
+                        "source": "pydantic_raw_stream",
+                        "providerEndpointType": "openai-compatible",
+                        "observationKind": "observed",
+                        "partIndex": 1,
+                        "toolCallId": tool_call_id,
+                        "toolName": "weather_current",
+                        "argumentsComplete": False,
+                        "toolArgumentsJson": '{"location":"Shen',
+                    },
+                    "stage": "collect_raw_stream",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="diagnostic",
+                payload={
+                    "code": "raw_tool_call_arguments_completed",
+                    "message": "Provider tool call arguments became complete in raw collector.",
+                    "details": {
+                        "source": "pydantic_raw_stream",
+                        "providerEndpointType": "openai-compatible",
+                        "observationKind": "arguments_completed",
+                        "partIndex": 1,
+                        "toolCallId": tool_call_id,
+                        "toolName": "weather_current",
+                        "argumentsComplete": True,
+                        "toolArguments": {"location": "Shenzhen"},
+                    },
+                    "stage": "collect_raw_stream",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="tool_started",
+                payload={
+                    "toolCallId": tool_call_id,
+                    "toolId": WEATHER_CURRENT_TOOL_ID,
+                    "phase": "started",
+                    "title": "调用天气工具",
+                    "summary": "正在获取 Shenzhen 的天气。",
+                    "inputSummary": '{"location": "Shenzhen"}',
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="tool_completed",
+                payload={
+                    "toolCallId": tool_call_id,
+                    "toolId": WEATHER_CURRENT_TOOL_ID,
+                    "phase": "completed",
+                    "title": "天气工具已返回结果",
+                    "summary": "Shenzhen：晴 / 24°C / 湿度 60%",
+                    "inputSummary": '{"location": "Shenzhen"}',
+                    "resultSummary": "Shenzhen：晴 / 24°C / 湿度 60%",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_started",
+                payload={"segmentId": "run-test:assistant-segment-2"},
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_delta",
+                payload={
+                    "segmentId": "run-test:assistant-segment-2",
+                    "delta": "查到了。",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_completed",
+                payload={"segmentId": "run-test:assistant-segment-2"},
+            ),
+        ],
+        output="我先查一下。查到了。",
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(thread_id="thread-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "text_delta",
+        "run_diagnostic",
+        "run_diagnostic",
+        "tool_event",
+        "tool_event",
+        "text_delta",
+        "run_completed",
+    ]
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
+    assert events[3].payload["code"] == "raw_tool_call_observed"
+    assert events[3].payload["details"]["toolCallId"] == tool_call_id
+    assert events[4].payload["code"] == "raw_tool_call_arguments_completed"
+    assert events[5].payload["phase"] == "started"
+    assert events[6].payload["phase"] == "completed"
+    assert events[-1].payload["assistantText"] == "我先查一下。查到了。"
     assert executor.calls == [
         {
             "run_id": events[0].runId,
@@ -486,19 +897,105 @@ def test_stream_events_success_projects_completed_assistant_message_without_arch
             "user_prompt": "Hello",
             "message_history": [],
             "model_id": "gpt-4.1",
-            "enabled_tools": [],
-            "debug_enabled": True,
+            "enabled_tools": [WEATHER_CURRENT_TOOL_ID],
+            "debug_enabled": False,
             "request_options": {},
             "model_settings": {},
         }
     ]
-    assert store.list_messages("thread-1") == ()
 
 
-def test_stream_events_cancelled_run_projects_interrupted_draft_into_history() -> None:
+
+def test_stream_events_emits_explicit_diagnostic_when_raw_tool_call_never_executes() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
-    executor = _CancellingExecutor(deltas=["partial"], output="unused")
+    tool_call_id = "tool.weather-current:call-unexecuted"
+    executor = _EventStreamingExecutor(
+        events=[
+            RuntimeExecutionEvent(
+                type="assistant_segment_started",
+                payload={"segmentId": "run-test:assistant-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_delta",
+                payload={
+                    "segmentId": "run-test:assistant-segment-1",
+                    "delta": "我先查一下。",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="assistant_segment_completed",
+                payload={"segmentId": "run-test:assistant-segment-1"},
+            ),
+            RuntimeExecutionEvent(
+                type="diagnostic",
+                payload={
+                    "code": "raw_tool_call_observed",
+                    "message": "Observed provider tool call in raw collector.",
+                    "details": {
+                        "source": "pydantic_raw_stream",
+                        "providerEndpointType": "openai-compatible",
+                        "observationKind": "observed",
+                        "partIndex": 1,
+                        "toolCallId": tool_call_id,
+                        "toolName": "weather_current",
+                        "argumentsComplete": False,
+                        "toolArgumentsJson": '{"location":"Shen',
+                    },
+                    "stage": "collect_raw_stream",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="diagnostic",
+                payload={
+                    "code": "raw_tool_call_arguments_completed",
+                    "message": "Provider tool call arguments became complete in raw collector.",
+                    "details": {
+                        "source": "pydantic_raw_stream",
+                        "providerEndpointType": "openai-compatible",
+                        "observationKind": "arguments_completed",
+                        "partIndex": 1,
+                        "toolCallId": tool_call_id,
+                        "toolName": "weather_current",
+                        "argumentsComplete": True,
+                        "toolArguments": {"location": "Shenzhen"},
+                    },
+                    "stage": "collect_raw_stream",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="diagnostic",
+                payload={
+                    "code": "raw_tool_call_unexecuted",
+                    "message": "Provider tool call arguments became complete, but no actual tool execution followed.",
+                    "details": {
+                        "source": "pydantic_raw_stream",
+                        "providerEndpointType": "openai-compatible",
+                        "observationKind": "execution_missing",
+                        "partIndex": 1,
+                        "toolCallId": tool_call_id,
+                        "toolName": "weather_current",
+                        "argumentsComplete": True,
+                        "toolArguments": {"location": "Shenzhen"},
+                    },
+                    "stage": "drive_raw_tool_call",
+                },
+            ),
+            RuntimeExecutionEvent(
+                type="tool_failed",
+                payload={
+                    "toolCallId": tool_call_id,
+                    "toolId": WEATHER_CURRENT_TOOL_ID,
+                    "phase": "failed",
+                    "title": "工具调用失败",
+                    "summary": "模型产生了工具调用，但运行时未真正执行该调用。",
+                    "inputSummary": '{"location": "Shenzhen"}',
+                    "errorSummary": "Provider tool call arguments became complete, but no actual tool execution followed.",
+                },
+            ),
+        ],
+        output="我先查一下。",
+    )
     registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
@@ -511,65 +1008,303 @@ def test_stream_events_cancelled_run_projects_interrupted_draft_into_history() -
         ),
         model_route_resolver=_ResolvedRouteResolver(),
     )
-
-    events = asyncio.run(_collect_events(orchestrator, _build_request(thread_id="thread-1")))
-
-    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_cancelled"]
-    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
-    assert events[-1].payload == {
-        "assistantMessageId": events[0].payload["assistantMessageId"],
-        "reason": "cancelled",
-    }
-    assert store.list_messages("thread-1") == ()
-
-
-
-def test_stream_events_client_disconnect_projects_interrupted_draft_into_history() -> None:
-    store = InMemorySessionStore()
-    store.create_thread(bound_agent_id="default", thread_id="thread-1")
-    executor = _StreamingExecutor(deltas=["partial", "late"], output="partial late")
-    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
-    orchestrator = RuntimeMessageRunOrchestrator(
-        session_store=store,
-        agent_registry=registry,
-        scaffold=build_runtime_scaffold(
-            session_store_type=store.storage_type,
-            model_configured=True,
-            agent_registry=registry,
-            tool_registry=build_default_tool_registry(),
-        ),
-        model_route_resolver=_ResolvedRouteResolver(),
-    )
-    disconnect_checks = 0
-
-    async def is_client_disconnected() -> bool:
-        nonlocal disconnect_checks
-        disconnect_checks += 1
-        return disconnect_checks >= 2
 
     events = asyncio.run(
         _collect_events(
             orchestrator,
-            _build_request(thread_id="thread-1"),
-            is_client_disconnected=is_client_disconnected,
+            _build_request(thread_id="thread-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
         )
     )
 
-    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_cancelled"]
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "text_delta",
+        "run_diagnostic",
+        "run_diagnostic",
+        "run_diagnostic",
+        "tool_event",
+        "run_completed",
+    ]
     _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
-    assert events[-1].payload == {
-        "assistantMessageId": events[0].payload["assistantMessageId"],
-        "reason": "cancelled",
+    assert events[3].payload["code"] == "raw_tool_call_observed"
+    assert events[4].payload["code"] == "raw_tool_call_arguments_completed"
+    assert events[5].payload["code"] == "raw_tool_call_unexecuted"
+    assert events[5].payload["details"]["toolCallId"] == tool_call_id
+    assert events[6].payload == {
+        "toolCallId": tool_call_id,
+        "toolId": WEATHER_CURRENT_TOOL_ID,
+        "phase": "failed",
+        "title": "工具调用失败",
+        "summary": "模型产生了工具调用，但运行时未真正执行该调用。",
+        "inputSummary": '{"location": "Shenzhen"}',
+        "errorSummary": "Provider tool call arguments became complete, but no actual tool execution followed.",
+    }
+    assert events[7].payload["assistantText"] == "我先查一下。"
+    assert store.list_messages("thread-1") == ()
+
+
+
+def test_stream_events_host_resolution_failure_emits_diagnostic_and_failed_without_archive() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    executor = _StreamingExecutor(deltas=["should-not-run"], output="should-not-run")
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_MissingProviderResolver(),
+    )
+
+    events = asyncio.run(_collect_events(orchestrator, _build_request(thread_id="thread-1")))
+
+    assert [event.type for event in events] == ["run_started", "run_diagnostic", "run_failed"]
+    assert events[1].payload["code"] == "provider_profile_not_found"
+    assert events[2].payload["code"] == "provider_profile_not_found"
+    assert executor.calls == []
+    assert store.list_messages("thread-1") == ()
+
+
+
+def test_stream_events_tool_failure_emits_failed_tool_event_and_run_completes() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    executor = _ToolFailingExecutor(
+        message="Tool 'tool.weather-current' failed: boom",
+        tool_id=WEATHER_CURRENT_TOOL_ID,
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(thread_id="thread-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "tool_event",
+        "text_delta",
+        "run_completed",
+    ]
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
+    assert events[3].payload["phase"] == "failed"
+    assert events[-1].payload["assistantText"] == "Tool failed but I can still help."
+    assert "run_failed" not in [event.type for event in events]
+    assert store.list_messages("thread-1") == ()
+
+
+
+def test_stream_events_recoverable_tool_failure_allows_run_completion() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    tool_call_id = f"{WEATHER_CURRENT_TOOL_ID}:call-1"
+    tool_events = [
+        RuntimeToolLifecycleEvent(
+            tool_call_id=tool_call_id,
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="started",
+            title="调用天气工具",
+            summary="正在获取天气。",
+            input_summary='{"location": "Shenzhen"}',
+        ),
+        RuntimeToolLifecycleEvent(
+            tool_call_id=tool_call_id,
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="failed",
+            title="工具调用失败",
+            summary="工具执行失败。",
+            input_summary='{"location": "Shenzhen"}',
+            error_summary="temporary backend issue",
+        ),
+    ]
+    executor = _StreamingExecutor(
+        deltas=["Tool failed but I can still help."],
+        output="Tool failed but I can still help.",
+        tool_events=tool_events,
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(thread_id="thread-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "tool_event",
+        "text_delta",
+        "run_completed",
+    ]
+    assert [event.payload["phase"] for event in events if event.type == "tool_event"] == [
+        "started",
+        "failed",
+    ]
+    assert "run_failed" not in [event.type for event in events]
+    assert events[-1].payload["assistantText"] == "Tool failed but I can still help."
+    assert store.list_messages("thread-1") == ()
+
+
+def test_stream_events_form_request_interrupts_run_and_ends_with_awaiting_user_input() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    executor = _EventStreamingExecutor(
+        events=[
+            RuntimeExecutionEvent(
+                type="tool_completed",
+                payload={
+                    "toolCallId": f"{REQUEST_USER_FORM_TOOL_ID}:call-1",
+                    "toolId": REQUEST_USER_FORM_TOOL_ID,
+                    "phase": "completed",
+                    "title": "请求用户表单",
+                    "summary": "请填写课程编码。",
+                    "resultSummary": "表单请求已发送，等待用户提交。",
+                    "formRequest": {
+                        "formId": "course-form",
+                        "title": "请求课程表单",
+                        "description": "请填写课程编码。",
+                        "fields": [{
+                            "name": "courseCode",
+                            "label": "课程编码",
+                            "type": "text",
+                            "required": True,
+                        }],
+                    },
+                },
+            ),
+        ],
+        output=AwaitingUserInputError(
+            tool_id=REQUEST_USER_FORM_TOOL_ID,
+            tool_call_id=f"{REQUEST_USER_FORM_TOOL_ID}:call-1",
+            form_request={
+                "formId": "course-form",
+                "title": "请求课程表单",
+                "description": "请填写课程编码。",
+                "fields": [{
+                    "name": "courseCode",
+                    "label": "课程编码",
+                    "type": "text",
+                    "required": True,
+                }],
+            },
+            summary="请填写课程编码。",
+        ),
+    )
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(thread_id="thread-1", enabled_tools=(REQUEST_USER_FORM_TOOL_ID,)),
+        )
+    )
+
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "run_failed",
+    ]
+    assert events[2].payload["toolId"] == REQUEST_USER_FORM_TOOL_ID
+    assert events[2].payload["summary"] == "请填写课程编码。"
+    assert events[3].payload == {
+        "code": "awaiting_user_input",
+        "message": "Run interrupted until the user submits the requested form.",
+        "details": {
+            "toolId": REQUEST_USER_FORM_TOOL_ID,
+            "toolCallId": f"{REQUEST_USER_FORM_TOOL_ID}:call-1",
+            "summary": "请填写课程编码。",
+            "formRequest": {
+                "formId": "course-form",
+                "title": "请求课程表单",
+                "description": "请填写课程编码。",
+                "fields": [{
+                    "name": "courseCode",
+                    "label": "课程编码",
+                    "type": "text",
+                    "required": True,
+                }],
+            },
+        },
     }
     assert store.list_messages("thread-1") == ()
 
 
 
-def test_stream_events_explicit_false_overrides_runtime_debug_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
+def test_stream_events_tool_failure_can_be_followed_by_true_non_tool_fatal_failure() -> None:
     store = InMemorySessionStore()
     store.create_thread(bound_agent_id="default", thread_id="thread-1")
-    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    tool_call_id = f"{WEATHER_CURRENT_TOOL_ID}:call-1"
+    tool_events = [
+        RuntimeToolLifecycleEvent(
+            tool_call_id=tool_call_id,
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="started",
+            title="调用天气工具",
+            summary="正在获取天气。",
+            input_summary='{"location": "Shenzhen"}',
+        ),
+        RuntimeToolLifecycleEvent(
+            tool_call_id=tool_call_id,
+            tool_id=WEATHER_CURRENT_TOOL_ID,
+            phase="failed",
+            title="工具调用失败",
+            summary="工具执行失败。",
+            input_summary='{"location": "Shenzhen"}',
+            error_summary="boom",
+        ),
+    ]
+    executor = _StreamingExecutor(
+        deltas=[],
+        output=AgentExecutionError("model stream collapsed"),
+        tool_events=tool_events,
+    )
     registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
     orchestrator = RuntimeMessageRunOrchestrator(
         session_store=store,
@@ -583,83 +1318,39 @@ def test_stream_events_explicit_false_overrides_runtime_debug_env(monkeypatch: p
         model_route_resolver=_ResolvedRouteResolver(),
     )
 
-    asyncio.run(
+    events = asyncio.run(
         _collect_events(
             orchestrator,
-            _build_request(thread_id="thread-1", debug_mode_enabled=False),
+            _build_request(thread_id="thread-1", enabled_tools=(WEATHER_CURRENT_TOOL_ID,)),
         )
     )
 
-    assert executor.calls[0]["debug_enabled"] is False
-
-
-
-def test_stream_events_uses_runtime_debug_env_when_request_debug_omitted(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("COPILOT_RUNTIME_CHAIN_DEBUG", "1")
-    store = InMemorySessionStore()
-    store.create_thread(bound_agent_id="default", thread_id="thread-1")
-    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
-    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
-    orchestrator = RuntimeMessageRunOrchestrator(
-        session_store=store,
-        agent_registry=registry,
-        scaffold=build_runtime_scaffold(
-            session_store_type=store.storage_type,
-            model_configured=True,
-            agent_registry=registry,
-            tool_registry=build_default_tool_registry(),
-        ),
-        model_route_resolver=_ResolvedRouteResolver(),
-    )
-
-    asyncio.run(
-        _collect_events(
-            orchestrator,
-            _build_request(thread_id="thread-1", debug_mode_enabled=None),
-        )
-    )
-
-    assert executor.calls[0]["debug_enabled"] is True
-
-def test_encode_runtime_run_event_renders_sse_payload() -> None:
-    request = _build_request(thread_id="thread-1")
-    event = asyncio.run(_collect_events_from_request(request))[0]
-
-    assert encode_runtime_run_event(event) == (
-        'data: {"type": "run_started", "runId": "run-fixed", "sessionId": "thread-1", '
-        '"sequence": 1, "payload": {"assistantMessageId": "run-fixed:assistant"}}\n\n'
-    )
-
-
-
-def test_stream_events_missing_thread_emits_failed_terminal_event() -> None:
-    store = InMemorySessionStore()
-    executor = _StreamingExecutor(deltas=["unused"], output="unused")
-    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
-    orchestrator = RuntimeMessageRunOrchestrator(
-        session_store=store,
-        agent_registry=registry,
-        scaffold=build_runtime_scaffold(
-            session_store_type=store.storage_type,
-            model_configured=True,
-            agent_registry=registry,
-            tool_registry=build_default_tool_registry(),
-        ),
-        model_route_resolver=_ResolvedRouteResolver(),
-    )
-
-    events = asyncio.run(_collect_events(orchestrator, _build_request(thread_id="missing-thread")))
-
-    assert [event.type for event in events] == ["run_started", "run_failed"]
-    assert events[-1].payload == {
-        "code": "thread_not_found",
-        "message": str(ThreadNotFoundError("missing-thread")),
-        "details": {"threadId": "missing-thread"},
+    assert [event.type for event in events] == [
+        "run_started",
+        "run_metadata",
+        "tool_event",
+        "tool_event",
+        "run_diagnostic",
+        "run_failed",
+    ]
+    _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
+    assert [event.payload["phase"] for event in events if event.type == "tool_event"] == [
+        "started",
+        "failed",
+    ]
+    assert events[4].payload == {
+        "code": "agent_execution_failed",
+        "message": "model stream collapsed",
+        "details": {},
+        "stage": "execute_model",
     }
-
-
+    assert events[5].payload == {
+        "code": "agent_execution_failed",
+        "message": "model stream collapsed",
+        "details": {},
+    }
+    assert "run_completed" not in [event.type for event in events]
+    assert store.list_messages("thread-1") == ()
 
 def _unknown_route_thinking_snapshot() -> dict[str, object]:
     return {
