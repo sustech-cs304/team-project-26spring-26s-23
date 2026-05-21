@@ -50,6 +50,8 @@ def build_wakeup_ui_router() -> APIRouter:
             event_db = _get_event_db_manager(request)
             stats = event_db.sync_unified_calendar_events("wakeup", unified_events)
 
+            marker_file = Path(runtime_config.database_dir) / ".calendar_initialized"
+            marker_file.touch(exist_ok=True)
             return {
                 "ok": True,
                 "parsed": len(unified_events),

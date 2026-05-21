@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 
@@ -26,6 +27,9 @@ def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
         raise RuntimeError("Desktop runtime config is not available on app.state.runtime_config")
     return config
 
+def _is_calendar_initialized(runtime_config: DesktopRuntimeConfig) -> bool:
+    marker_file = Path(runtime_config.database_dir) / ".calendar_initialized"
+    return marker_file.exists()
 
 def build_calendar_router() -> APIRouter:
     router = APIRouter(prefix="/calendar", tags=["calendar"])
@@ -39,9 +43,10 @@ def build_calendar_router() -> APIRouter:
             resolve_default_event_manager_db_path(runtime_config.database_dir)
         )
         items = db.list_unified_calendar_events()
-        if items:
-            return {"items": [event.to_dict() for event in items]}
-
+        if _is_calendar_initialized(runtime_config):
+            return {
+                "items": [event.to_dict() for event in items]
+            }
         now = _utc_now()
         mock_events = [
             UnifiedCalendarEvent(
