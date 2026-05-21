@@ -69,8 +69,8 @@ export function requireRuntimeToolEventApproval(value: unknown, label: string): 
   return {
     mode,
     ...(timeoutAt === undefined ? {} : { timeoutAt }),
-    ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
-    ...(timeoutAction === undefined ? {} : { timeoutAction }),
+    ...(timeoutSeconds === undefined || timeoutSeconds === null ? {} : { timeoutSeconds }),
+    ...(timeoutAction === undefined || timeoutAction === null ? {} : { timeoutAction }),
   }
 }
 

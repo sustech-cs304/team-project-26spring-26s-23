@@ -30,7 +30,7 @@ export function normalizeNonEmptyString(input: unknown, fallback: string): strin
 }
 
 export function normalizeString(input: unknown, fallback: string): string {
-  return typeof input === 'string' ? input.trim() : fallback
+  return typeof input === 'string' ? input.trim() : fallback.trim()
 }
 
 export function normalizeBoolean(input: unknown, fallback: boolean): boolean {

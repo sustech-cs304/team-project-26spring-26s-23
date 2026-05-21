@@ -17,15 +17,29 @@ def require_local_token(request: Request, runtime_config: DesktopRuntimeConfig) 
     if not runtime_config.local_token:
         return
 
-    received_token = request.headers.get(LOCAL_TOKEN_HEADER_NAME)
+    received_token = (
+        request.headers.get(LOCAL_TOKEN_HEADER_NAME)
+        or request.query_params.get(LOCAL_TOKEN_HEADER_NAME)
+        or request.query_params.get("token")
+    )
     if received_token == runtime_config.local_token:
         return
+
+    if received_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "missing_local_token",
+                "message": "Missing local runtime token.",
+                "header_name": LOCAL_TOKEN_HEADER_NAME,
+            },
+        )
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail={
             "code": "invalid_local_token",
-            "message": "Missing or invalid local runtime token.",
+            "message": "Invalid local runtime token.",
             "header_name": LOCAL_TOKEN_HEADER_NAME,
         },
     )

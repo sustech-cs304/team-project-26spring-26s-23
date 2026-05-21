@@ -182,8 +182,6 @@ describe('parseRuntimeRunEventStream', () => {
           expect(event0.payload.phase).toBe('waiting_approval')
           expect(event0.payload.approval).toEqual({
             mode: 'ask',
-            timeoutSeconds: null,
-            timeoutAction: null,
           })
         }
       })

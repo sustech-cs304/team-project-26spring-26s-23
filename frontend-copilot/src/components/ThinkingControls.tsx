@@ -168,7 +168,7 @@ export function ThinkingPillGroup({
   const firstFocusableIndex = options.findIndex((option) => option.disabled !== true)
   const activeIndex = selectedFocusableIndex >= 0
     ? selectedFocusableIndex
-    : (firstFocusableIndex >= 0 ? firstFocusableIndex : 0)
+    : (firstFocusableIndex >= 0 ? firstFocusableIndex : -1)
 
   const handleOptionKeyDown = (index: number): KeyboardEventHandler<HTMLDivElement> => (event) => {
     const currentOption = options[index]
