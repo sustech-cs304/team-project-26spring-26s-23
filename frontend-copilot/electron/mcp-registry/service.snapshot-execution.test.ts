@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createHostedRuntimePaths, ensureHostedRuntimeDirectories } from '../runtime/runtime-paths'
 import { createMcpRegistryService } from './service'
-import type { ManagedRuntimeService } from '../managed-runtime/ManagedRuntimeService'
 import { buildMcpToolId } from './snapshot'
 import { createMcpRegistryPaths, createMcpRegistryStore } from './store'
 import {
@@ -90,19 +89,7 @@ async function createRegistryServiceFixture(testName: string, hubOptions: FakeCo
   }
 }
 
-function createManagedRuntimeServiceStub(
-  resolveLauncher: ManagedRuntimeService['resolveLauncher'],
-): ManagedRuntimeService {
-  return {
-    loadSnapshot: vi.fn(async () => {
-      throw new Error('loadSnapshot should not be called in this test')
-    }),
-    installOrRepairAll: vi.fn(async () => {
-      throw new Error('installOrRepairAll should not be called in this test')
-    }),
-    resolveLauncher,
-  }
-}
+
 
 // eslint-disable-next-line max-lines-per-function -- This helper constructs a full fake connector hub with realistic state transitions; keeping it colocated avoids indirection for test readers.
 function createFakeConnectorHub(options: FakeConnectorHubOptions = {}): FakeConnectorHub {

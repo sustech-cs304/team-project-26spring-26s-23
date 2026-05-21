@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, createRef } from 'react'
+import { createRef } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -8,10 +8,8 @@ import type { AssistantSessionHistoryState } from '../../workbench/assistant/ass
 import { CopilotPanelShell } from './CopilotPanelShell'
 import {
   createEmptyComposerDraft,
-  type CopilotChatComposerDraft,
 } from './copilot-chat-helpers'
 import { createCopilotErrorDetailSource } from './error-detail-overlay-view-model'
-import type { CopilotModelGroup } from './model-picker'
 import type { CopilotMessageListItem } from './run-segment-view-model'
 import {
   clickElement,
@@ -26,12 +24,8 @@ import {
 const DESC_CN_004 = '工具执行失败，请重试。'
 const LABEL_ERROR_DETAIL_OVERLAY = 'error-detail-overlay'
 const LABEL_HISTORY_SHELL = 'history-shell'
-const LABEL_OPENAI_GPT = 'openai/gpt-4.1'
-const LABEL_PROVIDER_OPENAI = 'provider-openai'
 const LABEL_TOOL_FAILED_BOOM = 'Tool failed: boom'
 const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
-const SELECTOR_CHAT_HISTORY_LOADING = 'chat-history-loading-skeleton'
-const SELECTOR_CHAT_MESSAGE_SCROLL = 'chat-message-scroll-region'
 
 
 afterEach(() => {
@@ -239,17 +233,6 @@ describe('CopilotPanelShell diagnostic debug', () => {
     })
   })
 })
-
-function queryActiveByTestId(container: HTMLElement, testId: string): HTMLElement | null {
-  const candidates = Array.from(container.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`))
-  return candidates.find((candidate) => candidate.closest('.cross-fade__stage--exiting') === null) ?? null
-}
-
-function readActiveTextContent(container: HTMLElement): string {
-  const clone = container.cloneNode(true) as HTMLElement
-  clone.querySelectorAll('.cross-fade__stage--exiting').forEach((element) => element.remove())
-  return clone.textContent ?? ''
-}
 
 function renderShell(debugModeEnabled: boolean): string {
   const conversation: CopilotMessageListItem[] = [
@@ -491,155 +474,6 @@ function renderInteractiveShell(debugModeEnabled: boolean) {
   )
 }
 
-function buildHistoryLoadingGateShell(input: {
-  sessionId?: string
-  detailStatus?: AssistantSessionHistoryState['detailStatus']
-  hasLoadedDetail?: boolean
-  isPersistedThread?: boolean
-  modelGroups?: ReturnType<typeof createHistoryLoadingGateModelGroups>
-  composerDraft?: ReturnType<typeof createHistoryLoadingGateComposerDraft>
-  conversation?: CopilotMessageListItem[]
-  sendDisabledReason?: string | null
-  renderLoadingSkeleton?: boolean
-} = {}) {
-  const sessionId = input.sessionId ?? 'thread-1'
-  const detailStatus = input.detailStatus ?? 'idle'
-  const isPersistedThread = input.isPersistedThread ?? true
-
-  return (
-    <CopilotPanelShell
-      state={createReadyState()}
-      retrying={false}
-      onRetry={vi.fn()}
-      selectedAgent={createSelectedAgent()}
-      sessionShell={createSessionShell({
-        sessionId,
-        ...(isPersistedThread
-          ? {
-              capabilities: {
-                capabilitiesVersion: LABEL_HISTORY_SHELL,
-              },
-            }
-          : {}),
-      })}
-      directoryState={createDirectoryState()}
-      sessionStatus="idle"
-      sessionError={null}
-      sessionHistory={createPersistedSessionHistoryStateForThread(sessionId, {
-        isPersistedThread,
-        detailStatus,
-        hasLoadedDetail: input.hasLoadedDetail ?? (detailStatus === 'ready'),
-        selectedRunId: isPersistedThread ? 'run-1' : null,
-      })}
-      renderLoadingSkeleton={input.renderLoadingSkeleton}
-      sendError={null}
-      modelGroups={input.modelGroups ?? []}
-      thinkingCapability={null}
-      composerDraft={input.composerDraft ?? createHistoryLoadingGateComposerDraft()}
-      onComposerDraftChange={vi.fn()}
-      onSend={vi.fn()}
-      onCancelCurrentRun={vi.fn()}
-      sendStatus="idle"
-      canCancelSend={false}
-      sendDisabledReason={input.sendDisabledReason ?? null}
-      composerLockedReason={null}
-      historyDrift={null}
-      historyRebindAcknowledged={false}
-      onAcknowledgeHistoryRebind={vi.fn()}
-      conversation={input.conversation ?? []}
-      assistantPlaceholder={{
-        shouldRender: false,
-        dismissReason: 'inactive',
-      }}
-      composerInputRef={createRef<HTMLTextAreaElement>()}
-      composerHeight={160}
-      onComposerResizeStart={vi.fn()}
-    />
-  )
-}
-
-function createHistoryLoadingGateComposerDraft(messageText = ''): CopilotChatComposerDraft {
-  return {
-    ...createEmptyComposerDraft(),
-    messageText,
-    selectedModelId: 'provider-openai:openai/gpt-4.1',
-    selectedModelRoute: {
-      routeRef: {
-        routeKind: 'provider-model',
-        profileId: LABEL_PROVIDER_OPENAI,
-        modelId: LABEL_OPENAI_GPT,
-      },
-    },
-  }
-}
-
-function createHistoryLoadingGateConversation(content: string): CopilotMessageListItem[] {
-  return [{
-    id: `assistant:${content}`,
-    kind: 'assistant',
-    runId: 'run-history-loading-gate',
-    sequence: 1,
-    title: '助手响应',
-    content,
-    status: 'completed',
-    resolvedModelId: null,
-    resolvedModelRoute: null,
-    resolvedToolIds: [],
-    requestOptions: {},
-  }]
-}
-
-function createHistoryLoadingGateModelGroups(): CopilotModelGroup[] {
-  return [{
-    key: LABEL_PROVIDER_OPENAI,
-    title: 'OpenAI',
-    models: [{
-      id: 'provider-openai:openai/gpt-4.1',
-      selectionValue: 'provider-openai:openai/gpt-4.1',
-      modelId: LABEL_OPENAI_GPT,
-      name: 'GPT-4.1',
-      provider: 'OpenAI',
-      group: 'OpenAI',
-      tags: [],
-      icon: {
-        label: 'G',
-        accent: '#10a37f',
-      },
-      routeRef: {
-        routeKind: 'provider-model',
-        profileId: LABEL_PROVIDER_OPENAI,
-        modelId: LABEL_OPENAI_GPT,
-      },
-      route: {
-        routeRef: {
-          routeKind: 'provider-model',
-          profileId: LABEL_PROVIDER_OPENAI,
-          modelId: LABEL_OPENAI_GPT,
-        },
-      },
-      available: true,
-      unavailableReason: null,
-      thinkingCapabilityOverride: null,
-    }],
-  }]
-}
-
-function createPersistedSessionHistoryStateForThread(
-  sessionId: string,
-  overrides: Partial<AssistantSessionHistoryState> = {},
-): AssistantSessionHistoryState {
-  const { summary, ...restOverrides } = overrides
-  const baseState = createPersistedSessionHistoryState()
-
-  return createPersistedSessionHistoryState({
-    ...restOverrides,
-    summary: {
-      ...baseState.summary,
-      threadId: sessionId,
-      ...(summary ?? {}),
-    },
-  })
-}
 
 function createPersistedSessionHistoryState(
   overrides: Partial<AssistantSessionHistoryState> = {},

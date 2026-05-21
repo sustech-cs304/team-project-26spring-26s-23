@@ -149,7 +149,7 @@ describe('closeTimelineDatabase', () => {
     getTimelineDatabase()
     closeTimelineDatabase()
 
-    const newInstance = getTimelineDatabase()
+    getTimelineDatabase()
     expect(hoisted.MockDatabase).toHaveBeenCalledTimes(2)
   })
 })

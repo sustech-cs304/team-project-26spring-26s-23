@@ -28,9 +28,6 @@ import type {
 } from '../../../electron/mcp-registry/types'
 import type { SkillRecord, SkillRegistrySubscriptionEvent } from '../../../electron/skill-registry/types'
 import type { ToolCatalogLoadResult } from '../../../electron/tool-catalog/ipc'
-import type { RuntimeToolDirectoryEntry } from '../../features/copilot/chat-contract'
-
-import type { SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
 import {
   createManagedRuntimeLoadResultFixture,
   createMcpDeleteServerSuccessFixture,
@@ -59,25 +56,18 @@ import { loadToolCatalog } from './tool-catalog'
 
 // Duplicate-string constants extracted for sonarjs/no-duplicate-string
 const DESC_CN_003 = '新增 MCP 服务器'
-const DESC_CN_009 = 'Blackboard 工具'
 const DESC_CN_010 = 'input[aria-label="服务器名称"]'
 const DESC_CN_011 = '读取项目内文件内容，用于理解上下文与定位实现细节。'
 const DESC_CN_013 = '从标准 MCP 配置导入'
 const DESC_CN_016 = 'textarea[aria-label="标准 MCP JSON"]'
-const DESC_CN_018 = 'input[aria-label="超时秒数"]'
-const LABEL_2026_17T00 = '2026-04-17T00:00:00.000Z'
-const LABEL_2026_21T12 = '2026-04-21T12:00:00.000Z'
 const LABEL_BUILTIN_CORE = 'builtin-core'
 const LABEL_BUILT_CORE = 'Built-in Core Tools'
 const LABEL_CHROME_DEVTOOLS_MCP = 'chrome-devtools-mcp@latest'
-const LABEL_FILESYSTEM_MCP = 'Filesystem MCP'
 const LABEL_MCP_SERVER = 'mcp-server'
 const LABEL_MCP_SERVERS = 'mcp-servers'
 const LABEL_STDIO_STUB_SERVER = 'stdio stub server'
 const LABEL_TOOL_READ = 'tool.fs.read'
 const SELECTOR_ROLE_DIALOG = '[role="dialog"]'
-const SELECTOR_TOOL_PERMISSION_GROUP = '.tool-permission-group'
-const SELECTOR_TOOL_PERMISSION_ROW = '.tool-permission-row'
 
 
 vi.mock('../settings/workspace-state', () => ({
@@ -114,13 +104,6 @@ const mockedDeleteSkill = vi.fn<(skillId: string) => Promise<SkillDeleteResult>>
 const mockedSetSkillEnabled = vi.fn<(request: { skillId: string, enabled: boolean }) => Promise<SkillSetEnabledResult>>()
 const mockedRefreshSkills = vi.fn<(request?: { skillId?: string | null }) => Promise<SkillRefreshResult>>()
 const mockedSubscribeSkillRegistry = vi.fn<(listener: (event: SkillRegistrySubscriptionEvent) => void) => () => void>()
-const connectedStdioServer = createMcpStdioStubServerFixture()
-const connectedStdioState = createSavedMcpServerState(connectedStdioServer, {
-  connectionState: 'connected',
-  toolCount: 1,
-  lastHandshakeAt: LABEL_2026_21T12,
-  lastCatalogSyncAt: LABEL_2026_21T12,
-})
 
 let activeMcpRegistryListener: ((event: McpRegistrySubscriptionEvent) => void) | null = null
 let activeSkillRegistryListener: ((event: SkillRegistrySubscriptionEvent) => void) | null = null
@@ -249,19 +232,6 @@ function getExactButton(container: ParentNode, text: string): HTMLButtonElement 
   return button
 }
 
-function getToolRow(container: ParentNode, toolName: string): HTMLElement {
-  const heading = Array.from(container.querySelectorAll<HTMLElement>('.tool-permission-row__name')).find((element) => {
-    return element.textContent?.trim() === toolName
-  })
-  const row = heading?.closest(SELECTOR_TOOL_PERMISSION_ROW)
-
-  if (!(row instanceof HTMLElement)) {
-    throw new Error(`Missing tool permission row for tool=${toolName}`)
-  }
-
-  return row
-}
-
 function queryServerRow(container: ParentNode, serverName: string): HTMLElement | null {
   const heading = Array.from(container.querySelectorAll<HTMLElement>('.mcp-server-row__title')).find((element) => {
     return element.textContent?.trim() === serverName
@@ -308,13 +278,6 @@ function getDialog(container: ParentNode): HTMLElement {
   }
 
   return dialog
-}
-
-async function advanceTimersByTime(ms: number) {
-  await act(async () => {
-    vi.advanceTimersByTime(ms)
-    await Promise.resolve()
-  })
 }
 
 function createSavedMcpServerState(
@@ -537,144 +500,6 @@ function createToolCatalogLoadResult(
       },
     ],
     ...overrides,
-  }
-}
-
-function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
-  return {
-    ok: true,
-    directoryVersion: 'tools-v1',
-    tools: [
-      {
-        toolId: LABEL_TOOL_READ,
-        kind: 'builtin',
-        availability: 'available',
-        displayName: '读取文件',
-        description: DESC_CN_011,
-        group: {
-          id: LABEL_BUILTIN_CORE,
-          label: '内置基础工具',
-          labelZh: '内置基础工具',
-          labelEn: LABEL_BUILT_CORE,
-          order: 0,
-          sourceKind: 'builtin',
-        },
-      },
-      {
-        toolId: 'blackboard.course_catalog.search',
-        kind: 'contract',
-        availability: 'available',
-        displayName: '课程目录搜索',
-        description: '搜索 Blackboard 课程目录。',
-        group: {
-          id: 'blackboard',
-          label: DESC_CN_009,
-          labelZh: DESC_CN_009,
-          labelEn: 'Blackboard Tools',
-          order: 10,
-          sourceKind: 'sustech-blackboard',
-        },
-      },
-      {
-        toolId: 'tis.personal_grades.fetch',
-        kind: 'contract',
-        availability: 'available',
-        displayName: '成绩查询',
-        description: '读取教学系统个人成绩。',
-        group: {
-          id: 'tis',
-          label: 'TIS 工具',
-          labelZh: 'TIS 工具',
-          labelEn: 'TIS Tools',
-          order: 20,
-          sourceKind: 'sustech-tis',
-        },
-      },
-      {
-        toolId: 'campus.events.list',
-        kind: 'external',
-        availability: 'available',
-        displayName: '校园活动',
-        description: '读取校园活动。',
-        group: {
-          id: 'mcp',
-          label: 'MCP 工具',
-          labelZh: 'MCP 工具',
-          labelEn: 'MCP Tools',
-          order: 100,
-          sourceKind: LABEL_MCP_SERVER,
-        },
-      },
-    ],
-  }
-}
-
-function createDynamicMcpGroupCatalogLoadResult(): ToolCatalogLoadResult {
-  return {
-    ok: true,
-    directoryVersion: 'tools-v2',
-    tools: [
-      {
-        toolId: LABEL_TOOL_READ,
-        kind: 'builtin',
-        availability: 'available',
-        displayName: '读取文件',
-        description: DESC_CN_011,
-        group: {
-          id: LABEL_BUILTIN_CORE,
-          label: '内置基础工具',
-          labelZh: '内置基础工具',
-          labelEn: LABEL_BUILT_CORE,
-          order: 0,
-          sourceKind: 'builtin',
-        },
-      },
-      {
-        toolId: 'blackboard.course_catalog.search',
-        kind: 'contract',
-        availability: 'available',
-        displayName: '课程目录搜索',
-        description: '搜索 Blackboard 课程目录。',
-        group: {
-          id: 'blackboard',
-          label: DESC_CN_009,
-          labelZh: DESC_CN_009,
-          labelEn: 'Blackboard Tools',
-          order: 10,
-          sourceKind: 'sustech-blackboard',
-        },
-      },
-      {
-        toolId: 'tis.personal_grades.fetch',
-        kind: 'contract',
-        availability: 'available',
-        displayName: '成绩查询',
-        description: '读取教学系统个人成绩。',
-        group: {
-          id: 'tis',
-          label: 'TIS 工具',
-          labelZh: 'TIS 工具',
-          labelEn: 'TIS Tools',
-          order: 20,
-          sourceKind: 'sustech-tis',
-        },
-      },
-      {
-        toolId: 'mcp__filesystem__read_text_file',
-        kind: 'external',
-        availability: 'available',
-        displayName: '读取文本文件',
-        description: '通过 filesystem 服务器读取文本文件。',
-        group: {
-          id: 'mcp.server.filesystem',
-          label: LABEL_FILESYSTEM_MCP,
-          labelZh: LABEL_FILESYSTEM_MCP,
-          labelEn: LABEL_FILESYSTEM_MCP,
-          order: 100,
-          sourceKind: LABEL_MCP_SERVER,
-        },
-      },
-    ],
   }
 }
 

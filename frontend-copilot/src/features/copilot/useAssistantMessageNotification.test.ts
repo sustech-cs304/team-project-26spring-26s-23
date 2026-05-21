@@ -63,11 +63,11 @@ const mockShow = vi.fn().mockResolvedValue(undefined)
 const mockDesktopNotification = { show: mockShow }
 
 beforeEach(() => {
-  ;(window as Record<string, unknown>).desktopNotification = mockDesktopNotification
+  ;(window as any).desktopNotification = mockDesktopNotification
 })
 
 afterEach(() => {
-  delete (window as Record<string, unknown>).desktopNotification
+  delete (window as any).desktopNotification
   mockShow.mockClear()
 })
 

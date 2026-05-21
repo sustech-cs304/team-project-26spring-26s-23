@@ -342,7 +342,7 @@ describe('useSkillRegistry', () => {
 
       const { rendered } = await renderAndSettle(mock.client)
 
-      let result: Awaited<ReturnType<UseSkillRegistryResult['selectAndImportSkill']>>
+      let result: Awaited<ReturnType<UseSkillRegistryResult['selectAndImportSkill']>> = {} as any
       await act(async () => {
         result = await rendered.result.current.selectAndImportSkill()
         await Promise.resolve()
@@ -367,7 +367,7 @@ describe('useSkillRegistry', () => {
 
       const { rendered } = await renderAndSettle(mock.client)
 
-      let result: Awaited<ReturnType<UseSkillRegistryResult['selectAndImportSkill']>>
+      let result: Awaited<ReturnType<UseSkillRegistryResult['selectAndImportSkill']>> = {} as any
       await act(async () => {
         result = await rendered.result.current.selectAndImportSkill()
         await Promise.resolve()
@@ -387,7 +387,7 @@ describe('useSkillRegistry', () => {
 
       const { rendered } = await renderAndSettle(mock.client)
 
-      let result: Awaited<ReturnType<UseSkillRegistryResult['selectAndImportSkill']>>
+      let result: Awaited<ReturnType<UseSkillRegistryResult['selectAndImportSkill']>> = {} as any
       await act(async () => {
         result = await rendered.result.current.selectAndImportSkill()
         await Promise.resolve()
@@ -408,7 +408,7 @@ describe('useSkillRegistry', () => {
 
       const { rendered } = await renderAndSettle(mock.client)
 
-      let result: Awaited<ReturnType<UseSkillRegistryResult['selectAndImportSkill']>>
+      let result: Awaited<ReturnType<UseSkillRegistryResult['selectAndImportSkill']>> = {} as any
       await act(async () => {
         result = await rendered.result.current.selectAndImportSkill()
         await Promise.resolve()
@@ -587,7 +587,7 @@ describe('useSkillRegistry', () => {
   describe('initial state snapshot', () => {
     it('initializes with default empty state', () => {
       const mock = createMockClient()
-      mock.client.loadRegistry = vi.fn(() => new Promise(() => {})) // never resolves
+      mock.client.loadRegistry = vi.fn(() => new Promise(() => {})) as any // never resolves
 
       const { result } = renderSkillRegistry(mock.client)
 

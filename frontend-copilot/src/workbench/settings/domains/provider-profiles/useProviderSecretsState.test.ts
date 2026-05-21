@@ -34,7 +34,7 @@ describe('useSettingsWorkspaceProviderSecrets', () => {
   let setProviderProfiles: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    setProviderProfiles = vi.fn()
+    setProviderProfiles = vi.fn() as any
     // Set up clipboard mock on navigator
     Object.defineProperty(window.navigator, 'clipboard', {
       configurable: true,
@@ -61,7 +61,7 @@ describe('useSettingsWorkspaceProviderSecrets', () => {
           activeProviderId,
           activeProvider,
           hydratedProviderSecretValues,
-          setProviderProfiles,
+          setProviderProfiles: setProviderProfiles as any,
         }),
       {
         initialProps: {

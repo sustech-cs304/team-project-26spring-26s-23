@@ -243,7 +243,7 @@ describe('McpServerEditorDialog', () => {
       await clickElement(httpButton)
 
       expect(props.onValueChange).toHaveBeenCalled()
-      const lastCall = props.onValueChange.mock.calls.at(-1)![0] as string
+      const lastCall = props.onValueChange.mock.calls[props.onValueChange.mock.calls.length - 1]![0] as string
       const parsed = JSON.parse(lastCall)
       expect(parsed.transportKind).toBe('http-sse')
       expect(parsed.transportConfig.kind).toBe('http-sse')
@@ -323,7 +323,7 @@ describe('McpServerEditorDialog', () => {
       // Should auto-switch back to form mode with parsed data
       // onValueChange should have been called with the parsed draft
       expect(props.onValueChange).toHaveBeenCalled()
-      const lastCall = props.onValueChange.mock.calls.at(-1)![0] as string
+      const lastCall = props.onValueChange.mock.calls[props.onValueChange.mock.calls.length - 1]![0] as string
       const parsed = JSON.parse(lastCall)
       expect(parsed.serverId).toBe('parsed-server')
       expect(parsed.displayName).toBe('Parsed Server')
@@ -523,7 +523,7 @@ describe('McpServerEditorDialog', () => {
       const argsTextarea = getByAriaLabel(rendered.container, '命令参数') as HTMLTextAreaElement
       await setFormControlValue(argsTextarea, '-y\nmcp-server')
 
-      const lastCall = props.onValueChange.mock.calls.at(-1)![0] as string
+      const lastCall = props.onValueChange.mock.calls[props.onValueChange.mock.calls.length - 1]![0] as string
       const parsed = JSON.parse(lastCall)
 
       expect(parsed.displayName).toBe('My Stdio Server')
@@ -545,7 +545,7 @@ describe('McpServerEditorDialog', () => {
       const nameInput = getByAriaLabel(rendered.container, '服务器名称') as HTMLInputElement
       await setFormControlValue(nameInput, 'My HTTP Server')
 
-      const lastCall = props.onValueChange.mock.calls.at(-1)![0] as string
+      const lastCall = props.onValueChange.mock.calls[props.onValueChange.mock.calls.length - 1]![0] as string
       const parsed = JSON.parse(lastCall)
 
       expect(parsed.displayName).toBe('My HTTP Server')
@@ -662,7 +662,7 @@ describe('McpServerEditorDialog', () => {
       const envTextarea = getByAriaLabel(rendered.container, '环境变量') as HTMLTextAreaElement
       await setFormControlValue(envTextarea, 'API_KEY=secret123\nDEBUG=true')
 
-      const lastCall = props.onValueChange.mock.calls.at(-1)![0] as string
+      const lastCall = props.onValueChange.mock.calls[props.onValueChange.mock.calls.length - 1]![0] as string
       const parsed = JSON.parse(lastCall)
 
       expect(parsed.transportConfig.env).toEqual({ API_KEY: 'secret123', DEBUG: 'true' })
@@ -677,7 +677,7 @@ describe('McpServerEditorDialog', () => {
       const envTextarea = getByAriaLabel(rendered.container, '环境变量') as HTMLTextAreaElement
       await setFormControlValue(envTextarea, 'API_KEY=value\nSIMPLE_VAR')
 
-      const lastCall = props.onValueChange.mock.calls.at(-1)![0] as string
+      const lastCall = props.onValueChange.mock.calls[props.onValueChange.mock.calls.length - 1]![0] as string
       const parsed = JSON.parse(lastCall)
 
       expect(parsed.transportConfig.env).toEqual({ API_KEY: 'value', SIMPLE_VAR: '' })
@@ -705,7 +705,7 @@ describe('McpServerEditorDialog', () => {
       const headersTextarea = getByAriaLabel(rendered.container, '请求头') as HTMLTextAreaElement
       await setFormControlValue(headersTextarea, 'Authorization=Bearer abc\nX-Custom=value')
 
-      const lastCall = props.onValueChange.mock.calls.at(-1)![0] as string
+      const lastCall = props.onValueChange.mock.calls[props.onValueChange.mock.calls.length - 1]![0] as string
       const parsed = JSON.parse(lastCall)
 
       expect(parsed.transportConfig.headers).toEqual({ Authorization: 'Bearer abc', 'X-Custom': 'value' })
@@ -806,7 +806,7 @@ describe('McpServerEditorDialog', () => {
       const sseInput = getByAriaLabel(rendered.container, 'SSE 路径覆盖') as HTMLInputElement
       await setFormControlValue(sseInput, '/custom/sse')
 
-      const lastCall = props.onValueChange.mock.calls.at(-1)![0] as string
+      const lastCall = props.onValueChange.mock.calls[props.onValueChange.mock.calls.length - 1]![0] as string
       const parsed = JSON.parse(lastCall)
 
       expect(parsed.transportConfig.ssePathOverride).toBe('/custom/sse')
@@ -821,7 +821,7 @@ describe('McpServerEditorDialog', () => {
       const sseInput = getByAriaLabel(rendered.container, 'SSE 路径覆盖') as HTMLInputElement
       await setFormControlValue(sseInput, '   ')
 
-      const lastCall = props.onValueChange.mock.calls.at(-1)![0] as string
+      const lastCall = props.onValueChange.mock.calls[props.onValueChange.mock.calls.length - 1]![0] as string
       const parsed = JSON.parse(lastCall)
 
       expect(parsed.transportConfig.ssePathOverride).toBeNull()

@@ -100,6 +100,10 @@ describe('timeline-database IPC', () => {
         title: 'Minimal Event',
         start_time: '2026-05-21T10:00:00.000Z',
         is_all_day: false,
+        description: null,
+        location: null,
+        source_id: null,
+        end_time: null,
       }
 
       expect(input.source).toBe('test')
@@ -113,6 +117,10 @@ describe('timeline-database IPC', () => {
           title: 'Test Event',
           start_time: '2026-05-21T10:00:00.000Z',
           is_all_day: false,
+          description: null,
+          location: null,
+          source_id: null,
+          end_time: null,
         },
       }
 
@@ -214,6 +222,10 @@ describe('timeline-database IPC', () => {
         title: 'Test Event',
         start_time: '2026-05-21T10:00:00.000Z',
         is_all_day: false,
+        description: null,
+        location: null,
+        source_id: null,
+        end_time: null,
       })
 
       expect(hoisted.mockGetTimelineDatabase).toHaveBeenCalled()
@@ -227,6 +239,10 @@ describe('timeline-database IPC', () => {
         title: 'Test Event',
         start_time: '2026-05-21T10:00:00.000Z',
         is_all_day: true,
+        description: null,
+        location: null,
+        source_id: null,
+        end_time: null,
       })
 
       expect(hoisted.mockStatement.run).toHaveBeenCalledWith(expect.objectContaining({
@@ -242,6 +258,10 @@ describe('timeline-database IPC', () => {
         title: 'Test Event',
         start_time: '2026-05-21T10:00:00.000Z',
         is_all_day: false,
+        description: null,
+        location: null,
+        source_id: null,
+        end_time: null,
         metadata_payload: { campus: 'south', building: 'A' },
       })
 
@@ -256,6 +276,10 @@ describe('timeline-database IPC', () => {
         title: 'Test Event',
         start_time: '2026-05-21T10:00:00.000Z',
         is_all_day: false,
+        description: null,
+        location: null,
+        source_id: null,
+        end_time: null,
       })).toThrow('Invalid calendar event')
 
       expect(() => addCalendarEvent({
@@ -263,6 +287,10 @@ describe('timeline-database IPC', () => {
         title: '',
         start_time: '2026-05-21T10:00:00.000Z',
         is_all_day: false,
+        description: null,
+        location: null,
+        source_id: null,
+        end_time: null,
       })).toThrow('Invalid calendar event')
 
       expect(() => addCalendarEvent({
@@ -270,6 +298,10 @@ describe('timeline-database IPC', () => {
         title: 'Test',
         start_time: 'not-a-date',
         is_all_day: false,
+        description: null,
+        location: null,
+        source_id: null,
+        end_time: null,
       })).toThrow('Invalid calendar event')
     })
   })

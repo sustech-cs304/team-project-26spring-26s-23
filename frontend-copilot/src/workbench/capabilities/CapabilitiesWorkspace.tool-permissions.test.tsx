@@ -43,8 +43,6 @@ import {
 } from '../../../electron/renderer-ipc.test-support'
 import {
   clickElement,
-  focusElement,
-  mockClipboardWriteText,
   renderWithRoot,
   setFormControlValue,
   waitForNextFrame,
@@ -60,7 +58,6 @@ import { loadToolCatalog } from './tool-catalog'
 // Duplicate-string constants extracted for sonarjs/no-duplicate-string
 const DESC_CN_003 = '新增 MCP 服务器'
 const DESC_CN_009 = 'Blackboard 工具'
-const DESC_CN_010 = 'input[aria-label="服务器名称"]'
 const DESC_CN_011 = '读取项目内文件内容，用于理解上下文与定位实现细节。'
 const DESC_CN_013 = '从标准 MCP 配置导入'
 const DESC_CN_016 = 'textarea[aria-label="标准 MCP JSON"]'
@@ -69,7 +66,6 @@ const LABEL_2026_17T00 = '2026-04-17T00:00:00.000Z'
 const LABEL_2026_21T12 = '2026-04-21T12:00:00.000Z'
 const LABEL_BUILTIN_CORE = 'builtin-core'
 const LABEL_BUILT_CORE = 'Built-in Core Tools'
-const LABEL_CHROME_DEVTOOLS_MCP = 'chrome-devtools-mcp@latest'
 const LABEL_FILESYSTEM_MCP = 'Filesystem MCP'
 const LABEL_MCP_SERVER = 'mcp-server'
 const LABEL_MCP_SERVERS = 'mcp-servers'
@@ -281,25 +277,6 @@ function getServerRow(container: ParentNode, serverName: string): HTMLElement {
   return row
 }
 
-function querySkillRow(container: ParentNode, skillName: string): HTMLElement | null {
-  const heading = Array.from(container.querySelectorAll<HTMLElement>('.skill-row__title')).find((element) => {
-    return element.textContent?.trim() === skillName
-  })
-
-  const row = heading?.closest('.skill-row')
-  return row instanceof HTMLElement ? row : null
-}
-
-function getSkillRow(container: ParentNode, skillName: string): HTMLElement {
-  const row = querySkillRow(container, skillName)
-
-  if (row === null) {
-    throw new Error(`Missing Skill row for skill=${skillName}`)
-  }
-
-  return row
-}
-
 function getDialog(container: ParentNode): HTMLElement {
   const dialog = container.querySelector(SELECTOR_ROLE_DIALOG)
 
@@ -308,13 +285,6 @@ function getDialog(container: ParentNode): HTMLElement {
   }
 
   return dialog
-}
-
-async function advanceTimersByTime(ms: number) {
-  await act(async () => {
-    vi.advanceTimersByTime(ms)
-    await Promise.resolve()
-  })
 }
 
 function createSavedMcpServerState(
@@ -537,75 +507,6 @@ function createToolCatalogLoadResult(
       },
     ],
     ...overrides,
-  }
-}
-
-function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
-  return {
-    ok: true,
-    directoryVersion: 'tools-v1',
-    tools: [
-      {
-        toolId: LABEL_TOOL_READ,
-        kind: 'builtin',
-        availability: 'available',
-        displayName: '读取文件',
-        description: DESC_CN_011,
-        group: {
-          id: LABEL_BUILTIN_CORE,
-          label: '内置基础工具',
-          labelZh: '内置基础工具',
-          labelEn: LABEL_BUILT_CORE,
-          order: 0,
-          sourceKind: 'builtin',
-        },
-      },
-      {
-        toolId: 'blackboard.course_catalog.search',
-        kind: 'contract',
-        availability: 'available',
-        displayName: '课程目录搜索',
-        description: '搜索 Blackboard 课程目录。',
-        group: {
-          id: 'blackboard',
-          label: DESC_CN_009,
-          labelZh: DESC_CN_009,
-          labelEn: 'Blackboard Tools',
-          order: 10,
-          sourceKind: 'sustech-blackboard',
-        },
-      },
-      {
-        toolId: 'tis.personal_grades.fetch',
-        kind: 'contract',
-        availability: 'available',
-        displayName: '成绩查询',
-        description: '读取教学系统个人成绩。',
-        group: {
-          id: 'tis',
-          label: 'TIS 工具',
-          labelZh: 'TIS 工具',
-          labelEn: 'TIS Tools',
-          order: 20,
-          sourceKind: 'sustech-tis',
-        },
-      },
-      {
-        toolId: 'campus.events.list',
-        kind: 'external',
-        availability: 'available',
-        displayName: '校园活动',
-        description: '读取校园活动。',
-        group: {
-          id: 'mcp',
-          label: 'MCP 工具',
-          labelZh: 'MCP 工具',
-          labelEn: 'MCP Tools',
-          order: 100,
-          sourceKind: LABEL_MCP_SERVER,
-        },
-      },
-    ],
   }
 }
 

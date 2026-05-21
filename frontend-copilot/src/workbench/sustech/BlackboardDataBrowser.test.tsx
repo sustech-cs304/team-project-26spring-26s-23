@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
 
-import type { FileManagerApi } from '../../../electron/file-manager/ipc'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ReactElement } from 'react'
@@ -35,58 +34,17 @@ import {
 const LABEL_ANNOUNCEMENT = 'Announcement 1'
 const LABEL_API_BLACKBOARD_DATA = '/api/blackboard/data/courses'
 const LABEL_API_BLACKBOARD_DATA_2 = '/api/blackboard/data/courses/course-1/announcements'
-const LABEL_API_BLACKBOARD_DATA_3 = '/api/blackboard/data/courses/course-1/assignments'
-const LABEL_API_BLACKBOARD_DATA_4 = '/api/blackboard/data/courses/course-1/resources'
-const LABEL_API_BLACKBOARD_RESOURCES = '/api/blackboard/resources/downloads/status'
-const LABEL_API_BLACKBOARD_RESOURCES_2 = '/api/blackboard/resources/downloads/select-start'
 const LABEL_ASSIGNMENT = 'Assignment 1'
-const LABEL_BLACKBOARD_DETAIL_ITEM = 'blackboard-detail-item-assignments-asg-1'
-const LABEL_BLACKBOARD_RESOURCE_DOWNLOAD = 'blackboard-resource-download-res-1'
 const LABEL_CS304_SOFTWARE_ENGINEERING = 'CS304: Software Engineering'
 const LABEL_DOWNLOADS = 'C:/Downloads'
-const LABEL_DOWNLOADS_RES = 'C:/Downloads/res-2.pdf'
-const LABEL_HTTPS_EXAMPLE = 'https://bb.example/res-1.pdf'
 const LABEL_HTTPS_EXAMPLE_2 = 'https://bb.example/starter.zip'
 const LABEL_HTTPS_EXAMPLE_3 = 'https://bb.example/spec.pdf'
-const LABEL_HTTPS_EXAMPLE_4 = 'https://bb.example/res-2.pdf'
-const LABEL_HTTPS_EXAMPLE_5 = 'https://bb.example/ann-1'
 const LABEL_HTTP_LOCALHOST = 'http://localhost'
-const LABEL_LECTURE_SLIDES = 'Lecture 1 slides.pdf'
-const LABEL_PREFERRED = 'C:/Preferred'
-const LABEL_RES_STARTER = 'res-starter'
 const LABEL_SPRING_2026 = 'Spring 2026'
 const LABEL_STARTER_ZIP = 'starter.zip'
-const SELECTOR_FILE_CONTEXT_MENU = '.file-context-menu__item'
-const SELECTOR_SUSTECH_DETAIL_TAB = '.sustech-detail-tab'
 
 
 // Shared test fixture helpers
-function jsonResponse(data: unknown, init?: ResponseInit): Response {
-  return new Response(JSON.stringify(data), init)
-}
-
-function singleCourseFixture(overrides: Partial<{
-  totalAssignments: number
-  totalResources: number
-  totalAnnouncements: number
-}> = {}): unknown {
-  return {
-    ok: true,
-    courses: [{
-      id: 1,
-      course_id: 'course-1',
-      name: LABEL_CS304_SOFTWARE_ENGINEERING,
-      code: 'CS304',
-      instructor: 'Ada',
-      term: LABEL_SPRING_2026,
-      is_active: true,
-      total_assignments: overrides.totalAssignments ?? 0,
-      total_resources: overrides.totalResources ?? 0,
-      total_announcements: overrides.totalAnnouncements ?? 0,
-    }],
-  }
-}
-
 interface RenderedBrowser {
   container: HTMLDivElement
   getByTestId: (testId: string) => HTMLElement
@@ -126,18 +84,6 @@ async function clickElement(element: Element) {
   })
 }
 
-async function doubleClickElement(element: Element) {
-  await act(async () => {
-    element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
-  })
-}
-
-async function openContextMenu(element: Element, clientX = 120, clientY = 120) {
-  await act(async () => {
-    element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX, clientY }))
-  })
-}
-
 async function waitForNextFrame() {
   await act(async () => {
     await new Promise<void>((resolve) => {
@@ -158,29 +104,6 @@ async function waitForCondition(check: () => boolean, timeoutMs = 1000) {
     })
   }
   throw new Error('Condition was not met within timeout.')
-}
-
-function makeMockFileManager(): FileManagerApi {
-  return {
-    selectRootDirectory: vi.fn(async () => ({ ok: true as const, rootPath: 'C:/Chosen', entries: [] })),
-    listDirectory: vi.fn(async () => ({ ok: true as const, entries: [] })),
-    probeDirectory: vi.fn(async () => ({ ok: true as const, totalItems: 0, isLarge: false, maxDepth: 0 })),
-    createDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    copyEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    moveEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    renameEntry: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    trashEntries: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    deleteEntriesPermanently: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    watchDirectories: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    unwatchDirectories: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    onDirectoryChanged: vi.fn(() => () => undefined),
-    loadLastRootDirectory: vi.fn(async () => ({ ok: true as const, rootPath: null })),
-    saveLastRootDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    clearLastRootDirectory: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    openEntryWithSystem: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    revealEntryInFolder: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-    copyTextToClipboard: vi.fn(async () => ({ ok: true as const, affectedPaths: [] as never[] })),
-  }
 }
 
 afterEach(() => {

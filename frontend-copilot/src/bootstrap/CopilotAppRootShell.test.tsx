@@ -67,8 +67,8 @@ describe('CopilotAppRootShell', () => {
     it('shows BootstrapScreen with preparing message when status is loading', () => {
       mocks.useCopilotBootstrapState.mockReturnValue(
         createBootstrapHookResult({
-          configState: { status: 'loading' },
-          bootstrap: { state: { status: 'loading' }, retrying: false, retry: vi.fn() },
+          configState: { status: 'loading' } as any,
+          bootstrap: { state: { status: 'loading' } as any, retrying: false, retry: vi.fn() },
         }),
       )
 
@@ -81,8 +81,8 @@ describe('CopilotAppRootShell', () => {
     it('shows BootstrapScreen with connecting message when status is starting', () => {
       mocks.useCopilotBootstrapState.mockReturnValue(
         createBootstrapHookResult({
-          configState: { status: 'starting' },
-          bootstrap: { state: { status: 'starting' }, retrying: false, retry: vi.fn() },
+          configState: { status: 'starting' } as any,
+          bootstrap: { state: { status: 'starting' } as any, retrying: false, retry: vi.fn() },
         }),
       )
 
@@ -97,8 +97,8 @@ describe('CopilotAppRootShell', () => {
     it('shows error BootstrapScreen when configState status is error', () => {
       mocks.useCopilotBootstrapState.mockReturnValue(
         createBootstrapHookResult({
-          configState: { status: 'error', error: 'Connection refused' },
-          bootstrap: { state: { status: 'error', error: 'Connection refused' }, retrying: false, retry: vi.fn() },
+          configState: { status: 'error', error: 'Connection refused' } as any,
+          bootstrap: { state: { status: 'error', error: 'Connection refused' } as any, retrying: false, retry: vi.fn() },
         }),
       )
 
@@ -114,8 +114,8 @@ describe('CopilotAppRootShell', () => {
 
       mocks.useCopilotBootstrapState.mockReturnValue(
         createBootstrapHookResult({
-          configState: { status: 'error', error: 'fail' },
-          bootstrap: { state: { status: 'error', error: 'fail' }, retrying: false, retry: handleRetryConfig },
+          configState: { status: 'error', error: 'fail' } as any,
+          bootstrap: { state: { status: 'error', error: 'fail' } as any, retrying: false, retry: handleRetryConfig },
           handleRetryConfig,
         }),
       )
@@ -129,8 +129,8 @@ describe('CopilotAppRootShell', () => {
     it('shows disabled retry button with retrying text when retrying is true', () => {
       mocks.useCopilotBootstrapState.mockReturnValue(
         createBootstrapHookResult({
-          configState: { status: 'error', error: 'error' },
-          bootstrap: { state: { status: 'error', error: 'error' }, retrying: true, retry: vi.fn() },
+          configState: { status: 'error', error: 'error' } as any,
+          bootstrap: { state: { status: 'error', error: 'error' } as any, retrying: true, retry: vi.fn() },
           retrying: true,
         }),
       )
@@ -144,8 +144,8 @@ describe('CopilotAppRootShell', () => {
     it('does not render CopilotAppRootBoundary when in error state', () => {
       mocks.useCopilotBootstrapState.mockReturnValue(
         createBootstrapHookResult({
-          configState: { status: 'error', error: 'failed' },
-          bootstrap: { state: { status: 'error', error: 'failed' }, retrying: false, retry: vi.fn() },
+          configState: { status: 'error', error: 'failed' } as any,
+          bootstrap: { state: { status: 'error', error: 'failed' } as any, retrying: false, retry: vi.fn() },
         }),
       )
 
@@ -175,8 +175,8 @@ describe('CopilotAppRootShell', () => {
 
       mocks.useCopilotBootstrapState.mockReturnValue(
         createBootstrapHookResult({
-          configState: degradedState,
-          bootstrap: { state: degradedState, retrying: false, retry: vi.fn() },
+          configState: degradedState as any,
+          bootstrap: { state: degradedState as any, retrying: false, retry: vi.fn() },
         }),
       )
 

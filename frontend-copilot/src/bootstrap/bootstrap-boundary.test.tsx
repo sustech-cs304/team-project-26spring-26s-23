@@ -66,7 +66,7 @@ describe('CopilotAppRootBoundary', () => {
     it('renders LazyApp inside Suspense when no error occurs', () => {
       render(
         <CopilotAppRootBoundary
-          bootstrap={createMockController({ state: { status: 'ready' } })}
+          bootstrap={createMockController({ state: { status: 'ready' } as any })}
           configStatus="ready"
           retrying={false}
           onRetryConfig={vi.fn()}
@@ -81,7 +81,7 @@ describe('CopilotAppRootBoundary', () => {
 
       render(
         <CopilotAppRootBoundary
-          bootstrap={createMockController({ state: { status: 'ready' } })}
+          bootstrap={createMockController({ state: { status: 'ready' } as any })}
           configStatus="ready"
           retrying={false}
           onRetryConfig={vi.fn()}
@@ -156,7 +156,7 @@ describe('CopilotAppRootBoundary', () => {
 
       render(
         <CopilotAppRootBoundary
-          bootstrap={createMockController({ state: { status: 'ready' } })}
+          bootstrap={createMockController({ state: { status: 'ready' } as any })}
           configStatus="ready"
           retrying={false}
           onRetryConfig={vi.fn()}
@@ -173,7 +173,7 @@ describe('CopilotAppRootBoundary', () => {
 
       let shouldThrow = true
       function TestWithToggle() {
-        const [trigger, setTrigger] = useState(0)
+        const [_trigger, setTrigger] = useState(0)
 
         lazyBehavior.current = {
           shouldThrow: shouldThrow ? new Error('test failure') : undefined,
@@ -258,7 +258,7 @@ describe('CopilotAppRootBoundary', () => {
             </button>
             <CopilotAppRootBoundary
               bootstrap={createMockController()}
-              configStatus={configStatus}
+              configStatus={configStatus as any}
               retrying={false}
               onRetryConfig={vi.fn()}
             />

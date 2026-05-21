@@ -23,8 +23,6 @@ import type { FileManagerState } from './useFileManagerState'
 function file(overrides: Partial<FileTreeEntry> & { path: string; name: string }): FileTreeEntry {
   return {
     id: overrides.id ?? overrides.path,
-    path: overrides.path,
-    name: overrides.name,
     kind: 'file',
     parentPath: overrides.parentPath ?? '/test',
     size: overrides.size ?? 1024,
@@ -140,7 +138,7 @@ describe('useFileManagerState', () => {
 
   afterEach(() => {
     hook.unmount()
-    delete (window as Partial<Window> & Record<string, unknown>).fileManager
+    delete (window as any).fileManager
   })
 
   // ─── INITIAL STATE ────────────────────────────────────────────────
@@ -1170,7 +1168,6 @@ describe('useFileManagerState', () => {
     })
 
     it('handleDragEnd clears dragOverPath', () => {
-      const emptyEvent = { preventDefault: vi.fn() } as unknown as React.DragEvent
       act(() => {
         hook.result.current.handleDragEnd()
       })
@@ -1726,7 +1723,7 @@ describe('edge cases', () => {
 
   afterEach(() => {
     hook.unmount()
-    delete (window as Partial<Window> & Record<string, unknown>).fileManager
+    delete (window as any).fileManager
   })
 
   it('copySelected does nothing when rootPath is null', () => {

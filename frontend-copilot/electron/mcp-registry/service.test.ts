@@ -10,10 +10,8 @@ import type { ManagedRuntimeService } from '../managed-runtime/ManagedRuntimeSer
 import { buildMcpToolId } from './snapshot'
 import { createMcpRegistryPaths, createMcpRegistryStore } from './store'
 import {
-  createMcpHttpSseStubServerFixture,
   createMcpServerStateFixture,
   createMcpStdioStubServerFixture,
-  MCP_REGISTRY_TEST_FIXTURE_SERVER_IDS,
 } from './test-support'
 import type { McpConnectorHub } from './connector-hub'
 import type { McpCapabilitySnapshot, McpServerRecord, McpServerStateSummary, McpToolCallRequest } from './types'

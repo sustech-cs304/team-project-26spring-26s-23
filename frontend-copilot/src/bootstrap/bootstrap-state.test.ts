@@ -405,7 +405,7 @@ describe('useCopilotBootstrapState', () => {
       mocks.loadInitialConfigState.mockReturnValue(new Promise(() => {}))
       mocks.loadWorkbenchApp.mockResolvedValue({ default: vi.fn() })
 
-      const { result, rerender, unmount } = render()
+      const { rerender, unmount } = render()
 
       const readyState = createReadyBootstrapState({
         runtimeUrl: LABEL_HTTP_LOCALHOST_4400,

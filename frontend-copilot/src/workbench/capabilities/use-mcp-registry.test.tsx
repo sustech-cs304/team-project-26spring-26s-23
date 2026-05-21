@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import React, { useEffect, useRef, type ReactElement } from 'react'
+import React, { useEffect, type ReactElement } from 'react'
 import { act } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -824,7 +824,7 @@ describe('useMcpRegistry', () => {
     })
 
     it('returns empty status message when load is ready', async () => {
-      const { rendered, stateRef } = await renderProbe()
+      const { rendered } = await renderProbe()
 
       expect(rendered.getByTestId('status-message').textContent).toBe('')
 

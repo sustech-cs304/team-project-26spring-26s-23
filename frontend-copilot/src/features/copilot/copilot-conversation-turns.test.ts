@@ -13,7 +13,7 @@ import {
   upsertToolStepTurn,
   type CopilotConversationTurn,
 } from './copilot-conversation-turns'
-import type { RuntimeRunCompletedEvent, RuntimeToolEvent } from './thread-run-contract'
+import type { RuntimeRunCompletedEvent } from './thread-run-contract'
 import { createRuntimeModelRoute, createRuntimeRunCompletedEvent, createRuntimeToolEvent } from './thread-run-contract.test-support'
 
 const LABEL_TOOL_SEARCH = 'tool.remote-search'

@@ -1,10 +1,9 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import {
   buildHostedRuntimeSnapshot,
 } from './runtime-observability'
 import { createHostedRuntimePaths, type HostedRuntimePaths } from './runtime-paths'
 import { type HostedBackendState } from './runtime-state'
-import { type SanitizedHostedRuntimeLaunchConfig } from './runtime-config'
 import { type HostedBackendFailure } from './runtime-diagnostics'
 
 function createTestState(overrides?: Partial<HostedBackendState>): HostedBackendState {
@@ -104,13 +103,13 @@ describe('buildHostedRuntimeSnapshot', () => {
   })
 
   it('stores the launchConfig when provided', () => {
-    const launchConfig: SanitizedHostedRuntimeLaunchConfig = {
+    const launchConfig = {
       baseUrl: 'http://127.0.0.1:4000',
       readyUrl: 'http://127.0.0.1:4000/health',
       localToken: 'test-token',
       args: ['--port', '4000'],
       env: {},
-    }
+    } as any
 
     const snapshot = buildHostedRuntimeSnapshot({
       paths,

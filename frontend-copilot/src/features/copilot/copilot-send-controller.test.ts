@@ -18,10 +18,8 @@ import {
 import { createIdleCopilotRunState } from './copilot-send-controller'
 import { dispatchCopilotMessage, getCopilotSendDisabledReason } from './copilot-send-controller'
 import type { AssistantSessionShell } from '../../workbench/types'
-import type { CopilotBootstrapState, CopilotRunState } from './types'
+import type { CopilotBootstrapState } from './types'
 import type { CopilotChatComposerDraft } from './copilot-chat-helpers'
-
-const LABEL_HTTP_127 = 'http://127.0.0.1:8765/'
 
 function createConnectableState(): CopilotBootstrapState {
   return {
@@ -39,15 +37,15 @@ function createConnectableState(): CopilotBootstrapState {
       version: '1.0.0',
       pid: 1234,
       port: 8765,
-    } as unknown as CopilotBootstrapState['runtime'],
+    } as any,
     runtimeUrl: 'http://127.0.0.1:8765',
     runtimeSource: 'hosted',
     agentName: 'general',
     agentNameSource: 'config-center',
     diagnostics: {
-      hostedStatus: 'running',
+      hostedStatus: 'running' as any,
       failure: null,
-      mode: 'hosted',
+      mode: 'hosted' as any,
       modeSource: 'resolved',
       runtimeSource: 'hosted',
     },
@@ -61,10 +59,9 @@ function createSessionShell(overrides: Partial<AssistantSessionShell> = {}): Ass
     sessionId: 'session-1',
     boundAgent: {
       id: 'general',
-      name: '通用助手',
-      type: 'general',
-      icon: 'sparkles',
-    },
+      type: 'general' as any,
+      icon: 'sparkles' as any,
+    } as any,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     capabilities: {
@@ -671,7 +668,7 @@ describe('dispatchCopilotMessage', () => {
       modelRoute: createRuntimeModelRoute(),
       thinkingSelection: null,
       enabledTools: ['tool.fs.read'],
-      toolPermissionPolicy: toolPermissionPolicy as unknown as Record<string, unknown> & { defaultMode: string; rules?: unknown[] },
+      toolPermissionPolicy: toolPermissionPolicy as any,
       requestOptions: {},
       fetchFn: fetchFn as unknown as typeof fetch,
     })) {

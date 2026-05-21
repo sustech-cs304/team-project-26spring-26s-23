@@ -12,10 +12,6 @@ import {
   renderWithRoot,
 } from './AssistantWorkspace.test-support'
 import { createAssistantAgentDirectoryState } from './assistant-workspace-controller'
-import {
-  createRuntimeModelRoute,
-  createRuntimeThinkingSelection,
-} from '../../features/copilot/thread-run-contract.test-support'
 import { ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY } from './assistant-workspace-shell-state'
 import { COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY } from './useAssistantWorkspaceState'
 

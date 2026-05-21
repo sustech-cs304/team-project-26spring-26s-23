@@ -1,62 +1,27 @@
 /** @vitest-environment jsdom */
 
 import type { FileManagerApi } from '../../../electron/file-manager/ipc'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { ReactElement } from 'react'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  BlackboardDataBrowser,
-  resolveAssignmentDescription,
-  resolveAssignmentMarkdown,
-  buildDetailRequestUrl,
-  buildResourceDownloadStatusRequestUrl,
-  extractDetailItemsFromResponse,
-  flattenResourceHierarchy,
-  flattenVisibleResourceHierarchy,
-  formatDetailTimestamp,
-  resolveReadableResourceName,
-  resolveAssignmentAttachments,
-  resolveResourceDownloadUiState,
-  resolveResourceExtensionLabel,
-  resolveResourceVisualKind,
-  resolveAssignmentLinkedAnnouncements,
-  resolveAnnouncementMarkdown,
-  formatGradePercentage,
-  splitCourseDisplayName,
-  type AssignmentDetailItem,
-  type DataItem,
-} from './BlackboardDataBrowser'
+import { BlackboardDataBrowser } from './BlackboardDataBrowser'
 
 // Duplicate-string constants extracted for sonarjs/no-duplicate-string
-const LABEL_ANNOUNCEMENT = 'Announcement 1'
 const LABEL_API_BLACKBOARD_DATA = '/api/blackboard/data/courses'
 const LABEL_API_BLACKBOARD_DATA_2 = '/api/blackboard/data/courses/course-1/announcements'
-const LABEL_API_BLACKBOARD_DATA_3 = '/api/blackboard/data/courses/course-1/assignments'
 const LABEL_API_BLACKBOARD_DATA_4 = '/api/blackboard/data/courses/course-1/resources'
 const LABEL_API_BLACKBOARD_RESOURCES = '/api/blackboard/resources/downloads/status'
 const LABEL_API_BLACKBOARD_RESOURCES_2 = '/api/blackboard/resources/downloads/select-start'
-const LABEL_ASSIGNMENT = 'Assignment 1'
-const LABEL_BLACKBOARD_DETAIL_ITEM = 'blackboard-detail-item-assignments-asg-1'
 const LABEL_BLACKBOARD_RESOURCE_DOWNLOAD = 'blackboard-resource-download-res-1'
 const LABEL_CS304_SOFTWARE_ENGINEERING = 'CS304: Software Engineering'
-const LABEL_DOWNLOADS = 'C:/Downloads'
 const LABEL_DOWNLOADS_RES = 'C:/Downloads/res-2.pdf'
 const LABEL_HTTPS_EXAMPLE = 'https://bb.example/res-1.pdf'
-const LABEL_HTTPS_EXAMPLE_2 = 'https://bb.example/starter.zip'
-const LABEL_HTTPS_EXAMPLE_3 = 'https://bb.example/spec.pdf'
 const LABEL_HTTPS_EXAMPLE_4 = 'https://bb.example/res-2.pdf'
-const LABEL_HTTPS_EXAMPLE_5 = 'https://bb.example/ann-1'
 const LABEL_HTTP_LOCALHOST = 'http://localhost'
 const LABEL_LECTURE_SLIDES = 'Lecture 1 slides.pdf'
 const LABEL_PREFERRED = 'C:/Preferred'
-const LABEL_RES_STARTER = 'res-starter'
 const LABEL_SPRING_2026 = 'Spring 2026'
-const LABEL_STARTER_ZIP = 'starter.zip'
-const SELECTOR_FILE_CONTEXT_MENU = '.file-context-menu__item'
 const SELECTOR_SUSTECH_DETAIL_TAB = '.sustech-detail-tab'
 
 
@@ -129,12 +94,6 @@ async function clickElement(element: Element) {
 async function doubleClickElement(element: Element) {
   await act(async () => {
     element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
-  })
-}
-
-async function openContextMenu(element: Element, clientX = 120, clientY = 120) {
-  await act(async () => {
-    element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX, clientY }))
   })
 }
 

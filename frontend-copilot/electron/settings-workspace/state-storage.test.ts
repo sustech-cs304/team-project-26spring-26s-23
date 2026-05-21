@@ -21,7 +21,7 @@ const defaultStateValues = {
   mcp: {
     mcpAutoDiscoveryEnabled: true, toolPermissionMode: 'manual' as const,
     toolPermissionPolicy: {
-      version: 1, migrationSourceMode: 'manual' as const,
+      version: 1 as const, migrationSourceMode: 'manual' as const,
       defaultMode: 'ask' as const, toolPermissions: {},
     },
   },

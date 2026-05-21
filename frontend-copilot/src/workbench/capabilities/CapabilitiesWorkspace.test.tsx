@@ -23,30 +23,23 @@ import type {
 import type {
   McpRegistrySubscriptionEvent,
   McpServerDraft,
-  McpServerRecord,
-  McpServerStateSummary,
 } from '../../../electron/mcp-registry/types'
 import type { SkillRecord, SkillRegistrySubscriptionEvent } from '../../../electron/skill-registry/types'
 import type { ToolCatalogLoadResult } from '../../../electron/tool-catalog/ipc'
 import type { RuntimeToolDirectoryEntry } from '../../features/copilot/chat-contract'
 
-import type { SettingsWorkspaceStateSaveInput } from '../../../electron/settings-workspace/schema'
 import {
   createManagedRuntimeLoadResultFixture,
   createMcpDeleteServerSuccessFixture,
   createMcpRegistryLoadResultFixture,
   createMcpSaveServerSuccessFixture,
   createMcpSetServerEnabledSuccessFixture,
-  createMcpStdioStubServerFixture,
   createMcpTestConnectionSuccessFixture,
   createSkillRecordFixture,
 } from '../../../electron/renderer-ipc.test-support'
 import {
   clickElement,
-  focusElement,
-  mockClipboardWriteText,
   renderWithRoot,
-  setFormControlValue,
   waitForNextFrame,
 } from '../settings/test-support/SettingsWorkspaceTestSupport'
 import {
@@ -60,22 +53,14 @@ import { loadToolCatalog } from './tool-catalog'
 // Duplicate-string constants extracted for sonarjs/no-duplicate-string
 const DESC_CN_003 = '新增 MCP 服务器'
 const DESC_CN_009 = 'Blackboard 工具'
-const DESC_CN_010 = 'input[aria-label="服务器名称"]'
 const DESC_CN_011 = '读取项目内文件内容，用于理解上下文与定位实现细节。'
-const DESC_CN_013 = '从标准 MCP 配置导入'
-const DESC_CN_016 = 'textarea[aria-label="标准 MCP JSON"]'
-const DESC_CN_018 = 'input[aria-label="超时秒数"]'
-const LABEL_2026_17T00 = '2026-04-17T00:00:00.000Z'
-const LABEL_2026_21T12 = '2026-04-21T12:00:00.000Z'
 const LABEL_BUILTIN_CORE = 'builtin-core'
 const LABEL_BUILT_CORE = 'Built-in Core Tools'
-const LABEL_CHROME_DEVTOOLS_MCP = 'chrome-devtools-mcp@latest'
 const LABEL_FILESYSTEM_MCP = 'Filesystem MCP'
 const LABEL_MCP_SERVER = 'mcp-server'
 const LABEL_MCP_SERVERS = 'mcp-servers'
 const LABEL_STDIO_STUB_SERVER = 'stdio stub server'
 const LABEL_TOOL_READ = 'tool.fs.read'
-const SELECTOR_ROLE_DIALOG = '[role="dialog"]'
 const SELECTOR_TOOL_PERMISSION_GROUP = '.tool-permission-group'
 const SELECTOR_TOOL_PERMISSION_ROW = '.tool-permission-row'
 
@@ -114,13 +99,6 @@ const mockedDeleteSkill = vi.fn<(skillId: string) => Promise<SkillDeleteResult>>
 const mockedSetSkillEnabled = vi.fn<(request: { skillId: string, enabled: boolean }) => Promise<SkillSetEnabledResult>>()
 const mockedRefreshSkills = vi.fn<(request?: { skillId?: string | null }) => Promise<SkillRefreshResult>>()
 const mockedSubscribeSkillRegistry = vi.fn<(listener: (event: SkillRegistrySubscriptionEvent) => void) => () => void>()
-const connectedStdioServer = createMcpStdioStubServerFixture()
-const connectedStdioState = createSavedMcpServerState(connectedStdioServer, {
-  connectionState: 'connected',
-  toolCount: 1,
-  lastHandshakeAt: LABEL_2026_21T12,
-  lastCatalogSyncAt: LABEL_2026_21T12,
-})
 
 let activeMcpRegistryListener: ((event: McpRegistrySubscriptionEvent) => void) | null = null
 let activeSkillRegistryListener: ((event: SkillRegistrySubscriptionEvent) => void) | null = null
@@ -262,25 +240,6 @@ function getToolRow(container: ParentNode, toolName: string): HTMLElement {
   return row
 }
 
-function queryServerRow(container: ParentNode, serverName: string): HTMLElement | null {
-  const heading = Array.from(container.querySelectorAll<HTMLElement>('.mcp-server-row__title')).find((element) => {
-    return element.textContent?.trim() === serverName
-  })
-
-  const row = heading?.closest('.mcp-server-row')
-  return row instanceof HTMLElement ? row : null
-}
-
-function getServerRow(container: ParentNode, serverName: string): HTMLElement {
-  const row = queryServerRow(container, serverName)
-
-  if (row === null) {
-    throw new Error(`Missing MCP server row for server=${serverName}`)
-  }
-
-  return row
-}
-
 function querySkillRow(container: ParentNode, skillName: string): HTMLElement | null {
   const heading = Array.from(container.querySelectorAll<HTMLElement>('.skill-row__title')).find((element) => {
     return element.textContent?.trim() === skillName
@@ -300,52 +259,11 @@ function getSkillRow(container: ParentNode, skillName: string): HTMLElement {
   return row
 }
 
-function getDialog(container: ParentNode): HTMLElement {
-  const dialog = container.querySelector(SELECTOR_ROLE_DIALOG)
-
-  if (!(dialog instanceof HTMLElement)) {
-    throw new Error('Missing MCP editor dialog')
-  }
-
-  return dialog
-}
-
 async function advanceTimersByTime(ms: number) {
   await act(async () => {
     vi.advanceTimersByTime(ms)
     await Promise.resolve()
   })
-}
-
-function createSavedMcpServerState(
-  server: McpServerRecord,
-  overrides: Partial<McpServerStateSummary> = {},
-): McpServerStateSummary {
-  return {
-    serverId: server.serverId,
-    enabled: server.enabled,
-    connectionState: server.enabled ? 'idle' : 'disabled',
-    toolCount: 0,
-    lastHandshakeAt: null,
-    lastCatalogSyncAt: null,
-    lastError: null,
-    reconnectAttempt: 0,
-    transportState: server.transportConfig.kind === 'stdio'
-      ? {
-          kind: 'stdio',
-          processStatus: 'stopped',
-          pid: null,
-          lastExitCode: null,
-          lastExitSignal: null,
-        }
-      : {
-          kind: 'http-sse',
-          endpointStatus: 'offline',
-          lastHttpStatus: null,
-          sseOnline: false,
-        },
-    ...overrides,
-  }
 }
 
 function createLoadResult() {

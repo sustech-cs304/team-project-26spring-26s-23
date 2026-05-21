@@ -5,8 +5,6 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { CopilotRunState, CopilotBootstrapState } from '../types'
 import type { CopilotMessageListItem } from '../run-segment-view-model'
-import type { CopilotRunSegment } from '../run-segment-types'
-
 const mockIdleRunState: CopilotRunState = {
   phase: 'idle',
   runId: null,
@@ -324,7 +322,7 @@ describe('hasPendingInlineFormSegment', () => {
           formState: 'pending',
           formValues: {},
           submittedPayload: null,
-        } as CopilotRunSegment,
+        } as any,
       ],
     }
 
@@ -355,7 +353,7 @@ describe('hasPendingInlineFormSegment', () => {
           formState: 'submitted',
           formValues: {},
           submittedPayload: null,
-        } as CopilotRunSegment,
+        } as any,
       ],
     }
 
@@ -378,7 +376,7 @@ describe('hasPendingInlineFormSegment', () => {
           toolCallId: 'tc-1',
           toolId: 'tool.x',
           phases: [],
-        } as CopilotRunSegment,
+        } as any,
       ],
     }
 

@@ -5,7 +5,7 @@ import { renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useSettingsWorkspaceProviderModelEditor } from './useProviderModelEditorState'
-import type { ModelCapability, ProviderModelProfile, ProviderProfile } from '../../../types'
+import type { ProviderModelProfile, ProviderProfile } from '../../../types'
 
 function createModelProfile(overrides: Partial<ProviderModelProfile> & { modelId: string }): ProviderModelProfile {
   return {
@@ -61,18 +61,18 @@ describe('useSettingsWorkspaceProviderModelEditor', () => {
     activeProvider?: ProviderProfile | null
     setProviderProfilesImpl?: ReturnType<typeof vi.fn>
   } = {}) {
-    setProviderProfiles = opts.setProviderProfilesImpl ?? vi.fn()
-    setPrimaryAssistantModel = vi.fn()
-    setFastAssistantModel = vi.fn()
+    setProviderProfiles = opts.setProviderProfilesImpl ?? vi.fn() as any
+    setPrimaryAssistantModel = vi.fn() as any
+    setFastAssistantModel = vi.fn() as any
 
     return renderHook(
       ({ activeProviderId, activeProvider }) =>
         useSettingsWorkspaceProviderModelEditor({
           activeProviderId,
           activeProvider,
-          setProviderProfiles,
-          setPrimaryAssistantModel,
-          setFastAssistantModel,
+          setProviderProfiles: setProviderProfiles as any,
+          setPrimaryAssistantModel: setPrimaryAssistantModel as any,
+          setFastAssistantModel: setFastAssistantModel as any,
         }),
       {
         initialProps: {

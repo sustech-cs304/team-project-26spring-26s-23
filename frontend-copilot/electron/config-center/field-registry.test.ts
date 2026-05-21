@@ -2,12 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   UNIFIED_CONFIG_FIELD_REGISTRY,
   type UnifiedConfigFieldKey,
-  type UnifiedConfigFieldValueMap,
 } from './field-registry'
 import { UNIFIED_CONFIG_DOMAIN_KEYS } from './domain-schema'
 import {
   normalizeBoolean,
-  normalizeBooleanWithDefault,
   normalizeOptionalString,
   normalizeThemeMode,
   parseBooleanPatchValue,

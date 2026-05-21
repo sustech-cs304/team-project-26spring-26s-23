@@ -11,8 +11,6 @@ import {
   createDeferred,
   createDirectoryResponse,
   createSessionResponse,
-  inputText,
-  keyDownElement,
   openContextMenu,
   renderWithRoot,
 } from './AssistantWorkspace.test-support'
@@ -42,7 +40,6 @@ const TS_2026_04_13T16_08_00Z = '2026-04-13T16:08:00Z'
 const TS_2026_04_14T08_00_00Z = '2026-04-14T08:00:00Z'
 const TS_2026_04_14T08_03_00Z = '2026-04-14T08:03:00Z'
 const TS_2026_04_14T08_05_00Z = '2026-04-14T08:05:00Z'
-const ERROR_SEEDED_AGENT_DIRECTORY = 'Expected seeded agent directory.'
 
 const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
   <div
@@ -1584,14 +1581,6 @@ async function flushAssistantWorkspaceEffects() {
     await new Promise<void>((resolve) => {
       setTimeout(() => resolve(), 0)
     })
-    await Promise.resolve()
-  })
-}
-
-async function flushAssistantWorkspaceMicrotasks() {
-  await act(async () => {
-    await Promise.resolve()
-    await Promise.resolve()
     await Promise.resolve()
   })
 }

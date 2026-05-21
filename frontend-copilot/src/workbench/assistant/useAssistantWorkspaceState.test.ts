@@ -8,8 +8,6 @@ import {
   COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY,
 } from './useAssistantWorkspaceState'
 
-const HISTORY_SHELL_VERSION = 'history-shell'
-
 const mockBootstrapController = {
   retrying: false,
   retry: vi.fn(),
@@ -43,9 +41,9 @@ const mockBootstrapController = {
     devOverrideAllowed: true,
     devOverrideConfigured: false,
   },
-}
+} as any
 
-function createAgent(id: string, label = id) {
+function createAgent(id: string, label = id): any {
   return {
     id,
     agentId: id,
@@ -54,7 +52,10 @@ function createAgent(id: string, label = id) {
     displayName: label,
     description: `Agent ${label}`,
     label,
+    shortLabel: label,
+    hint: null,
     iconKey: 'sparkles',
+    icon: null as any,
     disabled: false,
   }
 }
@@ -63,28 +64,11 @@ function createSessionShell(sessionId: string, agentLabel = 'general'): import('
   return {
     sessionId,
     title: `Session ${sessionId}`,
-    boundAgent: createAgent('general', agentLabel),
+    boundAgent: createAgent('general', agentLabel) as any,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     capabilities: {
       capabilitiesVersion: 'live-cap-v1',
-      allAvailableTools: [],
-      recommendedToolsForAgent: [],
-      defaultEnabledTools: [],
-      toolSelectionMode: 'recommendation-only',
-    },
-  }
-}
-
-function createHistorySessionShell(sessionId: string, agentLabel = 'general'): import('../types').AssistantSessionShell {
-  return {
-    sessionId,
-    title: `History ${sessionId}`,
-    boundAgent: createAgent('general', agentLabel),
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
-    capabilities: {
-      capabilitiesVersion: HISTORY_SHELL_VERSION,
       allAvailableTools: [],
       recommendedToolsForAgent: [],
       defaultEnabledTools: [],
@@ -591,6 +575,7 @@ describe('useAssistantWorkspaceState - session shell propagation', () => {
     const initialSessions = { sessions: [shell], activeSessionId: 'live-1' }
 
     let setSessionListStateFn: (updater: unknown) => void = () => {}
+    void setSessionListStateFn
     mockUseAssistantDirectoryState.mockReturnValue({
       directoryState: defaultDirectoryState(),
       selectedAgent: createAgent('general'),
@@ -1093,7 +1078,7 @@ describe('useAssistantWorkspaceState - interaction state wiring', () => {
   })
 
   it('passes through sessionContextMenu from interaction sub-hook', () => {
-    const ctxMenu = { sessionId: 's1', sessionLabel: 'Test', x: 100, y: 200, activeSubmenu: null as const }
+    const ctxMenu = { sessionId: 's1', sessionLabel: 'Test', x: 100, y: 200, activeSubmenu: null }
     mockUseAssistantDirectoryState.mockReturnValue({
       directoryState: defaultDirectoryState(),
       selectedAgent: createAgent('general'),

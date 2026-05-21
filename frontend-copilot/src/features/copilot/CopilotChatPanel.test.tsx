@@ -1,53 +1,17 @@
 /** @vitest-environment jsdom */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import type { CopilotHistoryRunReplaySuccess } from '../../../electron/copilot-history'
-import type { AssistantSessionHistoryState } from '../../workbench/assistant/assistant-history-state'
-import { createPersistedWorkspaceState } from '../../workbench/settings/test-support/settings-workspace-test-fixtures'
-import {
-  buildPersistedConversationFromHistory,
-  getPersistedInlineFormRebuildability,
-} from './persisted-history-view-model'
-import { createIdleCopilotRunState } from './run-segment-reducer'
-import {
-  hasSufficientPersistedConversationForRun,
-  resolvePersistedConversationHandoffWaitReason,
-} from './state/useCopilotChatPanelState'
 import { CopilotChatPanel } from './CopilotChatPanel'
 import {
-  clickElement,
   createDirectoryState,
-  createEmptyState,
-  createFailedState,
-  createIdleDirectoryState,
   createReadyState,
   createSelectedAgent,
   createSessionShell,
-  renderWithRoot,
 } from './CopilotChatPanel.test-support'
 
-// Duplicate-string constants extracted for sonarjs/no-duplicate-string
-const DESC_CN_012 = '表单请求已发送，等待用户提交。'
-const LABEL_2026_13T15 = '2026-04-13T15:00:01Z'
-const LABEL_2026_13T15_2 = '2026-04-13T15:00:00Z'
-const LABEL_2026_13T15_3 = '2026-04-13T15:05:00Z'
-const LABEL_2026_13T15_4 = '2026-04-13T15:00:03Z'
-const LABEL_2026_13T15_5 = '2026-04-13T15:00:02Z'
-const LABEL_COURSE_FORM = 'course-form'
-const LABEL_HISTORY_SHELL = 'history-shell'
-const LABEL_INLINE_FORM = 'inline-form'
-const LABEL_OPENAI_GPT = 'openai/gpt-4.1'
-const LABEL_RUN_FORM_HISTORY = 'run-form-history'
-const LABEL_RUN_FORM_PENDING = 'run-form-pending-history'
-const LABEL_RUN_REASONING_HISTORY = 'run-reasoning-history'
-const LABEL_TOOL_REQUEST_USER = 'tool.request-user-form:call-1'
-const LABEL_TOOL_REQUEST_USER_2 = 'tool.request-user-form'
 const SELECTOR_DATA_TESTID_CHAT = 'data-testid="chat-message-scroll-region"'
-const SELECTOR_DATA_TESTID_CHAT_2 = 'data-testid="chat-history-loading-skeleton"'
-const SELECTOR_DATA_TESTID_CHAT_3 = 'data-testid="chat-history-retry-button"'
 
 
 declare global {

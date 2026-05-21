@@ -19,16 +19,12 @@ import { createCopilotModelCatalog } from './model-picker'
 import {
   buildCopilotMessageListItems,
   createUserMessageListItem,
-  type CopilotMessageListItem,
 } from './run-segment-view-model'
 import type { CopilotRunState } from './types'
 import { createProviderProfile } from '../../workbench/settings/settings-workspace-test-fixtures'
 
 // Duplicate-string constants extracted for sonarjs/no-duplicate-string
-const DESC_CN_008 = 'Shenzhen：晴 / 24°C / 湿度 60%'
-const LABEL_HTTPS_API_EXAMPLE = 'https://api.example.com/v1'
 const LABEL_LOCATION_SHENZHEN = '{"location":"Shenzhen"}'
-const LABEL_OPENAI_COMPATIBLE = 'openai-compatible'
 const LABEL_OPENAI_GPT = 'openai/gpt-4.1'
 const LABEL_PROVIDER_OPENAI = 'provider-openai'
 const LABEL_RUN_CANCELLED = 'run-cancelled'

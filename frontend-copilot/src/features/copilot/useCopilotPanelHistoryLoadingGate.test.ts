@@ -351,7 +351,7 @@ describe('usePersistedHistorySwitchLoadingGate', () => {
       rerender({
         sessionId: 'session-2',
         persistedHistoryViewState: 'loading',
-        sessionHistory: undefined,
+        sessionHistory: undefined as any,
       })
 
       expect(result.current.viewState).toBe('loading')
@@ -361,7 +361,7 @@ describe('usePersistedHistorySwitchLoadingGate', () => {
     it('teardown cleans up timers on unmount', () => {
       vi.useFakeTimers()
 
-      const { result, rerender, unmount } = renderGate(
+      const { rerender, unmount } = renderGate(
         'session-1', 'ready',
         createSessionHistory({ isPersistedThread: true }),
       )

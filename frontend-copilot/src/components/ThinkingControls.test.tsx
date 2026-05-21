@@ -1,32 +1,14 @@
 /** @vitest-environment jsdom */
 
-import { act, useState } from 'react'
+import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, vi, afterEach } from 'vitest'
 
 import {
   ThinkingPillGroup,
   ThinkingBudgetSlider,
   type ThinkingPillOption,
 } from './ThinkingControls'
-
-const LOW: ThinkingPillOption & { onSelect: ReturnType<typeof vi.fn> } = {
-  key: 'low',
-  labelZh: '低',
-  onSelect: vi.fn(),
-}
-
-const MEDIUM: ThinkingPillOption & { onSelect: ReturnType<typeof vi.fn> } = {
-  key: 'medium',
-  labelZh: '中',
-  onSelect: vi.fn(),
-}
-
-const HIGH: ThinkingPillOption & { onSelect: ReturnType<typeof vi.fn> } = {
-  key: 'high',
-  labelZh: '高',
-  onSelect: vi.fn(),
-}
 
 type RenderedRoot = {
   container: HTMLDivElement

@@ -27,6 +27,10 @@ const VALID_EVENT: AddTimelineEventInput = {
   title: 'Test Event',
   start_time: '2026-05-21T10:00:00.000Z',
   is_all_day: false,
+  description: null,
+  location: null,
+  source_id: null,
+  end_time: null,
 }
 
 const FULL_EVENT: AddTimelineEventInput = {
@@ -48,41 +52,6 @@ function createMockStatement(rows: unknown[]) {
     all: vi.fn(() => rows),
     run: vi.fn(() => ({ lastInsertRowid: 42, changes: 1 })),
   }
-}
-
-function createTimelineRow(overrides: Partial<{
-  id: number
-  source: string
-  source_id: string | null
-  title: string
-  description: string | null
-  start_time: string
-  end_time: string | null
-  is_all_day: number
-  location: string | null
-  status: string
-  metadata_payload: string | null
-  progress: number | null
-  created_at: string
-  updated_at: string
-}> = {}): ReturnType<typeof getCalendarEvents>[number] {
-  const row = {
-    id: overrides.id ?? 1,
-    source: overrides.source ?? 'test-source',
-    source_id: overrides.source_id ?? null,
-    title: overrides.title ?? 'Test Event',
-    description: overrides.description ?? null,
-    start_time: overrides.start_time ?? '2026-05-21T10:00:00.000Z',
-    end_time: overrides.end_time ?? null,
-    is_all_day: overrides.is_all_day ?? 0,
-    location: overrides.location ?? null,
-    status: overrides.status ?? 'not_started',
-    metadata_payload: overrides.metadata_payload ?? null,
-    progress: overrides.progress ?? null,
-    created_at: overrides.created_at ?? '2026-05-21T00:00:00.000Z',
-    updated_at: overrides.updated_at ?? '2026-05-21T00:00:00.000Z',
-  }
-  return row
 }
 
 describe('getCalendarEvents', () => {
@@ -509,7 +478,7 @@ describe('addCalendarEvent validation', () => {
     hoisted.mockDbInstance.prepare = vi.fn(() => stmt)
 
     expect(() => addCalendarEvent(VALID_EVENT)).not.toThrow()
-    expect(() => addCalendarEvent({ ...VALID_EVENT, end_time: undefined })).not.toThrow()
+    expect(() => addCalendarEvent({ ...VALID_EVENT, end_time: null })).not.toThrow()
   })
 
   it('allows status to be omitted', () => {

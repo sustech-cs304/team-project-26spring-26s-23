@@ -20,7 +20,7 @@ function createMockMcpRegistry(
       serverId: 'mock-server',
       remoteToolName: 'mockTool',
       content: [{ type: 'text', text: 'result' }],
-    }))),
+    }))) as any,
   }
 }
 

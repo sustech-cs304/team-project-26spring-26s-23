@@ -540,7 +540,7 @@ describe('requireRuntimeThinkingValue', () => {
         labelZh: '关闭',
       }, 'test')
       expect(result.valueType).toBe('budget')
-      expect(result.mode).toBe('off')
+      expect((result as any).mode).toBe('off')
     })
 
     it('accepts budget with mode dynamic', () => {
@@ -550,7 +550,7 @@ describe('requireRuntimeThinkingValue', () => {
         budgetTokens: null,
         labelZh: '动态',
       }, 'test')
-      expect(result.mode).toBe('dynamic')
+      expect((result as any).mode).toBe('dynamic')
     })
 
     it('rejects invalid budget mode', () => {

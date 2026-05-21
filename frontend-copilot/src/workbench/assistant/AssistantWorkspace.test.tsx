@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { StrictMode, act } from 'react'
+import { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -26,51 +26,30 @@ import {
 } from '../../features/copilot/thread-run-contract.test-support'
 import { runCreateSessionPendingScenario } from './test-support/assistant-workspace-creation-scenarios'
 import { ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY } from './assistant-workspace-shell-state'
-import { COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY } from './useAssistantWorkspaceState'
 import { runSessionContextMenuScenario } from './test-support/assistant-workspace-session-scenarios'
-import type { McpRegistrySubscriptionEvent } from '../../../electron/mcp-registry/types'
 // ── Test fixture constants (extracted for sonarjs/no-duplicate-string) ──
 
 const CHAT_HISTORY_VERSION = 'chat-history-v1'
 
 // Thread / run IDs
 const THREAD_ID_LIVE = 'thread-live'
-const THREAD_ID_NEW = 'thread-new'
-const THREAD_ID_LIVE_RACE = 'thread-live-race'
 const RUN_ID_LIVE_1 = 'run-live-1'
 
 // Tool and model identifiers
 const TOOL_ID_REMOTE_SEARCH = 'tool.remote-search'
 const MODEL_ID_GPT4_1 = 'openai/gpt-4.1'
 
-// Capability versions
-const CAP_VERSION_THREAD_LIVE_V1 = 'cap-thread-live-v1'
-
 // Test IDs (data-testid values)
 const TEST_ID_SESSION_CARD_THREAD_1 = 'assistant-session-card-thread-1'
-const TEST_ID_SESSION_CARD_THREAD_2 = 'assistant-session-card-thread-2'
 const TEST_ID_CREATE_SESSION_BUTTON = 'assistant-create-session-button'
-
-// ARIA
-const ARIA_HIDDEN = 'aria-hidden'
-
-// Debug / scope literals
-const COPILOT_DEBUG_PREFIX = '[copilot-debug]'
-const SCOPE_ASSISTANT_WORKSPACE = 'assistant-workspace'
 
 // Error messages
 const ERROR_SEEDED_AGENT_DIRECTORY = 'Expected seeded agent directory.'
-const ERROR_LRU_FIXTURES = 'Expected protected and evictable LRU fixtures.'
 
 // Timestamps
 const TS_2026_04_13T15_05_00Z = '2026-04-13T15:05:00Z'
-const TS_2026_04_13T15_06_30Z = '2026-04-13T15:06:30Z'
-const TS_2026_04_13T16_00_00Z = '2026-04-13T16:00:00Z'
-const TS_2026_04_13T16_03_00Z = '2026-04-13T16:03:00Z'
-const TS_2026_04_13T16_08_00Z = '2026-04-13T16:08:00Z'
 const TS_2026_04_14T08_00_00Z = '2026-04-14T08:00:00Z'
 const TS_2026_04_14T08_03_00Z = '2026-04-14T08:03:00Z'
-const TS_2026_04_14T08_05_00Z = '2026-04-14T08:05:00Z'
 
 
 const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
@@ -83,17 +62,12 @@ const mockCopilotChatPanel = vi.fn((props: Record<string, unknown>) => (
   </div>
 ))
 
-let activeMcpRegistryListener: ((event: McpRegistrySubscriptionEvent) => void) | null = null
-let mcpRegistryUnsubscribeMock = vi.fn()
-
 vi.mock('../../features/copilot/CopilotChatPanel', () => ({
   CopilotChatPanel: (props: Record<string, unknown>) => mockCopilotChatPanel(props),
 }))
 
 afterEach(() => {
   window.localStorage.removeItem(ASSISTANT_WORKSPACE_SHELL_STATE_STORAGE_KEY)
-  activeMcpRegistryListener = null
-  mcpRegistryUnsubscribeMock = vi.fn()
   vi.useRealTimers()
   vi.restoreAllMocks()
 })

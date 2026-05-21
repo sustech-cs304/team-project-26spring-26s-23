@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { installSettingsWorkspaceBridge } from '../test-support/settings-workspace-test-bridge'
 import { useSettingsWorkspaceState } from './useSettingsWorkspaceState'
-import type { SettingsWorkspaceFormState } from '../settings-workspace-form-state'
 
 function createProviderProfile(id: string, name: string) {
   return {
