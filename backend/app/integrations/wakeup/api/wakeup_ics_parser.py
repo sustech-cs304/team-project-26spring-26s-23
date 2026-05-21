@@ -131,15 +131,17 @@ class WakeupCalendarICSParser:
         occurrences: list[tuple[datetime, datetime | None]] = []
         current = start_at
         produced = 0
+        visited = 0
         max_occurrences = 512
 
         while True:
-            if count is not None and produced >= count:
+            if count is not None and visited >= count:
                 break
-            if until is not None and current > until:
+            if count is None and until is None and visited >= max_occurrences:
                 break
             if count is None and until is None and produced >= max_occurrences:
                 break
+            visited += 1
             if current not in exdates:
                 current_end = current + duration if duration is not None else None
                 occurrences.append((current, current_end))

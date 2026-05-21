@@ -60,9 +60,7 @@ export function ExternalSourcesSection({ externalSources, language }: ExternalSo
                 reader.onload = () => {
                   const text = typeof reader.result === 'string' ? reader.result : ''
                   onWakeupShareLinkChange(text)
-                  window.setTimeout(() => {
-                    void onWakeupLinkParse()
-                  }, 0)
+                  void onWakeupLinkParse()
                   event.target.value = ''
                 }
                 reader.onerror = () => {
