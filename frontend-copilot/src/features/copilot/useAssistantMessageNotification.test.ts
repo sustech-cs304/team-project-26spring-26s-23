@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CopilotAssistantSegment } from './run-segment-types'
@@ -28,7 +29,7 @@ function createRunState(overrides: Partial<CopilotRunState> = {}): CopilotRunSta
     thinkingSeriesDecision: null,
     reasoningSuppressionBasis: null,
     reasoningSuppressed: false,
-    reasoningTraceState: { currentTraceFragment: null, observedAt: 0 },
+    reasoningTraceState: 'not_observed',
     diagnostic: null,
     failure: null,
     cancelReason: null,
@@ -70,29 +71,45 @@ afterEach(() => {
   mockShow.mockClear()
 })
 
-describe.skip('useAssistantMessageNotification', () => {
+function render(config: {
+  language?: string
+  notificationsEnabled: boolean
+  runState: CopilotRunState
+}) {
+  return renderHook(
+    (props) =>
+      useAssistantMessageNotification({
+        language: props.language,
+        notificationsEnabled: props.notificationsEnabled,
+        runState: props.runState,
+      }),
+    {
+      initialProps: {
+        language: config.language ?? 'zh-CN',
+        notificationsEnabled: config.notificationsEnabled,
+        runState: config.runState,
+      },
+    },
+  )
+}
+
+describe('useAssistantMessageNotification', () => {
   describe('terminal phase transitions', () => {
     it('fires notification on first transition to completed phase', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: LABEL_RUN_ID,
-        segments: [createAssistantSegment({ text: 'Hello from AI' })],
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({
+          phase: 'completed',
+          runId: LABEL_RUN_ID,
+          segments: [createAssistantSegment({ text: 'Hello from AI' })],
+        }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      expect(effectFn).toBeDefined()
-      effectFn!()
 
       expect(mockShow).toHaveBeenCalledTimes(1)
       expect(mockShow).toHaveBeenCalledWith(
@@ -104,29 +121,24 @@ describe.skip('useAssistantMessageNotification', () => {
     })
 
     it('fires notification on transition to failed phase', () => {
-      const runState = createRunState({
-        phase: 'failed',
-        runId: LABEL_RUN_ID,
-        failure: {
-          code: 'error_code',
-          message: 'Something went wrong',
-          details: {},
-        },
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({
+          phase: 'failed',
+          runId: LABEL_RUN_ID,
+          failure: {
+            code: 'error_code',
+            message: 'Something went wrong',
+            details: {},
+          },
+        }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).toHaveBeenCalledTimes(1)
       expect(mockShow).toHaveBeenCalledWith(
@@ -138,116 +150,83 @@ describe.skip('useAssistantMessageNotification', () => {
     })
 
     it('does not fire notification when notifications are disabled', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: LABEL_RUN_ID,
+      const { rerender } = render({
+        notificationsEnabled: false,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: false,
-        runState,
+        runState: createRunState({
+          phase: 'completed',
+          runId: LABEL_RUN_ID,
+        }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).not.toHaveBeenCalled()
     })
 
     it('does not fire when runId is null', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: null,
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: null }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: null })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({ phase: 'completed', runId: null }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).not.toHaveBeenCalled()
     })
 
     it('does not fire when previous phase was already terminal', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: LABEL_RUN_ID,
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'completed', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'completed' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({ phase: 'completed', runId: LABEL_RUN_ID }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).not.toHaveBeenCalled()
     })
 
-    it('does not fire when transitioning from cancelled to completed', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: LABEL_RUN_ID,
+    it('fires notification when transitioning from cancelled to completed', () => {
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'cancelled', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'cancelled' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({
+          phase: 'completed',
+          runId: LABEL_RUN_ID,
+          segments: [createAssistantSegment({ text: 'Result after cancel' })],
+        }),
       })
 
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
-
-      expect(mockShow).not.toHaveBeenCalled()
+      expect(mockShow).toHaveBeenCalledTimes(1)
     })
 
     it('does not fire when runId changes between previous and current', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: 'run-2',
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({ phase: 'completed', runId: 'run-2' }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).not.toHaveBeenCalled()
     })
@@ -255,25 +234,20 @@ describe.skip('useAssistantMessageNotification', () => {
 
   describe('notification body resolution', () => {
     it('uses assistant segment text as success body', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: LABEL_RUN_ID,
-        segments: [createAssistantSegment({ text: 'Here is the AI response.' })],
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({
+          phase: 'completed',
+          runId: LABEL_RUN_ID,
+          segments: [createAssistantSegment({ text: 'Here is the AI response.' })],
+        }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -283,25 +257,20 @@ describe.skip('useAssistantMessageNotification', () => {
     })
 
     it('uses fallback body when assistant text is empty', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: LABEL_RUN_ID,
-        segments: [createAssistantSegment({ text: '   ' })],
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({
+          phase: 'completed',
+          runId: LABEL_RUN_ID,
+          segments: [createAssistantSegment({ text: '   ' })],
+        }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -311,29 +280,24 @@ describe.skip('useAssistantMessageNotification', () => {
     })
 
     it('uses failure message as failure body', () => {
-      const runState = createRunState({
-        phase: 'failed',
-        runId: LABEL_RUN_ID,
-        failure: {
-          code: 'error',
-          message: 'Connection timeout',
-          details: {},
-        },
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({
+          phase: 'failed',
+          runId: LABEL_RUN_ID,
+          failure: {
+            code: 'error',
+            message: 'Connection timeout',
+            details: {},
+          },
+        }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -343,43 +307,38 @@ describe.skip('useAssistantMessageNotification', () => {
     })
 
     it('uses failed tool error summary for failure body', () => {
-      const runState = createRunState({
-        phase: 'failed',
-        runId: LABEL_RUN_ID,
-        failure: { code: 'err', message: 'fail', details: {} },
-        segments: [
-          {
-            id: 'tool:1',
-            kind: 'tool',
-            runId: LABEL_RUN_ID,
-            startedSequence: 1,
-            lastSequence: 2,
-            status: 'failed',
-            toolCallId: 'tool.search:1',
-            toolId: 'tool.search',
-            toolPhase: 'failed',
-            title: 'Search',
-            summary: 'Failed',
-            inputSummary: null,
-            resultSummary: null,
-            errorSummary: 'API rate limit exceeded',
-          },
-        ],
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({
+          phase: 'failed',
+          runId: LABEL_RUN_ID,
+          failure: { code: 'err', message: 'fail', details: {} },
+          segments: [
+            {
+              id: 'tool:1',
+              kind: 'tool',
+              runId: LABEL_RUN_ID,
+              startedSequence: 1,
+              lastSequence: 2,
+              status: 'failed',
+              toolCallId: 'tool.search:1',
+              toolId: 'tool.search',
+              toolPhase: 'failed',
+              title: 'Search',
+              summary: 'Failed',
+              inputSummary: null,
+              resultSummary: null,
+              errorSummary: 'API rate limit exceeded',
+            },
+          ],
+        }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -391,50 +350,56 @@ describe.skip('useAssistantMessageNotification', () => {
 
   describe('transition dedup', () => {
     it('does not fire for already handled transitions', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: LABEL_RUN_ID,
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: `${LABEL_RUN_ID}:streaming->completed` })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({
+          phase: 'completed',
+          runId: LABEL_RUN_ID,
+          segments: [createAssistantSegment({ text: 'First time' })],
+        }),
       })
 
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
+      expect(mockShow).toHaveBeenCalledTimes(1)
 
-      expect(mockShow).not.toHaveBeenCalled()
+      rerender({
+        language: 'zh-CN',
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
+      })
+
+      rerender({
+        language: 'zh-CN',
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'completed', runId: LABEL_RUN_ID }),
+      })
+
+      expect(mockShow).toHaveBeenCalledTimes(1)
     })
   })
 
   describe('language support', () => {
     it('uses English copy for en-US language', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: LABEL_RUN_ID,
-        segments: [createAssistantSegment({ text: 'Hello' })],
-      })
-
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      const { rerender } = render({
         language: 'en-US',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
+      rerender({
+        language: 'en-US',
+        notificationsEnabled: true,
+        runState: createRunState({
+          phase: 'completed',
+          runId: LABEL_RUN_ID,
+          segments: [createAssistantSegment({ text: 'Hello' })],
+        }),
+      })
 
       expect(mockShow).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -444,25 +409,21 @@ describe.skip('useAssistantMessageNotification', () => {
     })
 
     it('falls back to zh-CN for unknown language', () => {
-      const runState = createRunState({
-        phase: 'completed',
-        runId: LABEL_RUN_ID,
-        segments: [createAssistantSegment({ text: 'Result' })],
-      })
-
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      const { rerender } = render({
         language: 'fr-FR',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
+      rerender({
+        language: 'fr-FR',
+        notificationsEnabled: true,
+        runState: createRunState({
+          phase: 'completed',
+          runId: LABEL_RUN_ID,
+          segments: [createAssistantSegment({ text: 'Result' })],
+        }),
+      })
 
       expect(mockShow).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -474,126 +435,52 @@ describe.skip('useAssistantMessageNotification', () => {
 
   describe('non-terminal phases', () => {
     it('does not fire notification for streaming phase', () => {
-      const runState = createRunState({
-        phase: 'streaming',
-        runId: LABEL_RUN_ID,
-      })
-
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'starting' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
-        language: 'zh-CN',
+      render({
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).not.toHaveBeenCalled()
     })
 
     it('does not fire notification for idle phase', () => {
-      const runState = createRunState({
-        phase: 'idle',
-        runId: LABEL_RUN_ID,
-      })
-
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'idle' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
-        language: 'zh-CN',
+      render({
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({ phase: 'idle', runId: LABEL_RUN_ID }),
       })
-
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
 
       expect(mockShow).not.toHaveBeenCalled()
     })
   })
 
   describe('async notification show', () => {
-    it('handles notification API error gracefully', () => {
+    it('handles notification API error gracefully', async () => {
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       mockShow.mockRejectedValueOnce(new Error('Permission denied'))
 
-      const runState = createRunState({
-        phase: 'completed',
-        runId: LABEL_RUN_ID,
-        segments: [createAssistantSegment({ text: 'Hello' })],
+      const { rerender } = render({
+        notificationsEnabled: true,
+        runState: createRunState({ phase: 'streaming', runId: LABEL_RUN_ID }),
       })
 
-      const mocks = mockReactHooks()
-      mocks.useRefReturnValues.set('previousPhase', { current: 'streaming' })
-      mocks.useRefReturnValues.set('previousRunId', { current: LABEL_RUN_ID })
-      mocks.useRefReturnValues.set('lastHandledTransition', { current: null })
-
-      useAssistantMessageNotification({
+      rerender({
         language: 'zh-CN',
         notificationsEnabled: true,
-        runState,
+        runState: createRunState({
+          phase: 'completed',
+          runId: LABEL_RUN_ID,
+          segments: [createAssistantSegment({ text: 'Hello' })],
+        }),
       })
 
-      const effectFn = mocks.useEffectCalls[0]?.callback
-      effectFn!()
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith(
+          '[assistant-notification] Failed to show desktop notification.',
+          expect.any(Error),
+        )
+      })
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        '[assistant-notification] Failed to show desktop notification.',
-        expect.any(Error),
-      )
       consoleSpy.mockRestore()
     })
   })
 })
-
-interface MockedHookCalls {
-  useEffectCalls: Array<{
-    callback: () => void
-    deps: unknown[]
-  }>
-  useRefReturnValues: Map<string, { current: unknown }>
-}
-
-let mockReactModule: {
-  useEffect: ReturnType<typeof vi.fn>
-  useRef: ReturnType<typeof vi.fn>
-  default: Record<string, unknown>
-}
-
-function mockReactHooks(): MockedHookCalls {
-  const calls: MockedHookCalls = {
-    useEffectCalls: [],
-    useRefReturnValues: new Map(),
-  }
-
-  let refCallIndex = 0
-  const refSequence = ['previousPhase', 'previousRunId', 'lastHandledTransition']
-
-  vi.doMock('react', () => {
-    const useEffect = vi.fn((callback: () => void, deps?: unknown[]) => {
-      calls.useEffectCalls.push({ callback, deps: deps ?? [] })
-    })
-
-    const useRef = vi.fn((initialValue?: unknown) => {
-      const key = refSequence[refCallIndex] ?? `ref-${refCallIndex}`
-      refCallIndex += 1
-      const existing = calls.useRefReturnValues.get(key)
-      if (existing) return existing
-      const ref = { current: initialValue ?? null }
-      calls.useRefReturnValues.set(key, ref)
-      return ref
-    })
-
-    return { useEffect, useRef }
-  })
-
-  return calls
-}

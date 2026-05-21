@@ -3,16 +3,25 @@ import type { DesktopCapabilityBridgeRequest } from '../protocol'
 import type { CreateDesktopCapabilityBridgeServiceOptions } from '../types'
 import { createDesktopCapabilityStateService } from '../services/DesktopCapabilityStateService'
 
-const emptyState = JSON.stringify({
-  version: 1,
-  values: { tool: {}, run: {} },
+const mockFsPromises = vi.hoisted(() => {
+  const store = new Map<string, string>()
+  return {
+    _store: store,
+    mkdir: vi.fn(async () => undefined),
+    readFile: vi.fn(async (filePath: string) => {
+      const content = store.get(filePath)
+      if (content === undefined) {
+        const error = new Error('ENOENT: no such file')
+        ;(error as any).code = 'ENOENT'
+        throw error
+      }
+      return content
+    }),
+    writeFile: vi.fn(async (filePath: string, content: string | Buffer) => {
+      store.set(filePath, typeof content === 'string' ? content : content.toString())
+    }),
+  }
 })
-
-const mockFsPromises = vi.hoisted(() => ({
-  mkdir: vi.fn(async () => undefined),
-  readFile: vi.fn(async () => emptyState),
-  writeFile: vi.fn(async () => undefined),
-}))
 
 vi.mock('node:fs/promises', () => mockFsPromises)
 
@@ -64,7 +73,7 @@ describe('DesktopCapabilityStateService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockFsPromises.readFile.mockResolvedValue(emptyState)
+    mockFsPromises._store.clear()
     service = createDesktopCapabilityStateService(createStubOptions())
   })
 
@@ -79,7 +88,7 @@ describe('DesktopCapabilityStateService', () => {
       expect(result.value).toBeNull()
     })
 
-    it.skip('returns found with value after put_value (mock does not persist state between operations)', async () => {
+    it('returns found with value after put_value', async () => {
       await service.handle(createRequest('put_value', {
         scope: 'tool',
         key: 'settings',
@@ -95,7 +104,7 @@ describe('DesktopCapabilityStateService', () => {
       expect(result.value).toEqual({ theme: 'dark' })
     })
 
-    it.skip('isolates run-scoped values from tool-scoped values (mock does not persist state between operations)', async () => {
+    it('isolates run-scoped values from tool-scoped values', async () => {
       await service.handle(createRequest('put_value', {
         scope: 'tool',
         key: 'shared',
@@ -134,7 +143,7 @@ describe('DesktopCapabilityStateService', () => {
       expect(result).toEqual({})
     })
 
-    it.skip('overwrites an existing value (mock does not persist state between operations)', async () => {
+    it('overwrites an existing value', async () => {
       await service.handle(createRequest('put_value', {
         scope: 'tool',
         key: 'config',
@@ -190,7 +199,7 @@ describe('DesktopCapabilityStateService', () => {
   })
 
   describe('state document resilience', () => {
-    it.skip('creates new state document when file does not exist (mock does not persist state between operations)', async () => {
+    it('creates new state document when file does not exist', async () => {
       mockFsPromises.readFile.mockRejectedValueOnce(
         Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' })
       )

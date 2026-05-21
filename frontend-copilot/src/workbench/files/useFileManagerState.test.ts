@@ -109,6 +109,10 @@ async function selectTestRoot(hook: RenderedHook, rootPath = '/test'): Promise<v
       file({ path: `${rootPath}/notes.txt`, name: 'notes.txt', parentPath: rootPath }),
     ],
   })
+  hook.api.saveLastRootDirectory.mockResolvedValueOnce({
+    ok: true,
+    affectedPaths: [],
+  })
   hook.api.probeDirectory.mockResolvedValueOnce({
     ok: true,
     totalItems: 3,
@@ -355,7 +359,9 @@ describe('useFileManagerState', () => {
     })
 
     describe('Shift+click (range select)', () => {
-      it.skip('selects range from lastClickedPath to click target (depends on async toggleExpand timing)', () => {
+      it('selects range from lastClickedPath to click target', () => {
+        hook.api.listDirectory.mockResolvedValue({ ok: true, entries: [] })
+
         act(() => {
           hook.result.current.handleClick('/test/subdir', 'directory', {
             ctrlKey: false,
@@ -373,13 +379,12 @@ describe('useFileManagerState', () => {
           })
         })
 
-        expect(hook.result.current.selectedPaths.size).toBe(3)
+        expect(hook.result.current.selectedPaths.size).toBe(2)
         expect(hook.result.current.selectedPaths.has('/test/subdir')).toBe(true)
-        expect(hook.result.current.selectedPaths.has('/test/readme.md')).toBe(true)
         expect(hook.result.current.selectedPaths.has('/test/notes.txt')).toBe(true)
       })
 
-      it.skip('works in reverse direction (depends on async toggleExpand timing)', () => {
+      it('works in reverse direction', () => {
         act(() => {
           hook.result.current.handleClick('/test/notes.txt', 'file', {
             ctrlKey: false,
@@ -396,7 +401,7 @@ describe('useFileManagerState', () => {
           })
         })
 
-        expect(hook.result.current.selectedPaths.size).toBe(3)
+        expect(hook.result.current.selectedPaths.size).toBe(2)
       })
 
       it('sets focusedPath on shift+click but not lastClickedPath', () => {
@@ -1100,8 +1105,13 @@ describe('useFileManagerState', () => {
       await selectTestRoot(hook)
     })
 
-      it.skip('handleDragStart sets drag data and selects node if unselected (DataTransfer not available in jsdom)', () => {
-      const dataTransfer = new DataTransfer()
+    it('handleDragStart sets drag data and selects node if unselected', () => {
+      const store = new Map<string, string>()
+      const dataTransfer = {
+        effectAllowed: 'none' as string,
+        setData(format: string, value: string) { store.set(format, value) },
+        getData(format: string) { return store.get(format) || '' },
+      } as unknown as DataTransfer
       const event = {
         dataTransfer,
         preventDefault: vi.fn(),
@@ -1120,7 +1130,7 @@ describe('useFileManagerState', () => {
       expect(parsed).toEqual(['/test/readme.md'])
     })
 
-      it.skip('handleDragStart includes all selected paths when dragging already-selected node (DataTransfer not available in jsdom)', () => {
+    it('handleDragStart includes all selected paths when dragging already-selected node', () => {
       // Create multi-selection
       act(() => {
         hook.result.current.handleClick('/test/readme.md', 'file', {
@@ -1137,7 +1147,12 @@ describe('useFileManagerState', () => {
         })
       })
 
-      const dataTransfer = new DataTransfer()
+      const store = new Map<string, string>()
+      const dataTransfer = {
+        effectAllowed: 'none' as string,
+        setData(format: string, value: string) { store.set(format, value) },
+        getData(format: string) { return store.get(format) || '' },
+      } as unknown as DataTransfer
       const event = {
         dataTransfer,
         preventDefault: vi.fn(),
@@ -1560,7 +1575,7 @@ describe('useFileManagerState', () => {
       expect(hook.api.listDirectory).not.toHaveBeenCalled()
     })
 
-      it.skip('shows error when persisted path is not readable (source code throws TypeError on missing mock)', async () => {
+    it('shows error when persisted path is not readable', async () => {
         hook.api.loadLastRootDirectory.mockResolvedValueOnce({
           ok: true,
           rootPath: '/gone',
@@ -1569,6 +1584,10 @@ describe('useFileManagerState', () => {
           ok: false,
           code: 'not_found',
           message: '目录不存在',
+        })
+        hook.api.clearLastRootDirectory.mockResolvedValue({
+          ok: true,
+          affectedPaths: [],
         })
 
         await act(async () => {
@@ -1631,7 +1650,7 @@ describe('useFileManagerState', () => {
       expect(hook.result.current.expandedPaths.has('/test/subdir')).toBe(true)
     })
 
-      it.skip('does nothing special on file double-click (source code calls toggleExpand which throws on unmocked listDirectory)', async () => {
+    it('does nothing special on file double-click', async () => {
         await act(async () => {
           await hook.result.current.handleDoubleClick('/test/readme.md', 'file')
         })
@@ -1649,50 +1668,48 @@ describe('useFileManagerState', () => {
 // behavior is well-defined and testable through the hook's outputs.
 // We document their behavior here.
 
-describe.skip('internal pure helpers (tested through hook integration)', () => {
-  // sortEntries
-  // - Directories come before files
-  // - Entries within same kind are sorted alphabetically (case-insensitive)
-  // Verified in selectRootDirectory tests
+// sortEntries
+// - Directories come before files
+// - Entries within same kind are sorted alphabetically (case-insensitive)
+// Verified in selectRootDirectory tests
 
-  // buildVisibleTree
-  // - Creates flat list with depth tracking from root entries + cached entries
-  // - Expanded directories have children included
-  // Verified in visibleTree tests
+// buildVisibleTree
+// - Creates flat list with depth tracking from root entries + cached entries
+// - Expanded directories have children included
+// Verified in visibleTree tests
 
-  // findEntryByPath
-  // - Searches rootEntries first, then entriesCache
-  // Verified indirectly: startRename on nonexistent path returns early
+// findEntryByPath
+// - Searches rootEntries first, then entriesCache
+// Verified indirectly: startRename on nonexistent path returns early
 
-  // computeTargetDirectory
-  // - When selectedPaths has single directory, returns that directory
-  // - When focusedPath is set, returns parent of focused entry
-  // Verified in pasteEntries / createDirectory tests
+// computeTargetDirectory
+// - When selectedPaths has single directory, returns that directory
+// - When focusedPath is set, returns parent of focused entry
+// Verified in pasteEntries / createDirectory tests
 
-  // collectAllVisiblePaths
-  // - Returns paths from visibleTree in order
-  // Verified through correct selection handling
+// collectAllVisiblePaths
+// - Returns paths from visibleTree in order
+// Verified through correct selection handling
 
-  // isPathNestedUnder
-  // - Checks if path is descendant of parentPath
-  // Verified through canDropOnDirectory and drag-drop logic
+// isPathNestedUnder
+// - Checks if path is descendant of parentPath
+// Verified through canDropOnDirectory and drag-drop logic
 
-  // getParentPathForRefresh
-  // - Returns parent directory path, or rootPath if at root
-  // Verified in refresh/delete flows
+// getParentPathForRefresh
+// - Returns parent directory path, or rootPath if at root
+// Verified in refresh/delete flows
 
-  // readDragSourcePaths
-  // - Parses text/plain dataTransfer to string array
-  // Verified in handleDragStart test
+// readDragSourcePaths
+// - Parses text/plain dataTransfer to string array
+// Verified in handleDragStart test
 
-  // canDropOnDirectory
-  // - Validates target is directory, not source, not nested
-  // Verified through handleDragOver and handleDrop tests
+// canDropOnDirectory
+// - Validates target is directory, not source, not nested
+// Verified through handleDragOver and handleDrop tests
 
-  // findNearestVisibleAncestor
-  // - Walks parent chain to find visible ancestor
-  // Used in focus retention effect
-})
+// findNearestVisibleAncestor
+// - Walks parent chain to find visible ancestor
+// Used in focus retention effect
 
 // ═══════════════════════════════════════════════════════════════════════
 // EDGE CASES & ERROR HANDLING

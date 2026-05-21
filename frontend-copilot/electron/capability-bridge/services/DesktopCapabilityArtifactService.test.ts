@@ -3,11 +3,25 @@ import type { DesktopCapabilityBridgeRequest } from '../protocol'
 import type { CreateDesktopCapabilityBridgeServiceOptions } from '../types'
 import { createDesktopCapabilityArtifactService } from '../services/DesktopCapabilityArtifactService'
 
-const mockFsPromises = vi.hoisted(() => ({
-  mkdir: vi.fn(async () => undefined),
-  readFile: vi.fn(async () => JSON.stringify({ version: 1, artifacts: {} })),
-  writeFile: vi.fn(async () => undefined),
-}))
+const mockFsPromises = vi.hoisted(() => {
+  const store = new Map<string, string>()
+  return {
+    _store: store,
+    mkdir: vi.fn(async () => undefined),
+    readFile: vi.fn(async (filePath: string) => {
+      const content = store.get(filePath)
+      if (content === undefined) {
+        const error = new Error('ENOENT: no such file')
+        ;(error as any).code = 'ENOENT'
+        throw error
+      }
+      return content
+    }),
+    writeFile: vi.fn(async (filePath: string, content: string | Buffer) => {
+      store.set(filePath, typeof content === 'string' ? content : content.toString())
+    }),
+  }
+})
 
 vi.mock('node:fs/promises', () => mockFsPromises)
 
@@ -67,7 +81,7 @@ describe('DesktopCapabilityArtifactService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockFsPromises.readFile.mockResolvedValue(JSON.stringify({ version: 1, artifacts: {} }))
+    mockFsPromises._store.clear()
     service = createDesktopCapabilityArtifactService(createStubOptions())
   })
 
@@ -126,7 +140,7 @@ describe('DesktopCapabilityArtifactService', () => {
   })
 
   describe('describe_artifact', () => {
-    it.skip('returns artifact descriptor when found (mock readFile does not persist writes)', async () => {
+    it('returns artifact descriptor when found', async () => {
       const saved = await service.handle(createRequest('save_text', {
         name: 'test.txt',
         text: 'content',
