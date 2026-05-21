@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, MAXYEAR
 
 from app.event_manager.data.dto import UnifiedCalendarEvent
 from app.integrations.sustech.blackboard.shared.datetime import (
@@ -133,6 +133,7 @@ class WakeupCalendarICSParser:
         produced = 0
         visited = 0
         max_occurrences = 512
+        max_date = datetime(MAXYEAR, 12, 31)
 
         while True:
             if count is not None and (visited >= count or produced >= count):
@@ -145,7 +146,13 @@ class WakeupCalendarICSParser:
                 occurrences.append((current, current_end))
                 produced += 1
 
-            current = current + timedelta(weeks=interval)
+            try:
+                next_current = current + timedelta(weeks=interval)
+            except OverflowError:
+                break
+            if next_current > max_date:
+                break
+            current = next_current
 
         return occurrences or [(start_at, end_at)]
 
