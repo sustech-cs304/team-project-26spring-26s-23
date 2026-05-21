@@ -116,7 +116,10 @@ def _compile_pattern(pattern: str) -> re.Pattern[str]:
             code="invalid_pattern", message="pattern must be a non-empty string."
         )
     try:
-        return re.compile(translate(normalized))
+        translated = translate(normalized)
+        if isinstance(translated, tuple):
+            translated = translated[0]
+        return re.compile(translated)
     except re.error as exc:
         raise FileToolError(
             code="invalid_pattern",

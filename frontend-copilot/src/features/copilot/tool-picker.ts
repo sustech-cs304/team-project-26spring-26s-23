@@ -172,7 +172,9 @@ export function toggleToolIdInSelection(input: {
   policy: SettingsWorkspaceToolPermissionPolicyState | null
 }): string[] {
   if (input.selectedToolIds.includes(input.toolId)) {
-    return input.selectedToolIds.filter((currentToolId) => currentToolId !== input.toolId)
+    return sanitizeSelectedToolIds(
+      input.selectedToolIds.filter((currentToolId) => currentToolId !== input.toolId),
+    )
   }
 
   if (isCopilotToolDenied(input.toolId, input.policy)) {
