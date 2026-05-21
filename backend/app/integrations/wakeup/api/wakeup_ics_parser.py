@@ -138,6 +138,8 @@ class WakeupCalendarICSParser:
         while True:
             if count is not None and (visited >= count or produced >= count):
                 break
+            if until is not None and current > until:
+                break
             if count is None and until is None and (visited >= max_occurrences or produced >= max_occurrences):
                 break
             visited += 1
