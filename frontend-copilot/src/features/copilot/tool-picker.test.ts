@@ -478,7 +478,7 @@ describe('toggleToolIdInSelection', () => {
     expect(result).toEqual([TOOL_READ])
   })
 
-  it.skip('sanitizes selected tool ids when toggling a denied tool (source does not deduplicate on remove path)', () => {
+  it('sanitizes selected tool ids when toggling a denied tool', () => {
     const result = toggleToolIdInSelection({
       selectedToolIds: [TOOL_READ, TOOL_READ, TOOL_SEARCH],
       toolId: TOOL_SEARCH,

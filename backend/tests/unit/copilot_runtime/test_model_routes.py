@@ -442,7 +442,7 @@ class TestResolvedRuntimeModelRoute:
         )
         assert resolved.auth_kind == "api-key"
 
-    def test_auth_kind_default_is_api_key_even_without_key(self) -> None:
+    def test_auth_kind_default_none_when_no_key(self) -> None:
         resolved = ResolvedRuntimeModelRoute(
             provider_profile_id="profile-x",
             provider="ollama",
@@ -451,7 +451,7 @@ class TestResolvedRuntimeModelRoute:
             model_id="llama3",
             api_key="",
         )
-        assert resolved.auth_kind == "api-key"
+        assert resolved.auth_kind == "none"
 
     def test_auth_kind_explicit_empty_normalizes_to_none_when_no_key(self) -> None:
         resolved = ResolvedRuntimeModelRoute(

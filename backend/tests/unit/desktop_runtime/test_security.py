@@ -103,20 +103,26 @@ class TestRequireLocalToken:
         require_local_token(request, config)
 
     def test_passes_with_valid_token_in_header(self) -> None:
-        request = _make_request(headers={LOCAL_TOKEN_HEADER_NAME: _VALID_TOKEN})
+        request = _make_request(
+            headers={LOCAL_TOKEN_HEADER_NAME: _VALID_TOKEN},
+            client=("127.0.0.1", 50000),
+        )
         config = _make_config(local_token=_VALID_TOKEN)
         require_local_token(request, config)
 
     def test_raises_401_when_token_header_missing_and_token_configured(self) -> None:
-        request = _make_request()
+        request = _make_request(client=("127.0.0.1", 50000))
         config = _make_config(local_token=_VALID_TOKEN)
         with pytest.raises(HTTPException) as exc_info:
             require_local_token(request, config)
         assert exc_info.value.status_code == 401
-        assert exc_info.value.detail["code"] == "invalid_local_token"
+        assert exc_info.value.detail["code"] == "missing_local_token"
 
     def test_raises_401_with_wrong_token(self) -> None:
-        request = _make_request(headers={LOCAL_TOKEN_HEADER_NAME: _WRONG_TOKEN})
+        request = _make_request(
+            headers={LOCAL_TOKEN_HEADER_NAME: _WRONG_TOKEN},
+            client=("127.0.0.1", 50000),
+        )
         config = _make_config(local_token=_VALID_TOKEN)
         with pytest.raises(HTTPException) as exc_info:
             require_local_token(request, config)
@@ -127,6 +133,7 @@ class TestRequireLocalToken:
         request = _make_request(
             path="/?X-Local-Token=some-token",
             headers={LOCAL_TOKEN_HEADER_NAME: _VALID_TOKEN},
+            client=("127.0.0.1", 50000),
         )
         config = _make_config(local_token=_VALID_TOKEN)
         require_local_token(request, config)

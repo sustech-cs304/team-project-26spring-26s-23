@@ -230,10 +230,10 @@ class TestExtractRoleCodes:
         codes = _extract_role_codes(html)
         _assert_equal(codes, ["ADMIN"], "rolecode extracted")
 
-    def test_quoted_role_code_key_not_matched_by_current_regex(self) -> None:
+    def test_quoted_role_code_key_is_matched(self) -> None:
         html = '{"RoleCode": "STUDENT"}'
         codes = _extract_role_codes(html)
-        _assert_equal(codes, [], "quoted JSON key RoleCode not matched by regex")
+        _assert_equal(codes, ["STUDENT"], "quoted JSON key RoleCode is now matched")
 
     def test_deduplicates_role_codes(self) -> None:
         html = '<script>var RoleCode = "STUDENT";\nvar roleCode = "STUDENT";</script>'

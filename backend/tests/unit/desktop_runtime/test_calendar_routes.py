@@ -19,7 +19,7 @@ def test_calendar_events_route_requires_local_token_and_serializes_utc_datetimes
         )
 
     assert unauthorized.status_code == 401
-    assert unauthorized.json()["detail"]["code"] == "invalid_local_token"
+    assert unauthorized.json()["detail"]["code"] == "missing_local_token"
 
     assert authorized.status_code == 200
     payload = authorized.json()
