@@ -18,6 +18,10 @@ export interface UnifiedCalendarEvent {
   progress?: number
 }
 
+export interface LoadTimelineEventsRequest {
+  runtimeUrl?: string | null
+}
+
 export interface LoadTimelineEventsResult {
   items: UnifiedCalendarEvent[]
 }

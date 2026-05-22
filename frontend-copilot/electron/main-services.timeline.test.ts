@@ -1,0 +1,134 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const REMOTE_RUNTIME_URL = 'http://127.0.0.1:8765'
+const LOCAL_TOKEN = 'calendar-token'
+
+const hoisted = vi.hoisted(() => ({
+  getCalendarEvents: vi.fn(),
+  addCalendarEvent: vi.fn(),
+  createElectronAttachmentService: vi.fn(() => ({
+    readClipboardData: vi.fn(),
+    writeTempFile: vi.fn(),
+    readPreview: vi.fn(),
+    cleanupTempFiles: vi.fn(),
+  })),
+  createElectronFileManagerService: vi.fn(() => ({
+    selectRootDirectory: vi.fn(),
+    listDirectory: vi.fn(),
+    probeDirectory: vi.fn(),
+    createDirectory: vi.fn(),
+    copyEntries: vi.fn(),
+    moveEntries: vi.fn(),
+    renameEntry: vi.fn(),
+    trashEntries: vi.fn(),
+    deleteEntriesPermanently: vi.fn(),
+    watchDirectories: vi.fn(),
+    unwatchDirectories: vi.fn(),
+    loadLastRootDirectory: vi.fn(),
+    saveLastRootDirectory: vi.fn(),
+    clearLastRootDirectory: vi.fn(),
+    openEntryWithSystem: vi.fn(),
+    revealEntryInFolder: vi.fn(),
+    copyTextToClipboard: vi.fn(),
+  })),
+}))
+
+vi.mock('./timeline-database/service', () => ({
+  getCalendarEvents: hoisted.getCalendarEvents,
+  addCalendarEvent: hoisted.addCalendarEvent,
+}))
+
+vi.mock('./attachment-service/service', () => ({
+  createElectronAttachmentService: hoisted.createElectronAttachmentService,
+}))
+
+vi.mock('./file-manager/service', () => ({
+  createElectronFileManagerService: hoisted.createElectronFileManagerService,
+}))
+
+import { createMainProcessServices } from './main-services'
+import type { HostedBackendService } from './runtime/hosted-backend-service'
+import type { UnifiedCalendarEvent } from './timeline-database/ipc'
+
+describe('createMainProcessServices timeline database bridge', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    hoisted.getCalendarEvents.mockReturnValue([])
+  })
+
+  it('loads remote calendar events through the main process with the hosted local token header', async () => {
+    const remoteEvent = createCalendarEvent({ id: 7, source_id: 'remote-1', title: 'Remote assignment' })
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ items: [remoteEvent] }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const hostedBackendService = {
+      getLocalToken: vi.fn(() => LOCAL_TOKEN),
+      getRuntimeBaseUrl: vi.fn(() => REMOTE_RUNTIME_URL),
+      start: vi.fn(async () => undefined),
+    } as unknown as HostedBackendService
+    const services = createServices(hostedBackendService)
+
+    await expect(services.loadTimelineEvents({ runtimeUrl: REMOTE_RUNTIME_URL })).resolves.toEqual({
+      items: [remoteEvent],
+    })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe(`${REMOTE_RUNTIME_URL}/calendar/events`)
+    expect((init.headers as Headers).get('X-Local-Token')).toBe(LOCAL_TOKEN)
+  })
+
+  it('throws the calendar load failure when both local cache and remote API are unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('unauthorized', { status: 401 })))
+
+    const hostedBackendService = {
+      getLocalToken: vi.fn(() => LOCAL_TOKEN),
+      getRuntimeBaseUrl: vi.fn(() => REMOTE_RUNTIME_URL),
+      start: vi.fn(async () => undefined),
+    } as unknown as HostedBackendService
+    const services = createServices(hostedBackendService)
+
+    await expect(services.loadTimelineEvents({ runtimeUrl: REMOTE_RUNTIME_URL })).rejects.toThrow(
+      '无法加载日历事件：本地无缓存数据且远端 API 请求失败，请检查网络连接或后端服务状态。',
+    )
+  })
+})
+
+function createServices(hostedBackendService: HostedBackendService) {
+  return createMainProcessServices({
+    prepareRuntimePaths: vi.fn(async () => ({ runtimeRootDir: 'runtime-root' }) as never),
+    userDataPath: 'D:/workspace/candue-user-data',
+    ensureHostedBackendService: vi.fn(async () => hostedBackendService),
+    appendMainRuntimeLog: vi.fn(),
+    publishConfigCenterPublicSnapshotUpdate: vi.fn(),
+    publishMcpRegistryEvent: vi.fn(),
+    publishSkillRegistryEvent: vi.fn(),
+    createCopilotHistoryService: vi.fn(() => ({
+      listThreads: vi.fn(),
+      getThreadDetail: vi.fn(),
+      getRunReplay: vi.fn(),
+      renameThread: vi.fn(),
+      duplicateThread: vi.fn(),
+      deleteThread: vi.fn(),
+      backupDatabase: vi.fn(),
+      restoreDatabase: vi.fn(),
+    })),
+  })
+}
+
+function createCalendarEvent(overrides: Partial<UnifiedCalendarEvent> = {}): UnifiedCalendarEvent {
+  return {
+    id: 1,
+    source: 'bb',
+    source_id: 'source-1',
+    title: 'Task 1',
+    description: 'Example event',
+    start_time: '2026-05-01T00:00:00.000Z',
+    end_time: '2026-05-03T00:00:00.000Z',
+    is_all_day: false,
+    location: null,
+    status: 'not_started',
+    metadata_payload: null,
+    ...overrides,
+  }
+}
