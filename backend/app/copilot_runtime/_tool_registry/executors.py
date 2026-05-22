@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TypedDict
 
+from app.tools.file_convert import convert_file_to_str
 from app.desktop_runtime.config import DEFAULT_USER_DATA_DIR, ENV_USER_DATA_DIR
 
 from .constants import DEFAULT_WEATHER_LOCATION, WEATHER_SAMPLE_RESULTS
@@ -40,6 +41,24 @@ async def execute_default_weather_tool(
     arguments: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     return await execute_weather_current_tool(arguments)
+
+
+async def execute_file_convert_tool(
+    arguments: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    payload = dict(arguments or {})
+    raw_path = payload.get("path")
+    if not isinstance(raw_path, str) or raw_path.strip() == "":
+        raise ValueError("path must be a non-empty string")
+    max_chars = payload.get("maxChars")
+    max_chars_value: int | None
+    if max_chars is None:
+        max_chars_value = None
+    elif isinstance(max_chars, bool) or not isinstance(max_chars, int):
+        raise ValueError("maxChars must be an integer")
+    else:
+        max_chars_value = max_chars
+    return {"text": convert_file_to_str(raw_path.strip(), max_chars=max_chars_value)}
 
 
 async def execute_request_user_form_tool(

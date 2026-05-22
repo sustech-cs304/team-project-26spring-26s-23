@@ -1441,6 +1441,7 @@ def _configure_contract_tool_test_model(
     app,
     *,
     tool_id: str,
+    tool_arguments: dict[str, Any],
     output_text: str,
 ) -> None:
     tool_registry = getattr(app.state, "copilot_runtime_tool_registry", None)

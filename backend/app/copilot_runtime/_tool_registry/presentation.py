@@ -33,6 +33,9 @@ from .constants import (
     BROWSER_SWITCH_TAB_TOOL_DESCRIPTION,
     BROWSER_SWITCH_TAB_TOOL_DISPLAY_NAME,
     BROWSER_SWITCH_TAB_TOOL_ID,
+    FILE_CONVERT_TOOL_DESCRIPTION,
+    FILE_CONVERT_TOOL_DISPLAY_NAME,
+    FILE_CONVERT_TOOL_ID,
     FILE_TOOL_EDIT_DESCRIPTION,
     FILE_TOOL_EDIT_DISPLAY_NAME,
     FILE_TOOL_EDIT_ID,
@@ -106,6 +109,7 @@ SKILL_TOOL_GROUP = ToolPresentationGroup(
 )
 
 TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
+    FILE_CONVERT_TOOL_ID: BUILTIN_TOOL_GROUP,
     FILE_TOOL_READ_ID: BUILTIN_TOOL_GROUP,
     FILE_TOOL_WRITE_ID: BUILTIN_TOOL_GROUP,
     FILE_TOOL_EDIT_ID: BUILTIN_TOOL_GROUP,
@@ -139,6 +143,12 @@ TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
 }
 
 TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
+    FILE_CONVERT_TOOL_ID: {
+        "display_name_zh": "文件转换",
+        "display_name_en": FILE_CONVERT_TOOL_DISPLAY_NAME,
+        "description_zh": "将本地文件（PDF/DOCX/PPTX/文本）转换为纯文本内容。",
+        "description_en": FILE_CONVERT_TOOL_DESCRIPTION,
+    },
     FILE_TOOL_READ_ID: {
         "display_name_zh": "文件读取",
         "display_name_en": FILE_TOOL_READ_DISPLAY_NAME,

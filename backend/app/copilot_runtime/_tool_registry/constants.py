@@ -24,6 +24,15 @@ DEFAULT_TOOL_KIND = "builtin"
 DEFAULT_TOOL_AVAILABILITY = "available"
 DEFAULT_TOOL_CATALOG_LANGUAGE = "zh-CN"
 
+FILE_CONVERT_TOOL_ID = "tool.file-convert"
+FILE_CONVERT_TOOL_DISPLAY_NAME = "File Convert"
+FILE_CONVERT_TOOL_DESCRIPTION = (
+    "Convert a local file (PDF/DOCX/PPTX/text) into plain text for downstream reasoning."
+)
+FILE_CONVERT_TOOL_PROMPT = (
+    "Use this tool to convert a file into plain text before summarizing or extracting information."
+)
+
 WEATHER_CURRENT_TOOL_ID = "tool.weather-current"
 WEATHER_CURRENT_TOOL_DISPLAY_NAME = "Current Weather"
 WEATHER_CURRENT_TOOL_DESCRIPTION = (
@@ -186,6 +195,11 @@ FILE_TOOL_SWITCH_ROOT_PROMPT = "Use this tool to validate a directory as the nex
 
 BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
     "zh-CN": {
+        FILE_CONVERT_TOOL_ID: {
+            "displayName": "文件转换",
+            "description": "将本地文件（PDF/DOCX/PPTX/文本）转换为纯文本内容。",
+            "prompt": "使用此工具把文件内容转成可被模型直接阅读的文本，再进行总结、提取与分析。",
+        },
         FILE_TOOL_READ_ID: {
             "displayName": "文件读取",
             "description": "按行分页读取工作区内 UTF-8 文本文件。",
@@ -439,6 +453,25 @@ SENSITIVE_TOOL_ARGUMENT_KEYWORDS = frozenset(
         "token",
     }
 )
+
+FILE_CONVERT_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "File path relative to the workspace root.",
+        },
+        "maxChars": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200000,
+            "description": "Maximum characters of extracted text to return.",
+        },
+    },
+    "required": ["path"],
+}
 
 SKILL_ACTIVATE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",

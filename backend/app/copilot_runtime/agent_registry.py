@@ -157,7 +157,7 @@ def build_default_agent_registry(
             default=True,
             toolset_name=toolset_name,
             executor_factory=executor_factory,
-            recommended_tools=("tool.fs.read",),
+            recommended_tools=("tool.file-convert",),
         )
     )
     return registry
