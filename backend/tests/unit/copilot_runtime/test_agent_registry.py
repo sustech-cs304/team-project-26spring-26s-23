@@ -39,7 +39,7 @@ def test_default_agent_registry_builds_info_directory_and_diagnostics_views() ->
         {
             "agentId": "default",
             "status": "active",
-            "recommendedTools": ["tool.fs.read"],
+            "recommendedTools": ["tool.file-convert"],
             "displayName": "Default",
             "description": "Minimal default agent exposed by the Copilot runtime run bridge.",
             "iconKey": None,
@@ -65,7 +65,7 @@ def test_default_agent_registry_builds_info_directory_and_diagnostics_views() ->
                 "default": True,
                 "status": "active",
                 "toolsetName": "default",
-                "recommendedTools": ["tool.fs.read"],
+                "recommendedTools": ["tool.file-convert"],
                 "iconKey": None,
                 "hasExecutorFactory": False,
             }

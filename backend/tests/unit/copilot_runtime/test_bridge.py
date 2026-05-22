@@ -742,13 +742,13 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
     assert capabilities.sessionId == thread.thread_id
     assert capabilities.boundAgent.agentId == "default"
     assert capabilities.toolSelectionMode == "recommendation-only"
-    assert capabilities.recommendedTools == ("tool.fs.read",)
+    assert capabilities.recommendedTools == ("tool.file-convert",)
     assert capabilities.capabilitiesVersion == "capabilities:agents-v1:tools-v1"
     tool_ids = {tool.toolId for tool in capabilities.tools}
-    assert "tool.fs.read" in tool_ids
+    assert "tool.file-convert" in tool_ids
     assert any(
-        tool.toolId == "tool.fs.read"
-        and tool.displayName in {"File Read", "文件读取"}
+        tool.toolId == "tool.file-convert"
+        and tool.displayName in {"File Convert", "文件转换"}
         for tool in capabilities.tools
     )
 

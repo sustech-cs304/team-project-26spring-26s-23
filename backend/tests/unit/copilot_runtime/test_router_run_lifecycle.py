@@ -1050,11 +1050,11 @@ def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool
 
     assert response.status_code == 200
     assert payload == scaffold.build_capabilities_response(thread=thread).to_dict()
-    assert payload["recommendedTools"] == ["tool.fs.read"]
+    assert payload["recommendedTools"] == ["tool.file-convert"]
     assert scaffold.tool_registry.get_default().name == "default"
     assert payload["toolSelectionMode"] == "recommendation-only"
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.fs.read" in tool_ids
+    assert "tool.file-convert" in tool_ids
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
 
 
