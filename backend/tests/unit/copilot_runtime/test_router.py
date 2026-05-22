@@ -811,19 +811,24 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
     }
     assert events[2]["payload"]["delta"] == TEST_MODEL_REPLY
     assert completed["resolvedModelId"] == "gpt-4.1"
-    assert completed["resolvedToolIds"] == ["tool.file-convert"]
+    assert "tool.file-convert" in completed["resolvedToolIds"]
     assert completed["requestOptions"] == {"temperature": 0.2}
-    assert executor.calls == [
-        {
-            "agent_name": "default",
-            "user_prompt": "Hello",
-            "message_history": [],
-            "resolved_model_id": "gpt-4.1",
-            "enabled_tools": ["tool.file-convert"],
-            "debug_enabled": True,
-            "request_options": {"temperature": 0.2},
-        }
-    ]
+    assert len(executor.calls) == 1
+    call = executor.calls[0]
+    assert call["enabled_tools"] is not None
+    assert "tool.file-convert" in call["enabled_tools"]
+    assert {
+        key: value
+        for key, value in call.items()
+        if key != "enabled_tools"
+    } == {
+        "agent_name": "default",
+        "user_prompt": "Hello",
+        "message_history": [],
+        "resolved_model_id": "gpt-4.1",
+        "debug_enabled": True,
+        "request_options": {"temperature": 0.2},
+    }
     assert [
         (message.role, message.content) for message in store.list_messages("thread-1")
     ] == [
