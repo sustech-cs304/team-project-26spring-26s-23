@@ -100,7 +100,7 @@ def ensure_builtin_skills(
     for spec in _DEFAULT_SKILLS:
         record = registry_by_id.get(spec.skill_id)
         if record is None:
-            record = {"skillId": spec.skill_id}
+            record = dict[str, object](skillId=spec.skill_id)
             registry_skills.append(record)
             registry_by_id[spec.skill_id] = record
             registry_changed = True
@@ -151,7 +151,7 @@ def ensure_builtin_skills(
     for spec in _DEFAULT_SKILLS:
         record = snapshot_by_id.get(spec.skill_id)
         if record is None:
-            record = {"skillId": spec.skill_id}
+            record = dict[str, object](skillId=spec.skill_id)
             snapshot_skills.append(record)
             snapshot_by_id[spec.skill_id] = record
             snapshot_changed = True
