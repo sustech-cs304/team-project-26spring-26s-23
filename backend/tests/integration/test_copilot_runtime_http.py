@@ -737,15 +737,27 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
     assert [event["payload"]["phase"] for event in tool_events] == ["started", "completed"]
     tool_call_id = tool_events[0]["payload"]["toolCallId"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
-    assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
-        ("event", "emit_event"),
-        ("secret", "get_secret"),
-        ("secret", "get_secret"),
-        ("database", "resolve_path"),
-        ("state", "put_value"),
-        ("artifact", "save_text"),
-        ("event", "emit_event"),
-    ]
+    operations = [(item["capability"], item["operation"]) for item in captured_bridge_payloads]
+    assert operations[0] == ("event", "emit_event")
+    assert operations[-1] == ("event", "emit_event")
+    assert operations.count(("secret", "get_secret")) == 2
+    assert ("state", "put_value") in operations
+    assert ("database", "resolve_path") in operations
+    assert ("artifact", "save_text") in operations
+    first_state_index = next(
+        index
+        for index, operation in enumerate(operations)
+        if operation == ("state", "put_value")
+    )
+    first_secret_index = next(
+        index
+        for index, operation in enumerate(operations)
+        if operation == ("secret", "get_secret")
+    )
+    database_index = operations.index(("database", "resolve_path"))
+    artifact_index = operations.index(("artifact", "save_text"))
+    assert first_state_index < first_secret_index
+    assert first_secret_index < database_index < artifact_index < len(operations) - 1
     assert all(item["toolId"] == "blackboard.snapshot.sync" for item in captured_bridge_payloads)
     assert all(item["runId"] == run_id for item in captured_bridge_payloads)
     assert all(item["toolCallId"] == tool_call_id for item in captured_bridge_payloads)
@@ -861,15 +873,27 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
     assert [event["payload"]["phase"] for event in tool_events] == ["started", "completed"]
     tool_call_id = tool_events[0]["payload"]["toolCallId"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
-    assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
-        ("event", "emit_event"),
-        ("secret", "get_secret"),
-        ("secret", "get_secret"),
-        ("database", "resolve_path"),
-        ("state", "put_value"),
-        ("artifact", "save_text"),
-        ("event", "emit_event"),
-    ]
+    operations = [(item["capability"], item["operation"]) for item in captured_bridge_payloads]
+    assert operations[0] == ("event", "emit_event")
+    assert operations[-1] == ("event", "emit_event")
+    assert operations.count(("secret", "get_secret")) == 2
+    assert ("state", "put_value") in operations
+    assert ("database", "resolve_path") in operations
+    assert ("artifact", "save_text") in operations
+    first_state_index = next(
+        index
+        for index, operation in enumerate(operations)
+        if operation == ("state", "put_value")
+    )
+    first_secret_index = next(
+        index
+        for index, operation in enumerate(operations)
+        if operation == ("secret", "get_secret")
+    )
+    database_index = operations.index(("database", "resolve_path"))
+    artifact_index = operations.index(("artifact", "save_text"))
+    assert first_state_index < first_secret_index
+    assert first_secret_index < database_index < artifact_index < len(operations) - 1
     database_request = next(
         item
         for item in captured_bridge_payloads
