@@ -13,24 +13,6 @@ interface HubWorkspaceProps {
   bootstrap?: CopilotBootstrapController
 }
 
-/**
- * Build a stable composite key for deduplication.
- * When source_id is available we use source:source_id; otherwise we degrade
- * to source + title + start_time so that multiple local events from the same
- * source without source_id are not collapsed into a single key.
- */
-function buildCompositeKey(event: {
-  source: string
-  source_id: string | null
-  title?: string
-  start_time?: string
-}): string {
-  if (event.source_id != null && String(event.source_id).trim().length > 0) {
-    return `${String(event.source)}:${String(event.source_id)}`
-  }
-  return `${String(event.source)}:${String(event.title ?? '')}:${String(event.start_time ?? '')}`
-}
-
 export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspaceProps) {
   const content = getHubWorkspaceContent(language, view)
   const [events, setEvents] = useState<UnifiedCalendarEvent[]>([])
@@ -51,8 +33,13 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
   useEffect(() => {
     let active = true
 
-    if (bootstrap && bootstrap.state.status !== 'ready' && bootstrap.state.status !== 'degraded') {
-      return
+    let actualRuntimeUrl = 'http://127.0.0.1:8765'
+    if (bootstrap) {
+      if (bootstrap.state.status === 'ready' || bootstrap.state.status === 'degraded') {
+        actualRuntimeUrl = bootstrap.state.runtimeUrl
+      } else {
+        return undefined
+      }
     }
 
     async function fetchEvents() {
@@ -60,61 +47,14 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       setError(null)
       try {
         const timelineDb = window.timelineDatabase
-        let localResponse: { items: UnifiedCalendarEvent[] }
-        if (timelineDb && typeof timelineDb.loadEvents === 'function') {
-          localResponse = await timelineDb.loadEvents()
-        } else {
-          console.warn(
-            '[Sync] timelineDatabase bridge is unavailable; falling back to remote calendar events only.',
-          )
-          localResponse = { items: [] }
-        }
-        const combinedEvents = [...(localResponse.items || [])]
-
-        const localKeys = new Set(combinedEvents.map(e => buildCompositeKey(e)))
-
-        let remoteFailed = false
-        try {
-          const desktopRuntime = window.desktopRuntime
-          if (!desktopRuntime || typeof desktopRuntime.loadCalendarEvents !== 'function') {
-            throw new Error('desktopRuntime bridge is unavailable')
-          }
-          const apiResponse = await desktopRuntime.loadCalendarEvents()
-          if (apiResponse.ok) {
-            if (apiResponse.items.length > 0) {
-              for (const remoteEvent of apiResponse.items) {
-                if (!localKeys.has(buildCompositeKey(remoteEvent))) {
-                  combinedEvents.push(remoteEvent)
-                }
-              }
-            }
-          } else {
-            console.warn(`[Sync] Calendar IPC proxy failed: ${apiResponse.error}`)
-            remoteFailed = true
-          }
-        } catch (fetchErr: unknown) {
-          console.warn('[Sync] Failed to load backend calendar events via IPC proxy:', fetchErr)
-          remoteFailed = true
+        if (timelineDb === undefined || typeof timelineDb.loadEvents !== 'function') {
+          throw new Error('无法加载日历事件：日历数据库桥接不可用。')
         }
 
-        if (remoteFailed && combinedEvents.length === 0) {
-          throw new Error(
-            '无法加载日历事件：本地无缓存数据且远端 API 请求失败，请检查网络连接或后端服务状态。',
-          )
-        }
-
-        // Re-sort the merged list chronologically so the UI always renders in
-        // correct time order regardless of the order local vs remote events were appended.
-        combinedEvents.sort((a, b) => {
-          const aTime = new Date(a.start_time).getTime()
-          const bTime = new Date(b.start_time).getTime()
-          if (aTime !== bTime) return aTime - bTime
-          // Stable tie-breaker: use title then source
-          return (a.title ?? '').localeCompare(b.title ?? '') || String(a.source).localeCompare(String(b.source))
-        })
+        const response = await timelineDb.loadEvents({ runtimeUrl: actualRuntimeUrl })
 
         if (active) {
-          setEvents(combinedEvents)
+          setEvents(response.items || [])
         }
       } catch (err: unknown) {
         if (active) {
@@ -126,7 +66,7 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
         }
       }
     }
-    fetchEvents()
+    void fetchEvents()
 
     return () => {
       active = false
@@ -165,7 +105,7 @@ function CalendarDebugPanel({ events, error, isLoading }: {
   isLoading: boolean
 }) {
   return (
-    <details className="calendar-debug-panel">
+    <details className="calendar-debug-panel" hidden>
       <summary className="calendar-debug-panel__summary">
         后端原始事件数据 Debug (Error: {error || 'None'})
       </summary>

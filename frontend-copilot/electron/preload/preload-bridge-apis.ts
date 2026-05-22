@@ -308,7 +308,11 @@ function buildFileManagerApi(ipcRenderer: IpcRendererLike): FileManagerApi {
 
 function buildTimelineDatabaseApi(ipcRenderer: IpcRendererLike): TimelineDatabaseApi {
   return {
-    loadEvents() { return ipcRenderer.invoke(TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL) },
+    loadEvents(request) {
+      return request === undefined
+        ? ipcRenderer.invoke(TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL)
+        : ipcRenderer.invoke(TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL, request)
+    },
     addEvent(request) { return ipcRenderer.invoke(TIMELINE_DATABASE_ADD_EVENT_CHANNEL, request) },
   }
 }

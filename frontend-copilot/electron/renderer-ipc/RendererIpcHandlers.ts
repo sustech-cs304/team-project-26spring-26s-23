@@ -97,7 +97,12 @@ import type {
   UnwatchDirectoriesRequest,
   WatchDirectoriesRequest,
 } from '../file-manager/ipc'
-import type { LoadTimelineEventsResult, AddTimelineEventRequest, AddTimelineEventResult } from '../timeline-database/ipc'
+import type {
+  LoadTimelineEventsRequest,
+  LoadTimelineEventsResult,
+  AddTimelineEventRequest,
+  AddTimelineEventResult,
+} from '../timeline-database/ipc'
 
 export interface RendererIpcHandlers {
   loadConfigCenterPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
@@ -186,6 +191,6 @@ export interface RendererIpcHandlers {
   openEntryWithSystem: (request: OpenEntryWithSystemRequest) => Promise<FileOperationResult>
   revealEntryInFolder: (request: RevealEntryInFolderRequest) => Promise<FileOperationResult>
   copyTextToClipboard: (request: CopyTextToClipboardRequest) => Promise<FileOperationResult>
-  loadTimelineEvents: () => Promise<LoadTimelineEventsResult>
+  loadTimelineEvents: (request?: LoadTimelineEventsRequest) => Promise<LoadTimelineEventsResult>
   addTimelineEvent: (request: AddTimelineEventRequest) => Promise<AddTimelineEventResult>
 }

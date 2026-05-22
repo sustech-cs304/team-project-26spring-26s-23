@@ -67,4 +67,5 @@ skips = ["B101"]
 dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
+    "radon>=6.0.1",
 ]

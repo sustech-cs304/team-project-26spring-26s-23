@@ -182,6 +182,7 @@ import {
 import type {
   AddTimelineEventRequest,
   AddTimelineEventResult,
+  LoadTimelineEventsRequest,
   LoadTimelineEventsResult,
 } from '../timeline-database/ipc'
 import type { RendererIpcHandlers } from './RendererIpcHandlers'
@@ -729,8 +730,8 @@ function registerFileManagerHandlers(ipcMain: IpcMainLike, handlers: RendererIpc
 function registerTimelineDatabaseHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(
     TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
-    async (): Promise<LoadTimelineEventsResult> => {
-      return await handlers.loadTimelineEvents()
+    async (_event, request?: LoadTimelineEventsRequest): Promise<LoadTimelineEventsResult> => {
+      return await handlers.loadTimelineEvents(request)
     },
   )
 

@@ -116,6 +116,11 @@ vi.mock('better-sqlite3', () => ({
   default: vi.fn(),
 }))
 
+vi.mock('./timeline-database/service', () => ({
+  getCalendarEvents: vi.fn(),
+  addCalendarEvent: vi.fn(),
+}))
+
 vi.mock('./config-center/main-process', () => ({
   createElectronUnifiedConfigService: hoisted.createElectronUnifiedConfigService,
 }))
@@ -167,6 +172,7 @@ import {
 } from './renderer-ipc.test-support'
 import { createMainProcessServices } from './main-services'
 import { normalizeSettingsWorkspaceStateValues } from './settings-workspace/state-schema'
+import { getCalendarEvents } from './timeline-database/service'
 
 /**
  * Builds all the test fixture result objects used by the main integration test.
@@ -476,6 +482,7 @@ describe('createMainProcessServices', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
     vi.clearAllMocks()
+    vi.mocked(getCalendarEvents).mockReturnValue([])
   })
 
   // eslint-disable-next-line max-lines-per-function -- See describe-level comment above.
@@ -662,6 +669,7 @@ describe('createMainProcessServices', () => {
     await expect(services.openEntryWithSystem({ path: TEST_FILE })).resolves.toEqual(f.openEntryWithSystemResult)
     await expect(services.revealEntryInFolder({ path: TEST_DIR_PATH })).resolves.toEqual(f.revealEntryInFolderResult)
     await expect(services.copyTextToClipboard({ text: 'copied text' })).resolves.toEqual(f.copyTextToClipboardResult)
+    await expect(services.loadTimelineEvents()).resolves.toEqual({ items: [] })
 
     // Verify factory functions called exactly once (lazy creation)
     expect(hoisted.createElectronUnifiedConfigService).toHaveBeenCalledTimes(1)
