@@ -167,21 +167,21 @@ class WakeupCalendarICSParser:
         while True:
             for weekday in bydays:
                 if count is not None and visited >= count:
-                    return occurrences or [(start_at, end_at)]
+                    return occurrences
                 if count is None and until is None and visited >= max_occurrences:
-                    return occurrences or [(start_at, end_at)]
+                    return occurrences
 
                 try:
                     current = current_week_start + timedelta(
                         days=weekday - start_at.weekday()
                     )
                 except OverflowError:
-                    return occurrences or [(start_at, end_at)]
+                    return occurrences
 
                 if current < start_at:
                     continue
                 if until is not None and current > until:
-                    return occurrences or [(start_at, end_at)]
+                    return occurrences
 
                 visited += 1
                 if current not in exdates:
@@ -190,7 +190,7 @@ class WakeupCalendarICSParser:
                     produced += 1
 
                 if count is None and until is None and produced >= max_occurrences:
-                    return occurrences or [(start_at, end_at)]
+                    return occurrences
 
             try:
                 next_week_start = current_week_start + timedelta(weeks=interval)
@@ -200,7 +200,7 @@ class WakeupCalendarICSParser:
                 break
             current_week_start = next_week_start
 
-        return occurrences or [(start_at, end_at)]
+        return occurrences
 
     @staticmethod
     def _parse_exdates(

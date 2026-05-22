@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 
+import { getExternalSourcesCopy } from '../locale'
 import type { WakeupDialogState } from './ExternalSourcesSection'
+import { normalizeWakeupIcsText } from './wakeup-ics-text'
 import {
   clearSettingsWorkspaceSustechCasPassword,
   saveSettingsWorkspaceSustechCasPassword,
@@ -8,6 +10,7 @@ import {
 
 interface UseSettingsWorkspaceSideflowsArgs {
   hydratedCasPasswordValue: string
+  language: string
   wakeupShareLink: string
 }
 
@@ -24,6 +27,7 @@ interface UseSettingsWorkspaceSideflowsResult {
 
 export function useSettingsWorkspaceSideflows({
   hydratedCasPasswordValue,
+  language,
   wakeupShareLink,
 }: UseSettingsWorkspaceSideflowsArgs): UseSettingsWorkspaceSideflowsResult {
   const [casPasswordDraft, setCasPasswordDraft] = useState('')
@@ -90,7 +94,7 @@ export function useSettingsWorkspaceSideflows({
     },
     wakeupDialogState,
     handleWakeupLinkParse: async (value?: string) => {
-      const result = await resolveWakeupIcsImportResult(value ?? wakeupShareLink)
+      const result = await resolveWakeupIcsImportResult(value ?? wakeupShareLink, language)
       if (!result.ok) {
         setWakeupDialogState({ status: 'failure', error: result.error })
         return
@@ -109,30 +113,32 @@ export function useSettingsWorkspaceSideflows({
 
 export async function resolveWakeupIcsImportResult(
   value: string,
+  language = 'zh-CN',
 ): Promise<{ ok: true; parsed: number } | { ok: false; error: string }> {
-  const normalizedValue = value.trim()
+  const copy = getExternalSourcesCopy(language)
+  const normalizedValue = normalizeWakeupIcsText(value)
 
   if (!normalizedValue) {
-    return { ok: false, error: '未选择 .ics 文件' }
+    return { ok: false, error: copy.missingIcsError }
   }
 
   if (!normalizedValue.startsWith('BEGIN:VCALENDAR')) {
-    return { ok: false, error: '不是有效的 .ics 内容' }
+    return { ok: false, error: copy.invalidIcsError }
   }
 
   try {
     const desktopRuntime = window.desktopRuntime
     if (!desktopRuntime || typeof desktopRuntime.importWakeupIcs !== 'function') {
-      return { ok: false, error: '桌面运行时 IPC 不可用' }
+      return { ok: false, error: copy.desktopRuntimeUnavailableError }
     }
 
     const data = await desktopRuntime.importWakeupIcs({ icsText: normalizedValue })
     if (data.ok !== true) {
-      return { ok: false, error: (typeof data.error === 'string' ? data.error : '导入失败') }
+      return { ok: false, error: (typeof data.error === 'string' ? data.error : copy.importFailedFallbackError) }
     }
     const parsed = typeof data.parsed === 'number' ? data.parsed : 0
     if (parsed <= 0) {
-      return { ok: false, error: '未解析到任何事件' }
+      return { ok: false, error: copy.emptyParsedEventsError }
     }
     return { ok: true, parsed }
   } catch (error: unknown) {

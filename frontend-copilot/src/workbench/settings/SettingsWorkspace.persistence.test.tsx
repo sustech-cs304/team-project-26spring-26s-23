@@ -346,11 +346,12 @@ describe('SettingsWorkspace persistence', () => {
         'PRODID:-//Candue//WakeUp Next//EN',
         'END:VCALENDAR',
       ].join('\n')
+      const nextIcsWithBom = `\uFEFF${nextIcs}`
 
       await act(async () => {
         Object.defineProperty(importInput!, 'files', {
           configurable: true,
-          value: [new File([nextIcs], 'wakeup.ics', { type: 'text/calendar' })],
+          value: [new File([nextIcsWithBom], 'wakeup.ics', { type: 'text/calendar' })],
         })
         importInput!.dispatchEvent(new Event('change', { bubbles: true }))
       })
@@ -364,6 +365,95 @@ describe('SettingsWorkspace persistence', () => {
 
       const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
       expect(lastSaveCall?.externalSource.wakeupShareLink).toBe(nextIcs)
+
+      rendered.unmount()
+
+      Object.defineProperty(window, 'FileReader', {
+        configurable: true,
+        value: originalFileReader,
+      })
+    })
+
+    it('localizes wakeup import status and success copy in English', async () => {
+      vi.useFakeTimers()
+
+      const originalFileReader = window.FileReader
+
+      class MockFileReader {
+        public result: string | ArrayBuffer | null = null
+        public onload: ((this: FileReader, _ev: ProgressEvent<FileReader>) => unknown) | null = null
+        public onerror: ((this: FileReader, _ev: ProgressEvent<FileReader>) => unknown) | null = null
+
+        public readAsText(file: Blob) {
+          void file.text().then((text) => {
+            this.result = text
+            this.onload?.call(
+              this as unknown as FileReader,
+              new ProgressEvent('load') as ProgressEvent<FileReader>,
+            )
+          }, () => {
+            this.onerror?.call(
+              this as unknown as FileReader,
+              new ProgressEvent('error') as ProgressEvent<FileReader>,
+            )
+          })
+        }
+      }
+
+      Object.defineProperty(window, 'FileReader', {
+        configurable: true,
+        value: MockFileReader,
+      })
+
+      const initialIcs = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Candue//WakeUp English//EN',
+        'END:VCALENDAR',
+      ].join('\n')
+      installSettingsWorkspaceBridge({
+        importWakeupIcsResult: { ok: true, parsed: 2 },
+        loadStateResult: {
+          ok: true,
+          source: 'stored',
+          state: createPersistedWorkspaceState({
+            externalSource: {
+              wakeupShareLink: initialIcs,
+            },
+            general: {
+              language: 'en-US',
+            },
+          }),
+        },
+      })
+
+      const rendered = renderSettingsWorkspace({
+        initialSection: 'external-source',
+      })
+
+      await flushAsyncEffects()
+
+      expect(rendered.container.textContent).toContain('WakeUP Course Sync')
+      expect(rendered.container.textContent).toContain('Loaded .ics content')
+      expect(rendered.container.textContent).not.toContain('已加载 .ics 内容')
+
+      const importInput = rendered.container.querySelector(
+        'input[type="file"][aria-label="Import WakeUP .ics file"]',
+      ) as HTMLInputElement | null
+      expect(importInput).not.toBeNull()
+
+      await act(async () => {
+        Object.defineProperty(importInput!, 'files', {
+          configurable: true,
+          value: [new File([initialIcs], 'wakeup.ics', { type: 'text/calendar' })],
+        })
+        importInput!.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+
+      await flushAsyncEffects()
+
+      expect(rendered.container.textContent).toContain('Imported 2 events')
+      expect(rendered.container.textContent).not.toContain('已导入 2 条事件')
 
       rendered.unmount()
 

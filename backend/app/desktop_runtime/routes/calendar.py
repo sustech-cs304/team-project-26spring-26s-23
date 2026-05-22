@@ -43,7 +43,7 @@ def build_calendar_router() -> APIRouter:
             resolve_default_event_manager_db_path(runtime_config.database_dir)
         )
         items = db.list_unified_calendar_events()
-        if _is_calendar_initialized(runtime_config):
+        if items or _is_calendar_initialized(runtime_config):
             return {
                 "items": [event.to_dict() for event in items]
             }

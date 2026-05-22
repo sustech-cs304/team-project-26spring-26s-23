@@ -2,6 +2,7 @@ import { X } from 'lucide-react'
 import { useRef } from 'react'
 
 import { getExternalSourcesCopy } from '../locale'
+import { isWakeupIcsText, normalizeWakeupIcsText } from './wakeup-ics-text'
 
 export type WakeupDialogState =
   | { status: 'failure'; error?: string }
@@ -59,8 +60,9 @@ export function ExternalSourcesSection({ externalSources, language }: ExternalSo
                 const reader = new FileReader()
                 reader.onload = () => {
                   const text = typeof reader.result === 'string' ? reader.result : ''
-                  onWakeupShareLinkChange(text)
-                  void onWakeupLinkParse(text)
+                  const normalizedText = normalizeWakeupIcsText(text)
+                  onWakeupShareLinkChange(normalizedText)
+                  void onWakeupLinkParse(normalizedText)
                   event.target.value = ''
                 }
                 reader.onerror = () => {
@@ -80,7 +82,7 @@ export function ExternalSourcesSection({ externalSources, language }: ExternalSo
             </button>
           </div>
           <p className="settings-card__hint">
-            {wakeupShareLink.trim().startsWith('BEGIN:VCALENDAR') ? '已加载 .ics 内容' : '未选择 .ics 文件'}
+            {isWakeupIcsText(wakeupShareLink) ? copy.icsLoadedHint : copy.icsEmptyHint}
           </p>
         </div>
       </section>
@@ -112,11 +114,11 @@ export function ExternalSourcesSection({ externalSources, language }: ExternalSo
               {wakeupDialogState.status === 'failure' ? (
                 <p data-testid="wakeup-parse-failure">
                   {copy.parseFailureText}
-                  {wakeupDialogState.error ? `：${wakeupDialogState.error}` : ''}
+                  {wakeupDialogState.error ? `${copy.parseFailureSeparator}${wakeupDialogState.error}` : ''}
                 </p>
               ) : (
                 <div className="settings-stack" data-testid="wakeup-parse-success">
-                  <p>{`已导入 ${wakeupDialogState.parsed} 条事件`}</p>
+                  <p>{copy.importSuccessText(wakeupDialogState.parsed)}</p>
                   <button type="button" className="primary-button" onClick={onWakeupDialogClose}>
                     {copy.cancelButton}
                   </button>

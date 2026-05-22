@@ -97,3 +97,29 @@ END:VCALENDAR
     _assert_true(
         all(event.end_time is not None for event in events), "BYDAY 实例应保留时长"
     )
+
+
+def test_wakeup_rrule_weekly_count_terminates_when_all_candidates_are_exdates() -> None:
+    ics_text = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//WakeUpSchedule//icalendarkit//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:WakeUpSchedule-COUNT-EXDATE-TEST
+DESCRIPTION:全部候选实例被 EXDATE 排除
+DTSTART:20260302T000000Z
+SUMMARY:excluded-course
+DTEND:20260302T015000Z
+RRULE:FREQ=WEEKLY;INTERVAL=1;COUNT=3
+EXDATE:20260302T000000Z,20260309T000000Z,20260316T000000Z
+END:VEVENT
+END:VCALENDAR
+"""
+    parser = WakeupCalendarICSParser()
+    events = parser.parse_to_unified_events(ics_text, source="wakeup")
+
+    _assert_equal(
+        len(events),
+        0,
+        "COUNT 应按已遍历候选实例终止，并允许 EXDATE 排除全部实例",
+    )
