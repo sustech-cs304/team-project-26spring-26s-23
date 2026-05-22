@@ -10,6 +10,11 @@ import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import { createElectronFileManagerService } from '../file-manager/service'
 import type { ElectronFileManagerService } from '../file-manager/service'
 import { getCalendarEvents, addCalendarEvent } from '../timeline-database/service'
+import type { LoadTimelineEventsRequest, UnifiedCalendarEvent } from '../timeline-database/ipc'
+
+const LOCAL_RUNTIME_TOKEN_HEADER = 'X-Local-Token'
+const CALENDAR_EVENTS_PATH = '/calendar/events'
+const CALENDAR_LOAD_FAILURE_MESSAGE = '无法加载日历事件：本地无缓存数据且远端 API 请求失败，请检查网络连接或后端服务状态。'
 
 // ===== Builder functions for service API groups =====
 
@@ -236,17 +241,222 @@ function buildFileManagerApiBridge(fileManagerService: ElectronFileManagerServic
   }
 }
 
-function buildTimelineDatabaseApi() {
+function buildTimelineDatabaseApi(options: CreateMainProcessServicesOptions) {
   return {
-    async loadTimelineEvents() {
-      const items = getCalendarEvents()
-      return { items }
+    async loadTimelineEvents(request?: LoadTimelineEventsRequest) {
+      const localItems = getCalendarEvents()
+      const runtimeUrl = normalizeOptionalString(request?.runtimeUrl)
+      if (runtimeUrl === null) {
+        return { items: localItems }
+      }
+
+      const remoteItems = await fetchRemoteCalendarEvents(runtimeUrl, options)
+      if (remoteItems === null) {
+        if (localItems.length === 0) {
+          throw new Error(CALENDAR_LOAD_FAILURE_MESSAGE)
+        }
+        return { items: localItems }
+      }
+
+      return { items: mergeCalendarEvents(localItems, remoteItems) }
     },
     async addTimelineEvent(request: Parameters<MainProcessServices['addTimelineEvent']>[0]) {
       const id = addCalendarEvent(request.event)
       return { id }
     },
   }
+}
+
+async function fetchRemoteCalendarEvents(
+  runtimeUrl: string,
+  options: CreateMainProcessServicesOptions,
+): Promise<UnifiedCalendarEvent[] | null> {
+  const request = await buildTrustedCalendarEventsRequest(runtimeUrl, options)
+  if (request === null) {
+    return null
+  }
+
+  try {
+    const response = await fetch(request.apiUrl, { headers: request.headers })
+    if (!response.ok) {
+      await appendTimelineLog(options, 'warn', 'Calendar API responded with a non-success status.', {
+        runtimeUrl: request.requestedRuntimeUrl,
+        trustedRuntimeUrl: request.trustedRuntimeUrl,
+        status: response.status,
+        statusText: response.statusText,
+      })
+      return null
+    }
+
+    const payload = await response.json() as { items?: UnifiedCalendarEvent[] }
+    return Array.isArray(payload.items) ? payload.items : []
+  } catch (error) {
+    await appendTimelineLog(options, 'warn', 'Failed to fetch backend calendar events.', {
+      runtimeUrl: request.requestedRuntimeUrl,
+      trustedRuntimeUrl: request.trustedRuntimeUrl,
+      error: formatUnknownError(error),
+    })
+    return null
+  }
+}
+
+interface TrustedCalendarEventsRequest {
+  apiUrl: string
+  headers: Headers
+  requestedRuntimeUrl: string
+  trustedRuntimeUrl: string
+}
+
+async function buildTrustedCalendarEventsRequest(
+  requestedRuntimeUrl: string,
+  options: CreateMainProcessServicesOptions,
+): Promise<TrustedCalendarEventsRequest | null> {
+  const requestedRuntimeBaseUrl = parseRuntimeBaseUrl(requestedRuntimeUrl)
+  if (requestedRuntimeBaseUrl === null) {
+    await appendTimelineLog(options, 'warn', 'Invalid renderer runtime URL for calendar events request.', {
+      runtimeUrl: requestedRuntimeUrl,
+    })
+    return null
+  }
+
+  let service: Awaited<ReturnType<CreateMainProcessServicesOptions['ensureHostedBackendService']>>
+  try {
+    service = await options.ensureHostedBackendService()
+  } catch (error) {
+    await appendTimelineLog(options, 'warn', 'Unable to resolve hosted runtime for calendar events request.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+      error: formatUnknownError(error),
+    })
+    return null
+  }
+
+  let trustedRuntimeUrl: string | null
+  try {
+    trustedRuntimeUrl = normalizeOptionalString(service.getRuntimeBaseUrl())
+  } catch (error) {
+    await appendTimelineLog(options, 'warn', 'Unable to resolve trusted backend calendar events base URL.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+      error: formatUnknownError(error),
+    })
+    return null
+  }
+
+  if (trustedRuntimeUrl === null) {
+    await appendTimelineLog(options, 'warn', 'Trusted backend calendar events base URL is empty.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+    })
+    return null
+  }
+
+  const trustedRuntimeBaseUrl = parseRuntimeBaseUrl(trustedRuntimeUrl)
+  if (trustedRuntimeBaseUrl === null) {
+    await appendTimelineLog(options, 'warn', 'Failed to build trusted backend calendar events URL.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+      trustedRuntimeUrl,
+    })
+    return null
+  }
+
+  if (requestedRuntimeBaseUrl.origin !== trustedRuntimeBaseUrl.origin) {
+    await appendTimelineLog(options, 'warn', 'Renderer calendar runtime URL does not match trusted hosted runtime; using trusted runtime URL.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+      trustedRuntimeUrl: trustedRuntimeBaseUrl.toString(),
+    })
+  }
+
+  const apiUrl = new URL(CALENDAR_EVENTS_PATH, trustedRuntimeBaseUrl).toString()
+  const headers = new Headers()
+  try {
+    const token = normalizeOptionalString(service.getLocalToken())
+    if (token !== null) {
+      headers.set(LOCAL_RUNTIME_TOKEN_HEADER, token)
+    }
+  } catch (error) {
+    await appendTimelineLog(options, 'warn', 'Unable to resolve local runtime token for calendar events request.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+      trustedRuntimeUrl: trustedRuntimeBaseUrl.toString(),
+      error: formatUnknownError(error),
+    })
+  }
+
+  return {
+    apiUrl,
+    headers,
+    requestedRuntimeUrl: requestedRuntimeBaseUrl.toString(),
+    trustedRuntimeUrl: trustedRuntimeBaseUrl.toString(),
+  }
+}
+
+function mergeCalendarEvents(
+  localItems: UnifiedCalendarEvent[],
+  remoteItems: UnifiedCalendarEvent[],
+): UnifiedCalendarEvent[] {
+  const eventsByKey = new Map<string, UnifiedCalendarEvent>()
+
+  for (const localEvent of localItems) {
+    eventsByKey.set(buildCompositeKey(localEvent), localEvent)
+  }
+
+  for (const remoteEvent of remoteItems) {
+    eventsByKey.set(buildCompositeKey(remoteEvent), remoteEvent)
+  }
+
+  const combinedEvents = Array.from(eventsByKey.values())
+  combinedEvents.sort(compareCalendarEvents)
+  return combinedEvents
+}
+
+function compareCalendarEvents(a: UnifiedCalendarEvent, b: UnifiedCalendarEvent): number {
+  const aTime = new Date(a.start_time).getTime()
+  const bTime = new Date(b.start_time).getTime()
+  if (aTime !== bTime) return aTime - bTime
+  return (a.title ?? '').localeCompare(b.title ?? '') || String(a.source).localeCompare(String(b.source))
+}
+
+function buildCompositeKey(event: {
+  source: string
+  source_id: string | null
+  title?: string
+  start_time?: string
+}): string {
+  if (event.source_id != null && String(event.source_id).trim().length > 0) {
+    return `${String(event.source)}:${String(event.source_id)}`
+  }
+  return `${String(event.source)}:${String(event.title ?? '')}:${String(event.start_time ?? '')}`
+}
+
+function parseRuntimeBaseUrl(runtimeBaseUrl: string): URL | null {
+  try {
+    return new URL(normalizeRuntimeBaseUrl(runtimeBaseUrl))
+  } catch {
+    return null
+  }
+}
+
+function normalizeRuntimeBaseUrl(runtimeBaseUrl: string): string {
+  return runtimeBaseUrl.endsWith('/') ? runtimeBaseUrl : `${runtimeBaseUrl}/`
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const normalizedValue = value.trim()
+  return normalizedValue.length > 0 ? normalizedValue : null
+}
+
+function formatUnknownError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function appendTimelineLog(
+  options: CreateMainProcessServicesOptions,
+  level: 'warn' | 'error',
+  message: string,
+  context: Record<string, unknown>,
+): Promise<void> {
+  await options.appendMainRuntimeLog(level, `[timeline-database] ${message}`, context)
 }
 
 // ===== Main factory function =====
@@ -280,6 +490,6 @@ export function createMainProcessServices(
     ...buildCopilotHistoryApi(copilotHistoryService),
     ...buildAttachmentApi(attachmentService),
     ...buildFileManagerApiBridge(fileManagerService),
-    ...buildTimelineDatabaseApi(),
+    ...buildTimelineDatabaseApi(options),
   }
 }

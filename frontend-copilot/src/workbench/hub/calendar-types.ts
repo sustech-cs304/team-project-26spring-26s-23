@@ -3,7 +3,7 @@
 export type {
   CalendarEventStatus,
   UnifiedCalendarEvent,
-} from '../../electron/timeline-database/ipc'
+} from '../../../electron/timeline-database/ipc'
 
 export interface CalendarEventPatch {
   start_time?: string

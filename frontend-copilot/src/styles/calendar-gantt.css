@@ -19,26 +19,26 @@
 
 .calendar-gantt-card {
   flex: 0 0 auto;
-  min-height: 320px;
+  min-height: 300px;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
+  gap: 0.55rem;
+  padding: 0.95rem 1rem 1rem;
   border-radius: 6px;
   background: var(--surface-subtle, var(--vscode-editorWidget-background));
   overflow: hidden;
 
-  --g-bar-color: var(--accent-color, var(--vscode-textLink-foreground));
-  --g-bar-border: transparent;
-  --g-progress-color: color-mix(in srgb, var(--accent-color, var(--vscode-testing-iconPassed)) 78%, transparent);
-  --g-handle-color: var(--accent-color, var(--vscode-focusBorder));
+  --g-bar-color: color-mix(in srgb, var(--text-muted, var(--vscode-descriptionForeground)) 88%, transparent);
+  --g-bar-border: color-mix(in srgb, var(--text-primary, var(--vscode-foreground)) 10%, transparent);
+  --g-progress-color: color-mix(in srgb, var(--accent-color, var(--vscode-textLink-foreground)) 42%, var(--surface-subtle, var(--vscode-editorWidget-background)));
+  --g-handle-color: color-mix(in srgb, var(--text-primary, var(--vscode-foreground)) 24%, transparent);
   --g-header-background: transparent;
   --g-row-color: transparent;
   --g-row-border-color: var(--border-color, var(--vscode-widget-border));
   --g-border-color: var(--border-color, var(--vscode-widget-border));
   --g-text-muted: var(--text-muted);
   --g-text-dark: var(--text-primary);
-  --g-text-light: var(--text-primary, var(--vscode-button-foreground));
+  --g-text-light: #f8fafc;
   --g-actions-background: var(--interactive-hover-bg);
   --g-tick-color: color-mix(in srgb, var(--border-color, var(--vscode-widget-border)) 40%, transparent);
   --g-tick-color-thick: color-mix(in srgb, var(--border-color, var(--vscode-widget-border)) 68%, transparent);
@@ -50,9 +50,10 @@
 
 .calendar-gantt-card__header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-end;
   gap: 1rem;
+  min-height: 1.35rem;
 }
 
 .calendar-gantt-card__eyebrow {
@@ -75,6 +76,7 @@
   margin: 0;
   font-size: 0.82rem;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .calendar-gantt-card__notice {
@@ -87,8 +89,112 @@
   background: color-mix(in srgb, var(--vscode-list-warningForeground, #cca700) 8%, transparent);
 }
 
-.calendar-gantt-card__chart {
+.calendar-gantt-card__chart-shell {
+  position: relative;
   flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.calendar-gantt-card__chart-shell[hidden] {
+  display: none;
+}
+
+.calendar-gantt-card__controls {
+  position: absolute;
+  top: 0.54rem;
+  right: 0.6rem;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.calendar-gantt-card__today-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  height: 34px;
+  padding: 0 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--accent-strong, #8fb1dc) 20%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-strong, #8fb1dc) 12%, var(--surface-bg, #111827));
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 10px 22px color-mix(in srgb, black 12%, transparent);
+  transition:
+    border-color var(--transition-duration-standard) var(--easing-standard),
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-fast) var(--easing-standard);
+}
+
+.calendar-gantt-card__today-button:hover {
+  border-color: color-mix(in srgb, var(--accent-strong, #8fb1dc) 38%, transparent);
+  background: color-mix(in srgb, var(--accent-strong, #8fb1dc) 18%, var(--surface-bg, #111827));
+}
+
+.calendar-gantt-card__today-button:active {
+  transform: translateY(1px);
+}
+
+.calendar-gantt-view-mode {
+  position: relative;
+  width: 112px;
+}
+
+.calendar-gantt-view-mode__trigger.select-trigger {
+  min-height: 34px;
+  height: 34px;
+  padding: 0 0.72rem;
+  border-color: color-mix(in srgb, var(--border-muted, var(--border-color)) 86%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-bg, #111827) 96%, transparent);
+  box-shadow: 0 10px 22px color-mix(in srgb, black 12%, transparent);
+  flex: none;
+}
+
+.calendar-gantt-view-mode__trigger.select-trigger:hover,
+.calendar-gantt-view-mode--open .calendar-gantt-view-mode__trigger.select-trigger {
+  border-color: color-mix(in srgb, var(--accent-strong, #8fb1dc) 34%, var(--border-muted, var(--border-color)));
+  background: color-mix(in srgb, var(--surface-bg, #111827) 91%, var(--accent-strong, #8fb1dc) 5%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-strong, #8fb1dc) 10%, transparent), 0 10px 22px color-mix(in srgb, black 12%, transparent);
+}
+
+.calendar-gantt-view-mode .select-trigger__value {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.calendar-gantt-view-mode__menu.select-dropdown {
+  right: 0;
+  left: auto;
+  width: 154px;
+  max-height: min(280px, calc(100vh - 9rem));
+  border-color: color-mix(in srgb, var(--border-muted, var(--border-color)) 88%, transparent);
+  border-radius: 12px;
+  background: var(--surface-bg);
+  box-shadow: 0 18px 32px color-mix(in srgb, black 16%, transparent);
+}
+
+.calendar-gantt-view-mode__option.select-option {
+  min-height: 36px;
+  padding: 0.55rem 0.68rem;
+  border-radius: 9px;
+}
+
+.calendar-gantt-view-mode__option.select-option:hover {
+  background: color-mix(in srgb, var(--accent-strong, #8fb1dc) 8%, transparent);
+}
+
+.calendar-gantt-view-mode__option.select-option--active {
+  background: color-mix(in srgb, var(--accent-strong, #8fb1dc) 14%, transparent);
+}
+
+.calendar-gantt-card__chart {
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -122,6 +228,12 @@
   background: transparent;
 }
 
+.calendar-gantt-card .gantt-container .side-header,
+.calendar-gantt-card .gantt-container .upper-text,
+.calendar-gantt-card .gantt-container .lower-text {
+  color: var(--text-secondary);
+}
+
 .calendar-gantt-card .gantt-container .popup-wrapper {
   border: 1px solid var(--vscode-widget-border, var(--border-color));
   border-radius: 6px;
@@ -130,23 +242,55 @@
   color: var(--text-primary);
 }
 
-/* ──────────── gantt source‑specific bar colors ──────────── */
-
-.calendar-gantt-card .bar-wrapper.calendar-gantt-source--bb .bar {
-  fill: var(--vscode-charts-blue, #3794ff);
+.calendar-gantt-popup-wrapper {
+  position: fixed;
+  z-index: 10000;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 10px;
+  border: 1px solid var(--vscode-widget-border, var(--border-color));
+  border-radius: 6px;
+  background: var(--vscode-editorHoverWidget-background, var(--panel-solid-bg));
+  box-shadow: 0 6px 28px -6px rgba(0, 0, 0, 0.32);
+  color: var(--text-primary);
+  box-sizing: border-box;
+  pointer-events: auto;
 }
 
-.calendar-gantt-card .bar-wrapper.calendar-gantt-source--course .bar {
-  fill: var(--vscode-charts-purple, #b180d7);
+.calendar-gantt-popup-wrapper.hide {
+  display: none;
 }
 
-.calendar-gantt-card .bar-wrapper.calendar-gantt-source--custom .bar {
-  fill: var(--vscode-charts-orange, #d18616);
+/* ──────────── gantt bar polish ──────────── */
+
+.calendar-gantt-card .bar-wrapper .bar {
+  filter: drop-shadow(0 5px 10px color-mix(in srgb, black 18%, transparent));
+}
+
+.calendar-gantt-card .bar-wrapper .bar-progress {
+  opacity: 0.82;
+}
+
+.calendar-gantt-card .bar-wrapper .handle {
+  opacity: 0;
+}
+
+.calendar-gantt-card .bar-wrapper:hover .handle {
+  opacity: 0.88;
 }
 
 .calendar-gantt-card .gantt-container .bar-label {
+  fill: #f8fafc;
+  font-weight: 650;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, black 24%, transparent);
+  stroke-width: 2px;
+}
+
+.calendar-gantt-card .gantt-container .bar-label.big {
   fill: var(--text-primary);
-  font-weight: 600;
+  stroke: transparent;
+  text-anchor: start;
 }
 
 /* ──────────── popup ──────────── */
@@ -393,7 +537,15 @@
   }
 
   .calendar-gantt-card {
-    min-height: 380px;
+    min-height: 360px;
+  }
+
+  .calendar-gantt-card__controls {
+    right: 0.45rem;
+  }
+
+  .calendar-gantt-view-mode {
+    width: 104px;
   }
 
   .kanban-tracker__columns {

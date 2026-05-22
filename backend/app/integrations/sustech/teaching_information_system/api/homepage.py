@@ -161,13 +161,11 @@ def _extract_candidate_endpoints(
 
 def _extract_role_codes(html: str) -> list[str]:
     patterns = (
-        r"RoleCode\s*[:=]\s*['\"]([^'\"]+)['\"]",
-        r"roleCode\s*[:=]\s*['\"]([^'\"]+)['\"]",
-        r"rolecode\s*[:=]\s*['\"]([^'\"]+)['\"]",
+        r'''"?[Rr]ole[Cc]ode"?\s*[:=]\s*['"]([^'"]+)['"]''',
     )
     role_codes: list[str] = []
     for pattern in patterns:
-        for match in re.finditer(pattern, html or "", flags=re.IGNORECASE):
+        for match in re.finditer(pattern, html or ""):
             code = _clean_text(match.group(1), max_length=64)
             if code:
                 role_codes.append(code)

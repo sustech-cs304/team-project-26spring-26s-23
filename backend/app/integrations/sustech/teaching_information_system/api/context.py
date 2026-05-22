@@ -93,8 +93,8 @@ class TISAPIContext:
         if text.startswith("http://") or text.startswith("https://"):
             return text
         if text.startswith("/"):
-            return f"{self.base_url}{text}"
-        return f"{self.base_url}/{text.lstrip('/')}"
+            return urljoin(self.base_url, text)
+        return f"{self.base_url.rstrip('/')}/{text.lstrip('/')}"
 
     def _build_headers(self, extra_headers: dict[str, str] | None) -> dict[str, str]:
         headers = {

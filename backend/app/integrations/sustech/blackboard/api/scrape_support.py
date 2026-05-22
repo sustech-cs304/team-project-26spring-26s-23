@@ -43,7 +43,7 @@ def looks_like_course_name(text: str) -> bool:
     if any(token in lower for token in noise_tokens):
         return False
 
-    if re.search(r"\b(?:mon|tue|wed|thu|fri|sat|sun)\b", lower):
+    if re.search(r"\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b", lower):
         return False
 
     if re.fullmatch(r"(?:20\d{2}[\-./年]\s*\d{1,2}[\-./月]\s*\d{1,2}.*)", candidate):
@@ -83,7 +83,7 @@ def extract_grade_text(text: str) -> str:
         return match.group(1)
 
     match = re.search(
-        r"\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F)\b", text, re.IGNORECASE
+        r"\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F)(?!\w)", text, re.IGNORECASE
     )
     if match:
         return match.group(1).upper()
