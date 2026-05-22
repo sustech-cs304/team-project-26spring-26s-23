@@ -471,8 +471,9 @@ def test_post_root_run_stream_emits_real_tool_lifecycle_events() -> None:
     assert events[3]["payload"]["resultSummary"] == "Shenzhen：晴 / 24°C / 湿度 60%"
     assert events[4]["payload"]["delta"] == "Weather answer"
     assert events[-1]["payload"]["assistantText"] == "Weather answer"
-    assert events[-1]["payload"]["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
-    assert executor.captured_calls[0]["enabled_tools"] == [WEATHER_CURRENT_TOOL_ID]
+    resolved_tool_ids = events[-1]["payload"]["resolvedToolIds"]
+    assert WEATHER_CURRENT_TOOL_ID in resolved_tool_ids
+    assert executor.captured_calls[0]["enabled_tools"][0] == WEATHER_CURRENT_TOOL_ID
 
 
 
@@ -556,7 +557,7 @@ def test_post_root_run_stream_keeps_run_alive_for_contract_execution_failure(
     assert tool_events[1]["payload"]["toolId"] == "blackboard.course_catalog.search"
     assert tool_events[1]["payload"]["errorSummary"] == "blackboard search exploded"
     assert events[-1]["payload"]["assistantText"] == "unused"
-    assert events[-1]["payload"]["resolvedToolIds"] == ["blackboard.course_catalog.search"]
+    assert "blackboard.course_catalog.search" in events[-1]["payload"]["resolvedToolIds"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
 
 
@@ -634,7 +635,7 @@ def test_post_root_run_stream_keeps_run_alive_for_recoverable_contract_tool_fail
     assert [event["payload"]["phase"] for event in tool_events] == ["started", "failed"]
     assert tool_events[1]["payload"]["errorSummary"] == "keyword must be a non-empty string."
     assert events[-1]["payload"]["assistantText"] == "I can explain the failure and continue."
-    assert events[-1]["payload"]["resolvedToolIds"] == ["blackboard.course_catalog.search"]
+    assert "blackboard.course_catalog.search" in events[-1]["payload"]["resolvedToolIds"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
 
 
@@ -1664,7 +1665,7 @@ def _assert_contract_tool_run_events(
     assert [event["payload"]["phase"] for event in tool_events] == ["started", "completed"]
     assert all(event["payload"]["toolId"] == tool_id for event in tool_events)
     assert events[-1]["payload"]["assistantText"] == assistant_text
-    assert events[-1]["payload"]["resolvedToolIds"] == [tool_id]
+    assert tool_id in events[-1]["payload"]["resolvedToolIds"]
     return tool_events[0]["payload"]["toolCallId"]
 
 

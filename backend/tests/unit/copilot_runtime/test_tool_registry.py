@@ -14,9 +14,6 @@ from app.copilot_runtime import (
     build_default_tool_registry,
 )
 from app.copilot_runtime.tool_registry import (
-    CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
-    CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
-    CAMPUS_INFO_SEARCH_TOOL_ID,
     DEFAULT_WEATHER_LOCATION,
     FILE_CONVERT_TOOL_DESCRIPTION,
     FILE_CONVERT_TOOL_DISPLAY_NAME,
@@ -109,7 +106,6 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         REQUEST_USER_FORM_TOOL_ID,
         SKILL_ACTIVATE_TOOL_ID,
         SKILL_READ_RESOURCE_TOOL_ID,
-        CAMPUS_INFO_SEARCH_TOOL_ID,
         *CONTRACT_TOOL_IDS,
     )
     catalog = registry.build_tool_catalog(language="zh-CN")
@@ -261,20 +257,6 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
             "order": 0,
             "sourceKind": "builtin",
         },
-    }
-    assert catalog_by_id[CAMPUS_INFO_SEARCH_TOOL_ID] == {
-        "toolId": CAMPUS_INFO_SEARCH_TOOL_ID,
-        "kind": "builtin",
-        "availability": "available",
-        "displayName": CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
-        "description": CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
-    }
-    assert catalog_by_id[CAMPUS_INFO_SEARCH_TOOL_ID] == {
-        "toolId": CAMPUS_INFO_SEARCH_TOOL_ID,
-        "kind": "builtin",
-        "availability": "available",
-        "displayName": CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
-        "description": CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
     }
     for tool_id in CONTRACT_TOOL_IDS:
         assert catalog_by_id[tool_id]["toolId"] == tool_id

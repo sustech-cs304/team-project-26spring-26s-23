@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 from .constants import (
+    CAMPUS_DOCS_ENSURE_READY_TOOL_DESCRIPTION,
+    CAMPUS_DOCS_ENSURE_READY_TOOL_DISPLAY_NAME,
+    CAMPUS_DOCS_ENSURE_READY_TOOL_ID,
+    CAMPUS_DOCS_SEARCH_TOOL_DESCRIPTION,
+    CAMPUS_DOCS_SEARCH_TOOL_DISPLAY_NAME,
+    CAMPUS_DOCS_SEARCH_TOOL_ID,
     FILE_CONVERT_TOOL_DESCRIPTION,
     FILE_CONVERT_TOOL_DISPLAY_NAME,
     FILE_CONVERT_TOOL_ID,
@@ -82,6 +88,8 @@ TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_TOOL_SWITCH_ROOT_ID: BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: BUILTIN_TOOL_GROUP,
     REQUEST_USER_FORM_TOOL_ID: BUILTIN_TOOL_GROUP,
+    CAMPUS_DOCS_ENSURE_READY_TOOL_ID: BUILTIN_TOOL_GROUP,
+    CAMPUS_DOCS_SEARCH_TOOL_ID: BUILTIN_TOOL_GROUP,
     SKILL_ACTIVATE_TOOL_ID: SKILL_TOOL_GROUP,
     SKILL_READ_RESOURCE_TOOL_ID: SKILL_TOOL_GROUP,
     "blackboard.sql.query": BLACKBOARD_TOOL_GROUP,
@@ -155,6 +163,18 @@ TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
         "description_zh": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
         "description_en": REQUEST_USER_FORM_TOOL_DESCRIPTION,
+    },
+    CAMPUS_DOCS_ENSURE_READY_TOOL_ID: {
+        "display_name_zh": CAMPUS_DOCS_ENSURE_READY_TOOL_DISPLAY_NAME,
+        "display_name_en": CAMPUS_DOCS_ENSURE_READY_TOOL_DISPLAY_NAME,
+        "description_zh": "同步并更新校园官方文档缓存，生成可引用的本地 chunks/索引。",
+        "description_en": CAMPUS_DOCS_ENSURE_READY_TOOL_DESCRIPTION,
+    },
+    CAMPUS_DOCS_SEARCH_TOOL_ID: {
+        "display_name_zh": CAMPUS_DOCS_SEARCH_TOOL_DISPLAY_NAME,
+        "display_name_en": CAMPUS_DOCS_SEARCH_TOOL_DISPLAY_NAME,
+        "description_zh": "在本地 SQLite 索引中检索校园文档证据片段。",
+        "description_en": CAMPUS_DOCS_SEARCH_TOOL_DESCRIPTION,
     },
     SKILL_ACTIVATE_TOOL_ID: {
         "display_name_zh": "Skill 激活",

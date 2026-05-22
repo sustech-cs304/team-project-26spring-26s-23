@@ -26,10 +26,16 @@ from app.copilot_runtime.skill_snapshot_provider import (
 )
 
 from .constants import (
-    CAMPUS_INFO_SEARCH_PARAMETERS_JSON_SCHEMA,
-    CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
-    CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
-    CAMPUS_INFO_SEARCH_TOOL_ID,
+    CAMPUS_DOCS_ENSURE_READY_PARAMETERS_JSON_SCHEMA,
+    CAMPUS_DOCS_ENSURE_READY_TOOL_DESCRIPTION,
+    CAMPUS_DOCS_ENSURE_READY_TOOL_DISPLAY_NAME,
+    CAMPUS_DOCS_ENSURE_READY_TOOL_ID,
+    CAMPUS_DOCS_ENSURE_READY_TOOL_PROMPT,
+    CAMPUS_DOCS_SEARCH_PARAMETERS_JSON_SCHEMA,
+    CAMPUS_DOCS_SEARCH_TOOL_DESCRIPTION,
+    CAMPUS_DOCS_SEARCH_TOOL_DISPLAY_NAME,
+    CAMPUS_DOCS_SEARCH_TOOL_ID,
+    CAMPUS_DOCS_SEARCH_TOOL_PROMPT,
     DEFAULT_TOOLSET_DESCRIPTION,
     DEFAULT_TOOLSET_LABEL,
     DEFAULT_TOOLSET_NAME,
@@ -88,7 +94,8 @@ from .constants import (
     WEATHER_CURRENT_TOOL_PROMPT,
 )
 from .executors import (
-    execute_default_campus_info_search_tool,
+    execute_campus_docs_ensure_ready_tool,
+    execute_campus_docs_search_tool,
     execute_default_file_convert_tool,
     execute_default_weather_tool,
     execute_request_user_form_tool,
@@ -336,15 +343,33 @@ def build_default_tool_registry(
                 ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(
-                        tool_id=CAMPUS_INFO_SEARCH_TOOL_ID,
+                        tool_id=CAMPUS_DOCS_ENSURE_READY_TOOL_ID,
                         kind=DEFAULT_TOOL_KIND,
-                        display_name=CAMPUS_INFO_SEARCH_TOOL_DISPLAY_NAME,
-                        description=CAMPUS_INFO_SEARCH_TOOL_DESCRIPTION,
+                        display_name=CAMPUS_DOCS_ENSURE_READY_TOOL_DISPLAY_NAME,
+                        description=CAMPUS_DOCS_ENSURE_READY_TOOL_DESCRIPTION,
                         availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=CAMPUS_DOCS_ENSURE_READY_TOOL_PROMPT,
+                        presentation=TOOL_PRESENTATION_BY_ID[
+                            CAMPUS_DOCS_ENSURE_READY_TOOL_ID
+                        ],
                     ),
-                    execute=execute_default_campus_info_search_tool,
-                    function_name="campus_info_search",
-                    parameters_json_schema=CAMPUS_INFO_SEARCH_PARAMETERS_JSON_SCHEMA,
+                    execute=execute_campus_docs_ensure_ready_tool,
+                    function_name="campus_docs_ensure_ready",
+                    parameters_json_schema=CAMPUS_DOCS_ENSURE_READY_PARAMETERS_JSON_SCHEMA,
+                ),
+                ExecutableTool(
+                    descriptor=ToolDescriptor(
+                        tool_id=CAMPUS_DOCS_SEARCH_TOOL_ID,
+                        kind=DEFAULT_TOOL_KIND,
+                        display_name=CAMPUS_DOCS_SEARCH_TOOL_DISPLAY_NAME,
+                        description=CAMPUS_DOCS_SEARCH_TOOL_DESCRIPTION,
+                        availability=DEFAULT_TOOL_AVAILABILITY,
+                        prompt=CAMPUS_DOCS_SEARCH_TOOL_PROMPT,
+                        presentation=TOOL_PRESENTATION_BY_ID[CAMPUS_DOCS_SEARCH_TOOL_ID],
+                    ),
+                    execute=execute_campus_docs_search_tool,
+                    function_name="campus_docs_search",
+                    parameters_json_schema=CAMPUS_DOCS_SEARCH_PARAMETERS_JSON_SCHEMA,
                 ),
                 *build_contract_runtime_executable_tools(
                     host_capabilities_factory=host_capabilities_factory,

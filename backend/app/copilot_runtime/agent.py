@@ -523,7 +523,9 @@ class _PydanticAIEventStream:
             return "tool.unknown"
         if normalized_tool_name == "weather_current":
             return WEATHER_CURRENT_TOOL_ID
-        for registered_tool_id in self._deps.tool_registry.list_tool_ids():
+        for registered_tool_id in self._deps.tool_registry.list_tool_ids(
+            include_internal=True
+        ):
             try:
                 executable_tool = self._deps.tool_registry.resolve_tool(
                     registered_tool_id
@@ -784,7 +786,7 @@ class PydanticAIAgentExecutor:
             else frozenset(self._normalize_enabled_tools(enabled_tools))
         )
         tools: list[Tool[Any]] = []
-        for tool_id in self._tool_registry.list_tool_ids():
+        for tool_id in self._tool_registry.list_tool_ids(include_internal=True):
             if allowed_tool_ids is not None and tool_id not in allowed_tool_ids:
                 continue
             executable_tool = self._tool_registry.resolve_tool(tool_id)

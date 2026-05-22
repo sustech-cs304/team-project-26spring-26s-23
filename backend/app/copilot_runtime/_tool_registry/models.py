@@ -11,6 +11,7 @@ from .constants import (
     DEFAULT_TOOL_AVAILABILITY,
     DEFAULT_TOOL_DIRECTORY_VERSION,
     DEFAULT_TOOL_KIND,
+    INTERNAL_TOOL_IDS,
 )
 from .helpers import normalize_tool_catalog_language, resolve_builtin_tool_locale
 
@@ -158,13 +159,16 @@ class ToolsetDescriptor:
     default: bool = False
 
     def build_summary(self) -> dict[str, Any]:
+        visible_tools = tuple(
+            tool for tool in self.tools if tool.tool_id not in INTERNAL_TOOL_IDS
+        )
         return {
             "name": self.name,
             "label": self.label,
             "description": self.description,
             "default": self.default,
-            "toolCount": len(self.tools),
-            "tools": [tool.descriptor.build_summary() for tool in self.tools],
+            "toolCount": len(visible_tools),
+            "tools": [tool.descriptor.build_summary() for tool in visible_tools],
         }
 
 
@@ -227,22 +231,33 @@ class ToolRegistry:
             f"Tool '{tool_id}' is not registered in toolset '{toolset.name}'."
         )
 
-    def list_tool_ids(self, *, toolset_name: str | None = None) -> tuple[str, ...]:
+    def list_tool_ids(
+        self, *, toolset_name: str | None = None, include_internal: bool = False
+    ) -> tuple[str, ...]:
         toolset = (
             self.get_default() if toolset_name is None else self._toolsets[toolset_name]
         )
-        tool_ids = [tool.tool_id for tool in toolset.tools]
+        tool_ids = [
+            tool.tool_id
+            for tool in toolset.tools
+            if include_internal or tool.tool_id not in INTERNAL_TOOL_IDS
+        ]
         for tool in self._load_dynamic_tools(toolset_name=toolset.name):
             if tool.tool_id not in tool_ids:
+                if not include_internal and tool.tool_id in INTERNAL_TOOL_IDS:
+                    continue
                 tool_ids.append(tool.tool_id)
         return tuple(tool_ids)
 
     def build_view(self) -> dict[str, dict[str, Any]]:
+        def _visible_count(toolset: ToolsetDescriptor) -> int:
+            return sum(1 for tool in toolset.tools if tool.tool_id not in INTERNAL_TOOL_IDS)
+
         return {
             toolset.name: {
                 "name": toolset.name,
                 "description": toolset.description,
-                "toolCount": len(toolset.tools),
+                "toolCount": _visible_count(toolset),
             }
             for toolset in self._toolsets.values()
         }
@@ -259,12 +274,16 @@ class ToolRegistry:
         catalog: list[dict[str, Any]] = []
         seen_tool_ids: set[str] = set()
         for tool in toolset.tools:
+            if tool.tool_id in INTERNAL_TOOL_IDS:
+                continue
             catalog.append(tool.descriptor.build_catalog_entry_for_language(language))
             seen_tool_ids.add(tool.tool_id)
         for tool in self._load_dynamic_tools(
             toolset_name=toolset.name, language=language
         ):
             if tool.tool_id in seen_tool_ids:
+                continue
+            if tool.tool_id in INTERNAL_TOOL_IDS:
                 continue
             catalog.append(tool.descriptor.build_catalog_entry_for_language(language))
             seen_tool_ids.add(tool.tool_id)

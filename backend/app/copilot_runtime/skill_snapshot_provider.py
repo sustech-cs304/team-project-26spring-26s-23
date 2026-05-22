@@ -310,7 +310,35 @@ async def execute_skill_activate_tool(
         skill_id_or_name = dict(arguments or {}).get("skillId")
     if skill_id_or_name is None:
         skill_id_or_name = dict(arguments or {}).get("name")
-    return activate_skill(index, skill_id_or_name)
+    resolved = _resolve_skill_reference(index, skill_id_or_name)
+    if isinstance(resolved, dict):
+        return resolved
+
+    entry_content, error = _read_text_file_within_skill_root(
+        locator=resolved.locator,
+        relative_path=resolved.locator.entry_path,
+        max_bytes=SKILL_ENTRY_MAX_BYTES,
+        kind="entry",
+    )
+    if error is not None:
+        return _skill_error(
+            error[0],
+            error[1],
+            skill_id=resolved.skill.skill_id,
+            snapshot_revision=index.snapshot_revision,
+        )
+
+    payload: dict[str, Any] = {
+        "ok": True,
+        "skillId": resolved.skill.skill_id,
+        "displayName": resolved.skill.display_name,
+        "entryContent": entry_content,
+        "resources": [
+            resource.to_public_dict() for resource in resolved.skill.resource_summaries
+        ],
+        "snapshotRevision": index.snapshot_revision,
+    }
+    return payload
 
 
 async def execute_skill_read_resource_tool(
@@ -613,6 +641,7 @@ def build_skill_index_system_prompt(index: SkillRuntimeIndex) -> str | None:
         "## Available Skills",
         "",
         "The following enabled Skills are available for this run. Treat each Skill description and Use when hint as activation criteria. If the current user task is related to a listed Skill and the skill_activate tool is available, you MUST call skill_activate(skill_id) with the skill id or display name to read its SKILL.md entry before producing the substantive answer. Do not answer a matching task from this lightweight list alone. After reading SKILL.md, if the entry references resources that are relevant to the task, call skill_read_resource(skill_id, path) with the skill id or display name and the listed relative resource path before relying on that resource. skill_read_resource does not require a prior activation call, but the path must be listed in the enabled skill snapshot.",
+        "You MUST NOT invent Skill ids, display names, or resource paths. Only use the exact ids or display names shown in the list below. If none apply, do not call skill_activate/skill_read_resource.",
         "",
     ]
     for skill in sorted(index.skills_by_id.values(), key=lambda item: item.skill_id):
