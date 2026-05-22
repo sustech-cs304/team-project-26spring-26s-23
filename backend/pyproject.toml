@@ -66,4 +66,5 @@ skips = ["B101"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "radon>=6.0.1",
 ]
