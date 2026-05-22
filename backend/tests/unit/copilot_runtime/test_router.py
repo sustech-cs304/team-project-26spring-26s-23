@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
@@ -8,9 +8,11 @@ import pytest
 from pydantic_ai.messages import ModelMessage
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from app.copilot_runtime import (
     RuntimeBridge,
+    RuntimeRunStartResponse,
     RuntimeScaffold,
     RuntimeToolPermissionPolicy,
     build_default_agent_registry,
@@ -18,6 +20,7 @@ from app.copilot_runtime import (
     build_router,
     build_runtime_scaffold,
 )
+from app.copilot_runtime.agent import ModelNotConfiguredError
 from app.copilot_runtime.agent_registry import AgentRegistry
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
@@ -27,6 +30,7 @@ from app.copilot_runtime.model_routes import (
     RuntimeModelRoute,
 )
 from app.copilot_runtime.session_store import InMemorySessionStore
+from app.tooling.file_tools import FILE_TOOL_READ_ID
 
 
 TEST_MODEL_REPLY = "Hello from the test model."
@@ -123,6 +127,48 @@ class _PermissiveExecutor:
             events=_build_text_execution_events(run_id=run_id, text=self._reply),
             output=self._reply,
             resolved_model_id=model_route.model_id,
+        )
+
+
+class _RecordingExecutor(_PermissiveExecutor):
+    def __init__(self, *, reply: str) -> None:
+        super().__init__(reply=reply)
+        self.calls: list[dict[str, object]] = []
+
+    def open_event_stream(
+        self,
+        *,
+        run_id: str,
+        agent_name: str,
+        user_prompt: str,
+        message_history: list[object],
+        model_route: ResolvedRuntimeModelRoute,
+        enabled_tools: list[str] | tuple[str, ...] = (),
+        debug_enabled: bool = False,
+        request_options: dict[str, object] | None = None,
+        model_settings: dict[str, object] | None = None,
+    ) -> _ImmediateEventStream:
+        self.calls.append(
+            {
+                "agent_name": agent_name,
+                "user_prompt": user_prompt,
+                "message_history": list(message_history),
+                "resolved_model_id": model_route.model_id,
+                "enabled_tools": list(enabled_tools),
+                "debug_enabled": debug_enabled,
+                "request_options": dict(request_options or {}),
+            }
+        )
+        return super().open_event_stream(
+            run_id=run_id,
+            agent_name=agent_name,
+            user_prompt=user_prompt,
+            message_history=message_history,
+            model_route=model_route,
+            enabled_tools=enabled_tools,
+            debug_enabled=debug_enabled,
+            request_options=request_options,
+            model_settings=model_settings,
         )
 
 
@@ -660,7 +706,7 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
             json=_build_run_start_request(
                 thread_id="thread-1",
                 model="gpt-4.1",
-                enabled_tools=["tool.file-convert"],
+                enabled_tools=[FILE_TOOL_READ_ID],
                 debug_mode_enabled=True,
                 request_options={"temperature": 0.2},
             ),
@@ -763,12 +809,12 @@ def test_root_post_run_stream_executes_started_run_and_persists_thread_history()
     }
     assert events[2]["payload"]["delta"] == TEST_MODEL_REPLY
     assert completed["resolvedModelId"] == "gpt-4.1"
-    assert "tool.file-convert" in completed["resolvedToolIds"]
+    assert FILE_TOOL_READ_ID in completed["resolvedToolIds"]
     assert completed["requestOptions"] == {"temperature": 0.2}
     assert len(executor.calls) == 1
     call = executor.calls[0]
     assert call["enabled_tools"] is not None
-    assert "tool.file-convert" in call["enabled_tools"]
+    assert FILE_TOOL_READ_ID in call["enabled_tools"]
     assert {
         key: value
         for key, value in call.items()
@@ -1100,11 +1146,11 @@ def test_root_post_capabilities_get_returns_bound_agent_recommendations_and_tool
 
     assert response.status_code == 200
     assert payload == scaffold.build_capabilities_response(thread=thread).to_dict()
-    assert payload["recommendedTools"] == ["tool.file-convert"]
+    assert payload["recommendedTools"] == [FILE_TOOL_READ_ID]
     assert scaffold.tool_registry.get_default().name == "default"
     assert payload["toolSelectionMode"] == "recommendation-only"
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" in tool_ids
+    assert FILE_TOOL_READ_ID in tool_ids
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
 
 
@@ -1122,7 +1168,7 @@ def test_root_post_capabilities_get_routes_tool_permission_policy_to_bridge_cata
                 tool_permission_policy={
                     "schemaVersion": 1,
                     "defaultMode": "allow",
-                    "toolModes": {"tool.file-convert": "deny"},
+                    "toolModes": {FILE_TOOL_READ_ID: "deny"},
                 },
             ),
         )
@@ -1131,7 +1177,7 @@ def test_root_post_capabilities_get_routes_tool_permission_policy_to_bridge_cata
 
     assert response.status_code == 200
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" not in tool_ids
+    assert FILE_TOOL_READ_ID not in tool_ids
     assert "tool.weather-current" in tool_ids
     assert payload["recommendedTools"] == []
 
@@ -1304,3 +1350,171 @@ def _build_capabilities_get_request(
         "method": "capabilities/get",
         "body": body,
     }
+
+
+def _build_app_with_recording_executor() -> tuple[
+    FastAPI,
+    RuntimeScaffold,
+    InMemorySessionStore,
+    _RecordingExecutor,
+]:
+    executor = _RecordingExecutor(reply=TEST_MODEL_REPLY)
+    store = InMemorySessionStore()
+    tool_registry = build_default_tool_registry()
+    agent_registry = build_default_agent_registry(
+        executor_factory=lambda: executor,
+        toolset_name=tool_registry.get_default().name,
+    )
+    scaffold = build_runtime_scaffold(
+        session_store_type=store.storage_type,
+        model_configured=executor.model_configured,
+        model_environment_keys=executor.model_environment_keys,
+        agent_registry=agent_registry,
+        tool_registry=tool_registry,
+    )
+    bridge = _build_runtime_bridge(
+        store=store, agent_registry=agent_registry, scaffold=scaffold
+    )
+    app = FastAPI()
+    app.include_router(build_router(scaffold, bridge))
+    return app, scaffold, store, executor
+
+
+def _build_thinking_capability_get_request(
+    *,
+    session_id: str,
+    provider: str,
+    model: str,
+) -> dict[str, Any]:
+    return {
+        "method": "thinking/capability/get",
+        "body": {
+            "sessionId": session_id,
+            "modelRoute": {
+                "routeRef": {
+                    "routeKind": "provider-model",
+                    "profileId": "provider-1",
+                    "modelId": model,
+                },
+            },
+        },
+    }
+
+
+def _build_http_request(*, debug_mode_enabled: bool | None) -> Request:
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+    )
+    request_mappers = __import__(
+        "app.copilot_runtime.transport.request_mappers",
+        fromlist=["set_runtime_request_context"],
+    )
+    if debug_mode_enabled is not None:
+        request.state.copilot_runtime_debug_mode_enabled = debug_mode_enabled
+    request_mappers.set_runtime_request_context(
+        request,
+        runtime_method="run/start",
+        thread_id="thread-1",
+        agent_id="default",
+        run_id="run-1",
+        phase="create_run_record",
+    )
+    return request
+
+
+def _build_run_start_request(
+    *,
+    thread_id: str,
+    model: str,
+    user_text: str = "Hello",
+    agent_id: str | None = "default",
+    enabled_tools: list[str] | None = None,
+    debug_mode_enabled: bool = False,
+    request_options: dict[str, object] | None = None,
+    thinking_selection: dict[str, object] | None = None,
+    thinking_capability_override: dict[str, object] | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "threadId": thread_id,
+        "message": {"role": "user", "content": user_text},
+        "policy": _build_policy(
+            model=model,
+            enabled_tools=enabled_tools,
+            debug_mode_enabled=debug_mode_enabled,
+            request_options=request_options,
+            thinking_selection=thinking_selection,
+            thinking_capability_override=thinking_capability_override,
+        ),
+    }
+    if agent_id is not None:
+        body["agent"] = agent_id
+    return {"method": "run/start", "body": body}
+
+
+def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
+    return {
+        "method": "run/stream",
+        "body": {
+            "runId": run_id,
+        },
+    }
+
+
+def _build_run_cancel_request(*, run_id: str) -> dict[str, Any]:
+    return {
+        "method": "run/cancel",
+        "body": {
+            "runId": run_id,
+        },
+    }
+
+
+def _build_policy(
+    *,
+    model: str,
+    enabled_tools: list[str] | None = None,
+    debug_mode_enabled: bool = False,
+    request_options: dict[str, object] | None = None,
+    thinking_selection: dict[str, object] | None = None,
+    thinking_capability_override: dict[str, object] | None = None,
+) -> dict[str, object]:
+    policy: dict[str, object] = {
+        "modelRoute": {
+            "routeRef": {
+                "routeKind": "provider-model",
+                "profileId": "provider-1",
+                "modelId": model,
+            },
+        },
+        "enabledTools": list(enabled_tools or []),
+        "debugModeEnabled": debug_mode_enabled,
+        "requestOptions": dict(request_options or {}),
+    }
+    if thinking_selection is not None:
+        policy["thinkingSelection"] = dict(thinking_selection)
+    if thinking_capability_override is not None:
+        policy["thinkingCapabilityOverride"] = dict(thinking_capability_override)
+    return policy
+
+
+def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for chunk in raw_text.strip().split("\n\n"):
+        lines = [line for line in chunk.splitlines() if line.startswith("data: ")]
+        if not lines:
+            continue
+        payload = "\n".join(line[6:] for line in lines)
+        events.append(json.loads(payload))
+    return events

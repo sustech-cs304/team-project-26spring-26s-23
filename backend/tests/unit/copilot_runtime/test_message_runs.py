@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, Sequence
@@ -33,6 +33,7 @@ from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextM
 from app.copilot_runtime.tool_approval_coordinator import RuntimeToolApprovalCoordinator
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.tool_registry import REQUEST_USER_FORM_TOOL_ID, WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
+from app.tooling.file_tools import FILE_TOOL_READ_ID
 
 
 def _strip_internal_tool_ids(tool_ids: Sequence[str]) -> list[str]:
@@ -787,7 +788,7 @@ def test_stream_events_filters_denied_tools_from_enabled_tools() -> None:
 
     request = _build_request(
         thread_id="thread-1",
-        enabled_tools=("tool.file-convert",),
+        enabled_tools=(FILE_TOOL_READ_ID,),
         tool_permission_policy=RuntimeToolPermissionPolicy(
             schemaVersion=1,
             defaultMode="allow",
@@ -798,7 +799,7 @@ def test_stream_events_filters_denied_tools_from_enabled_tools() -> None:
 
     assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
     assert _strip_internal_tool_ids(executor.calls[0]["enabled_tools"]) == [
-        "tool.file-convert"
+        FILE_TOOL_READ_ID
     ]
     assert not any(WEATHER_CURRENT_TOOL_ID in call["enabled_tools"] for call in executor.calls)
 
