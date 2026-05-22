@@ -45,6 +45,11 @@ import {
   type CopilotRuntimeApi,
 } from '../copilot-runtime'
 import {
+  DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+  DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
+  type DesktopRuntimeApi,
+} from '../desktop-runtime'
+import {
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
   type DesktopNotificationApi,
 } from '../desktop-notification'
@@ -116,6 +121,7 @@ import {
 
 export interface PreloadBridgeApis {
   copilotRuntime: CopilotRuntimeApi
+  desktopRuntime: DesktopRuntimeApi
   copilotHistory: CopilotHistoryApi
   configCenterPublicSnapshot: ConfigCenterPublicSnapshotApi
   configCenterPublicSnapshotSubscription: ConfigCenterPublicSnapshotSubscriptionApi
@@ -142,6 +148,13 @@ function buildCopilotRuntimeApi(ipcRenderer: IpcRendererLike): CopilotRuntimeApi
   return {
     load() { return ipcRenderer.invoke(COPILOT_RUNTIME_LOAD_CHANNEL) },
     retry() { return ipcRenderer.invoke(COPILOT_RUNTIME_RETRY_CHANNEL) },
+  }
+}
+
+function buildDesktopRuntimeApi(ipcRenderer: IpcRendererLike): DesktopRuntimeApi {
+  return {
+    loadCalendarEvents() { return ipcRenderer.invoke(DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL) },
+    importWakeupIcs(request) { return ipcRenderer.invoke(DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL, request) },
   }
 }
 
@@ -312,6 +325,7 @@ export function createPreloadBridgeApis(
 ): PreloadBridgeApis {
   return {
     copilotRuntime: buildCopilotRuntimeApi(ipcRenderer),
+    desktopRuntime: buildDesktopRuntimeApi(ipcRenderer),
     copilotHistory: buildCopilotHistoryApi(ipcRenderer),
     configCenterPublicSnapshot: buildConfigCenterPublicSnapshotApi(ipcRenderer),
     configCenterPublicSnapshotSubscription: createConfigCenterPublicSnapshotSubscriptionApi(ipcRenderer),

@@ -185,7 +185,7 @@ function renderWithRoot(element: ReactElement) {
       if (!(target instanceof HTMLElement)) {
         throw new Error(`Missing element for data-testid=${testId}`)
       }
-      
+
       return target
     },
     queryByTestId(testId: string) {

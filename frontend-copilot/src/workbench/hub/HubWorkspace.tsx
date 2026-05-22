@@ -18,6 +18,17 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
   const [events, setEvents] = useState<UnifiedCalendarEvent[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshToken, setRefreshToken] = useState(0)
+
+  useEffect(() => {
+    const handler = () => {
+      setRefreshToken((value) => value + 1)
+    }
+    window.addEventListener('candue:calendar-refresh', handler)
+    return () => {
+      window.removeEventListener('candue:calendar-refresh', handler)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -60,7 +71,7 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
     return () => {
       active = false
     }
-  }, [bootstrap])
+  }, [bootstrap, refreshToken])
 
   const handleCalendarEventChange = useCallback((eventId: string | number, patch: CalendarEventPatch) => {
     setEvents((currentEvents) => mergeCalendarEventPatch(currentEvents, eventId, patch))

@@ -1,4 +1,9 @@
 import type {
+  DesktopRuntimeApi,
+  DesktopRuntimeCalendarEventsLoadResult,
+  DesktopRuntimeWakeupIcsImportResult,
+} from '../../../../electron/desktop-runtime'
+import type {
   SettingsWorkspaceProfileSecretMutationResult,
   SettingsWorkspaceSecretsApi,
   SettingsWorkspaceSecretsLoadStatusesResult,
@@ -25,6 +30,8 @@ export interface InstallSettingsWorkspaceBridgeOptions {
   clearProfileApiKeyResult?: SettingsWorkspaceProfileSecretMutationResult
   saveSustechCasPasswordResult?: SettingsWorkspaceSustechCasSecretMutationResult
   clearSustechCasPasswordResult?: SettingsWorkspaceSustechCasSecretMutationResult
+  loadCalendarEventsResult?: DesktopRuntimeCalendarEventsLoadResult
+  importWakeupIcsResult?: DesktopRuntimeWakeupIcsImportResult
 }
 
 export function installSettingsWorkspaceBridge(options: InstallSettingsWorkspaceBridgeOptions = {}) {
@@ -89,6 +96,13 @@ export function installSettingsWorkspaceBridge(options: InstallSettingsWorkspace
     },
   )
 
+  const loadCalendarEvents = vi.fn<DesktopRuntimeApi['loadCalendarEvents']>().mockResolvedValue(
+    options.loadCalendarEventsResult ?? { ok: true, items: [] },
+  )
+  const importWakeupIcs = vi.fn<DesktopRuntimeApi['importWakeupIcs']>().mockResolvedValue(
+    options.importWakeupIcsResult ?? { ok: true, parsed: 1 },
+  )
+
   const stateApi: SettingsWorkspaceStateApi = {
     load: loadState,
     save: saveState,
@@ -101,15 +115,21 @@ export function installSettingsWorkspaceBridge(options: InstallSettingsWorkspace
     saveSustechCasPassword,
     clearSustechCasPassword,
   }
+  const desktopRuntime: DesktopRuntimeApi = {
+    loadCalendarEvents,
+    importWakeupIcs,
+  }
 
   Object.assign(window, {
     settingsWorkspaceState: stateApi,
     settingsWorkspaceSecrets: secretsApi,
+    desktopRuntime,
   })
 
   return {
     stateApi,
     secretsApi,
+    desktopRuntime,
     loadState,
     saveState,
     loadStatuses,
@@ -118,5 +138,7 @@ export function installSettingsWorkspaceBridge(options: InstallSettingsWorkspace
     clearProfileApiKey,
     saveSustechCasPassword,
     clearSustechCasPassword,
+    loadCalendarEvents,
+    importWakeupIcs,
   }
 }

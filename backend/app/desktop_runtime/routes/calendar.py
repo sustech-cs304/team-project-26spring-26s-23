@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 
 from app.desktop_runtime.config import DesktopRuntimeConfig
 from app.desktop_runtime.security import require_local_token
+from app.event_manager.data.db_manager import (
+    DatabaseManager as EventDatabaseManager,
+    resolve_default_event_manager_db_path,
+)
 from app.event_manager.data.dto import UnifiedCalendarEvent
 
 
@@ -22,6 +27,9 @@ def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
         raise RuntimeError("Desktop runtime config is not available on app.state.runtime_config")
     return config
 
+def _is_calendar_initialized(runtime_config: DesktopRuntimeConfig) -> bool:
+    marker_file = Path(runtime_config.database_dir) / ".calendar_initialized"
+    return marker_file.exists()
 
 def build_calendar_router() -> APIRouter:
     router = APIRouter(prefix="/calendar", tags=["calendar"])
@@ -31,10 +39,15 @@ def build_calendar_router() -> APIRouter:
         runtime_config = _get_runtime_config(request)
         require_local_token(request, runtime_config)
 
-        # TODO: Replace with real database queries once the persistence layer is ready.
-        # This is mock data for the frontend to start developing the UI.
+        db = EventDatabaseManager(
+            resolve_default_event_manager_db_path(runtime_config.database_dir)
+        )
+        items = db.list_unified_calendar_events()
+        if items or _is_calendar_initialized(runtime_config):
+            return {
+                "items": [event.to_dict() for event in items]
+            }
         now = _utc_now()
-
         mock_events = [
             UnifiedCalendarEvent(
                 id=1,

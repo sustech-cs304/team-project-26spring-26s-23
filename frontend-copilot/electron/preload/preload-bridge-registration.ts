@@ -6,6 +6,7 @@ interface ContextBridgeLike {
 
 const PRELOAD_BRIDGE_KEYS = [
   'copilotRuntime',
+  'desktopRuntime',
   'copilotHistory',
   'configCenterPublicSnapshot',
   'configCenterPublicSnapshotSubscription',

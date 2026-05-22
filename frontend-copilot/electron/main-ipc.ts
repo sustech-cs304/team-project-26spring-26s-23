@@ -72,6 +72,8 @@ export function registerMainProcessIpcHandlers(
     loadToolCatalog: services.loadToolCatalog,
     loadCopilotRuntime,
     retryCopilotRuntime,
+    loadDesktopRuntimeCalendarEvents: services.loadDesktopRuntimeCalendarEvents,
+    importDesktopRuntimeWakeupIcs: services.importDesktopRuntimeWakeupIcs,
     readClipboardAttachmentData: services.readClipboardAttachmentData,
     writeAttachmentTempFile: services.writeAttachmentTempFile,
     readAttachmentPreview: services.readAttachmentPreview,

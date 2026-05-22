@@ -364,6 +364,23 @@ function createTestFixtures() {
     revealEntryInFolderResult: { ok: true as const, affectedPaths: [TEST_REVEALED_ENTRY] },
     copyTextToClipboardResult: { ok: true as const, affectedPaths: [] },
 
+    desktopCalendarEventsResult: {
+      ok: true as const,
+      items: [{
+        id: 'desktop-event-1',
+        source: 'wakeup',
+        source_id: 'WakeUpSchedule-BYDAY-TEST',
+        title: '多日课程',
+        description: null,
+        start_time: '2026-03-02T00:00:00.000Z',
+        end_time: '2026-03-02T01:50:00.000Z',
+        is_all_day: false,
+        location: null,
+        status: 'not_started',
+      }],
+    },
+    desktopWakeupIcsImportResult: { ok: true as const, parsed: 2, stats: { inserted: 2 } },
+
     loadManagedRuntimeResult: createManagedRuntimeLoadResultFixture(),
     loadMcpRegistryResult: createMcpRegistryLoadResultFixture(),
     saveMcpServerResult: createMcpSaveServerSuccessFixture(),
@@ -463,6 +480,7 @@ function setupDomainServiceMocks(f: ReturnType<typeof createTestFixtures>) {
 // eslint-disable-next-line max-lines-per-function -- single integration test, fragile to split
 describe('createMainProcessServices', () => {
   beforeEach(() => {
+    vi.unstubAllGlobals()
     vi.clearAllMocks()
     vi.mocked(getCalendarEvents).mockReturnValue([])
   })
@@ -483,11 +501,29 @@ describe('createMainProcessServices', () => {
     hoisted.createElectronFileManagerService.mockReturnValue(hoisted.fileManagerService)
 
     const hostedBackendService = {
-      getLocalToken: vi.fn(() => 'runtime-token'),
+      start: vi.fn(async () => ({ status: 'ready' } as never)),
       getRuntimeBaseUrl: vi.fn(() => 'http://127.0.0.1:8765'),
-      start: vi.fn(async () => undefined),
+      getLocalToken: vi.fn(() => 'runtime-token'),
     }
     hoisted.unifiedConfigService.getHostedBackendService.mockResolvedValue(hostedBackendService)
+
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0], _init?: Parameters<typeof fetch>[1]) => {
+      const requestUrl = input instanceof URL ? input.toString() : typeof input === 'string' ? input : input.url
+      if (requestUrl === 'http://127.0.0.1:8765/calendar/events') {
+        return new Response(JSON.stringify(f.desktopCalendarEventsResult), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (requestUrl === 'http://127.0.0.1:8765/api/wakeup/import/ics') {
+        return new Response(JSON.stringify(f.desktopWakeupIcsImportResult), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ detail: `Unexpected runtime URL: ${requestUrl}` }), { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
 
     const prepareRuntimePaths = vi.fn(async () => ({ runtimeRootDir: 'runtime-root' } as never))
     const ensureHostedBackendService = vi.fn(async () => hostedBackendService as never)
@@ -517,10 +553,13 @@ describe('createMainProcessServices', () => {
     expect(hoisted.createElectronToolCatalogService).not.toHaveBeenCalled()
 
     const patch = { domains: { frontendPreferences: { theme: 'dark' as const } } }
+    const wakeupIcsImportRequest = { icsText: 'BEGIN:VCALENDAR' }
 
     await expect(services.loadConfigCenterPublicSnapshot()).resolves.toEqual(f.loadPublicSnapshotResult)
     await expect(services.applyConfigCenterPublicPatch(patch)).resolves.toEqual(f.applyPublicPatchResult)
     await expect(services.loadToolCatalog()).resolves.toEqual(f.loadToolCatalogResult)
+    await expect(services.loadDesktopRuntimeCalendarEvents()).resolves.toEqual(f.desktopCalendarEventsResult)
+    await expect(services.importDesktopRuntimeWakeupIcs(wakeupIcsImportRequest)).resolves.toEqual(f.desktopWakeupIcsImportResult)
     await expect(services.loadSettingsWorkspaceState()).resolves.toEqual(f.loadStateResult)
     await expect(services.saveSettingsWorkspaceState(f.saveInput)).resolves.toEqual(f.saveStateResult)
     await expect(services.loadSettingsWorkspaceSecretStates({ profileIds: [PROFILE_ID] })).resolves.toEqual(f.loadSecretStatesResult)
@@ -686,6 +725,28 @@ describe('createMainProcessServices', () => {
     })
     expect(hoisted.skillRegistryService.refreshSkills).toHaveBeenCalledWith({ skillId: f.skillRecord.skillId })
     expect(hoisted.toolCatalogService.load).toHaveBeenCalledOnce()
+    expect(ensureHostedBackendService).toHaveBeenCalledTimes(2)
+    expect(hostedBackendService.start).toHaveBeenCalledTimes(2)
+    expect(hostedBackendService.getRuntimeBaseUrl).toHaveBeenCalledTimes(2)
+    expect(hostedBackendService.getLocalToken).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    const calendarFetchCall = fetchMock.mock.calls[0]
+    const calendarFetchInit = calendarFetchCall?.[1]
+    expect(calendarFetchCall?.[0]).toBe('http://127.0.0.1:8765/calendar/events')
+    expect(calendarFetchInit?.method).toBe('GET')
+    expect(calendarFetchInit?.headers).toBeInstanceOf(Headers)
+    expect((calendarFetchInit?.headers as Headers).get('X-Local-Token')).toBe('runtime-token')
+    expect(calendarFetchInit?.body).toBeUndefined()
+
+    const wakeupImportFetchCall = fetchMock.mock.calls[1]
+    const wakeupImportFetchInit = wakeupImportFetchCall?.[1]
+    expect(wakeupImportFetchCall?.[0]).toBe('http://127.0.0.1:8765/api/wakeup/import/ics')
+    expect(wakeupImportFetchInit?.method).toBe('POST')
+    expect(wakeupImportFetchInit?.headers).toBeInstanceOf(Headers)
+    expect((wakeupImportFetchInit?.headers as Headers).get('X-Local-Token')).toBe('runtime-token')
+    expect((wakeupImportFetchInit?.headers as Headers).get('Content-Type')).toBe('application/json')
+    expect(wakeupImportFetchInit?.body).toBe(JSON.stringify(wakeupIcsImportRequest))
     expect(hoisted.copilotHistoryService.listThreads).toHaveBeenCalledOnce()
     expect(hoisted.copilotHistoryService.getThreadDetail).toHaveBeenCalledWith(THREAD_ID)
     expect(hoisted.copilotHistoryService.getRunReplay).toHaveBeenCalledWith(RUN_ID)

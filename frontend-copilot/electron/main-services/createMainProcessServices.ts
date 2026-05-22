@@ -10,10 +10,15 @@ import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import { createElectronFileManagerService } from '../file-manager/service'
 import type { ElectronFileManagerService } from '../file-manager/service'
 import { getCalendarEvents, addCalendarEvent } from '../timeline-database/service'
+import type {
+  DesktopRuntimeCalendarEventsLoadResult,
+  DesktopRuntimeWakeupIcsImportResult,
+} from '../desktop-runtime'
 import type { LoadTimelineEventsRequest, UnifiedCalendarEvent } from '../timeline-database/ipc'
 
 const LOCAL_RUNTIME_TOKEN_HEADER = 'X-Local-Token'
 const CALENDAR_EVENTS_PATH = '/calendar/events'
+const WAKEUP_ICS_IMPORT_PATH = '/api/wakeup/import/ics'
 const CALENDAR_LOAD_FAILURE_MESSAGE = '无法加载日历事件：本地无缓存数据且远端 API 请求失败，请检查网络连接或后端服务状态。'
 
 // ===== Builder functions for service API groups =====
@@ -241,6 +246,28 @@ function buildFileManagerApiBridge(fileManagerService: ElectronFileManagerServic
   }
 }
 
+function buildDesktopRuntimeApi(options: CreateMainProcessServicesOptions) {
+  return {
+    async loadDesktopRuntimeCalendarEvents(): Promise<DesktopRuntimeCalendarEventsLoadResult> {
+      return await requestProtectedRuntimeJson<DesktopRuntimeCalendarEventsLoadResult>({
+        options,
+        path: CALENDAR_EVENTS_PATH,
+        method: 'GET',
+        failureLabel: 'Failed to load desktop runtime calendar events',
+      })
+    },
+    async importDesktopRuntimeWakeupIcs(request: Parameters<MainProcessServices['importDesktopRuntimeWakeupIcs']>[0]): Promise<DesktopRuntimeWakeupIcsImportResult> {
+      return await requestProtectedRuntimeJson<DesktopRuntimeWakeupIcsImportResult>({
+        options,
+        path: WAKEUP_ICS_IMPORT_PATH,
+        method: 'POST',
+        body: request,
+        failureLabel: 'Failed to import WakeUP ICS payload',
+      })
+    },
+  }
+}
+
 function buildTimelineDatabaseApi(options: CreateMainProcessServicesOptions) {
   return {
     async loadTimelineEvents(request?: LoadTimelineEventsRequest) {
@@ -265,6 +292,74 @@ function buildTimelineDatabaseApi(options: CreateMainProcessServicesOptions) {
       return { id }
     },
   }
+}
+
+async function requestProtectedRuntimeJson<TResult extends { ok?: boolean; error?: string }>(input: {
+  options: CreateMainProcessServicesOptions
+  path: string
+  method: 'GET' | 'POST'
+  body?: unknown
+  failureLabel: string
+}): Promise<TResult> {
+  try {
+    const service = await input.options.ensureHostedBackendService()
+    await service.start()
+
+    const runtimeBaseUrl = service.getRuntimeBaseUrl()
+    if (runtimeBaseUrl === null || runtimeBaseUrl.trim() === '') {
+      throw new Error('Hosted backend runtime URL is unavailable.')
+    }
+
+    const token = service.getLocalToken()
+    const headers = new Headers()
+    if (token !== null && token.trim() !== '') {
+      headers.set(LOCAL_RUNTIME_TOKEN_HEADER, token)
+    }
+
+    let body: string | undefined
+    if (input.body !== undefined) {
+      body = JSON.stringify(input.body)
+      headers.set('Content-Type', 'application/json')
+    }
+
+    const response = await fetch(new URL(input.path, normalizeRuntimeBaseUrl(runtimeBaseUrl)).toString(), {
+      method: input.method,
+      headers,
+      body,
+    })
+    const payload = await response.json().catch(() => null)
+
+    if (!response.ok) {
+      const detail = extractRuntimeFailureMessage(payload, response.status, response.statusText)
+      return { ok: false, error: `${input.failureLabel}: ${detail}` } as TResult
+    }
+
+    if (!isPlainRecord(payload)) {
+      return { ok: false, error: `${input.failureLabel}: backend returned an invalid response payload.` } as TResult
+    }
+
+    return payload as TResult
+  } catch (error) {
+    return { ok: false, error: `${input.failureLabel}: ${formatUnknownError(error)}` } as TResult
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function extractRuntimeFailureMessage(payload: unknown, status: number, statusText: string): string {
+  if (isPlainRecord(payload)) {
+    if (typeof payload.error === 'string' && payload.error.trim() !== '') {
+      return payload.error
+    }
+    if (typeof payload.detail === 'string' && payload.detail.trim() !== '') {
+      return payload.detail
+    }
+  }
+
+  const normalizedStatusText = statusText.trim()
+  return normalizedStatusText ? `HTTP ${status} ${normalizedStatusText}` : `HTTP ${status}`
 }
 
 async function fetchRemoteCalendarEvents(
@@ -322,6 +417,7 @@ async function buildTrustedCalendarEventsRequest(
   let service: Awaited<ReturnType<CreateMainProcessServicesOptions['ensureHostedBackendService']>>
   try {
     service = await options.ensureHostedBackendService()
+    await service.start()
   } catch (error) {
     await appendTimelineLog(options, 'warn', 'Unable to resolve hosted runtime for calendar events request.', {
       runtimeUrl: requestedRuntimeBaseUrl.toString(),
@@ -488,6 +584,7 @@ export function createMainProcessServices(
     ...buildManagedRuntimeApi(accessors),
     ...buildCapabilityBridgeApi(accessors),
     ...buildCopilotHistoryApi(copilotHistoryService),
+    ...buildDesktopRuntimeApi(options),
     ...buildAttachmentApi(attachmentService),
     ...buildFileManagerApiBridge(fileManagerService),
     ...buildTimelineDatabaseApi(options),

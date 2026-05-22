@@ -10,6 +10,7 @@ describe('preload renderer bridge', () => {
 
     expect(exposedKeys).toEqual([
       'copilotRuntime',
+      'desktopRuntime',
       'copilotHistory',
       'configCenterPublicSnapshot',
       'configCenterPublicSnapshotSubscription',
