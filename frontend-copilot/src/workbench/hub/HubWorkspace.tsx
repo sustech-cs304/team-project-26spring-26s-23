@@ -94,7 +94,7 @@ function CalendarDebugPanel({ events, error, isLoading }: {
   isLoading: boolean
 }) {
   return (
-    <details className="calendar-debug-panel">
+    <details className="calendar-debug-panel" hidden>
       <summary className="calendar-debug-panel__summary">
         后端原始事件数据 Debug (Error: {error || 'None'})
       </summary>
