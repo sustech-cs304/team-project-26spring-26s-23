@@ -14,6 +14,10 @@ interface MockGanttTask {
 }
 
 interface MockGanttOptions {
+  bar_height?: number
+  lower_header_height?: number
+  padding?: number
+  upper_header_height?: number
   on_date_change?: (task: MockGanttTask, start: Date, end: Date) => void
   on_progress_change?: (task: MockGanttTask, progress: number) => void
 }
@@ -89,6 +93,43 @@ describe('CalendarGanttView', () => {
     expect(ganttInstances[0].tasks).toHaveLength(1)
     expect(ganttInstances[0].tasks[0].id).toBe('calendar-event-1')
     expect(rendered.queryByTestId('calendar-gantt-empty')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('caps the gantt viewport to seven visible rows and reserves Shift+wheel for vertical row scrolling', () => {
+    const rendered = renderWithRoot(
+      <CalendarGanttView
+        events={Array.from({ length: 12 }, (_, index) => createCalendarEvent({
+          id: index + 1,
+          source_id: `source-${index + 1}`,
+          title: `Task ${index + 1}`,
+        }))}
+        onEventChange={vi.fn()}
+      />,
+    )
+    const chart = rendered.getByTestId('calendar-gantt-container')
+    const chartShell = chart.parentElement
+    const scrollContainer = document.createElement('div')
+
+    scrollContainer.className = 'gantt-container'
+    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 399 })
+    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 620 })
+    chart.appendChild(scrollContainer)
+
+    act(() => {
+      scrollContainer.dispatchEvent(new window.WheelEvent('wheel', {
+        bubbles: true,
+        cancelable: true,
+        deltaY: 100,
+        shiftKey: true,
+      }))
+    })
+
+    expect(ganttInstances[0].options.bar_height).toBe(28)
+    expect(ganttInstances[0].options.padding).toBe(16)
+    expect(chartShell?.style.getPropertyValue('--calendar-gantt-visible-chart-height')).toBe('399px')
+    expect(scrollContainer.scrollTop).toBe(100)
 
     rendered.unmount()
   })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from 'react'
 import Gantt, { type GanttOptions, type GanttTask } from 'frappe-gantt'
 import { Check, ChevronDown } from 'lucide-react'
 
@@ -29,6 +29,9 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
   const tasks = mapping.tasks
   const hideChart = tasks.length === 0 || renderError !== null
   const selectedViewModeOption = GANTT_VIEW_MODE_OPTIONS.find((option) => option.value === viewMode) ?? GANTT_VIEW_MODE_OPTIONS[0]
+  const ganttChartViewportStyle = useMemo(() => ({
+    '--calendar-gantt-visible-chart-height': `${getGanttVisibleChartHeight(tasks.length)}px`,
+  }) as CSSProperties, [tasks.length])
 
   useEffect(() => {
     onEventChangeRef.current = onEventChange
@@ -75,6 +78,7 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
         ganttRef.current.refresh(tasks)
       }
       scheduleGanttLabelStabilization(ganttRef.current)
+      syncGanttVerticalScrollAffordance(container, tasks.length)
     } catch (error) {
       cleanupGanttPopupPositioning(ganttRef.current)
       ganttRef.current = null
@@ -105,6 +109,17 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault()
         scheduleGanttTimelineZoom(event, scrollContainer, ganttRef.current, viewModeRef.current, setRenderError, wheelInteraction)
+        return
+      }
+
+      if (event.shiftKey) {
+        const rawVerticalDelta = event.deltaY !== 0 ? event.deltaY : event.deltaX
+        if (rawVerticalDelta === 0) {
+          return
+        }
+
+        event.preventDefault()
+        scheduleGanttTimelineVerticalScroll(event, scrollContainer, rawVerticalDelta, wheelInteraction)
         return
       }
 
@@ -183,7 +198,7 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
         </div>
       ) : null}
 
-      <div className="calendar-gantt-card__chart-shell" hidden={hideChart}>
+      <div className="calendar-gantt-card__chart-shell" hidden={hideChart} style={ganttChartViewportStyle}>
         <div className="calendar-gantt-card__controls" aria-label="时间轴控制">
           <button
             type="button"
@@ -264,6 +279,12 @@ const GANTT_VIEW_MODE_OPTIONS = [
 type CalendarGanttViewMode = typeof GANTT_VIEW_MODE_OPTIONS[number]['value']
 
 const DEFAULT_GANTT_VIEW_MODE: CalendarGanttViewMode = 'Day'
+const GANTT_MAX_VISIBLE_ROWS = 7
+const GANTT_UPPER_HEADER_HEIGHT = 45
+const GANTT_LOWER_HEADER_HEIGHT = 30
+const GANTT_HEADER_HEIGHT = GANTT_UPPER_HEADER_HEIGHT + GANTT_LOWER_HEADER_HEIGHT + 10
+const GANTT_BAR_HEIGHT = 28
+const GANTT_ROW_PADDING = 16
 const GANTT_MIN_COLUMN_WIDTH = 28
 const GANTT_MAX_COLUMN_WIDTH = 180
 const GANTT_WHEEL_ZOOM_SENSITIVITY = 0.0015
@@ -313,6 +334,12 @@ function createGanttWheelInteractionState(): GanttWheelInteractionState {
   }
 }
 
+function getGanttVisibleChartHeight(taskCount: number): number {
+  const visibleRowCount = clampNumber(taskCount, 1, GANTT_MAX_VISIBLE_ROWS)
+
+  return GANTT_HEADER_HEIGHT + GANTT_ROW_PADDING + (GANTT_BAR_HEIGHT + GANTT_ROW_PADDING) * visibleRowCount - 10
+}
+
 function buildGanttOptions(
   onEventChangeRef: MutableRefObject<CalendarGanttViewProps['onEventChange']>,
   viewMode: CalendarGanttViewMode,
@@ -326,8 +353,10 @@ function buildGanttOptions(
     readonly_progress: false,
     move_dependencies: false,
     container_height: 'auto',
-    bar_height: 28,
-    padding: 16,
+    upper_header_height: GANTT_UPPER_HEADER_HEIGHT,
+    lower_header_height: GANTT_LOWER_HEADER_HEIGHT,
+    bar_height: GANTT_BAR_HEIGHT,
+    padding: GANTT_ROW_PADDING,
     infinite_padding: false,
     language: 'zh',
     popup_on: 'click',
@@ -461,6 +490,11 @@ function resolveGanttScrollContainer(wrapper: HTMLDivElement): HTMLElement {
   return wrapper.querySelector<HTMLElement>('.gantt-container') ?? wrapper
 }
 
+function syncGanttVerticalScrollAffordance(wrapper: HTMLDivElement, taskCount: number): void {
+  const scrollContainer = resolveGanttScrollContainer(wrapper)
+  scrollContainer.classList.toggle('calendar-gantt-container--vertical-scrollable', taskCount > GANTT_MAX_VISIBLE_ROWS)
+}
+
 function scheduleGanttTimelinePan(
   event: WheelEvent,
   scrollContainer: HTMLElement,
@@ -501,6 +535,22 @@ function scheduleGanttTimelinePan(
   }
 
   state.panAnimationFrame = window.requestAnimationFrame(animatePan)
+}
+
+function scheduleGanttTimelineVerticalScroll(
+  event: WheelEvent,
+  scrollContainer: HTMLElement,
+  rawDelta: number,
+  state: GanttWheelInteractionState,
+): void {
+  cancelGanttPanAnimation(state)
+  cancelGanttZoomAnimation(state)
+
+  scrollContainer.scrollTop = clampNumber(
+    scrollContainer.scrollTop + normalizeWheelDelta(rawDelta, event.deltaMode, scrollContainer, 'y'),
+    0,
+    getMaxScrollTop(scrollContainer),
+  )
 }
 
 function scheduleGanttTimelineZoom(
@@ -599,13 +649,15 @@ function getGanttColumnWidth(gantt: Gantt): number | null {
   return null
 }
 
-function normalizeWheelDelta(delta: number, deltaMode: number, scrollContainer: HTMLElement): number {
+function normalizeWheelDelta(delta: number, deltaMode: number, scrollContainer: HTMLElement, axis: 'x' | 'y' = 'x'): number {
   if (deltaMode === WheelEvent.DOM_DELTA_LINE) {
     return delta * GANTT_WHEEL_LINE_HEIGHT
   }
 
   if (deltaMode === WheelEvent.DOM_DELTA_PAGE) {
-    return delta * scrollContainer.clientWidth * GANTT_WHEEL_PAGE_RATIO
+    const pageSize = axis === 'y' ? scrollContainer.clientHeight : scrollContainer.clientWidth
+
+    return delta * pageSize * GANTT_WHEEL_PAGE_RATIO
   }
 
   return delta
@@ -613,6 +665,10 @@ function normalizeWheelDelta(delta: number, deltaMode: number, scrollContainer: 
 
 function getMaxScrollLeft(scrollContainer: HTMLElement): number {
   return Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth)
+}
+
+function getMaxScrollTop(scrollContainer: HTMLElement): number {
+  return Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
 }
 
 function clampNumber(value: number, min: number, max: number): number {
