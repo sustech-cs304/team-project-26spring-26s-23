@@ -13,6 +13,28 @@ from pydantic_ai.models.test import TestModel
 
 import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
 import app.integrations.sustech.teaching_information_system.facade.tools as tis_facade_tools
+from app.integrations.sustech.blackboard.api.dto import (
+    AnnouncementDTO,
+    AssignmentDTO,
+    CourseDTO,
+    GradeDTO,
+    ResourceDTO,
+)
+from app.integrations.sustech.blackboard.provider.results import (
+    BlackboardSnapshotFetchResult,
+    BlackboardSnapshotSyncReport,
+    BlackboardSyncPayloads,
+)
+from app.integrations.sustech.blackboard.shared import BlackboardLogEvent
+from app.integrations.sustech.teaching_information_system.api.dto import (
+    TISCreditGPAQueryResult,
+    TISCreditGPASummary,
+    TISCreditGPATermRecord,
+    TISCreditGPAYearRecord,
+    TISHomepageProfile,
+    TISProbeResult,
+)
+from app.integrations.sustech.teaching_information_system.shared import TISLogEvent
 from app.copilot_runtime.agent import PydanticAIAgentExecutor, RuntimeToolLifecycleEvent
 from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
@@ -631,8 +653,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         *,
         db_path: Path | None = None,
         reset_schema: bool = False,
-        resource_course_limit: int = 3,
         verify_second_sync: bool = True,
+        parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
@@ -643,8 +665,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
                 "password": password,
                 "db_path": db_path,
                 "reset_schema": reset_schema,
-                "resource_course_limit": resource_course_limit,
                 "verify_second_sync": verify_second_sync,
+                "parallel_workers": parallel_workers,
             }
         )
         if progress is not None:
@@ -671,8 +693,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
             tool_id="blackboard.snapshot.sync",
             tool_arguments={
                 "dbRelativePath": "blackboard/snapshot.db",
-                "resourceCourseLimit": 2,
                 "verifySecondSync": False,
+                "parallelWorkers": 2,
                 "stateKey": "snapshot-latest",
                 "artifactName": "snapshot.json",
             },
@@ -704,8 +726,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
         "password": "secret",
         "db_path": Path("database-root/blackboard/snapshot.db"),
         "reset_schema": False,
-        "resource_course_limit": 3,
         "verify_second_sync": False,
+        "parallel_workers": 2,
     }
     event_types = [event["type"] for event in events]
     tool_events = [event for event in events if event["type"] == "tool_event"]
@@ -758,8 +780,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
         *,
         db_path: Path | None = None,
         reset_schema: bool = False,
-        resource_course_limit: int = 3,
         verify_second_sync: bool = True,
+        parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
@@ -770,8 +792,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
                 "password": password,
                 "db_path": db_path,
                 "reset_schema": reset_schema,
-                "resource_course_limit": resource_course_limit,
                 "verify_second_sync": verify_second_sync,
+                "parallel_workers": parallel_workers,
             }
         )
         if progress is not None:
@@ -828,8 +850,8 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
         "password": "secret",
         "db_path": Path("database-root/blackboard/sustech.db"),
         "reset_schema": False,
-        "resource_course_limit": 3,
         "verify_second_sync": True,
+        "parallel_workers": 1,
     }
     event_types = [event["type"] for event in events]
     tool_events = [event for event in events if event["type"] == "tool_event"]
@@ -1427,6 +1449,167 @@ def test_post_root_run_stream_delay_tool_permission_policy_emits_waiting_approva
     )
     assert events[-1]["type"] == "run_completed"
     assert events[-1]["payload"]["assistantText"] == "HTTP delayed tool answer."
+
+
+def _build_blackboard_log_event(source: str) -> BlackboardLogEvent:
+    return BlackboardLogEvent(
+        timestamp="2026-04-14T08:00:00Z",
+        level="info",
+        layer="provider",
+        source=source,
+        message="ok",
+    )
+
+
+def _build_blackboard_snapshot_report(
+    *,
+    db_path: Path,
+) -> BlackboardSnapshotSyncReport:
+    snapshot = BlackboardSnapshotFetchResult(
+        courses=[CourseDTO(course_id="_course_1", name="CS305 Database Systems")],
+        assignments_by_course={
+            "_course_1": [
+                AssignmentDTO(
+                    assignment_id="asg_1",
+                    course_id="_course_1",
+                    title="Homework 1",
+                )
+            ]
+        },
+        resources_by_course={
+            "_course_1": [
+                ResourceDTO(
+                    resource_id="res_1",
+                    course_id="_course_1",
+                    title="Lecture 1",
+                )
+            ]
+        },
+        grades_by_course={
+            "_course_1": [
+                GradeDTO(
+                    grade_id="grd_1",
+                    course_id="_course_1",
+                    assignment_id=None,
+                    item_name="Homework 1",
+                )
+            ]
+        },
+        announcements=[
+            AnnouncementDTO(
+                announcement_id="ann_1",
+                course_id="_course_1",
+                course_name="CS305 Database Systems",
+                title="Welcome",
+            )
+        ],
+        logs=[_build_blackboard_log_event("integration.blackboard.fetch")],
+    )
+    payloads = BlackboardSyncPayloads(
+        course_payload=[{"course_id": "_course_1"}],
+        assignment_payloads={"_course_1": [{"assignment_id": "asg_1"}]},
+        resource_payloads={"_course_1": [{"resource_id": "res_1"}]},
+        grade_payloads={"_course_1": [{"grade_id": "grd_1"}]},
+        announcements_payload=[{"announcement_id": "ann_1"}],
+    )
+    return BlackboardSnapshotSyncReport(
+        db_path=db_path,
+        snapshot=snapshot,
+        payloads=payloads,
+        first_sync_stats={
+            "courses": {"inserted": 1, "updated": 0, "deleted": 0},
+            "assignments": {"inserted": 1, "updated": 0, "deleted": 0},
+            "resources": {"inserted": 1, "updated": 0, "deleted": 0},
+            "grades": {"inserted": 1, "updated": 0, "deleted": 0},
+            "announcements": {"inserted": 1, "updated": 0, "deleted": 0},
+        },
+        second_sync_stats={
+            "courses": {"inserted": 0, "updated": 1, "deleted": 0},
+            "assignments": {"inserted": 0, "updated": 1, "deleted": 0},
+            "resources": {"inserted": 0, "updated": 1, "deleted": 0},
+            "grades": {"inserted": 0, "updated": 1, "deleted": 0},
+            "announcements": {"inserted": 0, "updated": 1, "deleted": 0},
+        },
+        table_counts={
+            "courses": {"total": 1, "active": 1},
+            "assignments": {"total": 1, "active": 1},
+            "resources": {"total": 1, "active": 1},
+            "grades": {"total": 1, "active": 1},
+            "announcements": {"total": 1, "active": 1},
+        },
+        expected_active_counts={
+            "courses": 1,
+            "assignments": 1,
+            "resources": 1,
+            "grades": 1,
+            "announcements": 1,
+        },
+        integrity_ok=True,
+        logs=[_build_blackboard_log_event("integration.blackboard.sync")],
+    )
+
+
+def _build_tis_log_event(source: str) -> TISLogEvent:
+    return TISLogEvent(
+        timestamp="2026-04-14T08:05:00Z",
+        level="info",
+        layer="provider",
+        source=source,
+        message="ok",
+    )
+
+
+def _build_tis_homepage() -> TISHomepageProfile:
+    return TISHomepageProfile(
+        page_url="https://tis.sustech.edu.cn/student_index",
+        title="TIS",
+        role_codes=["01"],
+    )
+
+
+def _build_tis_credit_gpa_result(
+    *,
+    persistence: dict[str, Any] | None = None,
+) -> TISCreditGPAQueryResult:
+    return TISCreditGPAQueryResult(
+        success=True,
+        source_url="https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/queryXnAndXqXfj",
+        page_url="https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/xspjxfjcx",
+        api_url="https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/queryXnAndXqXfj",
+        homepage=_build_tis_homepage(),
+        summary=TISCreditGPASummary(
+            average_credit_gpa=3.82,
+            rank="5/100",
+            raw={"PJXFJ": 3.82},
+        ),
+        term_records=[
+            TISCreditGPATermRecord(
+                academic_year_term="2025秋季",
+                academic_year="2025-2026",
+                term_code="1",
+                term_credit_gpa=3.82,
+                year_credit_gpa=3.82,
+            )
+        ],
+        year_records=[
+            TISCreditGPAYearRecord(
+                academic_year="2025-2026",
+                year_credit_gpa=3.82,
+            )
+        ],
+        probes=[
+            TISProbeResult(
+                url="https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/queryXnAndXqXfj",
+                method="POST",
+                status_code=200,
+                is_json=True,
+                probe_label="credit-gpa-api",
+            )
+        ],
+        logs=[_build_tis_log_event("integration.tis.credit_gpa")],
+        resolved_role_code="01",
+        persistence=persistence,
+    )
 
 
 def _create_sqlite_db(path: Path, *, script: str) -> Path:
