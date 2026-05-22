@@ -19,7 +19,6 @@ from .pydantic_contracts import (
 from .session_store import RuntimeRunRecord, RuntimeThreadRecord
 from .tool_permissions import RuntimeToolPermissionResolver
 from .tool_registry import ToolRegistry, build_default_tool_registry
-from ._tool_registry.constants import INTERNAL_TOOL_IDS
 
 AGENTS_LIST_METHOD = "agents/list"
 THREAD_CREATE_METHOD = "thread/create"
@@ -718,29 +717,7 @@ class RuntimeScaffold(RuntimeContract):
             for tool_id in normalized_requested
             if tools_by_id[tool_id].availability == "available"
         )
-
-        implicit: list[str] = []
-        for tool_id in INTERNAL_TOOL_IDS:
-            if tool_permission_resolver is not None and not tool_permission_resolver.is_visible(tool_id):
-                continue
-            try:
-                resolved_tool = self.tool_registry.resolve_tool(
-                    tool_id, toolset_name=self._get_agent_toolset_name(agent_id)
-                )
-            except LookupError:
-                continue
-            if resolved_tool.descriptor.availability != "available":
-                continue
-            implicit.append(tool_id)
-
-        seen = set(resolved)
-        out: list[str] = list(resolved)
-        for tool_id in implicit:
-            if tool_id in seen:
-                continue
-            seen.add(tool_id)
-            out.append(tool_id)
-        return tuple(out)
+        return resolved
 
     def diagnostics_summary(self) -> dict[str, Any]:
         summary = {

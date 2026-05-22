@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any, cast
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
 from pydantic_ai.models.test import TestModel
 
+import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
+import app.integrations.sustech.teaching_information_system.facade.tools as tis_facade_tools
 from app.copilot_runtime.agent import PydanticAIAgentExecutor, RuntimeToolLifecycleEvent
 from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
@@ -34,6 +38,10 @@ from app.copilot_runtime.session_store import (
     RuntimeStoredRunPolicy,
 )
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
+from app.desktop_runtime.capability_bridge_client import (
+    HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME,
+    DesktopCapabilityBridgeClient,
+)
 from app.desktop_runtime.server import create_app
 from app.tooling.file_tools.runtime_bindings import FILE_TOOL_READ_ID
 
@@ -1421,12 +1429,18 @@ def test_post_root_run_stream_delay_tool_permission_policy_emits_waiting_approva
     assert events[-1]["payload"]["assistantText"] == "HTTP delayed tool answer."
 
 
+def _create_sqlite_db(path: Path, *, script: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(path)) as connection:
+        connection.executescript(script)
+    return path
+
+
 
 def _configure_contract_tool_test_model(
     app,
     *,
     tool_id: str,
-    tool_arguments: dict[str, Any],
     output_text: str,
 ) -> None:
     tool_registry = getattr(app.state, "copilot_runtime_tool_registry", None)
