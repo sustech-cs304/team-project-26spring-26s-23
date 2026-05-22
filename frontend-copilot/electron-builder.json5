@@ -18,6 +18,13 @@
       "filter": [
         "**/*"
       ]
+    },
+    {
+      "from": "builtin-skills",
+      "to": "builtin-skills",
+      "filter": [
+        "**/*"
+      ]
     }
   ],
   "mac": {
