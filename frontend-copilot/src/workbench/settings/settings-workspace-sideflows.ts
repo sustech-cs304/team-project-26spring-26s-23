@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 
-import { loadCopilotRuntimeLocalToken } from '../../features/copilot/runtime'
-
 import type { WakeupDialogState } from './ExternalSourcesSection'
 import {
   clearSettingsWorkspaceSustechCasPassword,
@@ -11,7 +9,6 @@ import {
 interface UseSettingsWorkspaceSideflowsArgs {
   hydratedCasPasswordValue: string
   wakeupShareLink: string
-  runtimeBaseUrl: string
 }
 
 interface UseSettingsWorkspaceSideflowsResult {
@@ -20,7 +17,7 @@ interface UseSettingsWorkspaceSideflowsResult {
   setCasPasswordDraft: (value: string) => void
   persistCasPasswordDraft: () => Promise<void>
   wakeupDialogState: WakeupDialogState
-  handleWakeupLinkParse: () => Promise<void>
+  handleWakeupLinkParse: (value?: string) => Promise<void>
   handleWakeupDialogClose: () => void
   handleWakeupConflictChoice: () => void
 }
@@ -28,7 +25,6 @@ interface UseSettingsWorkspaceSideflowsResult {
 export function useSettingsWorkspaceSideflows({
   hydratedCasPasswordValue,
   wakeupShareLink,
-  runtimeBaseUrl,
 }: UseSettingsWorkspaceSideflowsArgs): UseSettingsWorkspaceSideflowsResult {
   const [casPasswordDraft, setCasPasswordDraft] = useState('')
   const [casPasswordSavedValue, setCasPasswordSavedValue] = useState('')
@@ -93,8 +89,8 @@ export function useSettingsWorkspaceSideflows({
       setCasPasswordFeedback('已自动保存 CAS 密码')
     },
     wakeupDialogState,
-    handleWakeupLinkParse: async () => {
-      const result = await resolveWakeupIcsImportResult(wakeupShareLink, runtimeBaseUrl)
+    handleWakeupLinkParse: async (value?: string) => {
+      const result = await resolveWakeupIcsImportResult(value ?? wakeupShareLink)
       if (!result.ok) {
         setWakeupDialogState({ status: 'failure', error: result.error })
         return
@@ -113,7 +109,6 @@ export function useSettingsWorkspaceSideflows({
 
 export async function resolveWakeupIcsImportResult(
   value: string,
-  runtimeBaseUrl: string,
 ): Promise<{ ok: true; parsed: number } | { ok: false; error: string }> {
   const normalizedValue = value.trim()
 
@@ -126,23 +121,14 @@ export async function resolveWakeupIcsImportResult(
   }
 
   try {
-    const localToken = await loadCopilotRuntimeLocalToken()
-    const response = await fetch(`${runtimeBaseUrl}/api/wakeup/import/ics`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(localToken ? { 'X-Local-Token': localToken } : {}),
-      },
-      body: JSON.stringify({
-        icsText: normalizedValue,
-      }),
-    })
-    if (!response.ok) {
-      return { ok: false, error: `HTTP ${response.status}` }
+    const desktopRuntime = window.desktopRuntime
+    if (!desktopRuntime || typeof desktopRuntime.importWakeupIcs !== 'function') {
+      return { ok: false, error: '桌面运行时 IPC 不可用' }
     }
-    const data = await response.json().catch(() => null)
-    if (!data || data.ok !== true) {
-      return { ok: false, error: (data && typeof data.error === 'string' ? data.error : '导入失败') }
+
+    const data = await desktopRuntime.importWakeupIcs({ icsText: normalizedValue })
+    if (data.ok !== true) {
+      return { ok: false, error: (typeof data.error === 'string' ? data.error : '导入失败') }
     }
     const parsed = typeof data.parsed === 'number' ? data.parsed : 0
     if (parsed <= 0) {

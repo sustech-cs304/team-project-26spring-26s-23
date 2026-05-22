@@ -27,6 +27,11 @@ import type {
 } from '../copilot-history'
 import type { ElectronCopilotHistoryService } from '../copilot-history-service'
 import type { HostedBackendService } from '../runtime/hosted-backend-service'
+import type {
+  DesktopRuntimeCalendarEventsLoadResult,
+  DesktopRuntimeWakeupIcsImportRequest,
+  DesktopRuntimeWakeupIcsImportResult,
+} from '../desktop-runtime'
 import type { ManagedRuntimeLoadResponse } from '../managed-runtime/ipc'
 import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import type {
@@ -138,6 +143,10 @@ export interface CreateMainProcessServicesOptions {
 export interface MainProcessServices {
   loadConfigCenterPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
   loadToolCatalog: () => Promise<ToolCatalogLoadResult>
+  loadDesktopRuntimeCalendarEvents: () => Promise<DesktopRuntimeCalendarEventsLoadResult>
+  importDesktopRuntimeWakeupIcs: (
+    request: DesktopRuntimeWakeupIcsImportRequest,
+  ) => Promise<DesktopRuntimeWakeupIcsImportResult>
   applyConfigCenterPublicPatch: (patch: ConfigCenterPublicPatch) => Promise<ConfigCenterPublicPatchResult>
   loadSettingsWorkspaceState: () => Promise<SettingsWorkspaceStateLoadResult>
   saveSettingsWorkspaceState: (input: SettingsWorkspaceStateSaveInput) => Promise<SettingsWorkspaceStateSaveResult>

@@ -31,6 +31,11 @@ import type {
 } from '../settings-workspace/ipc'
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import type { CopilotRuntimeLoadResult } from '../copilot-runtime'
+import type {
+  DesktopRuntimeCalendarEventsLoadResult,
+  DesktopRuntimeWakeupIcsImportRequest,
+  DesktopRuntimeWakeupIcsImportResult,
+} from '../desktop-runtime'
 import type { DesktopNotificationRequest } from '../desktop-notification'
 import type { DesktopWindowState } from '../window-controls'
 import type { ManagedRuntimeLoadResponse } from '../managed-runtime/ipc'
@@ -148,7 +153,10 @@ export interface RendererIpcHandlers {
   loadToolCatalog: (request?: ToolCatalogLoadRequest) => Promise<ToolCatalogLoadResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
-  getCopilotRuntimeLocalToken: () => Promise<string | null>
+  loadDesktopRuntimeCalendarEvents: () => Promise<DesktopRuntimeCalendarEventsLoadResult>
+  importDesktopRuntimeWakeupIcs: (
+    request: DesktopRuntimeWakeupIcsImportRequest,
+  ) => Promise<DesktopRuntimeWakeupIcsImportResult>
   readClipboardAttachmentData: () => Promise<ReadClipboardAttachmentDataResult>
   writeAttachmentTempFile: (request: WriteAttachmentTempFileRequest) => Promise<WriteAttachmentTempFileResult>
   readAttachmentPreview: (request: ReadAttachmentPreviewRequest) => Promise<ReadAttachmentPreviewResult>

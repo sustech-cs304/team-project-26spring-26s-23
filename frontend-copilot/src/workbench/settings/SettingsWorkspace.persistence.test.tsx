@@ -314,7 +314,7 @@ describe('SettingsWorkspace persistence', () => {
         'END:VCALENDAR',
       ].join('\n')
 
-      const { saveState } = installSettingsWorkspaceBridge({
+      const { saveState, importWakeupIcs } = installSettingsWorkspaceBridge({
         loadStateResult: {
           ok: true,
           source: 'stored',
@@ -359,6 +359,8 @@ describe('SettingsWorkspace persistence', () => {
       await act(async () => {
         vi.advanceTimersByTime(250)
       })
+
+      expect(importWakeupIcs).toHaveBeenCalledWith({ icsText: nextIcs })
 
       const lastSaveCall = saveState.mock.calls[saveState.mock.calls.length - 1]?.[0]
       expect(lastSaveCall?.externalSource.wakeupShareLink).toBe(nextIcs)

@@ -10,7 +10,6 @@ type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
 export interface MainProcessRuntimeIpcHandlers {
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
-  getCopilotRuntimeLocalToken: () => Promise<string | null>
   notifyDesktopNotification: (request: DesktopNotificationRequest) => Promise<void>
   loadDesktopWindowState: () => Promise<DesktopWindowState>
   minimizeDesktopWindow: () => Promise<void>
@@ -29,7 +28,6 @@ export function registerMainProcessIpcHandlers(
     services,
     loadCopilotRuntime,
     retryCopilotRuntime,
-    getCopilotRuntimeLocalToken,
     notifyDesktopNotification,
     loadDesktopWindowState,
     minimizeDesktopWindow,
@@ -74,7 +72,8 @@ export function registerMainProcessIpcHandlers(
     loadToolCatalog: services.loadToolCatalog,
     loadCopilotRuntime,
     retryCopilotRuntime,
-    getCopilotRuntimeLocalToken,
+    loadDesktopRuntimeCalendarEvents: services.loadDesktopRuntimeCalendarEvents,
+    importDesktopRuntimeWakeupIcs: services.importDesktopRuntimeWakeupIcs,
     readClipboardAttachmentData: services.readClipboardAttachmentData,
     writeAttachmentTempFile: services.writeAttachmentTempFile,
     readAttachmentPreview: services.readAttachmentPreview,

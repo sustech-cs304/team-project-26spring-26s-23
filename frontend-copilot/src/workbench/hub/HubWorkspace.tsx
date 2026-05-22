@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CopilotBootstrapController } from '../../features/copilot/types'
-import { loadCopilotRuntimeLocalToken } from '../../features/copilot/runtime'
 import { getHubWorkspaceContent, type WorkbenchLanguage } from '../locale'
 import type { HubWorkspaceView } from '../types'
 import { CalendarGanttView } from './components/CalendarGanttView'
@@ -50,23 +49,16 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
   }, [])
 
   useEffect(() => {
-    const controller = new AbortController()
     let active = true
 
-    let actualRuntimeUrl = 'http://127.0.0.1:8765'
-    if (bootstrap) {
-      if (bootstrap.state.status === 'ready' || bootstrap.state.status === 'degraded') {
-        actualRuntimeUrl = bootstrap.state.runtimeUrl
-      } else {
-        return
-      }
+    if (bootstrap && bootstrap.state.status !== 'ready' && bootstrap.state.status !== 'degraded') {
+      return
     }
 
     async function fetchEvents() {
       setIsLoading(true)
       setError(null)
       try {
-        const localToken = await loadCopilotRuntimeLocalToken()
         const timelineDb = window.timelineDatabase
         let localResponse: { items: UnifiedCalendarEvent[] }
         if (timelineDb && typeof timelineDb.loadEvents === 'function') {
@@ -83,27 +75,25 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
 
         let remoteFailed = false
         try {
-          const apiResponse = await fetch(`${actualRuntimeUrl}/calendar/events`, {
-            signal: controller.signal,
-            headers: localToken ? { 'X-Local-Token': localToken } : undefined,
-        })
+          const desktopRuntime = window.desktopRuntime
+          if (!desktopRuntime || typeof desktopRuntime.loadCalendarEvents !== 'function') {
+            throw new Error('desktopRuntime bridge is unavailable')
+          }
+          const apiResponse = await desktopRuntime.loadCalendarEvents()
           if (apiResponse.ok) {
-            const data = await apiResponse.json()
-            if (data.items && data.items.length > 0) {
-              for (const remoteEvent of data.items) {
+            if (apiResponse.items.length > 0) {
+              for (const remoteEvent of apiResponse.items) {
                 if (!localKeys.has(buildCompositeKey(remoteEvent))) {
                   combinedEvents.push(remoteEvent)
                 }
               }
             }
           } else {
-            console.warn(`[Sync] Calendar API responded with status ${apiResponse.status}`)
+            console.warn(`[Sync] Calendar IPC proxy failed: ${apiResponse.error}`)
             remoteFailed = true
           }
         } catch (fetchErr: unknown) {
-          if (!controller.signal.aborted) {
-            console.warn('[Sync] Failed to fetch backend calendar events:', fetchErr)
-          }
+          console.warn('[Sync] Failed to load backend calendar events via IPC proxy:', fetchErr)
           remoteFailed = true
         }
 
@@ -140,7 +130,6 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
 
     return () => {
       active = false
-      controller.abort()
     }
   }, [bootstrap, refreshToken])
 

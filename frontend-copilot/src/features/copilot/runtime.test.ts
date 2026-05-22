@@ -5,7 +5,7 @@ import type {
   CopilotRuntimeLoadResult,
   CopilotRuntimeRetryResult,
 } from '../../../electron/copilot-runtime'
-import { loadCopilotRuntime, loadCopilotRuntimeLocalToken, retryCopilotRuntime } from './runtime'
+import { loadCopilotRuntime, retryCopilotRuntime } from './runtime'
 
 const runtimeUnavailableError = 'window.copilotRuntime is unavailable in the renderer process.'
 
@@ -48,7 +48,6 @@ describe('copilot runtime bridge', () => {
     const api: CopilotRuntimeApi = {
       load: vi.fn().mockResolvedValue(loadResult),
       retry: vi.fn().mockResolvedValue(retryResult),
-      getLocalToken: vi.fn().mockResolvedValue('runtime-token'),
     }
 
     vi.stubGlobal('window', {
@@ -57,7 +56,6 @@ describe('copilot runtime bridge', () => {
 
     await expect(loadCopilotRuntime()).resolves.toEqual(loadResult)
     await expect(retryCopilotRuntime()).resolves.toEqual(retryResult)
-    await expect(loadCopilotRuntimeLocalToken()).resolves.toBe('runtime-token')
     expect(api.load).toHaveBeenCalledOnce()
     expect(api.retry).toHaveBeenCalledOnce()
   })

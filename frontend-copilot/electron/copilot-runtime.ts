@@ -4,7 +4,6 @@ import type { HostedBackendStatus } from './runtime/runtime-state'
 
 export const COPILOT_RUNTIME_LOAD_CHANNEL = 'copilot-runtime:load'
 export const COPILOT_RUNTIME_RETRY_CHANNEL = 'copilot-runtime:retry'
-export const COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL = 'copilot-runtime:local-token'
 
 export interface CopilotHostedRuntimeFailureSummary {
   code: HostedBackendFailureCode
@@ -45,5 +44,4 @@ export type CopilotRuntimeRetryResult = CopilotRuntimeLoadResult
 export interface CopilotRuntimeApi {
   load: () => Promise<CopilotRuntimeLoadResult>
   retry: () => Promise<CopilotRuntimeRetryResult>
-  getLocalToken: () => Promise<string | null>
 }

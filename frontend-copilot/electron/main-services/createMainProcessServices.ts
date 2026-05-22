@@ -10,6 +10,10 @@ import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import { createElectronFileManagerService } from '../file-manager/service'
 import type { ElectronFileManagerService } from '../file-manager/service'
 import { getCalendarEvents, addCalendarEvent } from '../timeline-database/service'
+import type {
+  DesktopRuntimeCalendarEventsLoadResult,
+  DesktopRuntimeWakeupIcsImportResult,
+} from '../desktop-runtime'
 
 // ===== Builder functions for service API groups =====
 
@@ -236,6 +240,28 @@ function buildFileManagerApiBridge(fileManagerService: ElectronFileManagerServic
   }
 }
 
+function buildDesktopRuntimeApi(options: CreateMainProcessServicesOptions) {
+  return {
+    async loadDesktopRuntimeCalendarEvents(): Promise<DesktopRuntimeCalendarEventsLoadResult> {
+      return await requestProtectedRuntimeJson<DesktopRuntimeCalendarEventsLoadResult>({
+        options,
+        path: '/calendar/events',
+        method: 'GET',
+        failureLabel: 'Failed to load desktop runtime calendar events',
+      })
+    },
+    async importDesktopRuntimeWakeupIcs(request: Parameters<MainProcessServices['importDesktopRuntimeWakeupIcs']>[0]): Promise<DesktopRuntimeWakeupIcsImportResult> {
+      return await requestProtectedRuntimeJson<DesktopRuntimeWakeupIcsImportResult>({
+        options,
+        path: '/api/wakeup/import/ics',
+        method: 'POST',
+        body: request,
+        failureLabel: 'Failed to import WakeUP ICS payload',
+      })
+    },
+  }
+}
+
 function buildTimelineDatabaseApi() {
   return {
     async loadTimelineEvents() {
@@ -247,6 +273,82 @@ function buildTimelineDatabaseApi() {
       return { id }
     },
   }
+}
+
+async function requestProtectedRuntimeJson<TResult extends { ok?: boolean; error?: string }>(input: {
+  options: CreateMainProcessServicesOptions
+  path: string
+  method: 'GET' | 'POST'
+  body?: unknown
+  failureLabel: string
+}): Promise<TResult> {
+  try {
+    const service = await input.options.ensureHostedBackendService()
+    await service.start()
+
+    const runtimeBaseUrl = service.getRuntimeBaseUrl()
+    if (runtimeBaseUrl === null || runtimeBaseUrl.trim() === '') {
+      throw new Error('Hosted backend runtime URL is unavailable.')
+    }
+
+    const token = service.getLocalToken()
+    const headers = new Headers()
+    if (token !== null && token.trim() !== '') {
+      headers.set('X-Local-Token', token)
+    }
+
+    let body: string | undefined
+    if (input.body !== undefined) {
+      body = JSON.stringify(input.body)
+      headers.set('Content-Type', 'application/json')
+    }
+
+    const response = await fetch(new URL(input.path, normalizeRuntimeBaseUrl(runtimeBaseUrl)).toString(), {
+      method: input.method,
+      headers,
+      body,
+    })
+    const payload = await response.json().catch(() => null)
+
+    if (!response.ok) {
+      const detail = extractRuntimeFailureMessage(payload, response.status, response.statusText)
+      return { ok: false, error: `${input.failureLabel}: ${detail}` } as TResult
+    }
+
+    if (!isPlainRecord(payload)) {
+      return { ok: false, error: `${input.failureLabel}: backend returned an invalid response payload.` } as TResult
+    }
+
+    return payload as TResult
+  } catch (error) {
+    return { ok: false, error: `${input.failureLabel}: ${formatRuntimeRequestError(error)}` } as TResult
+  }
+}
+
+function normalizeRuntimeBaseUrl(baseUrl: string): string {
+  return baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function extractRuntimeFailureMessage(payload: unknown, status: number, statusText: string): string {
+  if (isPlainRecord(payload)) {
+    if (typeof payload.error === 'string' && payload.error.trim() !== '') {
+      return payload.error
+    }
+    if (typeof payload.detail === 'string' && payload.detail.trim() !== '') {
+      return payload.detail
+    }
+  }
+
+  const normalizedStatusText = statusText.trim()
+  return normalizedStatusText ? `HTTP ${status} ${normalizedStatusText}` : `HTTP ${status}`
+}
+
+function formatRuntimeRequestError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 // ===== Main factory function =====
@@ -278,6 +380,7 @@ export function createMainProcessServices(
     ...buildManagedRuntimeApi(accessors),
     ...buildCapabilityBridgeApi(accessors),
     ...buildCopilotHistoryApi(copilotHistoryService),
+    ...buildDesktopRuntimeApi(options),
     ...buildAttachmentApi(attachmentService),
     ...buildFileManagerApiBridge(fileManagerService),
     ...buildTimelineDatabaseApi(),

@@ -23,6 +23,10 @@ import type {
 } from './copilot-history'
 import type { CopilotRuntimeLoadResult } from './copilot-runtime'
 import type {
+  DesktopRuntimeCalendarEventsLoadResult,
+  DesktopRuntimeWakeupIcsImportResult,
+} from './desktop-runtime'
+import type {
   McpDeleteServerResult,
   McpRefreshCatalogResult,
   McpRegistryLoadResult,
@@ -379,7 +383,8 @@ function createToolCatalogFixtures(): Pick<RendererIpcHandlers, 'loadToolCatalog
 }
 
 function createCopilotRuntimeFixtures(): Pick<RendererIpcHandlers,
-  'loadCopilotRuntime' | 'retryCopilotRuntime' | 'getCopilotRuntimeLocalToken'> {
+  'loadCopilotRuntime' | 'retryCopilotRuntime'
+  | 'loadDesktopRuntimeCalendarEvents' | 'importDesktopRuntimeWakeupIcs'> {
   return {
     loadCopilotRuntime: vi.fn(async (): Promise<CopilotRuntimeLoadResult> => ({
       ok: true,
@@ -389,7 +394,14 @@ function createCopilotRuntimeFixtures(): Pick<RendererIpcHandlers,
       ok: true,
       snapshot: createCopilotRuntimeSnapshotFixture('starting', null),
     })),
-    getCopilotRuntimeLocalToken: vi.fn(async () => 'runtime-token'),
+    loadDesktopRuntimeCalendarEvents: vi.fn(async (): Promise<DesktopRuntimeCalendarEventsLoadResult> => ({
+      ok: true,
+      items: [],
+    })),
+    importDesktopRuntimeWakeupIcs: vi.fn(async (): Promise<DesktopRuntimeWakeupIcsImportResult> => ({
+      ok: true,
+      parsed: 1,
+    })),
   }
 }
 

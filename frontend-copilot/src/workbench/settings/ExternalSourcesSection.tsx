@@ -12,7 +12,7 @@ export interface ExternalSourcesSectionDomain {
   wakeupShareLink: string
   wakeupDialogState: WakeupDialogState
   onWakeupShareLinkChange: (value: string) => void
-  onWakeupLinkParse: () => void | Promise<void>
+  onWakeupLinkParse: (value?: string) => void | Promise<void>
   onWakeupDialogClose: () => void
   onWakeupConflictChoice: () => void
 }
@@ -60,7 +60,7 @@ export function ExternalSourcesSection({ externalSources, language }: ExternalSo
                 reader.onload = () => {
                   const text = typeof reader.result === 'string' ? reader.result : ''
                   onWakeupShareLinkChange(text)
-                  void onWakeupLinkParse()
+                  void onWakeupLinkParse(text)
                   event.target.value = ''
                 }
                 reader.onerror = () => {

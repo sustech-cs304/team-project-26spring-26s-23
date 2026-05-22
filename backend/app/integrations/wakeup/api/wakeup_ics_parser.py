@@ -102,6 +102,32 @@ class WakeupCalendarICSParser:
         return f"wakeup_{digest}"
 
     @staticmethod
+    def _parse_rrule_byday(value: str | None, start_at: datetime) -> tuple[int, ...]:
+        weekday_map = {
+            "MO": 0,
+            "TU": 1,
+            "WE": 2,
+            "TH": 3,
+            "FR": 4,
+            "SA": 5,
+            "SU": 6,
+        }
+        raw = str(value or "").strip().upper()
+        if not raw:
+            return (start_at.weekday(),)
+
+        parsed: list[int] = []
+        for item in raw.split(","):
+            token = item.strip()
+            if len(token) < 2:
+                continue
+            weekday = weekday_map.get(token[-2:])
+            if weekday is not None and weekday not in parsed:
+                parsed.append(weekday)
+
+        return tuple(sorted(parsed)) or (start_at.weekday(),)
+
+    @staticmethod
     def _expand_weekly_rrule(
         *,
         start_at: datetime,
@@ -126,35 +152,53 @@ class WakeupCalendarICSParser:
         except (TypeError, ValueError):
             count = None
 
+        bydays = WakeupCalendarICSParser._parse_rrule_byday(
+            rrule.get("BYDAY"), start_at
+        )
         duration = (end_at - start_at) if end_at is not None else None
 
         occurrences: list[tuple[datetime, datetime | None]] = []
-        current = start_at
+        current_week_start = start_at
         produced = 0
         visited = 0
         max_occurrences = 512
         max_date = datetime(MAXYEAR, 12, 31)
 
         while True:
-            if count is not None and (visited >= count or produced >= count):
-                break
-            if until is not None and current > until:
-                break
-            if count is None and until is None and (visited >= max_occurrences or produced >= max_occurrences):
-                break
-            visited += 1
-            if current not in exdates:
-                current_end = current + duration if duration is not None else None
-                occurrences.append((current, current_end))
-                produced += 1
+            for weekday in bydays:
+                if count is not None and visited >= count:
+                    return occurrences or [(start_at, end_at)]
+                if count is None and until is None and visited >= max_occurrences:
+                    return occurrences or [(start_at, end_at)]
+
+                try:
+                    current = current_week_start + timedelta(
+                        days=weekday - start_at.weekday()
+                    )
+                except OverflowError:
+                    return occurrences or [(start_at, end_at)]
+
+                if current < start_at:
+                    continue
+                if until is not None and current > until:
+                    return occurrences or [(start_at, end_at)]
+
+                visited += 1
+                if current not in exdates:
+                    current_end = current + duration if duration is not None else None
+                    occurrences.append((current, current_end))
+                    produced += 1
+
+                if count is None and until is None and produced >= max_occurrences:
+                    return occurrences or [(start_at, end_at)]
 
             try:
-                next_current = current + timedelta(weeks=interval)
+                next_week_start = current_week_start + timedelta(weeks=interval)
             except OverflowError:
                 break
-            if next_current > max_date:
+            if next_week_start > max_date:
                 break
-            current = next_current
+            current_week_start = next_week_start
 
         return occurrences or [(start_at, end_at)]
 

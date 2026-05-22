@@ -57,3 +57,43 @@ END:VCALENDAR
         ),
         "metadata_payload 应包含 rrule",
     )
+
+
+def test_wakeup_rrule_weekly_byday_expansion_applies_count_and_exdate() -> None:
+    ics_text = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//WakeUpSchedule//icalendarkit//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:WakeUpSchedule-BYDAY-TEST
+DESCRIPTION:第1 - 2周\\n第1 - 2节\\n\\n\\n
+DTSTART:20260302T000000Z
+LOCATION:
+SUMMARY:multi-day-course
+DTEND:20260302T015000Z
+RRULE:FREQ=WEEKLY;INTERVAL=1;COUNT=6;BYDAY=MO,WE,FR
+EXDATE:20260304T000000Z
+END:VEVENT
+END:VCALENDAR
+"""
+    parser = WakeupCalendarICSParser()
+    events = sorted(
+        parser.parse_to_unified_events(ics_text, source="wakeup"),
+        key=lambda event: event.start_time,
+    )
+
+    _assert_equal(len(events), 5, "BYDAY 周规则应展开多天并应用 EXDATE 过滤")
+    _assert_equal(
+        [event.start_time for event in events],
+        [
+            datetime(2026, 3, 2, 0, 0, 0),
+            datetime(2026, 3, 6, 0, 0, 0),
+            datetime(2026, 3, 9, 0, 0, 0),
+            datetime(2026, 3, 11, 0, 0, 0),
+            datetime(2026, 3, 13, 0, 0, 0),
+        ],
+        "BYDAY 应按周内星期顺序生成实例，COUNT 应在 EXDATE 前限制候选集",
+    )
+    _assert_true(
+        all(event.end_time is not None for event in events), "BYDAY 实例应保留时长"
+    )

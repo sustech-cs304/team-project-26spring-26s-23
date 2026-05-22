@@ -53,10 +53,16 @@ import {
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import {
   COPILOT_RUNTIME_LOAD_CHANNEL,
-  COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
   type CopilotRuntimeLoadResult,
 } from '../copilot-runtime'
+import {
+  DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+  DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
+  type DesktopRuntimeCalendarEventsLoadResult,
+  type DesktopRuntimeWakeupIcsImportRequest,
+  type DesktopRuntimeWakeupIcsImportResult,
+} from '../desktop-runtime'
 import {
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
   type DesktopNotificationRequest,
@@ -218,7 +224,8 @@ const RENDERER_IPC_CHANNELS = [
   TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
-  COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL,
+  DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+  DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
   ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
   ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
   ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
@@ -264,6 +271,7 @@ export function registerRendererIpcHandlers(
   registerSkillRegistryHandlers(ipcMain, handlers)
   registerCopilotHistoryHandlers(ipcMain, handlers)
   registerToolAndRuntimeHandlers(ipcMain, handlers)
+  registerDesktopRuntimeHandlers(ipcMain, handlers)
   registerAttachmentManagerHandlers(ipcMain, handlers)
   registerDesktopNotificationAndWindowHandlers(ipcMain, handlers)
   registerFileManagerHandlers(ipcMain, handlers)
@@ -530,10 +538,22 @@ function registerToolAndRuntimeHandlers(ipcMain: IpcMainLike, handlers: Renderer
   ipcMain.handle(COPILOT_RUNTIME_RETRY_CHANNEL, async (): Promise<CopilotRuntimeLoadResult> => {
     return await handlers.retryCopilotRuntime()
   })
+}
 
-  ipcMain.handle(COPILOT_RUNTIME_LOCAL_TOKEN_CHANNEL, async (): Promise<string | null> => {
-    return await handlers.getCopilotRuntimeLocalToken()
-  })
+function registerDesktopRuntimeHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
+  ipcMain.handle(
+    DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+    async (): Promise<DesktopRuntimeCalendarEventsLoadResult> => {
+      return await handlers.loadDesktopRuntimeCalendarEvents()
+    },
+  )
+
+  ipcMain.handle(
+    DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
+    async (_event, request: DesktopRuntimeWakeupIcsImportRequest): Promise<DesktopRuntimeWakeupIcsImportResult> => {
+      return await handlers.importDesktopRuntimeWakeupIcs(request)
+    },
+  )
 }
 
 function registerAttachmentManagerHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
