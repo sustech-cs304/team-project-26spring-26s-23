@@ -219,7 +219,7 @@ python scripts/metrics.py
 
 ### 2.4 管道执行证明
 
-所有工作流在 Push 和 Pull Request 事件时自动执行。成功的运行记录可在仓库的 [GitHub Actions 页面](https://github.com/SUSTech-CANdU/team-project-26spring-26s-23/actions) 查看。
+所有工作流在 Push 和 Pull Request 事件时自动执行。成功的运行记录可在仓库的 [GitHub Actions 页面](https://github.com/sustech-cs304/team-project-26spring-26s-23/actions) 查看。
 
 以下是各工作流成功执行的截图：
 
