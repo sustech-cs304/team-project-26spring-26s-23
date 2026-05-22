@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TypedDict
 
-from app.tools.file_convert import convert_file_to_str
 from app.desktop_runtime.config import DEFAULT_USER_DATA_DIR, ENV_USER_DATA_DIR
 
 from .constants import DEFAULT_WEATHER_LOCATION, WEATHER_SAMPLE_RESULTS
