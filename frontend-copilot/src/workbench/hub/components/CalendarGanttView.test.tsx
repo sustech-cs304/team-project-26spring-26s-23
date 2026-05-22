@@ -18,11 +18,23 @@ interface MockGanttOptions {
   on_progress_change?: (task: MockGanttTask, progress: number) => void
 }
 
+interface MockGanttPopupOptions {
+  target?: Element | null
+  [key: string]: unknown
+}
+
+interface MockGanttPopup {
+  parent: HTMLElement
+}
+
 interface MockGanttInstance {
   wrapper: string | HTMLElement | SVGElement
   tasks: MockGanttTask[]
   options: MockGanttOptions
+  $popup_wrapper: HTMLElement
+  popup?: MockGanttPopup
   refresh: (tasks: MockGanttTask[]) => void
+  show_popup: (options: MockGanttPopupOptions) => void
 }
 
 const { ganttInstances, MockGantt } = vi.hoisted(() => {
@@ -32,16 +44,25 @@ const { ganttInstances, MockGantt } = vi.hoisted(() => {
     wrapper: string | HTMLElement | SVGElement
     tasks: MockGanttTask[]
     options: MockGanttOptions
+    $popup_wrapper: HTMLElement
+    popup?: MockGanttPopup
 
     constructor(wrapper: string | HTMLElement | SVGElement, tasks: MockGanttTask[], options: MockGanttOptions = {}) {
       this.wrapper = wrapper
       this.tasks = tasks
       this.options = options
+      this.$popup_wrapper = document.createElement('div')
+      this.$popup_wrapper.className = 'popup-wrapper hide'
       instances.push(this)
     }
 
     refresh(tasks: MockGanttTask[]) {
       this.tasks = tasks
+    }
+
+    show_popup(_options: MockGanttPopupOptions) {
+      this.popup = { parent: this.$popup_wrapper }
+      this.$popup_wrapper.classList.remove('hide')
     }
   }
 
@@ -58,6 +79,7 @@ vi.mock('frappe-gantt', () => ({
 describe('CalendarGanttView', () => {
   beforeEach(() => {
     ganttInstances.length = 0
+    document.body.innerHTML = ''
   })
 
   it('initializes frappe gantt with mapped tasks', () => {
@@ -105,6 +127,29 @@ describe('CalendarGanttView', () => {
 
     rendered.unmount()
   })
+
+  it('keeps the frappe popup wrapper outside clipped chart containers', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 })
+
+    const rendered = renderWithRoot(<CalendarGanttView events={[createCalendarEvent()]} onEventChange={vi.fn()} />)
+    const gantt = ganttInstances[0]
+    const target = document.createElement('div')
+    target.getBoundingClientRect = () => createRect({ left: 520, top: 220, width: 100, height: 30 })
+    gantt.$popup_wrapper.getBoundingClientRect = () => createRect({ left: 0, top: 0, width: 180, height: 80 })
+
+    expect(gantt.$popup_wrapper.parentElement).toBe(document.body)
+
+    gantt.show_popup({ task: gantt.tasks[0], target })
+
+    expect(gantt.$popup_wrapper.parentElement).toBe(document.body)
+    expect(gantt.$popup_wrapper.classList.contains('calendar-gantt-popup-wrapper')).toBe(true)
+    expect(gantt.$popup_wrapper.style.left).toBe('575px')
+    expect(gantt.$popup_wrapper.style.top).toBe('260px')
+
+    rendered.unmount()
+    expect(gantt.$popup_wrapper.parentElement).toBeNull()
+  })
 })
 
 function createCalendarEvent(overrides: Partial<UnifiedCalendarEvent> = {}): UnifiedCalendarEvent {
@@ -140,7 +185,7 @@ function renderWithRoot(element: ReactElement) {
       if (!(target instanceof HTMLElement)) {
         throw new Error(`Missing element for data-testid=${testId}`)
       }
-
+      
       return target
     },
     queryByTestId(testId: string) {
@@ -153,4 +198,18 @@ function renderWithRoot(element: ReactElement) {
       container.remove()
     },
   }
+}
+
+function createRect({ left, top, width, height }: { left: number; top: number; width: number; height: number }): DOMRect {
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    toJSON: () => ({}),
+  } as DOMRect
 }

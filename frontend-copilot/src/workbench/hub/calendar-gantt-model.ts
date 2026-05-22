@@ -9,6 +9,8 @@ export interface CalendarGanttTask {
   progress: number
   description?: string
   custom_class: string
+  color: string
+  color_progress: string
   source: string
   originalEventId: string | number
 }
@@ -45,6 +47,8 @@ export function mapCalendarEventToGanttTask(event: UnifiedCalendarEvent): Calend
     return null
   }
 
+  const colorTokens = resolveSourceColorTokens(event.source)
+
   return {
     id: buildGanttTaskId(event.id),
     name: event.title,
@@ -53,6 +57,8 @@ export function mapCalendarEventToGanttTask(event: UnifiedCalendarEvent): Calend
     progress: resolveEventProgress(event),
     description: event.description ?? undefined,
     custom_class: buildSourceClassName(event.source),
+    color: colorTokens.bar,
+    color_progress: colorTokens.progress,
     source: event.source,
     originalEventId: event.id,
   }
@@ -152,7 +158,52 @@ function clampProgress(progress: number): number {
   return Math.max(0, Math.min(100, Math.round(progress)))
 }
 
+interface CalendarGanttColorTokens {
+  bar: string
+  progress: string
+}
+
+const DEFAULT_GANTT_COLOR_TOKENS: CalendarGanttColorTokens = {
+  bar: '#64748b',
+  progress: '#94a3b8',
+}
+
+const SOURCE_COLOR_TOKENS: Record<string, CalendarGanttColorTokens> = {
+  bb: {
+    bar: '#5b7fb9',
+    progress: '#8fb1dc',
+  },
+  blackboard: {
+    bar: '#5b7fb9',
+    progress: '#8fb1dc',
+  },
+  course: {
+    bar: '#7d6fa7',
+    progress: '#afa4cf',
+  },
+  tis: {
+    bar: '#6b8f7f',
+    progress: '#9bc2ae',
+  },
+  manual: {
+    bar: '#9a7a4f',
+    progress: '#c8a873',
+  },
+  custom: {
+    bar: '#9a7a4f',
+    progress: '#c8a873',
+  },
+}
+
 function buildSourceClassName(source: string): string {
-  const normalizedSource = source.toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'unknown'
+  const normalizedSource = normalizeSourceKey(source) || 'unknown'
   return `${SOURCE_CLASS_PREFIX}${normalizedSource}`
+}
+
+function resolveSourceColorTokens(source: string): CalendarGanttColorTokens {
+  return SOURCE_COLOR_TOKENS[normalizeSourceKey(source)] ?? DEFAULT_GANTT_COLOR_TOKENS
+}
+
+function normalizeSourceKey(source: string): string {
+  return source.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
 }
