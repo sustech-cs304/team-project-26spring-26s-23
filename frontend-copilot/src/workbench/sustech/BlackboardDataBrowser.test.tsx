@@ -1,0 +1,629 @@
+/** @vitest-environment jsdom */
+
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { ReactElement } from 'react'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  BlackboardDataBrowser,
+  resolveAssignmentDescription,
+  resolveAssignmentMarkdown,
+  buildDetailRequestUrl,
+  buildResourceDownloadStatusRequestUrl,
+  extractDetailItemsFromResponse,
+  flattenResourceHierarchy,
+  flattenVisibleResourceHierarchy,
+  formatDetailTimestamp,
+  resolveReadableResourceName,
+  resolveAssignmentAttachments,
+  resolveResourceDownloadUiState,
+  resolveResourceExtensionLabel,
+  resolveResourceVisualKind,
+  resolveAssignmentLinkedAnnouncements,
+  resolveAnnouncementMarkdown,
+  formatGradePercentage,
+  splitCourseDisplayName,
+  type AssignmentDetailItem,
+  type DataItem,
+} from './BlackboardDataBrowser'
+
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_ANNOUNCEMENT = 'Announcement 1'
+const LABEL_API_BLACKBOARD_DATA = '/api/blackboard/data/courses'
+const LABEL_API_BLACKBOARD_DATA_2 = '/api/blackboard/data/courses/course-1/announcements'
+const LABEL_ASSIGNMENT = 'Assignment 1'
+const LABEL_CS304_SOFTWARE_ENGINEERING = 'CS304: Software Engineering'
+const LABEL_DOWNLOADS = 'C:/Downloads'
+const LABEL_HTTPS_EXAMPLE_2 = 'https://bb.example/starter.zip'
+const LABEL_HTTPS_EXAMPLE_3 = 'https://bb.example/spec.pdf'
+const LABEL_HTTP_LOCALHOST = 'http://localhost'
+const LABEL_SPRING_2026 = 'Spring 2026'
+const LABEL_STARTER_ZIP = 'starter.zip'
+
+
+// Shared test fixture helpers
+interface RenderedBrowser {
+  container: HTMLDivElement
+  getByTestId: (testId: string) => HTMLElement
+  unmount: () => void
+}
+
+function renderWithRoot(element: ReactElement): RenderedBrowser {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+
+  act(() => {
+    root.render(element)
+  })
+
+  return {
+    container,
+    getByTestId(testId: string) {
+      const target = container.querySelector(`[data-testid="${testId}"]`)
+      if (!(target instanceof HTMLElement)) {
+        throw new Error(`Missing element for data-testid=${testId}`)
+      }
+      return target
+    },
+    unmount() {
+      act(() => {
+        root.unmount()
+      })
+      container.remove()
+    },
+  }
+}
+
+async function clickElement(element: Element) {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
+async function waitForNextFrame() {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve())
+    })
+  })
+}
+
+async function waitForCondition(check: () => boolean, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (check()) {
+      return
+    }
+    await waitForNextFrame()
+    await act(async () => {
+      await Promise.resolve()
+    })
+  }
+  throw new Error('Condition was not met within timeout.')
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  document.body.innerHTML = ''
+  delete (window as unknown as Record<string, unknown>).fileManager
+})
+
+// eslint-disable-next-line max-lines-per-function
+describe('BlackboardDataBrowser', () => {
+
+  describe('component rendering', () => {
+
+    it('renders split browser shell without redundant data browser frame', () => {
+      const html = renderToStaticMarkup(
+        <BlackboardDataBrowser language="zh-CN" baseUrl={LABEL_HTTP_LOCALHOST} />,
+      )
+      expect(html).toContain('课程列表')
+      expect(html).toContain('课程详情')
+      expect(html).toContain('搜索编号、课程名、授课老师')
+      expect(html).not.toContain('数据浏览')
+    })
+
+    it('renders split browser labels in English', () => {
+      const html = renderToStaticMarkup(
+        <BlackboardDataBrowser language="en-US" baseUrl={LABEL_HTTP_LOCALHOST} />,
+      )
+      expect(html).toContain('Courses')
+      expect(html).toContain('Course details')
+      expect(html).toContain('Search by code, course, teacher')
+      expect(html).not.toContain('Data Browser')
+    })
+  })
+
+  // eslint-disable-next-line max-lines-per-function
+  describe('pure functions', () => {
+
+    describe('course display', () => {
+      it('splits Blackboard course code from full display title', () => {
+        expect(splitCourseDisplayName('CS216-30020825-2026SP: Algorithm Design')).toEqual({
+          prefix: 'CS216-30020825-2026SP',
+          title: 'Algorithm Design',
+        })
+        expect(splitCourseDisplayName('No delimiter course')).toEqual({
+          prefix: null,
+          title: 'No delimiter course',
+        })
+      })
+    })
+
+    describe('timestamp formatting', () => {
+      it('formats recent detail timestamps as relative days', () => {
+        const now = new Date('2026-04-30T12:00:00Z')
+        expect(formatDetailTimestamp('2026-04-29T12:00:00Z', false, now)).toBe('1 天前')
+        expect(formatDetailTimestamp('2026-04-29T12:00:00Z', true, now)).toBe('1 day ago')
+        expect(formatDetailTimestamp('2026-04-30T08:00:00Z', false, now)).toBe('今天')
+        expect(formatDetailTimestamp('2026-03-01T12:00:00Z', false, now)).toBe('2026-03-01')
+      })
+    })
+
+    describe('announcement utilities', () => {
+      it('prefers backend-provided markdown for announcement content', () => {
+        expect(resolveAnnouncementMarkdown({
+          body_markdown: 'Plain announcement text\n\n- Item 1',
+        } as Pick<DataItem, 'body_markdown' | 'content_markdown'>)).toBe('Plain announcement text\n\n- Item 1')
+
+        expect(resolveAnnouncementMarkdown({
+          body_markdown: '   ',
+          content_markdown: 'Converted from HTML',
+        } as Pick<DataItem, 'body_markdown' | 'content_markdown'>)).toBeNull()
+      })
+    })
+
+    describe('request URL builders', () => {
+      it('builds scoped announcement requests without affecting other tabs', () => {
+        expect(buildDetailRequestUrl(LABEL_HTTP_LOCALHOST, 'course-1', 'announcements')).toBe(
+          'http://localhost/api/blackboard/data/courses/course-1/announcements',
+        )
+        expect(
+          buildDetailRequestUrl(LABEL_HTTP_LOCALHOST, 'course-1', 'announcements', {
+            announcementScope: 'course_only',
+          }),
+        ).toBe('http://localhost/api/blackboard/data/courses/course-1/announcements?scope=course_only')
+        expect(
+          buildDetailRequestUrl(LABEL_HTTP_LOCALHOST, 'course-1', 'assignments', {
+            announcementScope: 'course_only',
+          }),
+        ).toBe('http://localhost/api/blackboard/data/courses/course-1/assignments')
+      })
+
+      it('builds resource download status requests with repeated resource_urls params', () => {
+        expect(
+          buildResourceDownloadStatusRequestUrl(LABEL_HTTP_LOCALHOST, 'course-1', [
+            'https://bb.example/a.pdf',
+            'https://bb.example/b.pdf',
+          ]),
+        ).toBe(
+          'http://localhost/api/blackboard/resources/downloads/status?course_id=course-1&resource_urls=https%3A%2F%2Fbb.example%2Fa.pdf&resource_urls=https%3A%2F%2Fbb.example%2Fb.pdf',
+        )
+      })
+    })
+
+    describe('assignment utilities', () => {
+
+      describe('linked announcements', () => {
+        it('sorts linked assignment announcements by newest timestamp first', () => {
+          const item: AssignmentDetailItem = {
+            id: 1,
+            title: 'Homework 1',
+            linked_announcements: [
+              {
+                announcement_id: 'ann-older',
+                title: 'Older notice',
+                publish_time: '2026-04-01T10:00:00Z',
+                content_markdown: 'Older content',
+                relation_confidence: 'medium',
+              },
+              {
+                announcement_id: 'ann-newer',
+                title: 'Newer notice',
+                publish_time: '2026-04-02T10:00:00Z',
+                content_markdown: 'Newer **content**',
+                relation_confidence: 'high',
+              },
+            ],
+          }
+
+          const linked = resolveAssignmentLinkedAnnouncements(item)
+          expect(linked.map((announcement) => announcement.announcement_id)).toEqual([
+            'ann-newer',
+            'ann-older',
+          ])
+          expect(resolveAnnouncementMarkdown(linked[0] as unknown as DataItem)).toBe('Newer **content**')
+        })
+      })
+
+      describe('attachments', () => {
+        it('parses assignment attachments from backend attachments_json payload', () => {
+          expect(resolveAssignmentAttachments({
+            attachments_json: JSON.stringify([
+              {
+                title: 'spec.pdf',
+                url: LABEL_HTTPS_EXAMPLE_3,
+                type: 'pdf',
+                size: '1.2 MB',
+                resource_id: 'res-spec',
+              },
+              {
+                name: LABEL_STARTER_ZIP,
+                url: LABEL_HTTPS_EXAMPLE_2,
+                type: 'zip',
+              },
+            ]),
+          })).toEqual([
+            {
+              title: 'spec.pdf',
+              url: LABEL_HTTPS_EXAMPLE_3,
+              type: 'pdf',
+              size: '1.2 MB',
+              resource_id: 'res-spec',
+            },
+            {
+              title: LABEL_STARTER_ZIP,
+              url: LABEL_HTTPS_EXAMPLE_2,
+              type: 'zip',
+              size: null,
+              resource_id: null,
+            },
+          ])
+        })
+      })
+
+      describe('descriptions', () => {
+        it('resolves assignment descriptions from plain text fields and html fallback', () => {
+          expect(resolveAssignmentDescription({
+            description: '  Assignment body  ',
+            description_html: '<p>Ignored rich text</p>',
+          })).toBe('Assignment body')
+
+          expect(resolveAssignmentDescription({
+            description: '   ',
+            description_html: '<div><strong>Remember</strong> to submit.</div>',
+          })).toBe('Remember to submit.')
+        })
+
+        it('resolves assignment markdown from description html via turndown', () => {
+          expect(resolveAssignmentMarkdown({
+            description_html: '<p>Line 1</p><ul><li>item</li></ul>',
+          })).toBe('Line 1\n\n- item')
+
+          expect(resolveAssignmentMarkdown({
+            description_html: '   ',
+          })).toBeNull()
+        })
+      })
+    })
+
+    describe('grade formatting', () => {
+      it('formats grade percentages from explicit percentage or score fraction', () => {
+        expect(formatGradePercentage('19', '20', 95)).toBe('95%')
+        expect(formatGradePercentage('19', '20', null)).toBe('95%')
+        expect(formatGradePercentage('8.5', '10', null)).toBe('85%')
+        expect(formatGradePercentage('-', '100', null)).toBeNull()
+      })
+    })
+
+    describe('detail item extraction', () => {
+      it('extracts detail items from tab-specific response payloads', () => {
+        expect(
+          extractDetailItemsFromResponse('announcements', {
+            ok: true,
+            announcements: [{ id: 1, title: LABEL_ANNOUNCEMENT }],
+          }),
+        ).toEqual([{ id: 1, title: LABEL_ANNOUNCEMENT }])
+
+        expect(
+          extractDetailItemsFromResponse('assignments', {
+            ok: true,
+            assignments: [{ id: 2, title: LABEL_ASSIGNMENT, attachments_json: '[{"title":"spec.pdf","url":LABEL_HTTPS_EXAMPLE_3,"type":"pdf"}]' }],
+          }),
+        ).toEqual([{ id: 2, title: LABEL_ASSIGNMENT, attachments_json: '[{"title":"spec.pdf","url":LABEL_HTTPS_EXAMPLE_3,"type":"pdf"}]' }])
+      })
+    })
+
+    // eslint-disable-next-line max-lines-per-function
+    describe('resource utilities', () => {
+
+      describe('hierarchy flattening', () => {
+        it('flattens resources according to parent-child hierarchy', () => {
+          const items: DataItem[] = [
+            { id: 1, resource_id: 'root-b', title: 'Root B', parent_id: null },
+            { id: 2, resource_id: 'child-a', title: 'Child A', parent_id: 'root-a' },
+            { id: 3, resource_id: 'root-a', title: 'Root A', parent_id: null },
+            { id: 4, resource_id: 'grandchild-a', title: 'Grandchild A', parent_id: 'child-a' },
+          ]
+
+          expect(flattenResourceHierarchy(items).map((item) => [item.resource_id, item.depth])).toEqual([
+            ['root-b', 0],
+            ['root-a', 0],
+            ['child-a', 1],
+            ['grandchild-a', 2],
+          ])
+        })
+
+        it('flattens only expanded resource descendants in tree mode', () => {
+          const items: DataItem[] = [
+            { id: 1, resource_id: 'root-a', title: 'Root A', parent_id: null, type: 'folder' },
+            { id: 2, resource_id: 'child-a', title: 'Child A', parent_id: 'root-a', type: 'folder' },
+            { id: 3, resource_id: 'leaf-a', title: 'leaf-a.pdf', parent_id: 'child-a', type: 'pdf' },
+            { id: 4, resource_id: 'root-b', title: 'Root B', parent_id: null, type: 'folder' },
+          ]
+
+          expect(flattenVisibleResourceHierarchy(items, new Set()).map((item) => item.resource_id)).toEqual([
+            'root-a',
+            'root-b',
+          ])
+
+          expect(flattenVisibleResourceHierarchy(items, new Set(['root-a', 'child-a'])).map((item) => item.resource_id)).toEqual([
+            'root-a',
+            'child-a',
+            'leaf-a',
+            'root-b',
+          ])
+        })
+      })
+
+      describe('visual classification', () => {
+        it('classifies resource visuals by suffix and declared type', () => {
+          expect(resolveResourceVisualKind({ title: 'Week 1', type: 'folder' })).toBe('folder')
+          expect(resolveResourceVisualKind({ title: 'slides.pdf', type: 'pdf' })).toBe('pdf')
+          expect(resolveResourceVisualKind({ title: 'report.docx', type: 'docx' })).toBe('document')
+          expect(resolveResourceVisualKind({ title: 'table.xlsx', type: 'xlsx' })).toBe('spreadsheet')
+          expect(resolveResourceVisualKind({ title: 'demo.ts', type: 'ts' })).toBe('code')
+          expect(resolveResourceVisualKind({ title: 'lec01.mp4', type: 'mp4' })).toBe('video')
+          expect(resolveResourceVisualKind({ title: 'theme.mp3', type: 'mp3' })).toBe('audio')
+          expect(resolveResourceVisualKind({ title: 'slides.pptx', type: 'pptx' })).toBe('presentation')
+          expect(resolveResourceVisualKind({
+            title: '03 Stable Matching.pdf',
+            type: 'file',
+            url: 'https://blackboard.sustech.edu.cn/bbcswebdav/pid-588326-dt-content-rid-19137628_1/xid-19137628_1',
+          })).toBe('pdf')
+          expect(resolveResourceExtensionLabel({ title: 'slides.pdf', type: 'pdf' })).toBe('PDF')
+          expect(resolveResourceExtensionLabel({
+            title: '03 Stable Matching.pdf',
+            type: 'file',
+            url: 'https://blackboard.sustech.edu.cn/bbcswebdav/pid-588326-dt-content-rid-19137628_1/xid-19137628_1',
+          })).toBe('PDF')
+          expect(resolveResourceExtensionLabel({ title: 'resource', type: 'folder' })).toBeNull()
+        })
+
+        it('prefers readable file basenames over opaque Blackboard resource labels', () => {
+          expect(resolveReadableResourceName({
+            title: '12345678_987654321_1122334455_lec01.mp4',
+            url: 'https://bb.example/path/lec01.mp4?download=1',
+          })).toBe('lec01.mp4')
+
+          expect(resolveReadableResourceName({
+            title: 'Assign1-rubric.pdf',
+            url: 'https://bb.example/path/Assign1-rubric.pdf?download=1',
+          })).toBe('Assign1-rubric.pdf')
+
+          expect(resolveReadableResourceName({
+            title: 'Lecture Video',
+            url: 'https://bb.example/path/lec02.mp4?download=1',
+          })).toBe('lec02.mp4')
+
+          expect(resolveReadableResourceName({
+            title: 'Week 1',
+            type: 'folder',
+            url: 'https://bb.example/webapps/blackboard/content/listContent.jsp?course_id=_1&content_id=_2',
+          })).toBe('Week 1')
+
+          expect(resolveReadableResourceName({
+            title: 'lec01_202604301122334455.mp4',
+            url: 'https://bb.example/path/lec01_202604301122334455.mp4?download=1',
+          })).toBe('lec01.mp4')
+        })
+      })
+
+      describe('download UI state', () => {
+        it('resolves resource download ui state from backend status payloads', () => {
+          expect(resolveResourceDownloadUiState({ local_path: null, is_downloaded: false, download_failed: false }, {
+            state: 'downloading',
+            task_id: 'task-1',
+            progress_percent: 42.5,
+            preferred_directory: LABEL_DOWNLOADS,
+          })).toEqual({
+            state: 'downloading',
+            taskId: 'task-1',
+            localPath: null,
+            progressPercent: 42.5,
+            errorMessage: null,
+            preferredDirectory: LABEL_DOWNLOADS,
+          })
+
+          expect(resolveResourceDownloadUiState({
+            local_path: 'C:/Downloads/file.pdf',
+            is_downloaded: true,
+            download_failed: false,
+          }, null)).toEqual({
+            state: 'downloaded',
+            taskId: null,
+            localPath: 'C:/Downloads/file.pdf',
+            progressPercent: 100,
+            errorMessage: null,
+            preferredDirectory: LABEL_DOWNLOADS,
+          })
+
+          expect(resolveResourceDownloadUiState({
+            local_path: 'C:/Downloads/file.pdf',
+            is_downloaded: true,
+            download_failed: false,
+          }, {
+            state: 'idle',
+            local_path: null,
+            preferred_directory: LABEL_DOWNLOADS,
+          })).toEqual({
+            state: 'idle',
+            taskId: null,
+            localPath: null,
+            progressPercent: null,
+            errorMessage: null,
+            preferredDirectory: LABEL_DOWNLOADS,
+          })
+        })
+      })
+    })
+  })
+
+  describe('CSS styles', () => {
+    it('defines dedicated markdown styles for announcement descriptions', () => {
+      const css = readFileSync(join(process.cwd(), 'src/styles/sustech-workspace.css'), 'utf8')
+      expect(css).toMatch(
+        /\.sustech-detail-item__desc--markdown\s*\{[^}]*display:\s*block;/s,
+      )
+      expect(css).toMatch(
+        /\.sustech-detail-item__desc--markdown\s+p,[\s\S]*?margin:\s*0;/s,
+      )
+      expect(css).toMatch(/\.sustech-detail-filter__trigger\s*\{/s)
+      expect(css).toMatch(/\.sustech-detail-filter__menu\s*\{/s)
+      expect(css).toMatch(/\.sustech-linked-announcement-card\s*\{/s)
+    })
+  })
+
+  // eslint-disable-next-line max-lines-per-function
+  describe('announcement interactions', () => {
+    it('does not expose internal announcement relation metadata in the announcement card meta row', async () => {
+      const fetchMock = vi.fn<(input: string | URL) => Promise<Response>>()
+      fetchMock.mockImplementation(async (input) => {
+        const url = String(input)
+        if (url.endsWith(LABEL_API_BLACKBOARD_DATA)) {
+          return new Response(JSON.stringify({
+            ok: true,
+            courses: [{
+              id: 1,
+              course_id: 'course-1',
+              name: LABEL_CS304_SOFTWARE_ENGINEERING,
+              code: 'CS304',
+              instructor: 'Ada',
+              term: LABEL_SPRING_2026,
+              is_active: true,
+              total_assignments: 0,
+              total_resources: 0,
+              total_announcements: 1,
+            }],
+          }))
+        }
+        if (url.includes(LABEL_API_BLACKBOARD_DATA_2)) {
+          return new Response(JSON.stringify({
+            ok: true,
+            announcements: [{
+              id: 1,
+              announcement_id: 'ann-1',
+              title: 'Rubric released',
+              author: '陈杉',
+              body_markdown: 'The rubric is available now.',
+              relation_type: 'plain_course_announcement',
+              relation_confidence: 'none',
+            }],
+          }))
+        }
+        throw new Error(`Unhandled fetch URL: ${url}`)
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      const rendered = renderWithRoot(
+        <BlackboardDataBrowser language="zh-CN" baseUrl={LABEL_HTTP_LOCALHOST} />,
+      )
+
+      try {
+        await waitForCondition(() => rendered.container.textContent?.includes('Rubric released') === true)
+        expect(rendered.container.textContent).toContain('陈杉')
+        expect(rendered.container.textContent).not.toContain('plain_course_announcement')
+        expect(rendered.container.textContent).not.toContain('assignment_notice')
+        expect(rendered.container.textContent).not.toContain(' · none')
+        expect(rendered.container.textContent).not.toContain(' · medium')
+      } finally {
+        rendered.unmount()
+      }
+    })
+
+    it('does not show a loading hint while switching announcement scope', async () => {
+      let announcementPayload = {
+        ok: true,
+        announcements: [{
+          id: 1,
+          announcement_id: 'ann-1',
+          title: 'Course-only notice',
+          author: 'Ada',
+          body_markdown: 'Initial content',
+        }],
+      }
+
+      const fetchMock = vi.fn<(input: string | URL) => Promise<Response>>()
+      fetchMock.mockImplementation(async (input) => {
+        const url = String(input)
+        if (url.endsWith(LABEL_API_BLACKBOARD_DATA)) {
+          return new Response(JSON.stringify({
+            ok: true,
+            courses: [{
+              id: 1,
+              course_id: 'course-1',
+              name: LABEL_CS304_SOFTWARE_ENGINEERING,
+              code: 'CS304',
+              instructor: 'Ada',
+              term: LABEL_SPRING_2026,
+              is_active: true,
+              total_assignments: 0,
+              total_resources: 0,
+              total_announcements: 1,
+            }],
+          }))
+        }
+        if (url.includes(LABEL_API_BLACKBOARD_DATA_2)) {
+          return new Promise((resolve) => {
+            window.setTimeout(() => {
+              resolve(new Response(JSON.stringify(announcementPayload)))
+            }, 30)
+          })
+        }
+        throw new Error(`Unhandled fetch URL: ${url}`)
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      const rendered = renderWithRoot(
+        <BlackboardDataBrowser language="zh-CN" baseUrl={LABEL_HTTP_LOCALHOST} />,
+      )
+
+      try {
+        await waitForCondition(() => rendered.container.textContent?.includes('Course-only notice') === true)
+
+        const trigger = Array.from(rendered.container.querySelectorAll<HTMLButtonElement>('button')).find((button) => {
+          return button.textContent?.includes('仅课程公告') === true
+        })
+        expect(trigger).toBeTruthy()
+        await clickElement(trigger as HTMLButtonElement)
+
+        announcementPayload = {
+          ok: true,
+          announcements: [{
+            id: 2,
+            announcement_id: 'ann-2',
+            title: 'All-announcements notice',
+            author: 'Ada',
+            body_markdown: 'Updated content',
+          }],
+        }
+
+        const allOption = Array.from(rendered.container.querySelectorAll<HTMLButtonElement>('button')).find((button) => {
+          return button.textContent?.trim() === '所有公告'
+        })
+        expect(allOption).toBeTruthy()
+        await clickElement(allOption as HTMLButtonElement)
+
+        expect(rendered.container.textContent).not.toContain('加载中…')
+        await waitForCondition(() => rendered.container.textContent?.includes('All-announcements notice') === true)
+        expect(rendered.container.textContent).not.toContain('加载中…')
+      } finally {
+        rendered.unmount()
+      }
+    })
+  })
+})

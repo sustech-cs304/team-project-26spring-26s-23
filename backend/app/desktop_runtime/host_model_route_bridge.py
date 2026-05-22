@@ -68,6 +68,10 @@ class _HostModelRouteBridgeResolvedRoute(_HostModelRouteBridgeModel):
     base_url: str | None = Field(default=None, alias="baseUrl")
     model_id: str | None = Field(default=None, alias="modelId")
     auth_kind: str | None = Field(default=None, alias="authKind")
+    capability_hints: dict[str, Any] = Field(
+        default_factory=dict,
+        alias="capabilityHints",
+    )
 
     @field_validator("route_ref", mode="before")
     @classmethod
@@ -93,6 +97,13 @@ class _HostModelRouteBridgeResolvedRoute(_HostModelRouteBridgeModel):
     @classmethod
     def _normalize_optional_route_text(cls, value: Any) -> str | None:
         return _normalize_optional_text(value)
+
+    @field_validator("capability_hints", mode="before")
+    @classmethod
+    def _normalize_capability_hints(cls, value: Any) -> dict[str, Any]:
+        if isinstance(value, Mapping):
+            return {str(key): item for key, item in value.items()}
+        return {}
 
 
 class _HostModelRouteBridgeAuthPayload(_HostModelRouteBridgeModel):
@@ -312,6 +323,7 @@ def _build_resolved_route(
         auth_kind=auth_kind,
         api_key=api_key,
         route_ref=route_ref,
+        capability_hints=route.capability_hints,
     )
 
 

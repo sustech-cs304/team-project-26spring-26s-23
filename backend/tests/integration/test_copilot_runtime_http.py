@@ -1,31 +1,14 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any, cast
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
 from pydantic_ai.models.test import TestModel
 
-import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
-import app.integrations.sustech.teaching_information_system.facade.tools as tis_facade_tools
-from app.integrations.sustech.blackboard.api.dto import (
-    AnnouncementDTO,
-    AssignmentDTO,
-    CourseDTO,
-    GradeDTO,
-    ResourceDTO,
-)
-from app.integrations.sustech.blackboard.provider.results import (
-    BlackboardSnapshotFetchResult,
-    BlackboardSnapshotSyncReport,
-    BlackboardSyncPayloads,
-)
-from app.integrations.sustech.blackboard.shared import BlackboardLogEvent
 from app.copilot_runtime.agent import PydanticAIAgentExecutor, RuntimeToolLifecycleEvent
 from app.copilot_runtime.contracts import (
     AGENTS_LIST_METHOD,
@@ -51,21 +34,8 @@ from app.copilot_runtime.session_store import (
     RuntimeStoredRunPolicy,
 )
 from app.copilot_runtime.tool_registry import WEATHER_CURRENT_TOOL_ID
-from app.desktop_runtime.capability_bridge_client import (
-    HOST_CAPABILITY_BRIDGE_TOKEN_HEADER_NAME,
-    DesktopCapabilityBridgeClient,
-)
 from app.desktop_runtime.server import create_app
 from app.tooling.file_tools.runtime_bindings import FILE_TOOL_READ_ID
-from app.integrations.sustech.teaching_information_system.api.dto import (
-    TISCreditGPAQueryResult,
-    TISCreditGPASummary,
-    TISCreditGPATermRecord,
-    TISCreditGPAYearRecord,
-    TISHomepageProfile,
-    TISProbeResult,
-)
-from app.integrations.sustech.teaching_information_system.shared import TISLogEvent
 
 
 class _ImmediateEventStream:
@@ -1383,179 +1353,6 @@ def test_post_root_run_stream_corrupted_thread_history_returns_failed_event() ->
     assert events[-1]["payload"]["details"] == {}
 
 
-def _build_blackboard_log_event(source: str) -> BlackboardLogEvent:
-    return BlackboardLogEvent(
-        timestamp="2026-04-14T08:00:00Z",
-        level="info",
-        layer="provider",
-        source=source,
-        message="ok",
-    )
-
-
-
-def _build_blackboard_snapshot_report(
-    *,
-    db_path: Path,
-) -> BlackboardSnapshotSyncReport:
-    snapshot = BlackboardSnapshotFetchResult(
-        courses=[CourseDTO(course_id="_course_1", name="CS305 Database Systems")],
-        assignments_by_course={
-            "_course_1": [
-                AssignmentDTO(
-                    assignment_id="asg_1",
-                    course_id="_course_1",
-                    title="Homework 1",
-                )
-            ]
-        },
-        resources_by_course={
-            "_course_1": [
-                ResourceDTO(
-                    resource_id="res_1",
-                    course_id="_course_1",
-                    title="Lecture 1",
-                )
-            ]
-        },
-        grades_by_course={
-            "_course_1": [
-                GradeDTO(
-                    grade_id="grd_1",
-                    course_id="_course_1",
-                    assignment_id=None,
-                    item_name="Homework 1",
-                )
-            ]
-        },
-        announcements=[
-            AnnouncementDTO(
-                announcement_id="ann_1",
-                course_id="_course_1",
-                course_name="CS305 Database Systems",
-                title="Welcome",
-            )
-        ],
-        logs=[_build_blackboard_log_event("integration.blackboard.fetch")],
-    )
-    payloads = BlackboardSyncPayloads(
-        course_payload=[{"course_id": "_course_1"}],
-        assignment_payloads={"_course_1": [{"assignment_id": "asg_1"}]},
-        resource_payloads={"_course_1": [{"resource_id": "res_1"}]},
-        grade_payloads={"_course_1": [{"grade_id": "grd_1"}]},
-        announcements_payload=[{"announcement_id": "ann_1"}],
-    )
-    return BlackboardSnapshotSyncReport(
-        db_path=db_path,
-        snapshot=snapshot,
-        payloads=payloads,
-        first_sync_stats={
-            "courses": {"inserted": 1, "updated": 0, "deleted": 0},
-            "assignments": {"inserted": 1, "updated": 0, "deleted": 0},
-            "resources": {"inserted": 1, "updated": 0, "deleted": 0},
-            "grades": {"inserted": 1, "updated": 0, "deleted": 0},
-            "announcements": {"inserted": 1, "updated": 0, "deleted": 0},
-        },
-        second_sync_stats={
-            "courses": {"inserted": 0, "updated": 1, "deleted": 0},
-            "assignments": {"inserted": 0, "updated": 1, "deleted": 0},
-            "resources": {"inserted": 0, "updated": 1, "deleted": 0},
-            "grades": {"inserted": 0, "updated": 1, "deleted": 0},
-            "announcements": {"inserted": 0, "updated": 1, "deleted": 0},
-        },
-        table_counts={
-            "courses": {"total": 1, "active": 1},
-            "assignments": {"total": 1, "active": 1},
-            "resources": {"total": 1, "active": 1},
-            "grades": {"total": 1, "active": 1},
-            "announcements": {"total": 1, "active": 1},
-        },
-        expected_active_counts={
-            "courses": 1,
-            "assignments": 1,
-            "resources": 1,
-            "grades": 1,
-            "announcements": 1,
-        },
-        integrity_ok=True,
-        logs=[_build_blackboard_log_event("integration.blackboard.sync")],
-    )
-
-
-
-def _build_tis_log_event(source: str) -> TISLogEvent:
-    return TISLogEvent(
-        timestamp="2026-04-14T08:05:00Z",
-        level="info",
-        layer="provider",
-        source=source,
-        message="ok",
-    )
-
-
-
-def _build_tis_homepage() -> TISHomepageProfile:
-    return TISHomepageProfile(
-        page_url="https://tis.sustech.edu.cn/student_index",
-        title="TIS",
-        role_codes=["01"],
-    )
-
-
-
-def _build_tis_credit_gpa_result(
-    *,
-    persistence: dict[str, Any] | None = None,
-) -> TISCreditGPAQueryResult:
-    return TISCreditGPAQueryResult(
-        success=True,
-        source_url="https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/queryXnAndXqXfj",
-        page_url="https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/xspjxfjcx",
-        api_url="https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/queryXnAndXqXfj",
-        homepage=_build_tis_homepage(),
-        summary=TISCreditGPASummary(
-            average_credit_gpa=3.82,
-            rank="5/100",
-            raw={"PJXFJ": 3.82},
-        ),
-        term_records=[
-            TISCreditGPATermRecord(
-                academic_year_term="2025秋季",
-                academic_year="2025-2026",
-                term_code="1",
-                term_credit_gpa=3.82,
-                year_credit_gpa=3.82,
-            )
-        ],
-        year_records=[
-            TISCreditGPAYearRecord(
-                academic_year="2025-2026",
-                year_credit_gpa=3.82,
-            )
-        ],
-        probes=[
-            TISProbeResult(
-                url="https://tis.sustech.edu.cn/cjgl/xscjgl/xsgrcjcx/queryXnAndXqXfj",
-                method="POST",
-                status_code=200,
-                is_json=True,
-                probe_label="credit-gpa-api",
-            )
-        ],
-        logs=[_build_tis_log_event("integration.tis.credit_gpa")],
-        resolved_role_code="01",
-        persistence=persistence,
-    )
-
-
-
-def _create_sqlite_db(path: Path, *, script: str) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(str(path)) as connection:
-        connection.executescript(script)
-    return path
-
-
 def test_post_root_run_stream_delay_tool_permission_policy_emits_waiting_approval_before_timeout_failure(
     tmp_path: Path,
 ) -> None:
@@ -1742,7 +1539,7 @@ def _create_recording_bridge_client(
 def _create_app(
     executor: PydanticAIAgentExecutor | CapturingStreamingExecutor | None = None,
     *,
-    host_capability_bridge_client: DesktopCapabilityBridgeClient | None = None,
+    host_capability_bridge_client: Any | None = None,
 ):
     app = create_app(
         agent_executor=executor,  # type: ignore[arg-type]
@@ -1816,14 +1613,6 @@ def _build_run_start_request(
             },
             "policy": policy,
         },
-    }
-
-
-def _build_allow_tool_permission_policy(*tool_ids: str) -> dict[str, Any]:
-    return {
-        "schemaVersion": 1,
-        "defaultMode": "allow",
-        "toolModes": {tool_id: "allow" for tool_id in tool_ids},
     }
 
 

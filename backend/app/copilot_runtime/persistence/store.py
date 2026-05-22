@@ -43,6 +43,8 @@ if TYPE_CHECKING:
 
 
 _PERSISTENCE_LOGGER = logging.getLogger("uvicorn.error")
+_DEFAULT_THREAD_TITLE = "新话题"
+_DEFAULT_THREAD_TITLE_SOURCE = "deterministic"
 _MANUAL_THREAD_TITLE_SOURCE = "manual"
 _DUPLICATE_THREAD_TITLE_SUFFIX = "（副本）"
 _BACKUP_DIRECTORY_NAME = "backups"
@@ -106,6 +108,9 @@ class SQLiteSessionStore(RuntimeSessionStore):
                 updated_at=now,
             )
             thread_model = repositories.threads.create_from_runtime_record(thread)
+            thread_model.title = _DEFAULT_THREAD_TITLE
+            thread_model.title_source = _DEFAULT_THREAD_TITLE_SOURCE
+            thread_model.updated_at = now
             ProjectionService.refresh_thread_in_transaction(
                 repositories, resolved_thread_id
             )
@@ -168,10 +173,18 @@ class SQLiteSessionStore(RuntimeSessionStore):
 
     def list_runs(self, thread_id: str) -> tuple[RuntimeRunRecord, ...]:
         with run_lifecycle_transaction(self._session_factory) as repositories:
-            return tuple(
-                repositories.runs.to_runtime_record(run_model)
-                for run_model in repositories.runs.list_for_thread(thread_id)
-            )
+            run_models = repositories.runs.list_for_thread(thread_id)
+            run_ids = tuple(run_model.id for run_model in run_models)
+            events_by_run = repositories.events.list_for_runs_batch(run_ids)
+            runtime_runs: list[RuntimeRunRecord] = []
+            for run_model in run_models:
+                runtime_run = repositories.runs.to_runtime_record(run_model)
+                runtime_run.event_log = [
+                    repositories.events.to_runtime_record(event_model)
+                    for event_model in events_by_run.get(run_model.id, ())
+                ]
+                runtime_runs.append(runtime_run)
+            return tuple(runtime_runs)
 
     def list_run_events(self, run_id: str) -> tuple[RuntimeRunEventRecord, ...]:
         with run_lifecycle_transaction(self._session_factory) as repositories:

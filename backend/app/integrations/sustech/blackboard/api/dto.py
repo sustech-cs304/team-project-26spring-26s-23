@@ -66,6 +66,7 @@ class AssignmentDTO(BlackboardDTO):
     url: str | None = None
     summary: str | None = None
     description: str | None = None
+    description_html: str | None = None
     source_page: str | None = None
     attachments: list[AssignmentAttachmentDTO] = field(default_factory=list)
 
@@ -93,9 +94,11 @@ class AnnouncementDTO(BlackboardDTO):
     publish_time: str | None = None
     publish_time_parsed: datetime | None = None
     detail: str | None = None
+    detail_html: str | None = None
     author: str | None = None
     url: str | None = None
     source_page: str | None = None
+    linked_content_candidates: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -162,9 +165,10 @@ class CalendarEventDTO(BlackboardDTO):
     uid: str
     raw_uid: str | None
     title: str
-    start_at: datetime | None
+    start_at: datetime
     end_at: datetime | None
     all_day: bool = False
     description: str | None = None
     location: str | None = None
     course_id: str | None = None
+    done: bool = False

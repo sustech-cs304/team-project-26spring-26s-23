@@ -3,6 +3,7 @@ import type { CopilotRuntimeLoadResult } from './copilot-runtime'
 import type { DesktopNotificationRequest } from './desktop-notification'
 import type { MainProcessServices } from './main-services'
 import { registerRendererIpcHandlers } from './renderer-ipc-registration'
+import type { DesktopWindowState } from './window-controls'
 
 type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
 
@@ -10,6 +11,10 @@ export interface MainProcessRuntimeIpcHandlers {
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   notifyDesktopNotification: (request: DesktopNotificationRequest) => Promise<void>
+  loadDesktopWindowState: () => Promise<DesktopWindowState>
+  minimizeDesktopWindow: () => Promise<void>
+  toggleMaximizeDesktopWindow: () => Promise<DesktopWindowState>
+  closeDesktopWindow: () => Promise<void>
   notifyBootstrapWindowReady: () => Promise<void>
 }
 
@@ -19,7 +24,17 @@ export function registerMainProcessIpcHandlers(
     services: MainProcessServices
   } & MainProcessRuntimeIpcHandlers,
 ): void {
-  const { services, loadCopilotRuntime, retryCopilotRuntime, notifyDesktopNotification, notifyBootstrapWindowReady } = options
+  const {
+    services,
+    loadCopilotRuntime,
+    retryCopilotRuntime,
+    notifyDesktopNotification,
+    loadDesktopWindowState,
+    minimizeDesktopWindow,
+    toggleMaximizeDesktopWindow,
+    closeDesktopWindow,
+    notifyBootstrapWindowReady,
+  } = options
 
   registerRendererIpcHandlers(ipcMain, {
     loadConfigCenterPublicSnapshot: services.loadConfigCenterPublicSnapshot,
@@ -57,7 +72,36 @@ export function registerMainProcessIpcHandlers(
     loadToolCatalog: services.loadToolCatalog,
     loadCopilotRuntime,
     retryCopilotRuntime,
+    loadDesktopRuntimeCalendarEvents: services.loadDesktopRuntimeCalendarEvents,
+    importDesktopRuntimeWakeupIcs: services.importDesktopRuntimeWakeupIcs,
+    readClipboardAttachmentData: services.readClipboardAttachmentData,
+    writeAttachmentTempFile: services.writeAttachmentTempFile,
+    readAttachmentPreview: services.readAttachmentPreview,
+    cleanupAttachmentTempFiles: services.cleanupAttachmentTempFiles,
+    selectRootDirectory: services.selectRootDirectory,
+    listDirectory: services.listDirectory,
+    probeDirectory: services.probeDirectory,
+    createDirectory: services.createDirectory,
+    copyEntries: services.copyEntries,
+    moveEntries: services.moveEntries,
+    renameEntry: services.renameEntry,
+    trashEntries: services.trashEntries,
+    deleteEntriesPermanently: services.deleteEntriesPermanently,
+    watchDirectories: services.watchDirectories,
+    unwatchDirectories: services.unwatchDirectories,
+    loadLastRootDirectory: services.loadLastRootDirectory,
+    saveLastRootDirectory: services.saveLastRootDirectory,
+    clearLastRootDirectory: services.clearLastRootDirectory,
+    openEntryWithSystem: services.openEntryWithSystem,
+    revealEntryInFolder: services.revealEntryInFolder,
+    copyTextToClipboard: services.copyTextToClipboard,
+    loadTimelineEvents: services.loadTimelineEvents,
+    addTimelineEvent: services.addTimelineEvent,
     notifyDesktopNotification,
+    loadDesktopWindowState,
+    minimizeDesktopWindow,
+    toggleMaximizeDesktopWindow,
+    closeDesktopWindow,
     notifyBootstrapWindowReady,
   })
 }

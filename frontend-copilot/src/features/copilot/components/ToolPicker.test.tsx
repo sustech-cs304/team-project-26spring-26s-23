@@ -9,6 +9,21 @@ import type { SettingsWorkspaceToolPermissionPolicyState } from '../../../../ele
 import type { RuntimeToolDirectoryEntry } from '../chat-contract'
 import { ToolPicker } from './ToolPicker'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_STDIO_STUB_SERVER = 'stdio stub server'
+const LABEL_SUSTECH_BLACKBOARD = 'SUSTech Blackboard'
+const LABEL_TOOL_READ = 'tool.fs.read'
+const SELECTOR_ARIA_EXPANDED = 'aria-expanded'
+const SELECTOR_ARIA_PRESSED = 'aria-pressed'
+const SELECTOR_CHAT_TOOL_OPTION = 'chat-tool-option-blackboard.course_catalog.search'
+const SELECTOR_CHAT_TOOL_OPTION_2 = 'chat-tool-option-tool.fs.read'
+const SELECTOR_CHAT_TOOL_OPTION_3 = 'chat-tool-option-tis.personal_grades.fetch'
+const SELECTOR_CHAT_TOOL_OPTION_4 = 'chat-tool-option-blackboard.calendar.refresh'
+const SELECTOR_CHAT_TOOL_PICKER = 'chat-tool-picker-state'
+const SELECTOR_CHAT_TOOL_PICKER_2 = 'chat-tool-picker-trigger'
+const SELECTOR_CHAT_TOOL_PICKER_3 = 'chat-tool-picker-panel'
+
+
 declare global {
   // eslint-disable-next-line no-var
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
@@ -22,25 +37,28 @@ afterAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = undefined
 })
 
+// 已拆分为 2 个子 describe（rendering and search / selection and permissions），父级仅做语义分组
+/* eslint-disable-next-line max-lines-per-function */
 describe('ToolPicker', () => {
+  describe('rendering and search', () => {
   it('renders grouped localized tools in stable platform order and hides source/status labels', async () => {
     const rendered = renderWithRoot(<ToolPickerHarness />)
-    const trigger = rendered.getByTestId('chat-tool-picker-trigger') as HTMLButtonElement
+    const trigger = rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_2) as HTMLButtonElement
 
     await clickElement(trigger)
 
-    const panel = rendered.getByTestId('chat-tool-picker-panel')
+    const panel = rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_3)
     const groups = panel.querySelector('.copilot-model-picker__groups')
     expect(groups).not.toBeNull()
     expect(readGroupSummaries(panel)).toEqual([
       { title: 'Candue 内建', count: '1', expanded: 'true' },
-      { title: 'SUSTech Blackboard', count: '2', expanded: 'true' },
+      { title: LABEL_SUSTECH_BLACKBOARD, count: '2', expanded: 'true' },
       { title: 'SUSTech TIS', count: '1', expanded: 'true' },
     ])
 
-    const fileOption = rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement
-    const catalogOption = rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement
-    const gradesOption = rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement
+    const fileOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_2) as HTMLButtonElement
+    const catalogOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement
+    const gradesOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement
 
     expect(fileOption.textContent).toContain('读取文件')
     expect(fileOption.textContent).toContain('读取本地文本与文档内容')
@@ -49,7 +67,7 @@ describe('ToolPicker', () => {
     expect(gradesOption.textContent).toContain('成绩获取')
     expect(gradesOption.textContent).toContain('获取个人成绩记录')
 
-    expect(panel.textContent).not.toContain('tool.fs.read')
+    expect(panel.textContent).not.toContain(LABEL_TOOL_READ)
     expect(panel.textContent).not.toContain('blackboard.course_catalog.search')
     expect(panel.textContent).not.toContain('tis.personal_grades.fetch')
     expect(panel.textContent).not.toContain('Search Blackboard course catalog with a long English description')
@@ -79,110 +97,112 @@ describe('ToolPicker', () => {
 
   it('defaults all platform groups to expanded and lets group titles collapse and expand them', async () => {
     const rendered = renderWithRoot(<ToolPickerHarness />)
-    const trigger = rendered.getByTestId('chat-tool-picker-trigger') as HTMLButtonElement
+    const trigger = rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_2) as HTMLButtonElement
 
     await clickElement(trigger)
 
-    const panel = rendered.getByTestId('chat-tool-picker-panel')
+    const panel = rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_3)
 
-    expect(getGroupToggleByTitle(panel, 'SUSTech Blackboard').getAttribute('aria-expanded')).toBe('true')
-    expect(getGroupSectionByTitle(panel, 'SUSTech Blackboard').querySelector('.copilot-tool-picker__group-list')).not.toBeNull()
+    expect(getGroupToggleByTitle(panel, LABEL_SUSTECH_BLACKBOARD).getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('true')
+    expect(getGroupSectionByTitle(panel, LABEL_SUSTECH_BLACKBOARD).querySelector('.copilot-tool-picker__group-list')).not.toBeNull()
 
-    await clickElement(getGroupToggleByTitle(panel, 'SUSTech Blackboard'))
+    await clickElement(getGroupToggleByTitle(panel, LABEL_SUSTECH_BLACKBOARD))
 
-    expect(getGroupToggleByTitle(panel, 'SUSTech Blackboard').getAttribute('aria-expanded')).toBe('false')
-    expect(getGroupSectionByTitle(panel, 'SUSTech Blackboard').querySelector('.copilot-tool-picker__group-list')).toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-blackboard.calendar.refresh')).toBeNull()
+    expect(getGroupToggleByTitle(panel, LABEL_SUSTECH_BLACKBOARD).getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('false')
+    expect(getGroupSectionByTitle(panel, LABEL_SUSTECH_BLACKBOARD).querySelector('.copilot-tool-picker__group-list')).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION)).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_4)).toBeNull()
 
-    await clickElement(getGroupToggleByTitle(panel, 'SUSTech Blackboard'))
+    await clickElement(getGroupToggleByTitle(panel, LABEL_SUSTECH_BLACKBOARD))
 
-    expect(getGroupToggleByTitle(panel, 'SUSTech Blackboard').getAttribute('aria-expanded')).toBe('true')
-    expect(getGroupSectionByTitle(panel, 'SUSTech Blackboard').querySelector('.copilot-tool-picker__group-list')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-blackboard.calendar.refresh')).not.toBeNull()
+    expect(getGroupToggleByTitle(panel, LABEL_SUSTECH_BLACKBOARD).getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('true')
+    expect(getGroupSectionByTitle(panel, LABEL_SUSTECH_BLACKBOARD).querySelector('.copilot-tool-picker__group-list')).not.toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION)).not.toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_4)).not.toBeNull()
 
     rendered.unmount()
   })
 
   it('shows only matching groups and matching tools during search while keeping hidden ids searchable', async () => {
     const rendered = renderWithRoot(<ToolPickerHarness />)
-    const trigger = rendered.getByTestId('chat-tool-picker-trigger') as HTMLButtonElement
+    const trigger = rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_2) as HTMLButtonElement
 
     await clickElement(trigger)
 
-    const panel = rendered.getByTestId('chat-tool-picker-panel')
+    const panel = rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_3)
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
 
     await setFormControlValue(searchInput, '目录')
 
-    expect(readGroupSummaries(panel)).toEqual([{ title: 'SUSTech Blackboard', count: '1', expanded: 'true' }])
-    expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-blackboard.calendar.refresh')).toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-tis.personal_grades.fetch')).toBeNull()
+    expect(readGroupSummaries(panel)).toEqual([{ title: LABEL_SUSTECH_BLACKBOARD, count: '1', expanded: 'true' }])
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION)).not.toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_4)).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_2)).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_3)).toBeNull()
 
-    await setFormControlValue(searchInput, 'tool.fs.read')
+    await setFormControlValue(searchInput, LABEL_TOOL_READ)
 
     expect(readGroupSummaries(panel)).toEqual([{ title: 'Candue 内建', count: '1', expanded: 'true' }])
-    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-tis.personal_grades.fetch')).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_2)).not.toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION)).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_3)).toBeNull()
 
     rendered.unmount()
   })
+  })
 
+  describe('selection and permissions', () => {
   it('supports multi-select, select-all, invert and recommended shortcuts with grouped options', async () => {
     const rendered = renderWithRoot(<ToolPickerHarness />)
 
-    const trigger = rendered.getByTestId('chat-tool-picker-trigger') as HTMLButtonElement
+    const trigger = rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_2) as HTMLButtonElement
     expect(trigger.textContent).toContain('启用 1 项工具')
     expect(trigger.getAttribute('aria-label')).toBe('工具：启用 1 项工具')
     expect(trigger.title).toBe('工具：启用 1 项工具')
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(trigger.getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('false')
 
     await clickElement(trigger)
 
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
-    expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
+    expect(trigger.getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('true')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_2) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
 
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
     await setFormControlValue(searchInput, '目录')
 
-    expect(rendered.queryByTestId('chat-tool-option-blackboard.course_catalog.search')).not.toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-blackboard.calendar.refresh')).toBeNull()
-    expect(rendered.queryByTestId('chat-tool-option-tool.fs.read')).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION)).not.toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_4)).toBeNull()
+    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_2)).toBeNull()
 
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-tool-picker-select-all'))
-    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
+    expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(
       'tool.fs.read|blackboard.course_catalog.search|blackboard.calendar.refresh|tis.personal_grades.fetch',
     )
-    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
-    expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
-    expect((rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
-    expect((rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_2) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_4) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
 
     await clickElement(rendered.getByTestId('chat-tool-picker-invert'))
-    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('')
+    expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe('')
     expect(trigger.textContent).toContain('未启用工具')
     expect(trigger.getAttribute('aria-label')).toBe('工具：未启用工具')
     expect(trigger.title).toBe('工具：未启用工具')
-    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
-    expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_2) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
 
     await clickElement(rendered.getByTestId('chat-tool-picker-select-recommended'))
-    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.fs.read|blackboard.course_catalog.search')
-    expect((rendered.getByTestId('chat-tool-option-tool.fs.read') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
-    expect((rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
-    expect((rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false')
+    expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe('tool.fs.read|blackboard.course_catalog.search')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_2) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
 
-    await clickElement(rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch'))
-    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3))
+    expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(
       'tool.fs.read|blackboard.course_catalog.search|tis.personal_grades.fetch',
     )
-    expect((rendered.getByTestId('chat-tool-option-tis.personal_grades.fetch') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
     expect(trigger.textContent).toContain('启用 3 项工具')
     expect(trigger.getAttribute('aria-label')).toBe('工具：启用 3 项工具')
     expect(trigger.title).toBe('工具：启用 3 项工具')
@@ -193,7 +213,7 @@ describe('ToolPicker', () => {
   it('keeps denied tools focusable, blocks fresh selection, and still allows deselection', async () => {
     const rendered = renderWithRoot(
       <ToolPickerHarness
-        initialSelectedToolIds={['tool.fs.read', 'blackboard.calendar.refresh']}
+        initialSelectedToolIds={[LABEL_TOOL_READ, 'blackboard.calendar.refresh']}
         toolPermissionPolicy={{
           version: 1,
           defaultMode: 'ask',
@@ -204,31 +224,31 @@ describe('ToolPicker', () => {
       />,
     )
 
-    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_2))
 
-    const deniedOption = rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement
-    const normalOption = rendered.getByTestId('chat-tool-option-blackboard.course_catalog.search') as HTMLButtonElement
-    const blockedOption = rendered.getByTestId('chat-tool-option-blackboard.calendar.refresh') as HTMLButtonElement
+    const deniedOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_4) as HTMLButtonElement
+    const normalOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement
+    const blockedOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_4) as HTMLButtonElement
 
     expect(deniedOption.disabled).toBe(false)
     expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
-    expect(deniedOption.getAttribute('aria-pressed')).toBe('true')
+    expect(deniedOption.getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
     expect(deniedOption.textContent).toContain('已禁用')
     expect(deniedOption.textContent).toContain('当前策略：总是关闭')
     expect(normalOption.disabled).toBe(false)
 
     await clickElement(deniedOption)
-    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe('tool.fs.read')
+    expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(LABEL_TOOL_READ)
 
     await clickElement(normalOption)
-    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
+    expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(
       'tool.fs.read|blackboard.course_catalog.search',
     )
 
     expect(blockedOption.getAttribute('aria-disabled')).toBe('true')
 
     await clickElement(blockedOption)
-    expect(rendered.getByTestId('chat-tool-picker-state').textContent).toBe(
+    expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(
       'tool.fs.read|blackboard.course_catalog.search',
     )
 
@@ -247,12 +267,12 @@ describe('ToolPicker', () => {
             description: null,
             serverId: 'mcp-stdio-stub',
             remoteToolName: 'search-campus',
-            mcpServerName: 'stdio stub server',
+            mcpServerName: LABEL_STDIO_STUB_SERVER,
             group: {
               id: 'mcp.server.mcp-stdio-stub',
-              label: 'stdio stub server',
-              labelZh: 'stdio stub server',
-              labelEn: 'stdio stub server',
+              label: LABEL_STDIO_STUB_SERVER,
+              labelZh: LABEL_STDIO_STUB_SERVER,
+              labelEn: LABEL_STDIO_STUB_SERVER,
               order: 100,
               sourceKind: 'mcp-server',
             },
@@ -263,14 +283,15 @@ describe('ToolPicker', () => {
       />,
     )
 
-    await clickElement(rendered.getByTestId('chat-tool-picker-trigger'))
+    await clickElement(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_2))
 
-    expect(readGroupSummaries(rendered.getByTestId('chat-tool-picker-panel'))).toEqual([
-      { title: 'stdio stub server', count: '1', expanded: 'true' },
+    expect(readGroupSummaries(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_3))).toEqual([
+      { title: LABEL_STDIO_STUB_SERVER, count: '1', expanded: 'true' },
     ])
     expect(rendered.getByTestId('chat-tool-option-mcp.mcp-stdio-stub.search-campus.00004d8d').textContent).toContain('stdio stub server / Search Campus')
 
     rendered.unmount()
+  })
   })
 })
 
@@ -282,8 +303,8 @@ interface ToolPickerHarnessProps {
 }
 
 function ToolPickerHarness({
-  initialSelectedToolIds = ['tool.fs.read'],
-  recommendedToolIds = ['tool.fs.read', 'blackboard.course_catalog.search'],
+  initialSelectedToolIds = [LABEL_TOOL_READ],
+  recommendedToolIds = [LABEL_TOOL_READ, 'blackboard.course_catalog.search'],
   toolPermissionPolicy = null,
   tools = createTools(),
 }: ToolPickerHarnessProps) {
@@ -298,7 +319,7 @@ function ToolPickerHarness({
         toolPermissionPolicy={toolPermissionPolicy}
         onChangeToolIds={setSelectedToolIds}
       />
-      <output data-testid="chat-tool-picker-state">{selectedToolIds.join('|')}</output>
+      <output data-testid={SELECTOR_CHAT_TOOL_PICKER}>{selectedToolIds.join('|')}</output>
     </>
   )
 }
@@ -306,7 +327,7 @@ function ToolPickerHarness({
 function createTools(): RuntimeToolDirectoryEntry[] {
   return [
     {
-      toolId: 'tool.fs.read',
+      toolId: LABEL_TOOL_READ,
       kind: 'builtin',
       availability: 'available',
       displayName: '读取文件',
@@ -340,7 +361,7 @@ function readGroupSummaries(container: ParentNode) {
   return [...container.querySelectorAll('.copilot-tool-picker__group')].map((group) => ({
     title: group.querySelector('.copilot-tool-picker__group-title')?.textContent,
     count: group.querySelector('.copilot-tool-picker__group-count')?.textContent,
-    expanded: group.querySelector('.copilot-tool-picker__group-toggle')?.getAttribute('aria-expanded'),
+    expanded: group.querySelector('.copilot-tool-picker__group-toggle')?.getAttribute(SELECTOR_ARIA_EXPANDED),
   }))
 }
 

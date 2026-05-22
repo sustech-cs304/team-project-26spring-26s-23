@@ -23,7 +23,9 @@ export function ToolPermissionRow({
   const delayPanelOpen = tool.mode === 'delay'
 
   return (
-    <article className={`tool-permission-row${delayPanelOpen ? ' tool-permission-row--expanded' : ''}`}>
+    <article
+      className={`tool-permission-row${delayPanelOpen ? ' tool-permission-row--expanded' : ''}`}
+    >
       <div className="tool-permission-row__meta">
         <div className="tool-permission-row__title-line">
           <h4 className="tool-permission-row__name">{tool.name}</h4>

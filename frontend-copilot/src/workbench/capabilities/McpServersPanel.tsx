@@ -1,5 +1,7 @@
+import { useRef } from 'react'
 import { LoaderCircle, Trash2 } from 'lucide-react'
 
+import { useStaggerListEnter } from '../animation-utils'
 import type { McpRegistryServerViewModel } from './mcp-registry-view-model'
 import { resolveMcpConnectionStateLabel } from './mcp-registry-view-model'
 
@@ -18,13 +20,16 @@ export function McpServersPanel({
   onDelete,
   onTestConnection,
 }: McpServersPanelProps) {
+  const listRef = useRef<HTMLDivElement>(null)
+  useStaggerListEnter({ scope: listRef, selector: '.mcp-server-row:not(.mcp-server-row--empty)', itemCount: servers.length })
+
   return (
     <section className="capabilities-surface capabilities-surface--mcp">
       {statusMessage ? (
         <p className="capabilities-surface__status" aria-live="polite">{statusMessage}</p>
       ) : null}
 
-      <div className="mcp-server-list">
+      <div className="mcp-server-list" ref={listRef}>
         {servers.length === 0 ? (
           <article className="mcp-server-row mcp-server-row--empty">
             <div className="mcp-server-row__meta">

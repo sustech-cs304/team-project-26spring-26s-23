@@ -43,7 +43,7 @@ def looks_like_course_name(text: str) -> bool:
     if any(token in lower for token in noise_tokens):
         return False
 
-    if re.search(r"\b(?:mon|tue|wed|thu|fri|sat|sun)\b", lower):
+    if re.search(r"\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b", lower):
         return False
 
     if re.fullmatch(r"(?:20\d{2}[\-./年]\s*\d{1,2}[\-./月]\s*\d{1,2}.*)", candidate):
@@ -83,7 +83,7 @@ def extract_grade_text(text: str) -> str:
         return match.group(1)
 
     match = re.search(
-        r"\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F)\b", text, re.IGNORECASE
+        r"\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F)(?!\w)", text, re.IGNORECASE
     )
     if match:
         return match.group(1).upper()
@@ -231,6 +231,99 @@ def is_valid_assignment(
     return False
 
 
+_HELP_URL_TOKENS = (
+    "/webapps/blackboard/content/getting-started/",
+    "/webapps/blackboard/content/course-content-and-materials/",
+    "/webapps/blackboard/content/assessments/",
+    "/webapps/blackboard/content/plagiarism/",
+    "/webapps/blackboard/content/original-course-view/",
+    "/webapps/blackboard/content/ultra/",
+)
+
+_HELP_TITLE_TOKENS = (
+    "your profile",
+    "insert local file in the content editor",
+    "about files and folders",
+    "folder types",
+    "browse files",
+    "add files",
+    "file and folder permissions",
+    "create and edit folders",
+    "files and folders",
+    "content editor",
+    "safeassign supported file types",
+    "upload and download packages",
+    "manage files",
+    "folder properties",
+    "folder notifications",
+)
+
+_BLACKBOARD_HELP_NAME_TOKENS = (
+    "your profile",
+    "browse files",
+    "files and folders",
+    "content editor",
+    "safeassign",
+    "manage files",
+    "folder ",
+)
+
+_NAVIGATION_ACTION_NAMES = frozenset({"cancel", "close", "取消", "关闭"})
+
+_VALID_CONTENT_URL_TOKENS = (
+    "/bbcswebdav/",
+    "/webapps/assignment/",
+    "download",
+    "xid=",
+    "attachment",
+)
+
+
+def _log_resource_filtered(
+    logger: BlackboardLogger | None,
+    reason: str,
+    *,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    if logger is not None:
+        logger.debug(
+            "🗑 过滤资源噪音",
+            payload={"reason": reason, **(payload or {})},
+        )
+
+
+def _is_valid_resource_folder(
+    name: str,
+    download_url: str,
+    lower_name: str,
+    *,
+    logger: BlackboardLogger | None = None,
+) -> bool:
+    if lower_name in _NAVIGATION_ACTION_NAMES:
+        _log_resource_filtered(
+            logger,
+            "folder_navigation_action",
+            payload={"name": name, "download_url": download_url},
+        )
+        return False
+    if not name:
+        _log_resource_filtered(
+            logger, "empty_folder_name", payload={"download_url": download_url}
+        )
+        return False
+    if is_navigation_noise(name):
+        _log_resource_filtered(
+            logger,
+            "navigation_folder",
+            payload={"name": name, "download_url": download_url},
+        )
+        return False
+    if any(token in lower_name for token in _HELP_TITLE_TOKENS):
+        _log_resource_filtered(logger, "help_title", payload={"name": name})
+        return False
+    return True
+
+
 def is_valid_resource(
     resource: dict[str, Any],
     *,
@@ -239,85 +332,48 @@ def is_valid_resource(
     """判断是否为有效资源（非噪音数据）。"""
     name = str(resource.get("name") or "").strip()
     download_url = str(resource.get("download_url") or "").strip()
-
-    def _log_filtered(reason: str, *, payload: dict[str, Any] | None = None) -> None:
-        if logger is not None:
-            logger.debug(
-                "🗑 过滤资源噪音",
-                payload={"reason": reason, **(payload or {})},
-            )
+    resource_type = str(resource.get("type") or "").strip().lower()
 
     if not download_url:
-        _log_filtered("empty_download_url")
+        _log_resource_filtered(logger, "empty_download_url")
         return False
 
     lower_name = name.lower()
     lower_url = download_url.lower()
 
+    if any(token in lower_url for token in _HELP_URL_TOKENS):
+        _log_resource_filtered(
+            logger, "help_link", payload={"download_url": download_url}
+        )
+        return False
+
+    if resource_type == "folder":
+        return _is_valid_resource_folder(name, download_url, lower_name, logger=logger)
+
     if lower_url.startswith("javascript:"):
-        _log_filtered("javascript_url", payload={"download_url": download_url})
+        _log_resource_filtered(
+            logger, "javascript_url", payload={"download_url": download_url}
+        )
         return False
-
-    help_url_tokens = (
-        "/webapps/blackboard/content/getting-started/",
-        "/webapps/blackboard/content/course-content-and-materials/",
-        "/webapps/blackboard/content/assessments/",
-        "/webapps/blackboard/content/plagiarism/",
-        "/webapps/blackboard/content/original-course-view/",
-        "/webapps/blackboard/content/ultra/",
-    )
-    if any(token in lower_url for token in help_url_tokens):
-        _log_filtered("help_link", payload={"download_url": download_url})
-        return False
-
-    help_title_tokens = (
-        "your profile",
-        "insert local file in the content editor",
-        "about files and folders",
-        "folder types",
-        "browse files",
-        "add files",
-        "file and folder permissions",
-        "create and edit folders",
-        "files and folders",
-        "content editor",
-        "safeassign supported file types",
-        "upload and download packages",
-        "manage files",
-        "folder properties",
-        "folder notifications",
-    )
-    if any(token in lower_name for token in help_title_tokens):
-        _log_filtered("help_title", payload={"name": name})
+    if any(token in lower_name for token in _HELP_TITLE_TOKENS):
+        _log_resource_filtered(logger, "help_title", payload={"name": name})
         return False
 
     if "/webapps/blackboard/content/" in lower_url and not any(
-        token in lower_url
-        for token in (
-            "/bbcswebdav/",
-            "/webapps/assignment/",
-            "download",
-            "xid=",
-            "attachment",
-        )
+        token in lower_url for token in _VALID_CONTENT_URL_TOKENS
     ):
-        _log_filtered("course_help_page", payload={"download_url": download_url})
+        _log_resource_filtered(
+            logger, "course_help_page", payload={"download_url": download_url}
+        )
         return False
 
     if "/webapps/blackboard/content/" in lower_url and any(
-        token in lower_name
-        for token in (
-            "your profile",
-            "browse files",
-            "files and folders",
-            "content editor",
-            "safeassign",
-            "manage files",
-            "folder ",
-        )
+        token in lower_name for token in _BLACKBOARD_HELP_NAME_TOKENS
     ):
-        _log_filtered(
-            "blackboard_help_doc", payload={"name": name, "download_url": download_url}
+        _log_resource_filtered(
+            logger,
+            "blackboard_help_doc",
+            payload={"name": name, "download_url": download_url},
         )
         return False
 

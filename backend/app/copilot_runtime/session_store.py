@@ -111,16 +111,21 @@ class RuntimeRunRecord:
         self._mark_terminal(status="cancelled", metadata=metadata)
 
     def projected_messages(self) -> tuple[RuntimeTextMessage, ...]:
+        if self.status not in {"completed", "failed", "cancelled"}:
+            return ()
+
         projected_user_text = _build_projected_user_text(
             self.request.message_content,
             self.request.message_structured_payload,
         )
-        if self.status == "completed":
-            projected_assistant_text = _normalize_projected_text(self.assistant_text)
-            if projected_user_text is None or projected_assistant_text is None:
-                return ()
+        if projected_user_text is None:
+            return ()
 
-            assistant_created_at = self.terminal_at or self.updated_at
+        projected_assistant_text = _resolve_projected_assistant_text(self)
+
+        if self.status == "completed":
+            if projected_assistant_text is None:
+                return ()
             return (
                 RuntimeTextMessage(
                     role=self.request.message_role,
@@ -130,20 +135,21 @@ class RuntimeRunRecord:
                 RuntimeTextMessage(
                     role="assistant",
                     content=projected_assistant_text,
-                    created_at=assistant_created_at,
+                    created_at=self.terminal_at or self.updated_at,
                 ),
             )
 
-        if not _is_awaiting_user_input_run(self):
-            return ()
-
-        projected_assistant_text = _normalize_projected_text(
-            _resolve_awaiting_user_input_assistant_text(self)
-        )
-        if projected_user_text is None or projected_assistant_text is None:
-            return ()
-
+        # failed or cancelled: always retain the user message.
+        # Append the assistant message only when a draft / prompt can be recovered.
         assistant_created_at = self.terminal_at or self.updated_at
+        if projected_assistant_text is None:
+            return (
+                RuntimeTextMessage(
+                    role=self.request.message_role,
+                    content=projected_user_text,
+                    created_at=self.created_at,
+                ),
+            )
         return (
             RuntimeTextMessage(
                 role=self.request.message_role,
@@ -464,6 +470,33 @@ def _build_projected_user_text(
         default=str,
     )
     return f"{projected_text}\n\n[structured_payload]\n{serialized_payload}"
+
+
+def _resolve_projected_assistant_text(run: RuntimeRunRecord) -> str | None:
+    if run.status == "completed":
+        return _normalize_projected_text(run.assistant_text)
+    if run.status not in {"failed", "cancelled"}:
+        return None
+
+    if _is_awaiting_user_input_run(run):
+        return _normalize_projected_text(_resolve_awaiting_user_input_assistant_text(run))
+
+    return _resolve_interrupted_assistant_text(run)
+
+
+def _resolve_interrupted_assistant_text(run: RuntimeRunRecord) -> str | None:
+    assistant_text = _normalize_projected_text(run.assistant_text)
+    if assistant_text is not None:
+        return assistant_text
+
+    deltas: list[str] = []
+    for event in run.event_log:
+        if event.event_type != "text_delta":
+            continue
+        delta = event.payload.get("delta")
+        if isinstance(delta, str):
+            deltas.append(delta)
+    return _normalize_projected_text("".join(deltas))
 
 
 def _is_awaiting_user_input_run(run: RuntimeRunRecord) -> bool:

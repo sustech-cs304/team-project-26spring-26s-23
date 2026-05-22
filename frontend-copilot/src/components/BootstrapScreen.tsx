@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useRef } from 'react'
+import { useGSAP, gsap } from '../workbench/animation-utils'
 
 export type BootstrapScreenTone = 'info' | 'warning' | 'error'
-export const BOOTSTRAP_PREPARING_MESSAGE = '正在准备桌面界面…'
-export const BOOTSTRAP_CONNECTING_MESSAGE = '正在连接本地服务…'
+export const BOOTSTRAP_PREPARING_MESSAGE = '正在加载应用…'
+export const BOOTSTRAP_CONNECTING_MESSAGE = '正在连接服务…'
 
 export type BootstrapScreenLoadingMessage =
   | typeof BOOTSTRAP_PREPARING_MESSAGE
@@ -29,10 +30,18 @@ type BootstrapScreenProps =
   }
 
 export function BootstrapScreen(props: BootstrapScreenProps) {
+  const spinnerRef = useRef<HTMLDivElement>(null)
+
+  useGSAP(() => {
+    if (!spinnerRef.current) return
+    gsap.from(spinnerRef.current, { scale: 0.8, opacity: 0, duration: 0.4, ease: 'back.out(1.7)' })
+    gsap.from('.startup-loading__message', { y: 8, opacity: 0, duration: 0.35, delay: 0.15, ease: 'power2.out' })
+  }, { scope: spinnerRef })
+
   if ('message' in props) {
     return (
       <main className="startup-shell startup-shell--loading" aria-live="polite">
-        <div className="startup-loading" role="status" aria-label={props.message}>
+        <div ref={spinnerRef} className="startup-loading" role="status" aria-label={props.message}>
           <span className="startup-loading__spinner" aria-hidden="true" />
           <p className="startup-loading__message">{props.message}</p>
         </div>

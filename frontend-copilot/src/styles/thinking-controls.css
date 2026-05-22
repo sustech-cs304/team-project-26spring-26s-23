@@ -22,10 +22,10 @@
   line-height: 1;
   cursor: pointer;
   transition:
-    border-color 0.2s ease-out,
-    background-color 0.2s ease-out,
-    color 0.2s ease-out,
-    transform 0.15s cubic-bezier(0.2, 0, 0, 1);
+    border-color var(--transition-duration-slow) var(--easing-out),
+    background-color var(--transition-duration-slow) var(--easing-out),
+    color var(--transition-duration-slow) var(--easing-out),
+    transform var(--transition-duration-fast) var(--easing-slider);
 }
 
 .thinking-pill:hover:not(.thinking-pill--disabled) {
@@ -93,7 +93,7 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--surface-bg);
-  animation: thinking-budget-slider-fade-in 0.2s ease-out forwards;
+  animation: thinking-budget-slider-fade-in var(--anim-duration-slow) var(--easing-standard) forwards;
 }
 
 @keyframes thinking-budget-slider-fade-in {
@@ -183,7 +183,7 @@
 .thinking-budget-slider__track-fill {
   left: 0;
   background: var(--accent);
-  transition: width 0.15s ease-out;
+  transition: width var(--transition-duration-fast) var(--easing-standard);
 }
 
 .thinking-budget-slider__dot {
@@ -194,7 +194,7 @@
   border-radius: 50%;
   background: var(--border-color);
   transform: translate(-50%, -50%);
-  transition: background-color 0.15s ease-out;
+  transition: background-color var(--transition-duration-fast) var(--easing-standard);
 }
 
 .thinking-budget-slider__dot--active {
@@ -209,7 +209,7 @@
   font-family: Consolas, 'SFMono-Regular', 'Courier New', monospace;
   transform: translateX(-50%);
   white-space: nowrap;
-  transition: color 0.15s ease-out, font-weight 0.15s ease-out;
+  transition: color var(--transition-duration-fast) var(--easing-standard), font-weight var(--transition-duration-fast) var(--easing-standard);
 }
 
 .thinking-budget-slider__anchor--active {
@@ -252,7 +252,7 @@
   border: 2px solid var(--accent);
   border-radius: 999px;
   background: var(--surface-bg);
-  transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.15s ease-out;
+  transition: transform var(--transition-duration-fast) var(--easing-slider), box-shadow var(--transition-duration-fast) var(--easing-standard);
 }
 
 .thinking-budget-slider__input::-webkit-slider-thumb:hover {
@@ -275,7 +275,7 @@
   border: 2px solid var(--accent);
   border-radius: 999px;
   background: var(--surface-bg);
-  transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.15s ease-out;
+  transition: transform var(--transition-duration-fast) var(--easing-slider), box-shadow var(--transition-duration-fast) var(--easing-standard);
 }
 
 .thinking-budget-slider__input::-moz-range-thumb:hover {

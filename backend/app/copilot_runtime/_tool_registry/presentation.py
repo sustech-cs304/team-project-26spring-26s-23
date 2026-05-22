@@ -9,9 +9,30 @@ from .constants import (
     CAMPUS_DOCS_SEARCH_TOOL_DESCRIPTION,
     CAMPUS_DOCS_SEARCH_TOOL_DISPLAY_NAME,
     CAMPUS_DOCS_SEARCH_TOOL_ID,
-    FILE_CONVERT_TOOL_DESCRIPTION,
-    FILE_CONVERT_TOOL_DISPLAY_NAME,
-    FILE_CONVERT_TOOL_ID,
+    BROWSER_CLOSE_TAB_TOOL_DESCRIPTION,
+    BROWSER_CLOSE_TAB_TOOL_DISPLAY_NAME,
+    BROWSER_CLOSE_TAB_TOOL_ID,
+    BROWSER_EXECUTE_TOOL_DESCRIPTION,
+    BROWSER_EXECUTE_TOOL_DISPLAY_NAME,
+    BROWSER_EXECUTE_TOOL_ID,
+    BROWSER_LIST_TABS_TOOL_DESCRIPTION,
+    BROWSER_LIST_TABS_TOOL_DISPLAY_NAME,
+    BROWSER_LIST_TABS_TOOL_ID,
+    BROWSER_OPEN_TOOL_DESCRIPTION,
+    BROWSER_OPEN_TOOL_DISPLAY_NAME,
+    BROWSER_OPEN_TOOL_ID,
+    BROWSER_RESET_TOOL_DESCRIPTION,
+    BROWSER_RESET_TOOL_DISPLAY_NAME,
+    BROWSER_RESET_TOOL_ID,
+    BROWSER_SCREENSHOT_TOOL_DESCRIPTION,
+    BROWSER_SCREENSHOT_TOOL_DISPLAY_NAME,
+    BROWSER_SCREENSHOT_TOOL_ID,
+    BROWSER_SNAPSHOT_TOOL_DESCRIPTION,
+    BROWSER_SNAPSHOT_TOOL_DISPLAY_NAME,
+    BROWSER_SNAPSHOT_TOOL_ID,
+    BROWSER_SWITCH_TAB_TOOL_DESCRIPTION,
+    BROWSER_SWITCH_TAB_TOOL_DISPLAY_NAME,
+    BROWSER_SWITCH_TAB_TOOL_ID,
     FILE_TOOL_EDIT_DESCRIPTION,
     FILE_TOOL_EDIT_DISPLAY_NAME,
     FILE_TOOL_EDIT_ID,
@@ -62,6 +83,13 @@ BLACKBOARD_TOOL_GROUP = ToolPresentationGroup(
     order=10,
     source_kind="sustech-blackboard",
 )
+BROWSER_TOOL_GROUP = ToolPresentationGroup(
+    group_id="browser",
+    label_zh="浏览器工具",
+    label_en="Browser Tools",
+    order=15,
+    source_kind="desktop-browser",
+)
 TIS_TOOL_GROUP = ToolPresentationGroup(
     group_id="tis",
     label_zh="TIS 工具",
@@ -78,7 +106,6 @@ SKILL_TOOL_GROUP = ToolPresentationGroup(
 )
 
 TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
-    FILE_CONVERT_TOOL_ID: BUILTIN_TOOL_GROUP,
     FILE_TOOL_READ_ID: BUILTIN_TOOL_GROUP,
     FILE_TOOL_WRITE_ID: BUILTIN_TOOL_GROUP,
     FILE_TOOL_EDIT_ID: BUILTIN_TOOL_GROUP,
@@ -90,6 +117,14 @@ TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     REQUEST_USER_FORM_TOOL_ID: BUILTIN_TOOL_GROUP,
     CAMPUS_DOCS_ENSURE_READY_TOOL_ID: BUILTIN_TOOL_GROUP,
     CAMPUS_DOCS_SEARCH_TOOL_ID: BUILTIN_TOOL_GROUP,
+    BROWSER_OPEN_TOOL_ID: BROWSER_TOOL_GROUP,
+    BROWSER_SCREENSHOT_TOOL_ID: BROWSER_TOOL_GROUP,
+    BROWSER_LIST_TABS_TOOL_ID: BROWSER_TOOL_GROUP,
+    BROWSER_CLOSE_TAB_TOOL_ID: BROWSER_TOOL_GROUP,
+    BROWSER_SWITCH_TAB_TOOL_ID: BROWSER_TOOL_GROUP,
+    BROWSER_EXECUTE_TOOL_ID: BROWSER_TOOL_GROUP,
+    BROWSER_RESET_TOOL_ID: BROWSER_TOOL_GROUP,
+    BROWSER_SNAPSHOT_TOOL_ID: BROWSER_TOOL_GROUP,
     SKILL_ACTIVATE_TOOL_ID: SKILL_TOOL_GROUP,
     SKILL_READ_RESOURCE_TOOL_ID: SKILL_TOOL_GROUP,
     "blackboard.sql.query": BLACKBOARD_TOOL_GROUP,
@@ -104,12 +139,6 @@ TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
 }
 
 TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
-    FILE_CONVERT_TOOL_ID: {
-        "display_name_zh": "文件转换",
-        "display_name_en": FILE_CONVERT_TOOL_DISPLAY_NAME,
-        "description_zh": "将 DOCX、PDF 和 PPTX 文件转换为纯文本。",
-        "description_en": FILE_CONVERT_TOOL_DESCRIPTION,
-    },
     FILE_TOOL_READ_ID: {
         "display_name_zh": "文件读取",
         "display_name_en": FILE_TOOL_READ_DISPLAY_NAME,
@@ -175,6 +204,54 @@ TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": CAMPUS_DOCS_SEARCH_TOOL_DISPLAY_NAME,
         "description_zh": "在本地 SQLite 索引中检索校园文档证据片段。",
         "description_en": CAMPUS_DOCS_SEARCH_TOOL_DESCRIPTION,
+    },
+    BROWSER_OPEN_TOOL_ID: {
+        "display_name_zh": "浏览器打开",
+        "display_name_en": BROWSER_OPEN_TOOL_DISPLAY_NAME,
+        "description_zh": "在桌面运行时的浏览器窗口中打开一个 URL。",
+        "description_en": BROWSER_OPEN_TOOL_DESCRIPTION,
+    },
+    BROWSER_SCREENSHOT_TOOL_ID: {
+        "display_name_zh": "浏览器截图",
+        "display_name_en": BROWSER_SCREENSHOT_TOOL_DISPLAY_NAME,
+        "description_zh": "从桌面运行时浏览器窗口捕获截图。",
+        "description_en": BROWSER_SCREENSHOT_TOOL_DESCRIPTION,
+    },
+    BROWSER_LIST_TABS_TOOL_ID: {
+        "display_name_zh": "列出浏览器标签页",
+        "display_name_en": BROWSER_LIST_TABS_TOOL_DISPLAY_NAME,
+        "description_zh": "列出所有打开的浏览器标签页及其 ID、URL 和标题。",
+        "description_en": BROWSER_LIST_TABS_TOOL_DESCRIPTION,
+    },
+    BROWSER_CLOSE_TAB_TOOL_ID: {
+        "display_name_zh": "关闭浏览器标签页",
+        "display_name_en": BROWSER_CLOSE_TAB_TOOL_DISPLAY_NAME,
+        "description_zh": "按标签页 ID 关闭指定浏览器标签页。",
+        "description_en": BROWSER_CLOSE_TAB_TOOL_DESCRIPTION,
+    },
+    BROWSER_SWITCH_TAB_TOOL_ID: {
+        "display_name_zh": "切换浏览器标签页",
+        "display_name_en": BROWSER_SWITCH_TAB_TOOL_DISPLAY_NAME,
+        "description_zh": "切换到指定 ID 的浏览器标签页。",
+        "description_en": BROWSER_SWITCH_TAB_TOOL_DESCRIPTION,
+    },
+    BROWSER_EXECUTE_TOOL_ID: {
+        "display_name_zh": "执行浏览器脚本",
+        "display_name_en": BROWSER_EXECUTE_TOOL_DISPLAY_NAME,
+        "description_zh": "在当前浏览器页面中执行 JavaScript。",
+        "description_en": BROWSER_EXECUTE_TOOL_DESCRIPTION,
+    },
+    BROWSER_RESET_TOOL_ID: {
+        "display_name_zh": "重置浏览器",
+        "display_name_en": BROWSER_RESET_TOOL_DISPLAY_NAME,
+        "description_zh": "关闭所有打开的浏览器窗口并清除浏览器状态。",
+        "description_en": BROWSER_RESET_TOOL_DESCRIPTION,
+    },
+    BROWSER_SNAPSHOT_TOOL_ID: {
+        "display_name_zh": "浏览器页面快照",
+        "display_name_en": BROWSER_SNAPSHOT_TOOL_DISPLAY_NAME,
+        "description_zh": "获取当前浏览器页面的可访问性快照。",
+        "description_en": BROWSER_SNAPSHOT_TOOL_DESCRIPTION,
     },
     SKILL_ACTIVATE_TOOL_ID: {
         "display_name_zh": "Skill 激活",

@@ -1,3 +1,7 @@
+import { type ReactNode } from 'react'
+
+import { ANIM } from '../../workbench/animation-utils'
+import { CrossFade } from './components/CrossFade'
 import { NotConnectedNotice } from './components/NotConnectedNotice'
 import {
   buildCopilotRuntimeDetails,
@@ -20,9 +24,11 @@ export function CopilotRuntimeStateShell({
   retrying,
   onRetry,
 }: CopilotRuntimeStateShellProps) {
+  let content: ReactNode
+
   switch (state.status) {
     case 'loading':
-      return (
+      content = (
         <section className="copilot-panel__card" aria-live="polite">
           <p className="copilot-panel__eyebrow">Copilot</p>
           <h2 className="copilot-panel__title">正在准备服务连接</h2>
@@ -31,9 +37,10 @@ export function CopilotRuntimeStateShell({
           </p>
         </section>
       )
+      break
 
     case 'error':
-      return (
+      content = (
         <section className="copilot-panel__card copilot-panel__card--error" aria-live="assertive">
           <p className="copilot-panel__eyebrow">Copilot</p>
           <h2 className="copilot-panel__title">读取连接状态失败</h2>
@@ -43,9 +50,10 @@ export function CopilotRuntimeStateShell({
           <pre className="copilot-panel__error">{state.error}</pre>
         </section>
       )
+      break
 
     case 'empty':
-      return (
+      content = (
         <NotConnectedNotice
           title="尚未连接服务"
           description="请先完成服务连接配置，然后再开始聊天。"
@@ -53,9 +61,10 @@ export function CopilotRuntimeStateShell({
           details={buildCopilotRuntimeDetails(state)}
         />
       )
+      break
 
     case 'incomplete':
-      return (
+      content = (
         <NotConnectedNotice
           title="连接信息不完整"
           description="请先补全所需配置，然后再开始聊天。"
@@ -63,9 +72,10 @@ export function CopilotRuntimeStateShell({
           details={buildCopilotRuntimeDetails(state)}
         />
       )
+      break
 
     case 'starting':
-      return (
+      content = (
         <section className="copilot-panel__card copilot-panel__card--notice" aria-live="polite">
           <p className="copilot-panel__eyebrow">Copilot</p>
           <h2 className="copilot-panel__title">正在连接服务</h2>
@@ -82,9 +92,10 @@ export function CopilotRuntimeStateShell({
           </dl>
         </section>
       )
+      break
 
     case 'failed':
-      return (
+      content = (
         <section className="copilot-panel__card copilot-panel__card--error" aria-live="assertive">
           <p className="copilot-panel__eyebrow">Copilot</p>
           <h2 className="copilot-panel__title">连接服务失败</h2>
@@ -114,5 +125,12 @@ export function CopilotRuntimeStateShell({
           </div>
         </section>
       )
+      break
   }
+
+  return (
+    <CrossFade transitionKey={state.status} duration={ANIM.DURATION_STANDARD}>
+      {content}
+    </CrossFade>
+  )
 }

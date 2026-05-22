@@ -49,6 +49,10 @@ _MCP_CAPABILITY_BRIDGE_NOTES: dict[HostCapabilityName, str] = {
         "requires mapping into MCP logging or progress notifications, "
         "or a host-specific event bridge."
     ),
+    "browser_controller": (
+        "Not directly satisfiable over a bare MCP tool boundary; "
+        "requires a host-specific browser or page-control bridge."
+    ),
 }
 
 
@@ -349,16 +353,18 @@ def assess_mcp_tool_readiness(
 
 
 def assess_default_contract_mcp_readiness() -> tuple[MCPToolReadinessReport, ...]:
-    """Assess MCP readiness for the currently approved Blackboard and TIS facade tools."""
+    """Assess MCP readiness for the currently approved Blackboard, TIS, and browser tools."""
 
     from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
     from app.integrations.sustech.teaching_information_system import (
         get_tis_tool_contracts,
     )
+    from app.tooling.browser_tools import get_browser_tool_contracts
 
     contracts = (
         *get_blackboard_tool_contracts(),
         *get_tis_tool_contracts(),
+        *get_browser_tool_contracts(),
     )
     return tuple(assess_mcp_tool_readiness(contract) for contract in contracts)
 

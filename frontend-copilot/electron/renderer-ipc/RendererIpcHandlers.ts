@@ -31,7 +31,13 @@ import type {
 } from '../settings-workspace/ipc'
 import type { SettingsWorkspaceStateSaveInput } from '../settings-workspace/state-schema'
 import type { CopilotRuntimeLoadResult } from '../copilot-runtime'
+import type {
+  DesktopRuntimeCalendarEventsLoadResult,
+  DesktopRuntimeWakeupIcsImportRequest,
+  DesktopRuntimeWakeupIcsImportResult,
+} from '../desktop-runtime'
 import type { DesktopNotificationRequest } from '../desktop-notification'
+import type { DesktopWindowState } from '../window-controls'
 import type { ManagedRuntimeLoadResponse } from '../managed-runtime/ipc'
 import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import type {
@@ -60,6 +66,43 @@ import type {
   SkillSetEnabledResult,
 } from '../skill-registry/ipc'
 import type { ToolCatalogLoadRequest, ToolCatalogLoadResult } from '../tool-catalog/ipc'
+import type {
+  CleanupTemporaryAttachmentFilesRequest,
+  CleanupTemporaryAttachmentFilesResult,
+  ReadAttachmentPreviewRequest,
+  ReadAttachmentPreviewResult,
+  ReadClipboardAttachmentDataResult,
+  WriteAttachmentTempFileRequest,
+  WriteAttachmentTempFileResult,
+} from '../attachment-service/ipc'
+import type {
+  CopyEntriesRequest,
+  CopyTextToClipboardRequest,
+  CreateDirectoryRequest,
+  DeleteEntriesRequest,
+  FileOperationResult,
+  ListDirectoryRequest,
+  ListDirectoryResult,
+  LoadLastRootDirectoryResult,
+  MoveEntriesRequest,
+  OpenEntryWithSystemRequest,
+  ProbeDirectoryRequest,
+  ProbeDirectoryResult,
+  RenameEntryRequest,
+  RevealEntryInFolderRequest,
+  SaveLastRootDirectoryRequest,
+  SelectRootDirectoryRequest,
+  SelectDirectoryResult,
+  TrashEntriesRequest,
+  UnwatchDirectoriesRequest,
+  WatchDirectoriesRequest,
+} from '../file-manager/ipc'
+import type {
+  LoadTimelineEventsRequest,
+  LoadTimelineEventsResult,
+  AddTimelineEventRequest,
+  AddTimelineEventResult,
+} from '../timeline-database/ipc'
 
 export interface RendererIpcHandlers {
   loadConfigCenterPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
@@ -115,6 +158,39 @@ export interface RendererIpcHandlers {
   loadToolCatalog: (request?: ToolCatalogLoadRequest) => Promise<ToolCatalogLoadResult>
   loadCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
   retryCopilotRuntime: () => Promise<CopilotRuntimeLoadResult>
+  loadDesktopRuntimeCalendarEvents: () => Promise<DesktopRuntimeCalendarEventsLoadResult>
+  importDesktopRuntimeWakeupIcs: (
+    request: DesktopRuntimeWakeupIcsImportRequest,
+  ) => Promise<DesktopRuntimeWakeupIcsImportResult>
+  readClipboardAttachmentData: () => Promise<ReadClipboardAttachmentDataResult>
+  writeAttachmentTempFile: (request: WriteAttachmentTempFileRequest) => Promise<WriteAttachmentTempFileResult>
+  readAttachmentPreview: (request: ReadAttachmentPreviewRequest) => Promise<ReadAttachmentPreviewResult>
+  cleanupAttachmentTempFiles: (
+    request: CleanupTemporaryAttachmentFilesRequest,
+  ) => Promise<CleanupTemporaryAttachmentFilesResult>
   notifyDesktopNotification: (request: DesktopNotificationRequest) => Promise<void>
+  loadDesktopWindowState: () => Promise<DesktopWindowState>
+  minimizeDesktopWindow: () => Promise<void>
+  toggleMaximizeDesktopWindow: () => Promise<DesktopWindowState>
+  closeDesktopWindow: () => Promise<void>
   notifyBootstrapWindowReady: () => Promise<void>
+  selectRootDirectory: (request?: SelectRootDirectoryRequest) => Promise<SelectDirectoryResult>
+  listDirectory: (request: ListDirectoryRequest) => Promise<ListDirectoryResult>
+  probeDirectory: (request: ProbeDirectoryRequest) => Promise<ProbeDirectoryResult>
+  createDirectory: (request: CreateDirectoryRequest) => Promise<FileOperationResult>
+  copyEntries: (request: CopyEntriesRequest) => Promise<FileOperationResult>
+  moveEntries: (request: MoveEntriesRequest) => Promise<FileOperationResult>
+  renameEntry: (request: RenameEntryRequest) => Promise<FileOperationResult>
+  trashEntries: (request: TrashEntriesRequest) => Promise<FileOperationResult>
+  deleteEntriesPermanently: (request: DeleteEntriesRequest) => Promise<FileOperationResult>
+  watchDirectories: (request: WatchDirectoriesRequest) => Promise<FileOperationResult>
+  unwatchDirectories: (request: UnwatchDirectoriesRequest) => Promise<FileOperationResult>
+  loadLastRootDirectory: () => Promise<LoadLastRootDirectoryResult>
+  saveLastRootDirectory: (request: SaveLastRootDirectoryRequest) => Promise<FileOperationResult>
+  clearLastRootDirectory: () => Promise<FileOperationResult>
+  openEntryWithSystem: (request: OpenEntryWithSystemRequest) => Promise<FileOperationResult>
+  revealEntryInFolder: (request: RevealEntryInFolderRequest) => Promise<FileOperationResult>
+  copyTextToClipboard: (request: CopyTextToClipboardRequest) => Promise<FileOperationResult>
+  loadTimelineEvents: (request?: LoadTimelineEventsRequest) => Promise<LoadTimelineEventsResult>
+  addTimelineEvent: (request: AddTimelineEventRequest) => Promise<AddTimelineEventResult>
 }

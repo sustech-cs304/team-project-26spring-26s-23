@@ -716,6 +716,7 @@ function buildSupportedDeclaration(
   }
 }
 
+// eslint-disable-next-line complexity
 function hydrateThinkingSeriesTemplate(
   record: Record<string, unknown>,
   preset: ThinkingSeriesPreset,
@@ -918,6 +919,7 @@ function normalizeBudgetTemplateDefaultValue(
   return cloneThinkingSeriesValue(preferred) ?? createBudgetValue('off', '关闭')
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity
 function normalizeBudgetTemplateDefaultValueInternal(
   value: unknown,
   budget: ThinkingSeriesBudgetTemplate,

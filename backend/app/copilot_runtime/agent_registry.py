@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .agent import AgentExecutorFactory, DEFAULT_AGENT_NAME
-from .tool_registry import DEFAULT_TOOLSET_NAME, FILE_CONVERT_TOOL_ID
+from .tool_registry import DEFAULT_TOOLSET_NAME
 
 DEFAULT_AGENT_LABEL = "Default"
 DEFAULT_AGENT_DESCRIPTION = (
@@ -157,7 +157,7 @@ def build_default_agent_registry(
             default=True,
             toolset_name=toolset_name,
             executor_factory=executor_factory,
-            recommended_tools=(FILE_CONVERT_TOOL_ID,),
+            recommended_tools=("tool.fs.read",),
         )
     )
     return registry

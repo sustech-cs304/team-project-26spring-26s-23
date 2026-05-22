@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import {
   type ToolPermissionDelayAction,
@@ -7,6 +7,7 @@ import {
   type ToolPermissionMode,
   type ToolPermissionRecord,
 } from './capabilities-demo'
+import { useStaggerListEnter } from '../animation-utils'
 import { ToolPermissionRow } from './ToolPermissionRow'
 
 interface ToolPermissionsPanelProps {
@@ -27,6 +28,8 @@ export function ToolPermissionsPanel({
   onDelaySecondsChange,
 }: ToolPermissionsPanelProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<ToolPermissionGroupId, boolean>>(initialCollapsedGroups)
+  const listRef = useRef<HTMLDivElement>(null)
+  useStaggerListEnter({ scope: listRef, selector: '.tool-permission-row', itemCount: tools.length })
 
   const groupedTools = useMemo(() => {
     const groups = new Map<string, {
@@ -87,7 +90,7 @@ export function ToolPermissionsPanel({
   }
 
   return (
-    <div className="tool-permission-groups" aria-label="工具权限列表">
+    <div className="tool-permission-groups" aria-label="工具权限列表" ref={listRef}>
       {statusMessage ? (
         <div className="tool-permission-empty-state" role="status">{statusMessage}</div>
       ) : null}

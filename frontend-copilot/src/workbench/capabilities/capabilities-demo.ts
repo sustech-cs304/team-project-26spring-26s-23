@@ -65,9 +65,11 @@ export const capabilitiesNavItems: readonly CapabilitiesNavItem[] = [
   },
 ]
 
+const BUILTIN_CORE_GROUP_ID = 'builtin-core'
+
 export const toolPermissionGroups: readonly ToolPermissionGroup[] = [
   {
-    id: 'builtin-core',
+    id: BUILTIN_CORE_GROUP_ID,
     label: '内置基础工具',
     order: 0,
   },
@@ -98,7 +100,7 @@ export const toolPermissionModes: ReadonlyArray<{ value: ToolPermissionMode, lab
 export const initialToolPermissions: ToolPermissionRecord[] = [
   {
     id: 'tool-read-file',
-    groupId: 'builtin-core',
+    groupId: BUILTIN_CORE_GROUP_ID,
     groupLabel: '内置基础工具',
     groupOrder: 0,
     name: '读取文件',
@@ -110,7 +112,7 @@ export const initialToolPermissions: ToolPermissionRecord[] = [
   },
   {
     id: 'tool-execute-command',
-    groupId: 'builtin-core',
+    groupId: BUILTIN_CORE_GROUP_ID,
     groupLabel: '内置基础工具',
     groupOrder: 0,
     name: '执行命令',
@@ -122,7 +124,7 @@ export const initialToolPermissions: ToolPermissionRecord[] = [
   },
   {
     id: 'tool-write-file',
-    groupId: 'builtin-core',
+    groupId: BUILTIN_CORE_GROUP_ID,
     groupLabel: '内置基础工具',
     groupOrder: 0,
     name: '写入文件',

@@ -12,8 +12,22 @@ import {
 import { RuntimeRequestError } from './thread-run-contract'
 import { createRuntimeModelRoute } from './thread-run-contract.test-support'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const DESC_CN_005 = '工具执行失败，请重试。'
+const DESC_CN_008 = '原始 details'
+const LABEL_OPENAI_GPT = 'openai/gpt-4.1'
+const LABEL_RAW_DETAILS = 'raw-details'
+const LABEL_REQUEST_CONTEXT = 'request-context'
+const LABEL_RUN_STREAM = 'run/stream'
+const LABEL_TOOL_CALL = 'tool-call-1'
+const LABEL_TOOL_MODEL_CONTEXT = 'tool-model-context'
+const LABEL_TOOL_REMOTE_SEARCH = 'tool.remote-search'
+
+
+/* eslint-disable-next-line max-lines-per-function -- 测试文件包含多个集中 describe 分组，拆分将破坏语义完整性 */
 describe('error detail overlay view model', () => {
-  it('maps preflight, run-start, and streaming failures into the same stable group order', () => {
+  describe('group ordering', () => {
+    it('maps preflight, run-start, and streaming failures into the same stable group order', () => {
     const preflight = buildErrorDetailOverlayViewModel(createPreflightErrorDetail({
       summaryMessage: '请求选项格式无效，请检查 JSON。',
       rawMessage: 'Unexpected token } in JSON at position 4',
@@ -21,12 +35,12 @@ describe('error detail overlay view model', () => {
       details: {
         requestOptionsText: '{ trace: true }',
       },
-      resolvedModelId: 'openai/gpt-4.1',
+      resolvedModelId: LABEL_OPENAI_GPT,
       resolvedModelRoute: createRuntimeModelRoute({
         providerProfileId: 'provider-openai',
-        modelId: 'openai/gpt-4.1',
+        modelId: LABEL_OPENAI_GPT,
       }),
-      resolvedToolIds: ['tool.remote-search'],
+      resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
       requestOptions: {
         trace: true,
       },
@@ -41,12 +55,12 @@ describe('error detail overlay view model', () => {
       }),
       stage: 'run-start',
       requestedMethod: 'run/start',
-      resolvedModelId: 'openai/gpt-4.1',
+      resolvedModelId: LABEL_OPENAI_GPT,
       resolvedModelRoute: createRuntimeModelRoute({
         providerProfileId: 'provider-openai',
-        modelId: 'openai/gpt-4.1',
+        modelId: LABEL_OPENAI_GPT,
       }),
-      resolvedToolIds: ['tool.remote-search'],
+      resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
       requestOptions: {
         trace: true,
       },
@@ -54,20 +68,20 @@ describe('error detail overlay view model', () => {
     const streaming = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
       source: 'streaming',
       title: '发送失败',
-      summaryMessage: '工具执行失败，请重试。',
+      summaryMessage: DESC_CN_005,
       rawMessage: 'Tool failed: boom',
       code: 'tool_execution_failed',
       stage: 'streaming',
-      requestedMethod: 'run/stream',
+      requestedMethod: LABEL_RUN_STREAM,
       details: {
-        toolId: 'tool.remote-search',
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
       },
-      resolvedModelId: 'openai/gpt-4.1',
+      resolvedModelId: LABEL_OPENAI_GPT,
       resolvedModelRoute: createRuntimeModelRoute({
         providerProfileId: 'provider-openai',
-        modelId: 'openai/gpt-4.1',
+        modelId: LABEL_OPENAI_GPT,
       }),
-      resolvedToolIds: ['tool.remote-search'],
+      resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
       requestOptions: {
         trace: true,
       },
@@ -75,21 +89,21 @@ describe('error detail overlay view model', () => {
 
     expect(preflight.groups.map((group) => group.key)).toEqual([
       'summary',
-      'request-context',
-      'tool-model-context',
-      'raw-details',
+      LABEL_REQUEST_CONTEXT,
+      LABEL_TOOL_MODEL_CONTEXT,
+      LABEL_RAW_DETAILS,
     ])
     expect(runStart.groups.map((group) => group.key)).toEqual([
       'summary',
-      'request-context',
-      'tool-model-context',
-      'raw-details',
+      LABEL_REQUEST_CONTEXT,
+      LABEL_TOOL_MODEL_CONTEXT,
+      LABEL_RAW_DETAILS,
     ])
     expect(streaming.groups.map((group) => group.key)).toEqual([
       'summary',
-      'request-context',
-      'tool-model-context',
-      'raw-details',
+      LABEL_REQUEST_CONTEXT,
+      LABEL_TOOL_MODEL_CONTEXT,
+      LABEL_RAW_DETAILS,
     ])
   })
 
@@ -121,13 +135,16 @@ describe('error detail overlay view model', () => {
 
     expect(viewModel.groups.map((group) => group.key)).toEqual([
       'summary',
-      'request-context',
-      'raw-details',
+      LABEL_REQUEST_CONTEXT,
+      LABEL_RAW_DETAILS,
     ])
-    expect(viewModel.groups[viewModel.groups.length - 1]?.key).toBe('raw-details')
+    expect(viewModel.groups[viewModel.groups.length - 1]?.key).toBe(LABEL_RAW_DETAILS)
+    })
   })
 
-  it('preserves traceback diagnostics in the raw details group for streaming tool failures', () => {
+  /* eslint-disable-next-line max-lines-per-function -- 多个工具失败场景测试集中于同一 describe，拆分降低可读性 */
+  describe('tool failure details', () => {
+    it('preserves traceback diagnostics in the raw details group for streaming tool failures', () => {
     const traceback = [
       'Traceback (most recent call last):',
       '  File "/workspace/backend/tool.py", line 42, in invoke',
@@ -137,14 +154,14 @@ describe('error detail overlay view model', () => {
     const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
       source: 'streaming',
       title: '发送失败',
-      summaryMessage: '工具执行失败，请重试。',
+      summaryMessage: DESC_CN_005,
       rawMessage: 'blackboard search exploded',
       code: 'execution_failed',
       stage: 'streaming',
-      requestedMethod: 'run/stream',
+      requestedMethod: LABEL_RUN_STREAM,
       details: {
         toolId: 'blackboard.course_catalog.search',
-        toolCallId: 'tool-call-1',
+        toolCallId: LABEL_TOOL_CALL,
         exceptionType: 'RuntimeError',
         exceptionMessage: 'blackboard search exploded',
         traceback,
@@ -155,16 +172,16 @@ describe('error detail overlay view model', () => {
       resolvedToolIds: ['blackboard.course_catalog.search'],
     }))
     const rawDetailsItem = viewModel.groups
-      .find((group) => group.key === 'raw-details')
-      ?.items.find((item) => item.kind === 'text' && item.label === '原始 details')
+      .find((group) => group.key === LABEL_RAW_DETAILS)
+      ?.items.find((item) => item.kind === 'text' && item.label === DESC_CN_008)
 
     expect(rawDetailsItem).toMatchObject({
       kind: 'text',
-      label: '原始 details',
+      label: DESC_CN_008,
       presentation: 'json',
       structuredValue: {
         toolId: 'blackboard.course_catalog.search',
-        toolCallId: 'tool-call-1',
+        toolCallId: LABEL_TOOL_CALL,
         exceptionType: 'RuntimeError',
         exceptionMessage: 'blackboard search exploded',
         traceback,
@@ -184,14 +201,14 @@ describe('error detail overlay view model', () => {
     const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
       source: 'streaming',
       title: '工具调用失败',
-      summaryMessage: '工具执行失败，请重试。',
+      summaryMessage: DESC_CN_005,
       rawMessage: 'remote tool error',
       code: 'tool_execution_failed',
       stage: 'streaming',
-      requestedMethod: 'run/stream',
+      requestedMethod: LABEL_RUN_STREAM,
       details: {
         toolId: 'mcp.mcp-stdio-stub.search-campus.00004d8d',
-        toolCallId: 'tool-call-1',
+        toolCallId: LABEL_TOOL_CALL,
         serverId: 'mcp-stdio-stub',
         serverName: 'stdio stub server',
         remoteToolName: 'search-campus',
@@ -202,14 +219,14 @@ describe('error detail overlay view model', () => {
       },
     }))
 
-    expect(viewModel.groups.find((group) => group.key === 'request-context')?.items).toEqual(
+    expect(viewModel.groups.find((group) => group.key === LABEL_REQUEST_CONTEXT)?.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'key-value', label: '调用阶段', value: 'tools/call' }),
         expect.objectContaining({ kind: 'key-value', label: '快照版本', value: '12' }),
         expect.objectContaining({ kind: 'key-value', label: '目录版本', value: '未提供' }),
       ]),
     )
-    expect(viewModel.groups.find((group) => group.key === 'tool-model-context')?.items).toEqual(
+    expect(viewModel.groups.find((group) => group.key === LABEL_TOOL_MODEL_CONTEXT)?.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'key-value', label: '工具名称', value: 'search-campus' }),
         expect.objectContaining({ kind: 'key-value', label: 'toolId', value: 'mcp.mcp-stdio-stub.search-campus.00004d8d' }),
@@ -217,7 +234,7 @@ describe('error detail overlay view model', () => {
         expect.objectContaining({ kind: 'key-value', label: 'serverId', value: 'mcp-stdio-stub' }),
       ]),
     )
-    expect(viewModel.groups.find((group) => group.key === 'raw-details')?.items).toEqual(
+    expect(viewModel.groups.find((group) => group.key === LABEL_RAW_DETAILS)?.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'key-value', label: '诊断摘要', value: 'connector ready but remote tool returned error' }),
         expect.objectContaining({ kind: 'key-value', label: 'stderr 摘要', value: 'stderr tail' }),
@@ -229,79 +246,82 @@ describe('error detail overlay view model', () => {
     const viewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
       source: 'streaming',
       title: '工具调用失败',
-      summaryMessage: '工具执行失败，请重试。',
+      summaryMessage: DESC_CN_005,
       rawMessage: 'remote search failed',
       code: 'tool_execution_failed',
       stage: 'streaming',
-      requestedMethod: 'run/stream',
+      requestedMethod: LABEL_RUN_STREAM,
       details: {
-        toolId: 'tool.remote-search',
-        toolCallId: 'tool-call-1',
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
+        toolCallId: LABEL_TOOL_CALL,
         phase: 'tools/call',
         snapshotRevision: 12,
         catalogVersion: 9,
       },
-      resolvedToolIds: ['tool.remote-search'],
+      resolvedToolIds: [LABEL_TOOL_REMOTE_SEARCH],
     }))
 
-    expect(viewModel.groups.find((group) => group.key === 'request-context')?.items).not.toEqual(
+    expect(viewModel.groups.find((group) => group.key === LABEL_REQUEST_CONTEXT)?.items).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'key-value', label: '调用阶段' }),
         expect.objectContaining({ kind: 'key-value', label: '快照版本' }),
         expect.objectContaining({ kind: 'key-value', label: '目录版本' }),
       ]),
     )
-    expect(viewModel.groups.find((group) => group.key === 'tool-model-context')?.items).toEqual(
+    expect(viewModel.groups.find((group) => group.key === LABEL_TOOL_MODEL_CONTEXT)?.items).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: 'list', label: '工具', values: ['tool.remote-search'] }),
+        expect.objectContaining({ kind: 'list', label: '工具', values: [LABEL_TOOL_REMOTE_SEARCH] }),
       ]),
     )
-    expect(viewModel.groups.find((group) => group.key === 'tool-model-context')?.items).not.toEqual(
+    expect(viewModel.groups.find((group) => group.key === LABEL_TOOL_MODEL_CONTEXT)?.items).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'key-value', label: 'serverId' }),
         expect.objectContaining({ kind: 'key-value', label: '服务器名称' }),
       ]),
     )
-    expect(viewModel.groups.find((group) => group.key === 'raw-details')?.items).not.toEqual(
+    expect(viewModel.groups.find((group) => group.key === LABEL_RAW_DETAILS)?.items).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'key-value', label: '诊断摘要' }),
         expect.objectContaining({ kind: 'key-value', label: 'stderr 摘要' }),
       ]),
     )
+      })
+    })
   })
 
-  it('marks raw details as structured json only when the serialized value is a json object or array', () => {
+  describe('json parsing', () => {
+    it('marks raw details as structured json only when the serialized value is a json object or array', () => {
     const jsonViewModel = buildErrorDetailOverlayViewModel(createCopilotErrorDetailSource({
       source: 'streaming',
       title: '发送失败',
-      summaryMessage: '工具执行失败，请重试。',
+      summaryMessage: DESC_CN_005,
       rawMessage: 'Tool failed: boom',
       details: {
-        toolId: 'tool.remote-search',
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         retryable: false,
         attempts: [1, 2],
       },
     }))
     const jsonItem = jsonViewModel.groups
-      .find((group) => group.key === 'raw-details')
-      ?.items.find((item) => item.kind === 'text' && item.label === '原始 details')
+      .find((group) => group.key === LABEL_RAW_DETAILS)
+      ?.items.find((item) => item.kind === 'text' && item.label === DESC_CN_008)
 
     expect(jsonItem).toMatchObject({
       kind: 'text',
-      label: '原始 details',
+      label: DESC_CN_008,
       presentation: 'json',
       structuredValue: {
-        toolId: 'tool.remote-search',
+        toolId: LABEL_TOOL_REMOTE_SEARCH,
         retryable: false,
         attempts: [1, 2],
       },
     })
 
-    expect(parseErrorDetailJsonTextForViewer('{"toolId":"tool.remote-search"}')).toEqual({
-      toolId: 'tool.remote-search',
+    expect(parseErrorDetailJsonTextForViewer(`{"toolId":"${LABEL_TOOL_REMOTE_SEARCH}"}`)).toEqual({
+      toolId: LABEL_TOOL_REMOTE_SEARCH,
     })
     expect(parseErrorDetailJsonTextForViewer('[1,true,{"ok":false}]')).toEqual([1, true, { ok: false }])
-    expect(parseErrorDetailJsonTextForViewer('"tool.remote-search"')).toBeNull()
+    expect(parseErrorDetailJsonTextForViewer('LABEL_TOOL_REMOTE_SEARCH')).toBeNull()
     expect(parseErrorDetailJsonTextForViewer('123')).toBeNull()
     expect(parseErrorDetailJsonTextForViewer('invalid json')).toBeNull()
   })

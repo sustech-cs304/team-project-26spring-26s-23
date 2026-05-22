@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { BootstrapScreen, BOOTSTRAP_PREPARING_MESSAGE } from './components/BootstrapScreen'
 import { RecoverableErrorBoundary } from './components/RecoverableErrorBoundary'
@@ -16,6 +16,7 @@ import {
   loadAnimationsEnabledPreference,
   subscribeToAnimationsEnabledPreferenceUpdates,
 } from './workbench/animation-config'
+import { ANIM } from './workbench/animation-utils'
 import {
   loadThemeModePreference,
   persistThemeModePreference,
@@ -35,6 +36,9 @@ function logStartupTrace(stage: string, data: Record<string, unknown> = {}) {
 }
 
 logStartupTrace('module-evaluated')
+
+const ALL_WORKSPACE_VIEWS: WorkspaceView[] = ['assistant', 'capabilities', 'files', 'sustech', 'developer', 'settings']
+const WORKBENCH_WORKSPACE_TRANSITION_MS = ANIM.DURATION_SLOW
 
 const AssistantWorkspace = lazy(async () => {
   const startedAt = performance.now()
@@ -81,12 +85,52 @@ const SettingsWorkspace = lazy(async () => {
   }
 })
 
+const FilesWorkspace = lazy(async () => {
+  const startedAt = performance.now()
+  logStartupTrace('files-workspace-import:start')
+
+  const module = await import('./workbench/files/FilesWorkspace')
+
+  logStartupTrace('files-workspace-import:resolved', {
+    durationMs: Math.round(performance.now() - startedAt),
+  })
+
+  return {
+    default: module.FilesWorkspace,
+  }
+})
+
+const SustechWorkspace = lazy(async () => {
+  const startedAt = performance.now()
+  logStartupTrace('sustech-workspace-import:start')
+
+  const module = await import('./workbench/sustech/SustechWorkspace')
+
+  logStartupTrace('sustech-workspace-import:resolved', {
+    durationMs: Math.round(performance.now() - startedAt),
+  })
+
+  return {
+    default: module.SustechWorkspace,
+  }
+})
+
 interface AppProps {
   bootstrap: CopilotBootstrapController
 }
 
+// App wires many tightly-coupled effects (theme, animations, language,
+// workspace routing) and sub-components together. Extracting a custom hook
+// would scatter shared refs/state and increase risk of behavioral regressions
+// without material readability gain.
+// eslint-disable-next-line max-lines-per-function
 function App({ bootstrap }: AppProps) {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceView>('assistant')
+  const [visitedWorkspaces, setVisitedWorkspaces] = useState<Set<WorkspaceView>>(
+    () => new Set<WorkspaceView>(['assistant']),
+  )
+  const [exitingWorkspace, setExitingWorkspace] = useState<WorkspaceView | null>(null)
+  const workspaceTransitionTimerRef = useRef<number | null>(null)
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialThemeMode)
   const [animationsEnabled, setAnimationsEnabled] = useState(resolveInitialAnimationsEnabled)
   const [workbenchLanguage, setWorkbenchLanguage] = useState<WorkbenchLanguage>('zh-CN')
@@ -204,6 +248,41 @@ function App({ bootstrap }: AppProps) {
     })
   }, [activeWorkspace, bootstrap.state.status])
 
+  useEffect(() => {
+    return () => {
+      if (workspaceTransitionTimerRef.current !== null) {
+        window.clearTimeout(workspaceTransitionTimerRef.current)
+      }
+    }
+  }, [])
+
+  const activateWorkspace = useCallback((target: WorkspaceView) => {
+    if (target === activeWorkspace) {
+      return
+    }
+
+    setVisitedWorkspaces((prev) => {
+      if (prev.has(target)) {
+        return prev
+      }
+      const next = new Set(prev)
+      next.add(target)
+      return next
+    })
+
+    if (workspaceTransitionTimerRef.current !== null) {
+      window.clearTimeout(workspaceTransitionTimerRef.current)
+    }
+
+    const previousWorkspace = activeWorkspace
+    setExitingWorkspace(previousWorkspace)
+    setActiveWorkspace(target)
+    workspaceTransitionTimerRef.current = window.setTimeout(() => {
+      setExitingWorkspace((current) => (current === previousWorkspace ? null : current))
+      workspaceTransitionTimerRef.current = null
+    }, WORKBENCH_WORKSPACE_TRANSITION_MS)
+  }, [activeWorkspace])
+
   const workspaceMeta = useMemo(
     () => getWorkspaceMeta(workbenchLanguage, activeWorkspace),
     [activeWorkspace, workbenchLanguage],
@@ -219,113 +298,110 @@ function App({ bootstrap }: AppProps) {
       data-theme={themeMode}
       data-animations={animationsEnabled ? 'enabled' : 'disabled'}
     >
-      <aside className="workbench-rail" aria-label={workbenchShellCopy.railAriaLabel}>
-        {railPrimaryItems.map((item) => {
-          const Icon = item.icon
-          const active = activeWorkspace === item.id
-          const label = getWorkspaceLabel(workbenchLanguage, item.id)
+        <WorkbenchRail
+          activeWorkspace={activeWorkspace}
+          workbenchLanguage={workbenchLanguage}
+          railAriaLabel={workbenchShellCopy.railAriaLabel}
+          onActivateWorkspace={activateWorkspace}
+        />
 
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={`rail-button${active ? ' rail-button--active' : ''}`}
-              title={label}
-              aria-label={label}
-              aria-pressed={active}
-              onClick={() => setActiveWorkspace(item.id)}
+        <div className="workbench-viewport">
+          <RecoverableErrorBoundary
+            fallback={({ error, reset }) => (
+              <BootstrapScreen
+                title={workbenchLanguage === 'en-US'
+                  ? `${workspaceMeta.label} workspace failed to load`
+                  : `${workspaceMeta.label}工作区加载失败`}
+                description={workbenchShellCopy.workspaceLoadFailureDescription}
+                tone="error"
+                details={<pre className="startup-shell__pre">{formatErrorMessage(error)}</pre>}
+                actions={[
+                  {
+                    label: activeWorkspace === 'assistant'
+                      ? workbenchShellCopy.retryCurrentWorkspace
+                      : workbenchShellCopy.switchBackToAssistant,
+                    onClick: () => {
+                      if (activeWorkspace === 'assistant') {
+                        reset()
+                        return
+                      }
+
+                      activateWorkspace('assistant')
+                    },
+                  },
+                  {
+                    label: workbenchShellCopy.reloadPage,
+                    onClick: () => window.location.reload(),
+                    emphasis: 'secondary',
+                  },
+                ]}
+              />
+            )}
+          >
+            <Suspense
+              fallback={<BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />}
             >
-              <Icon size={18} className="rail-button__icon" />
-            </button>
-          )
-        })}
+              {ALL_WORKSPACE_VIEWS.map((view) => {
+                if (!visitedWorkspaces.has(view)) {
+                  return null
+                }
 
-        <div className="rail-spacer" />
+                const isActive = view === activeWorkspace
+                const isExiting = exitingWorkspace === view && !isActive
+                const isVisible = isActive || isExiting
 
-        {railSecondaryItems.map((item) => {
-          const Icon = item.icon
-          const active = activeWorkspace === item.id
-          const label = getWorkspaceLabel(workbenchLanguage, item.id)
-
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={`rail-button${active ? ' rail-button--active' : ''}`}
-              title={label}
-              aria-label={label}
-              aria-pressed={active}
-              onClick={() => setActiveWorkspace(item.id)}
-            >
-              <Icon size={18} className="rail-button__icon" />
-            </button>
-          )
-        })}
-      </aside>
-
-      <RecoverableErrorBoundary
-        resetKeys={[activeWorkspace]}
-        fallback={({ error, reset }) => (
-          <BootstrapScreen
-            title={workbenchLanguage === 'en-US'
-              ? `${workspaceMeta.label} workspace failed to load`
-              : `${workspaceMeta.label}工作区加载失败`}
-            description={workbenchShellCopy.workspaceLoadFailureDescription}
-            tone="error"
-            details={<pre className="startup-shell__pre">{formatErrorMessage(error)}</pre>}
-            actions={[
-              {
-                label: activeWorkspace === 'assistant'
-                  ? workbenchShellCopy.retryCurrentWorkspace
-                  : workbenchShellCopy.switchBackToAssistant,
-                onClick: () => {
-                  if (activeWorkspace === 'assistant') {
-                    reset()
-                    return
-                  }
-
-                  setActiveWorkspace('assistant')
-                },
-              },
-              {
-                label: workbenchShellCopy.reloadPage,
-                onClick: () => window.location.reload(),
-                emphasis: 'secondary',
-              },
-            ]}
-          />
-        )}
-      >
-        <Suspense
-          fallback={<BootstrapScreen message={BOOTSTRAP_PREPARING_MESSAGE} />}
-        >
-          {renderActiveWorkspace(
-            activeWorkspace,
-            bootstrap,
-            themeMode,
-            handleThemeModeChange,
-            workbenchLanguage,
-            applyWorkbenchLanguage,
-          )}
-        </Suspense>
-      </RecoverableErrorBoundary>
+                return (
+                  <div
+                    key={view}
+                    className={[
+                      'workbench-view',
+                      isActive ? 'workbench-view--active' : null,
+                      isExiting ? 'workbench-view--exiting' : null,
+                    ].filter(Boolean).join(' ')}
+                    data-workspace-view={view}
+                    hidden={!isVisible}
+                    aria-hidden={!isActive}
+                  >
+                    {renderWorkspace({
+                      view,
+                      bootstrap,
+                      themeMode,
+                      onThemeModeChange: handleThemeModeChange,
+                      workbenchLanguage,
+                      onWorkbenchLanguageChange: applyWorkbenchLanguage,
+                    })}
+                  </div>
+                )
+              })}
+            </Suspense>
+          </RecoverableErrorBoundary>
+      </div>
     </div>
   )
 }
 
-function renderActiveWorkspace(
-  activeWorkspace: WorkspaceView,
-  bootstrap: CopilotBootstrapController,
-  themeMode: ThemeMode,
-  onThemeModeChange: (value: ThemeMode) => void,
-  workbenchLanguage: WorkbenchLanguage,
-  onWorkbenchLanguageChange: (value: string) => void,
-) {
-  if (activeWorkspace === 'assistant') {
+interface RenderWorkspaceOptions {
+  view: WorkspaceView
+  bootstrap: CopilotBootstrapController
+  themeMode: ThemeMode
+  onThemeModeChange: (value: ThemeMode) => void
+  workbenchLanguage: WorkbenchLanguage
+  onWorkbenchLanguageChange: (value: string) => void
+}
+
+function renderWorkspace({
+  view,
+  bootstrap,
+  themeMode,
+  onThemeModeChange,
+  workbenchLanguage,
+  onWorkbenchLanguageChange,
+}: RenderWorkspaceOptions) {
+  if (view === 'assistant') {
     return <AssistantWorkspace bootstrap={bootstrap} language={workbenchLanguage} />
   }
 
-  if (activeWorkspace === 'settings') {
+  if (view === 'settings') {
     return (
       <SettingsWorkspace
         bootstrap={bootstrap}
@@ -336,15 +412,83 @@ function renderActiveWorkspace(
     )
   }
 
-  if (activeWorkspace === 'capabilities') {
+  if (view === 'sustech') {
+    return <SustechWorkspace bootstrap={bootstrap} language={workbenchLanguage} />
+  }
+
+  if (view === 'capabilities') {
     return <CapabilitiesWorkspace />
   }
 
-  if (isHubWorkspaceView(activeWorkspace)) {
-    return <HubWorkspace view={activeWorkspace} language={workbenchLanguage} />
+  if (view === 'files') {
+    return <FilesWorkspace />
+  }
+
+  if (isHubWorkspaceView(view)) {
+    return <HubWorkspace view={view} language={workbenchLanguage} bootstrap={bootstrap} />
   }
 
   return null
+}
+
+interface WorkbenchRailProps {
+  activeWorkspace: WorkspaceView
+  workbenchLanguage: WorkbenchLanguage
+  railAriaLabel: string
+  onActivateWorkspace: (target: WorkspaceView) => void
+}
+
+function WorkbenchRail({
+  activeWorkspace,
+  workbenchLanguage,
+  railAriaLabel,
+  onActivateWorkspace,
+}: WorkbenchRailProps) {
+  return (
+    <aside className="workbench-rail" aria-label={railAriaLabel}>
+      {railPrimaryItems.map((item) => {
+        const Icon = item.icon
+        const active = activeWorkspace === item.id
+        const label = getWorkspaceLabel(workbenchLanguage, item.id)
+
+        return (
+          <button
+            key={item.id}
+            type="button"
+            className={`rail-button${active ? ' rail-button--active' : ''}`}
+            title={label}
+            aria-label={label}
+            aria-pressed={active}
+            onClick={() => onActivateWorkspace(item.id)}
+          >
+            <Icon size={18} className="rail-button__icon" />
+          </button>
+        )
+      })}
+
+      <div className="rail-spacer" />
+
+      {railSecondaryItems.map((item) => {
+        const Icon = item.icon
+        const active = activeWorkspace === item.id
+        const label = getWorkspaceLabel(workbenchLanguage, item.id)
+
+        return (
+          <button
+            key={item.id}
+            type="button"
+            className={`rail-button${active ? ' rail-button--active' : ''}`}
+            title={label}
+            aria-label={label}
+            aria-pressed={active}
+            onClick={() => onActivateWorkspace(item.id)}
+          >
+            <Icon size={18} className="rail-button__icon" />
+          </button>
+        )
+      })}
+    </aside>
+  )
 }
 
 function formatErrorMessage(error: unknown): string {

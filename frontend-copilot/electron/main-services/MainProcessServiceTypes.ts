@@ -1,4 +1,13 @@
 import type {
+  CleanupTemporaryAttachmentFilesRequest,
+  CleanupTemporaryAttachmentFilesResult,
+  ReadAttachmentPreviewRequest,
+  ReadAttachmentPreviewResult,
+  ReadClipboardAttachmentDataResult,
+  WriteAttachmentTempFileRequest,
+  WriteAttachmentTempFileResult,
+} from '../attachment-service/ipc'
+import type {
   DesktopCapabilityBridgeRequest,
   DesktopCapabilityBridgeResponse,
 } from '../capability-bridge/protocol'
@@ -18,6 +27,11 @@ import type {
 } from '../copilot-history'
 import type { ElectronCopilotHistoryService } from '../copilot-history-service'
 import type { HostedBackendService } from '../runtime/hosted-backend-service'
+import type {
+  DesktopRuntimeCalendarEventsLoadResult,
+  DesktopRuntimeWakeupIcsImportRequest,
+  DesktopRuntimeWakeupIcsImportResult,
+} from '../desktop-runtime'
 import type { ManagedRuntimeLoadResponse } from '../managed-runtime/ipc'
 import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import type {
@@ -73,6 +87,34 @@ import type {
 } from '../skill-registry/ipc'
 import type { SkillRegistrySubscriptionEvent } from '../skill-registry/types'
 import type { ToolCatalogLoadResult } from '../tool-catalog/ipc'
+import type {
+  CopyEntriesRequest,
+  CopyTextToClipboardRequest,
+  CreateDirectoryRequest,
+  DeleteEntriesRequest,
+  FileOperationResult,
+  ListDirectoryRequest,
+  ListDirectoryResult,
+  LoadLastRootDirectoryResult,
+  MoveEntriesRequest,
+  OpenEntryWithSystemRequest,
+  ProbeDirectoryRequest,
+  ProbeDirectoryResult,
+  RenameEntryRequest,
+  RevealEntryInFolderRequest,
+  SaveLastRootDirectoryRequest,
+  SelectRootDirectoryRequest,
+  SelectDirectoryResult,
+  TrashEntriesRequest,
+  UnwatchDirectoriesRequest,
+  WatchDirectoriesRequest,
+} from '../file-manager/ipc'
+import type {
+  LoadTimelineEventsRequest,
+  LoadTimelineEventsResult,
+  AddTimelineEventRequest,
+  AddTimelineEventResult,
+} from '../timeline-database/ipc'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
 
@@ -100,11 +142,16 @@ export interface CreateMainProcessServicesOptions {
     event: SkillRegistrySubscriptionEvent,
   ) => void | Promise<void>
   createCopilotHistoryService: () => ElectronCopilotHistoryService
+  getMainWindow?: () => Electron.BrowserWindow | null
 }
 
 export interface MainProcessServices {
   loadConfigCenterPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
   loadToolCatalog: () => Promise<ToolCatalogLoadResult>
+  loadDesktopRuntimeCalendarEvents: () => Promise<DesktopRuntimeCalendarEventsLoadResult>
+  importDesktopRuntimeWakeupIcs: (
+    request: DesktopRuntimeWakeupIcsImportRequest,
+  ) => Promise<DesktopRuntimeWakeupIcsImportResult>
   applyConfigCenterPublicPatch: (patch: ConfigCenterPublicPatch) => Promise<ConfigCenterPublicPatchResult>
   loadSettingsWorkspaceState: () => Promise<SettingsWorkspaceStateLoadResult>
   saveSettingsWorkspaceState: (input: SettingsWorkspaceStateSaveInput) => Promise<SettingsWorkspaceStateSaveResult>
@@ -161,4 +208,29 @@ export interface MainProcessServices {
   handleDesktopCapabilityBridgeRequest: (
     request: DesktopCapabilityBridgeRequest,
   ) => Promise<DesktopCapabilityBridgeResponse>
+  readClipboardAttachmentData: () => Promise<ReadClipboardAttachmentDataResult>
+  writeAttachmentTempFile: (request: WriteAttachmentTempFileRequest) => Promise<WriteAttachmentTempFileResult>
+  readAttachmentPreview: (request: ReadAttachmentPreviewRequest) => Promise<ReadAttachmentPreviewResult>
+  cleanupAttachmentTempFiles: (
+    request: CleanupTemporaryAttachmentFilesRequest,
+  ) => Promise<CleanupTemporaryAttachmentFilesResult>
+  selectRootDirectory: (request?: SelectRootDirectoryRequest) => Promise<SelectDirectoryResult>
+  listDirectory: (request: ListDirectoryRequest) => Promise<ListDirectoryResult>
+  probeDirectory: (request: ProbeDirectoryRequest) => Promise<ProbeDirectoryResult>
+  createDirectory: (request: CreateDirectoryRequest) => Promise<FileOperationResult>
+  copyEntries: (request: CopyEntriesRequest) => Promise<FileOperationResult>
+  moveEntries: (request: MoveEntriesRequest) => Promise<FileOperationResult>
+  renameEntry: (request: RenameEntryRequest) => Promise<FileOperationResult>
+  trashEntries: (request: TrashEntriesRequest) => Promise<FileOperationResult>
+  deleteEntriesPermanently: (request: DeleteEntriesRequest) => Promise<FileOperationResult>
+  watchDirectories: (request: WatchDirectoriesRequest) => Promise<FileOperationResult>
+  unwatchDirectories: (request: UnwatchDirectoriesRequest) => Promise<FileOperationResult>
+  loadLastRootDirectory: () => Promise<LoadLastRootDirectoryResult>
+  saveLastRootDirectory: (request: SaveLastRootDirectoryRequest) => Promise<FileOperationResult>
+  clearLastRootDirectory: () => Promise<FileOperationResult>
+  openEntryWithSystem: (request: OpenEntryWithSystemRequest) => Promise<FileOperationResult>
+  revealEntryInFolder: (request: RevealEntryInFolderRequest) => Promise<FileOperationResult>
+  copyTextToClipboard: (request: CopyTextToClipboardRequest) => Promise<FileOperationResult>
+  loadTimelineEvents: (request?: LoadTimelineEventsRequest) => Promise<LoadTimelineEventsResult>
+  addTimelineEvent: (request: AddTimelineEventRequest) => Promise<AddTimelineEventResult>
 }

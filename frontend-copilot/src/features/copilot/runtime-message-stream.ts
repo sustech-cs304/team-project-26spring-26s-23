@@ -33,6 +33,8 @@ const TERMINAL_RUNTIME_RUN_EVENT_TYPES = new Set<RuntimeRunEvent['type']>([
   'run_cancelled',
 ])
 
+const EVENT_PAYLOAD_ASSISTANT_MESSAGE_ID_PATH = 'runtime event payload.assistantMessageId'
+
 export async function* parseRuntimeRunEventStream(
   stream: ReadableStream<Uint8Array>,
 ): AsyncGenerator<RuntimeRunEvent> {
@@ -116,177 +118,186 @@ function parseRuntimeRunEvent(value: unknown): RuntimeRunEvent {
 
   switch (eventType) {
     case 'run_started':
-      return {
-        type: 'run_started',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          assistantMessageId: requireNonEmptyString(
-            payload.assistantMessageId,
-            'runtime event payload.assistantMessageId',
-          ),
-          ...parseOptionalRuntimeRunThinkingMetadata(payload, 'runtime event payload'),
-        },
-      } satisfies RuntimeRunStartedEvent
+      return parseRunStartedEvent(runId, sessionId, sequence, payload)
     case 'run_metadata':
-      return {
-        type: 'run_metadata',
-        runId,
-        sessionId,
-        sequence,
-        payload: requireRuntimeRunThinkingMetadata(payload, 'runtime event payload'),
-      } satisfies RuntimeRunMetadataEvent
+      return parseRunMetadataEvent(runId, sessionId, sequence, payload)
     case 'text_delta':
-      return {
-        type: 'text_delta',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          assistantMessageId: requireNonEmptyString(
-            payload.assistantMessageId,
-            'runtime event payload.assistantMessageId',
-          ),
-          delta: requireString(payload.delta, 'runtime event payload.delta'),
-        },
-      } satisfies RuntimeTextDeltaEvent
+      return parseTextDeltaEvent(runId, sessionId, sequence, payload)
     case 'reasoning_delta':
-      return {
-        type: 'reasoning_delta',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          delta: requireString(payload.delta, 'runtime event payload.delta'),
-        },
-      } satisfies RuntimeReasoningDeltaEvent
+      return parseReasoningDeltaEvent(runId, sessionId, sequence, payload)
     case 'run_completed':
-      return {
-        type: 'run_completed',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          assistantMessageId: requireNonEmptyString(
-            payload.assistantMessageId,
-            'runtime event payload.assistantMessageId',
-          ),
-          assistantText: requireString(payload.assistantText, 'runtime event payload.assistantText'),
-          resolvedModelId: requireNonEmptyString(
-            payload.resolvedModelId,
-            'runtime event payload.resolvedModelId',
-          ),
-          resolvedModelRoute: requireRuntimeResolvedModelRoute(
-            payload.resolvedModelRoute,
-            'runtime event payload.resolvedModelRoute',
-          ),
-          resolvedToolIds: requireStringArray(payload.resolvedToolIds, 'runtime event payload.resolvedToolIds'),
-          requestOptions: requireRecord(payload.requestOptions, 'runtime event payload.requestOptions'),
-        },
-      } satisfies RuntimeRunCompletedEvent
+      return parseRunCompletedEvent(runId, sessionId, sequence, payload)
     case 'run_failed':
-      return {
-        type: 'run_failed',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          code: requireNonEmptyString(payload.code, 'runtime event payload.code'),
-          message: requireString(payload.message, 'runtime event payload.message'),
-          details: requireRecord(payload.details, 'runtime event payload.details'),
-        },
-      } satisfies RuntimeRunFailedEvent
+      return parseRunFailedEvent(runId, sessionId, sequence, payload)
     case 'run_cancelled':
-      return {
-        type: 'run_cancelled',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          assistantMessageId: requireNonEmptyString(
-            payload.assistantMessageId,
-            'runtime event payload.assistantMessageId',
-          ),
-          reason: requireString(payload.reason, 'runtime event payload.reason'),
-        },
-      }
+      return parseRunCancelledEvent(runId, sessionId, sequence, payload)
     case 'run_diagnostic':
-      return {
-        type: 'run_diagnostic',
-        runId,
-        sessionId,
-        sequence,
-        payload: {
-          code: requireNonEmptyString(payload.code, 'runtime event payload.code'),
-          message: requireString(payload.message, 'runtime event payload.message'),
-          details: requireRecord(payload.details, 'runtime event payload.details'),
-          stage: requireNonEmptyString(payload.stage, 'runtime event payload.stage'),
-        },
-      } satisfies RuntimeRunDiagnosticEvent
-    case 'tool_event': {
-      const toolEventPayload: RuntimeToolEvent['payload'] = {
-        toolCallId: requireNonEmptyString(payload.toolCallId, 'runtime event payload.toolCallId'),
-        toolId: requireNonEmptyString(payload.toolId, 'runtime event payload.toolId'),
-        phase: requireRuntimeToolEventPhase(payload.phase),
-        title: requireNonEmptyString(payload.title, 'runtime event payload.title'),
-        summary: requireNonEmptyString(payload.summary, 'runtime event payload.summary'),
-      }
-      const inputSummary = requireOptionalString(payload.inputSummary, 'runtime event payload.inputSummary')
-      const resultSummary = requireOptionalString(payload.resultSummary, 'runtime event payload.resultSummary')
-      const errorSummary = requireOptionalString(payload.errorSummary, 'runtime event payload.errorSummary')
-
-      if (inputSummary !== undefined) {
-        toolEventPayload.inputSummary = inputSummary
-      }
-      if (resultSummary !== undefined) {
-        toolEventPayload.resultSummary = resultSummary
-      }
-      if (errorSummary !== undefined) {
-        toolEventPayload.errorSummary = errorSummary
-      }
-
-      if (payload.security !== undefined && payload.security !== null) {
-        if (typeof payload.security !== 'object' || Array.isArray(payload.security)) {
-          throw new Error('runtime event payload.security must be an object')
-        }
-        const securityObj = payload.security as Record<string, unknown>
-        const riskLevel = securityObj.riskLevel
-        if (riskLevel !== 'safe' && riskLevel !== 'moderate' && riskLevel !== 'high') {
-          throw new Error(`Invalid security riskLevel: ${riskLevel}`)
-        }
-        const approvalMethod = securityObj.approvalMethod
-        if (approvalMethod !== undefined && approvalMethod !== 'accept_reject' && approvalMethod !== 'password') {
-          throw new Error(`Invalid security approvalMethod: ${approvalMethod}`)
-        }
-        const securityPayload: RuntimeToolEventSecurity = { riskLevel }
-        if (approvalMethod) {
-          securityPayload.approvalMethod = approvalMethod
-        }
-        toolEventPayload.security = securityPayload
-      }
-
-      if (payload.approval !== undefined && payload.approval !== null) {
-        toolEventPayload.approval = requireRuntimeToolEventApproval(
-          payload.approval,
-          'runtime event payload.approval',
-        )
-      }
-
-      const formRequest = parseOptionalRuntimeInlineFormRequest(payload.formRequest)
-      if (formRequest !== undefined) {
-        toolEventPayload.formRequest = formRequest
-      }
-
-      return {
-        type: 'tool_event',
-        runId,
-        sessionId,
-        sequence,
-        payload: toolEventPayload,
-      } satisfies RuntimeToolEvent
-    }
+      return parseRunDiagnosticEvent(runId, sessionId, sequence, payload)
+    case 'tool_event':
+      return parseToolEvent(runId, sessionId, sequence, payload)
   }
+}
+
+function parseRunStartedEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunStartedEvent {
+  return {
+    type: 'run_started', runId, sessionId, sequence,
+    payload: {
+      assistantMessageId: requireNonEmptyString(payload.assistantMessageId, EVENT_PAYLOAD_ASSISTANT_MESSAGE_ID_PATH),
+      ...parseOptionalRuntimeRunThinkingMetadata(payload, 'runtime event payload'),
+    },
+  }
+}
+
+function parseRunMetadataEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunMetadataEvent {
+  return {
+    type: 'run_metadata', runId, sessionId, sequence,
+    payload: requireRuntimeRunThinkingMetadata(payload, 'runtime event payload'),
+  }
+}
+
+function parseTextDeltaEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeTextDeltaEvent {
+  return {
+    type: 'text_delta', runId, sessionId, sequence,
+    payload: {
+      assistantMessageId: requireNonEmptyString(payload.assistantMessageId, EVENT_PAYLOAD_ASSISTANT_MESSAGE_ID_PATH),
+      delta: requireString(payload.delta, 'runtime event payload.delta'),
+    },
+  }
+}
+
+function parseReasoningDeltaEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeReasoningDeltaEvent {
+  return {
+    type: 'reasoning_delta', runId, sessionId, sequence,
+    payload: {
+      delta: requireString(payload.delta, 'runtime event payload.delta'),
+    },
+  }
+}
+
+function parseRunCompletedEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunCompletedEvent {
+  return {
+    type: 'run_completed', runId, sessionId, sequence,
+    payload: {
+      assistantMessageId: requireNonEmptyString(payload.assistantMessageId, EVENT_PAYLOAD_ASSISTANT_MESSAGE_ID_PATH),
+      assistantText: requireString(payload.assistantText, 'runtime event payload.assistantText'),
+      resolvedModelId: requireNonEmptyString(payload.resolvedModelId, 'runtime event payload.resolvedModelId'),
+      resolvedModelRoute: requireRuntimeResolvedModelRoute(payload.resolvedModelRoute, 'runtime event payload.resolvedModelRoute'),
+      resolvedToolIds: requireStringArray(payload.resolvedToolIds, 'runtime event payload.resolvedToolIds'),
+      requestOptions: requireRecord(payload.requestOptions, 'runtime event payload.requestOptions'),
+    },
+  }
+}
+
+function parseRunFailedEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunFailedEvent {
+  return {
+    type: 'run_failed', runId, sessionId, sequence,
+    payload: {
+      code: requireNonEmptyString(payload.code, 'runtime event payload.code'),
+      message: requireString(payload.message, 'runtime event payload.message'),
+      details: requireRecord(payload.details, 'runtime event payload.details'),
+    },
+  }
+}
+
+function parseRunCancelledEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunEvent {
+  return {
+    type: 'run_cancelled', runId, sessionId, sequence,
+    payload: {
+      assistantMessageId: requireNonEmptyString(payload.assistantMessageId, EVENT_PAYLOAD_ASSISTANT_MESSAGE_ID_PATH),
+      reason: requireString(payload.reason, 'runtime event payload.reason'),
+    },
+  }
+}
+
+function parseRunDiagnosticEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeRunDiagnosticEvent {
+  return {
+    type: 'run_diagnostic', runId, sessionId, sequence,
+    payload: {
+      code: requireNonEmptyString(payload.code, 'runtime event payload.code'),
+      message: requireString(payload.message, 'runtime event payload.message'),
+      details: requireRecord(payload.details, 'runtime event payload.details'),
+      stage: requireNonEmptyString(payload.stage, 'runtime event payload.stage'),
+    },
+  }
+}
+
+function parseToolEvent(
+  runId: string, sessionId: string, sequence: number, payload: Record<string, unknown>,
+): RuntimeToolEvent {
+  const toolEventPayload: RuntimeToolEvent['payload'] = {
+    toolCallId: requireNonEmptyString(payload.toolCallId, 'runtime event payload.toolCallId'),
+    toolId: requireNonEmptyString(payload.toolId, 'runtime event payload.toolId'),
+    phase: requireRuntimeToolEventPhase(payload.phase),
+    title: requireNonEmptyString(payload.title, 'runtime event payload.title'),
+    summary: requireNonEmptyString(payload.summary, 'runtime event payload.summary'),
+  }
+
+  assignOptionalStringField(toolEventPayload, 'inputSummary', payload.inputSummary, 'runtime event payload.inputSummary')
+  assignOptionalStringField(toolEventPayload, 'resultSummary', payload.resultSummary, 'runtime event payload.resultSummary')
+  assignOptionalStringField(toolEventPayload, 'errorSummary', payload.errorSummary, 'runtime event payload.errorSummary')
+
+  if (payload.security !== undefined && payload.security !== null) {
+    toolEventPayload.security = parseToolEventSecurity(payload.security)
+  }
+
+  if (payload.approval !== undefined && payload.approval !== null) {
+    toolEventPayload.approval = requireRuntimeToolEventApproval(payload.approval, 'runtime event payload.approval')
+  }
+
+  const formRequest = parseOptionalRuntimeInlineFormRequest(payload.formRequest)
+  if (formRequest !== undefined) {
+    toolEventPayload.formRequest = formRequest
+  }
+
+  return { type: 'tool_event', runId, sessionId, sequence, payload: toolEventPayload }
+}
+
+function assignOptionalStringField(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+  path: string,
+): void {
+  const resolved = requireOptionalString(value, path)
+  if (resolved !== undefined) {
+    target[key] = resolved
+  }
+}
+
+function parseToolEventSecurity(security: unknown): RuntimeToolEventSecurity {
+  if (typeof security !== 'object' || security === null || Array.isArray(security)) {
+    throw new Error('runtime event payload.security must be an object')
+  }
+  const securityObj = security as Record<string, unknown>
+  const riskLevel = securityObj.riskLevel
+  if (riskLevel !== 'safe' && riskLevel !== 'moderate' && riskLevel !== 'high') {
+    throw new Error(`Invalid security riskLevel: ${riskLevel}`)
+  }
+  const approvalMethod = securityObj.approvalMethod
+  if (approvalMethod !== undefined && approvalMethod !== 'accept_reject' && approvalMethod !== 'password') {
+    throw new Error(`Invalid security approvalMethod: ${approvalMethod}`)
+  }
+  const securityPayload: RuntimeToolEventSecurity = { riskLevel }
+  if (approvalMethod) {
+    securityPayload.approvalMethod = approvalMethod
+  }
+  return securityPayload
 }
 
 function normalizeSseBuffer(value: string): string {

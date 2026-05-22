@@ -15,6 +15,10 @@ import {
   type RuntimeModule,
 } from './config.test-support'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_HTTP_LOCALHOST_4400 = 'http://localhost:4400'
+
+
 beforeEach(() => {
   configCenterMocks.loadConfigCenterPublicSnapshot.mockReset()
 })
@@ -28,7 +32,7 @@ describe('loadCopilotConfigState', () => {
     configCenterMocks.loadConfigCenterPublicSnapshot.mockResolvedValueOnce({
       ok: true,
       snapshot: createConfigCenterPublicSnapshot({
-        runtimeUrl: 'http://localhost:4400',
+        runtimeUrl: LABEL_HTTP_LOCALHOST_4400,
         agentName: 'planner',
         theme: 'light',
         model: 'gpt-4.1-mini',
@@ -47,9 +51,9 @@ describe('loadCopilotConfigState', () => {
     expect(state).toMatchObject({
       status: 'ready',
       runtimeSource: 'dev-override',
-      runtimeUrl: 'http://localhost:4400',
+      runtimeUrl: LABEL_HTTP_LOCALHOST_4400,
       bootstrapFields: {
-        runtimeUrl: 'http://localhost:4400',
+        runtimeUrl: LABEL_HTTP_LOCALHOST_4400,
         agentName: 'planner',
         debugModeEnabled: false,
       },
@@ -94,7 +98,7 @@ describe('loadCopilotConfigState', () => {
     configCenterMocks.loadConfigCenterPublicSnapshot.mockResolvedValueOnce({
       ok: true,
       snapshot: createConfigCenterPublicSnapshot({
-        runtimeUrl: 'http://localhost:4400',
+        runtimeUrl: LABEL_HTTP_LOCALHOST_4400,
         agentName: 'planner',
       }),
     })

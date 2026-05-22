@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol, Self
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any, Protocol, Self
 
 from pydantic import Field, model_validator
 
@@ -64,7 +65,8 @@ class ResolvedRuntimeModelRoute:
     runtime_status: str = "enabled"
     catalog_revision: str = ""
     endpoint_family: str = ""
-    auth_kind: str = "api-key"
+    auth_kind: str = ""
+    capability_hints: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         normalized_route_ref = self.route_ref or RuntimeModelRouteRef(
@@ -91,11 +93,17 @@ class ResolvedRuntimeModelRoute:
             normalized_auth_kind = "none" if self.api_key.strip() == "" else "api-key"
         object.__setattr__(self, "auth_kind", normalized_auth_kind)
 
+        object.__setattr__(
+            self,
+            "capability_hints",
+            _normalize_capability_hints(self.capability_hints),
+        )
+
     def to_public_dict(self) -> dict[str, object]:
         return self.to_resolved_route_dict()
 
     def to_resolved_route_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "routeRef": self.route_ref.to_dict()
             if self.route_ref is not None
             else {
@@ -115,6 +123,9 @@ class ResolvedRuntimeModelRoute:
             "modelId": self.model_id,
             "authKind": self.auth_kind,
         }
+        if self.capability_hints:
+            payload["capabilityHints"] = dict(self.capability_hints)
+        return payload
 
 
 class RuntimeModelRouteResolver(Protocol):
@@ -176,6 +187,12 @@ def _normalize_optional_text(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _normalize_capability_hints(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): item for key, item in value.items()}
 
 
 def _resolve_endpoint_family(endpoint_type: str) -> str:

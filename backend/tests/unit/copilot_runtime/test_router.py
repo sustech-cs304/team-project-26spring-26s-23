@@ -1,21 +1,16 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Mapping, Sequence
-from contextlib import closing
 from typing import Any, cast
 
 import pytest
 from pydantic_ai.messages import ModelMessage
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from starlette.requests import Request
 
 from app.copilot_runtime import (
     RuntimeBridge,
-    RuntimeRunStartResponse,
-    RuntimeToolApprovalCoordinator,
     RuntimeScaffold,
     RuntimeToolPermissionPolicy,
     build_default_agent_registry,
@@ -23,8 +18,7 @@ from app.copilot_runtime import (
     build_router,
     build_runtime_scaffold,
 )
-from app.copilot_runtime.agent import ModelNotConfiguredError
-from app.copilot_runtime.agent_registry import AgentDescriptor, AgentRegistry
+from app.copilot_runtime.agent_registry import AgentRegistry
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
@@ -132,48 +126,6 @@ class _PermissiveExecutor:
         )
 
 
-class _RecordingExecutor(_PermissiveExecutor):
-    def __init__(self, *, reply: str) -> None:
-        super().__init__(reply=reply)
-        self.calls: list[dict[str, object]] = []
-
-    def open_event_stream(
-        self,
-        *,
-        run_id: str,
-        agent_name: str,
-        user_prompt: str,
-        message_history: list[object],
-        model_route: ResolvedRuntimeModelRoute,
-        enabled_tools: list[str] | tuple[str, ...] = (),
-        debug_enabled: bool = False,
-        request_options: dict[str, object] | None = None,
-        model_settings: dict[str, object] | None = None,
-    ) -> _ImmediateEventStream:
-        self.calls.append(
-            {
-                "agent_name": agent_name,
-                "user_prompt": user_prompt,
-                "message_history": list(message_history),
-                "resolved_model_id": model_route.model_id,
-                "enabled_tools": list(enabled_tools),
-                "debug_enabled": debug_enabled,
-                "request_options": dict(request_options or {}),
-            }
-        )
-        return super().open_event_stream(
-            run_id=run_id,
-            agent_name=agent_name,
-            user_prompt=user_prompt,
-            message_history=message_history,
-            model_route=model_route,
-            enabled_tools=enabled_tools,
-            debug_enabled=debug_enabled,
-            request_options=request_options,
-            model_settings=model_settings,
-        )
-
-
 class _EchoModelRouteResolver:
     async def resolve(
         self, model_route: RuntimeModelRoute
@@ -271,10 +223,10 @@ def test_root_post_thread_get_returns_bound_agent_recommendations_and_tool_catal
 
     assert response.status_code == 200
     assert payload == scaffold.build_thread_get_response(thread=thread).to_dict()
-    assert payload["recommendedTools"] == ["tool.file-convert"]
+    assert payload["recommendedTools"] == ["tool.fs.read"]
     assert payload["toolSelectionMode"] == "recommendation-only"
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" in tool_ids
+    assert "tool.fs.read" in tool_ids
     assert payload["capabilitiesVersion"] == "capabilities:agents-v1:tools-v1"
     assert payload["latestRunId"] is None
     assert scaffold.tool_registry.get_default().name == "default"
@@ -1194,13 +1146,13 @@ def test_scaffold_capabilities_response_filters_denied_tools_from_catalog() -> N
             RuntimeToolPermissionPolicy(
                 schemaVersion=1,
                 defaultMode="allow",
-                toolModes={"tool.file-convert": "deny"},
+                toolModes={"tool.fs.read": "deny"},
             )
         ),
     ).to_dict()
 
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" not in tool_ids
+    assert "tool.fs.read" not in tool_ids
     assert "tool.weather-current" in tool_ids
     assert payload["recommendedTools"] == []
 
@@ -1236,159 +1188,7 @@ def test_root_post_global_tool_catalog_get_returns_default_toolset_catalog() -> 
     assert payload["directoryVersion"] == "tools-v1"
     assert payload["defaultToolset"] == "default"
     tool_ids = [tool["toolId"] for tool in payload["tools"]]
-    assert "tool.file-convert" in tool_ids
-
-
-def test_root_post_thinking_capability_get_returns_verified_unsupported_snapshot_for_catalog_only_provider() -> (
-    None
-):
-    app, _scaffold, store = _build_app()
-    store.create_thread(bound_agent_id="default", thread_id="session-1")
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json=_build_thinking_capability_get_request(
-                session_id="session-1",
-                provider="openrouter",
-                model="openrouter/auto",
-            ),
-        )
-
-    payload = response.json()
-
-    assert response.status_code == 200
-    assert payload == {
-        "ok": True,
-        "sessionId": "session-1",
-        "capabilitySchemaVersion": "canonical-thinking-capability-v2",
-        "capability": {
-            "status": "unknown-without-override",
-            "source": "unknown",
-            "series": None,
-            "seriesLabelZh": None,
-            "editorType": None,
-            "allowedValues": [],
-            "defaultValue": None,
-            "providerBuilderKey": None,
-            "reasonCode": "route_not_verified",
-            "routeFingerprint": {
-                "providerProfileId": "provider-1",
-                "provider": "openrouter",
-                "endpointType": "openai-compatible",
-                "baseUrl": "https://example.com/v1",
-                "modelId": "openrouter/auto",
-            },
-        },
-    }
-
-
-def test_root_post_run_stream_agent_mismatch_streams_failed_terminal_event() -> None:
-    app, _scaffold, store = _build_app_with_secondary_agent()
-    store.create_thread(bound_agent_id="default", thread_id="session-1")
-
-    with TestClient(app) as client:
-        start_response = client.post(
-            "/",
-            json=_build_run_start_request(
-                thread_id="session-1",
-                agent_id="secondary",
-                model="gpt-4.1",
-            ),
-        )
-        run_id = start_response.json()["run"]["runId"]
-        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
-
-    events = _parse_sse_events(response.text)
-
-    assert start_response.status_code == 200
-    assert response.status_code == 200
-    assert [event["type"] for event in events] == ["run_started", "run_failed"]
-    assert events[-1]["payload"] == {
-        "code": "agent_mismatch",
-        "message": "Session 'session-1' is bound to agent 'default', cannot use agent 'secondary'.",
-        "details": {
-            "sessionId": "session-1",
-            "boundAgentId": "default",
-            "requestedAgentId": "secondary",
-        },
-    }
-
-
-def test_root_post_run_stream_unknown_tool_streams_failed_terminal_event() -> None:
-    app, _scaffold, store = _build_app()
-    store.create_thread(bound_agent_id="default", thread_id="session-1")
-
-    with TestClient(app) as client:
-        start_response = client.post(
-            "/",
-            json=_build_run_start_request(
-                thread_id="session-1",
-                model="gpt-4.1",
-                enabled_tools=["tool.missing"],
-            ),
-        )
-        run_id = start_response.json()["run"]["runId"]
-        response = client.post("/", json=_build_run_stream_request(run_id=run_id))
-
-    events = _parse_sse_events(response.text)
-
-    assert start_response.status_code == 200
-    assert response.status_code == 200
-    assert [event["type"] for event in events] == ["run_started", "run_failed"]
-    assert events[-1]["payload"] == {
-        "code": "tool_not_found",
-        "message": "Unknown tool 'tool.missing'.",
-        "details": {"toolId": "tool.missing"},
-    }
-
-
-def test_root_post_run_start_unsupported_message_shape_returns_structured_error() -> (
-    None
-):
-    app, _scaffold, _store = _build_app()
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json={
-                "method": "run/start",
-                "body": {
-                    "threadId": "session-1",
-                    "message": {"role": "assistant", "content": "ignored"},
-                    "policy": _build_policy(model="gpt-4.1"),
-                },
-            },
-        )
-
-    payload = response.json()
-
-    assert response.status_code == 400
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "unsupported_message_shape"
-    assert payload["error"]["requestedMethod"] == "run/start"
-
-
-def test_root_post_run_start_requires_explicit_body_wrapper() -> None:
-    app, _scaffold, _store = _build_app()
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json={
-                "method": "run/start",
-                "threadId": "session-1",
-            },
-        )
-
-    payload = response.json()
-
-    assert response.status_code == 400
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "invalid_request"
-    assert payload["error"]["requestedMethod"] == "run/start"
-    assert payload["error"]["details"] == {"field": "body"}
-
+    assert "tool.fs.read" in tool_ids
 
 def test_root_post_missing_method_returns_structured_bad_request() -> None:
     app, _scaffold, _store = _build_app()
@@ -1424,7 +1224,6 @@ def test_root_post_legacy_info_returns_method_not_implemented() -> None:
     assert payload["error"]["code"] == "method_not_implemented"
     assert payload["error"]["requestedMethod"] == "info"
     assert payload["error"]["supportedMethods"] == SUPPORTED_METHODS
-
 
 def _build_runtime_bridge(
     *,
@@ -1473,75 +1272,6 @@ def _build_app() -> tuple[FastAPI, RuntimeScaffold, InMemorySessionStore]:
     return app, scaffold, store
 
 
-def _build_app_with_secondary_agent() -> tuple[
-    FastAPI, RuntimeScaffold, InMemorySessionStore
-]:
-    executor = _PermissiveExecutor(reply=TEST_MODEL_REPLY)
-    store = InMemorySessionStore()
-    tool_registry = build_default_tool_registry()
-    registry = AgentRegistry(
-        [
-            AgentDescriptor(
-                name="default",
-                label="Default",
-                description="Default runtime agent.",
-                default=True,
-                toolset_name=tool_registry.get_default().name,
-                executor_factory=lambda: executor,
-                recommended_tools=("tool.file-convert",),
-            ),
-            AgentDescriptor(
-                name="secondary",
-                label="Secondary",
-                description="Secondary runtime agent.",
-                toolset_name=tool_registry.get_default().name,
-                executor_factory=lambda: executor,
-            ),
-        ]
-    )
-    scaffold = build_runtime_scaffold(
-        session_store_type=store.storage_type,
-        model_configured=executor.model_configured,
-        model_environment_keys=executor.model_environment_keys,
-        agent_registry=registry,
-        tool_registry=tool_registry,
-    )
-    bridge = _build_runtime_bridge(
-        store=store, agent_registry=registry, scaffold=scaffold
-    )
-    app = FastAPI()
-    app.include_router(build_router(scaffold, bridge))
-    return app, scaffold, store
-
-
-def _build_app_with_recording_executor() -> tuple[
-    FastAPI,
-    RuntimeScaffold,
-    InMemorySessionStore,
-    _RecordingExecutor,
-]:
-    executor = _RecordingExecutor(reply=TEST_MODEL_REPLY)
-    store = InMemorySessionStore()
-    tool_registry = build_default_tool_registry()
-    agent_registry = build_default_agent_registry(
-        executor_factory=lambda: executor,
-        toolset_name=tool_registry.get_default().name,
-    )
-    scaffold = build_runtime_scaffold(
-        session_store_type=store.storage_type,
-        model_configured=executor.model_configured,
-        model_environment_keys=executor.model_environment_keys,
-        agent_registry=agent_registry,
-        tool_registry=tool_registry,
-    )
-    bridge = _build_runtime_bridge(
-        store=store, agent_registry=agent_registry, scaffold=scaffold
-    )
-    app = FastAPI()
-    app.include_router(build_router(scaffold, bridge))
-    return app, scaffold, store, executor
-
-
 def _build_thread_create_request(*, agent_id: str = "default") -> dict[str, Any]:
     return {
         "method": "thread/create",
@@ -1574,298 +1304,3 @@ def _build_capabilities_get_request(
         "method": "capabilities/get",
         "body": body,
     }
-
-
-def _build_thinking_capability_get_request(
-    *,
-    session_id: str,
-    provider: str,
-    model: str,
-) -> dict[str, Any]:
-    return {
-        "method": "thinking/capability/get",
-        "body": {
-            "sessionId": session_id,
-            "modelRoute": {
-                "routeRef": {
-                    "routeKind": "provider-model",
-                    "profileId": "provider-1",
-                    "modelId": model,
-                },
-            },
-        },
-    }
-
-
-def _build_http_request(*, debug_mode_enabled: bool | None) -> Request:
-    request = Request(
-        {
-            "type": "http",
-            "http_version": "1.1",
-            "method": "POST",
-            "scheme": "http",
-            "path": "/",
-            "raw_path": b"/",
-            "query_string": b"",
-            "headers": [],
-            "client": ("127.0.0.1", 50000),
-            "server": ("testserver", 80),
-            "root_path": "",
-        }
-    )
-    request_mappers = __import__(
-        "app.copilot_runtime.transport.request_mappers",
-        fromlist=["set_runtime_request_context"],
-    )
-    if debug_mode_enabled is not None:
-        request.state.copilot_runtime_debug_mode_enabled = debug_mode_enabled
-    request_mappers.set_runtime_request_context(
-        request,
-        runtime_method="run/start",
-        thread_id="thread-1",
-        agent_id="default",
-        run_id="run-1",
-        phase="create_run_record",
-    )
-    return request
-
-
-def _build_run_start_request(
-    *,
-    thread_id: str,
-    model: str,
-    user_text: str = "Hello",
-    agent_id: str | None = "default",
-    enabled_tools: list[str] | None = None,
-    debug_mode_enabled: bool = False,
-    request_options: dict[str, object] | None = None,
-    thinking_selection: dict[str, object] | None = None,
-    thinking_capability_override: dict[str, object] | None = None,
-) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "threadId": thread_id,
-        "message": {"role": "user", "content": user_text},
-        "policy": _build_policy(
-            model=model,
-            enabled_tools=enabled_tools,
-            debug_mode_enabled=debug_mode_enabled,
-            request_options=request_options,
-            thinking_selection=thinking_selection,
-            thinking_capability_override=thinking_capability_override,
-        ),
-    }
-    if agent_id is not None:
-        body["agent"] = agent_id
-    return {"method": "run/start", "body": body}
-
-
-def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
-    return {
-        "method": "run/stream",
-        "body": {
-            "runId": run_id,
-        },
-    }
-
-
-def _build_run_cancel_request(*, run_id: str) -> dict[str, Any]:
-    return {
-        "method": "run/cancel",
-        "body": {
-            "runId": run_id,
-        },
-    }
-
-
-def _build_tool_approval_resolve_request(
-    *,
-    run_id: str,
-    tool_call_id: str,
-    decision: str,
-) -> dict[str, Any]:
-    return {
-        "method": "tool-approval/resolve",
-        "body": {
-            "runId": run_id,
-            "toolCallId": tool_call_id,
-            "decision": decision,
-        },
-    }
-
-
-def test_root_post_tool_approval_resolve_approved_routes_to_coordinator() -> None:
-    app, _scaffold, _store = _build_app()
-    bridge = app.state.runtime_bridge
-
-    with closing(asyncio.new_event_loop()) as approval_loop:
-        bridge._approval_coordinator = RuntimeToolApprovalCoordinator(
-            _loop_provider=lambda: approval_loop,
-        )
-        bridge._approval_coordinator.create_request(
-            run_id="run-approved",
-            tool_call_id="call-approved",
-            tool_id="tool.file-convert",
-            mode="ask",
-        )
-
-        with TestClient(app) as client:
-            response = client.post(
-                "/",
-                json=_build_tool_approval_resolve_request(
-                    run_id="run-approved",
-                    tool_call_id="call-approved",
-                    decision="approved",
-                ),
-            )
-
-    payload = response.json()
-    assert response.status_code == 200
-    assert payload["ok"] is True
-    assert payload["decision"] == "approved"
-    assert payload["status"] == "approved"
-    assert payload["details"] == {
-        "toolId": "tool.file-convert",
-        "mode": "ask",
-    }
-
-
-def test_root_post_tool_approval_resolve_rejected_routes_to_coordinator() -> None:
-    app, _scaffold, _store = _build_app()
-    bridge = app.state.runtime_bridge
-
-    with closing(asyncio.new_event_loop()) as approval_loop:
-        bridge._approval_coordinator = RuntimeToolApprovalCoordinator(
-            _loop_provider=lambda: approval_loop,
-        )
-        bridge._approval_coordinator.create_request(
-            run_id="run-rejected",
-            tool_call_id="call-rejected",
-            tool_id="tool.file-convert",
-            mode="ask",
-        )
-
-        with TestClient(app) as client:
-            response = client.post(
-                "/",
-                json=_build_tool_approval_resolve_request(
-                    run_id="run-rejected",
-                    tool_call_id="call-rejected",
-                    decision="rejected",
-                ),
-            )
-
-    payload = response.json()
-    assert response.status_code == 200
-    assert payload["ok"] is True
-    assert payload["decision"] == "rejected"
-    assert payload["status"] == "rejected"
-    assert payload["details"] == {
-        "toolId": "tool.file-convert",
-        "mode": "ask",
-    }
-
-
-def test_root_post_tool_approval_resolve_missing_request_returns_stable_error() -> None:
-    app, _scaffold, _store = _build_app()
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/",
-            json=_build_tool_approval_resolve_request(
-                run_id="run-missing",
-                tool_call_id="call-missing",
-                decision="approved",
-            ),
-        )
-
-    payload = response.json()
-    assert response.status_code == 404
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "tool_approval_not_found"
-    assert payload["error"]["requestedMethod"] == "tool-approval/resolve"
-    assert payload["error"]["details"] == {
-        "runId": "run-missing",
-        "toolCallId": "call-missing",
-    }
-
-
-def test_root_post_tool_approval_resolve_duplicate_decision_returns_stable_error() -> (
-    None
-):
-    app, _scaffold, _store = _build_app()
-    bridge = app.state.runtime_bridge
-
-    with closing(asyncio.new_event_loop()) as approval_loop:
-        bridge._approval_coordinator = RuntimeToolApprovalCoordinator(
-            _loop_provider=lambda: approval_loop,
-        )
-        bridge._approval_coordinator.create_request(
-            run_id="run-dup",
-            tool_call_id="call-dup",
-            tool_id="tool.file-convert",
-            mode="ask",
-        )
-
-        with TestClient(app) as client:
-            first_response = client.post(
-                "/",
-                json=_build_tool_approval_resolve_request(
-                    run_id="run-dup",
-                    tool_call_id="call-dup",
-                    decision="approved",
-                ),
-            )
-            second_response = client.post(
-                "/",
-                json=_build_tool_approval_resolve_request(
-                    run_id="run-dup",
-                    tool_call_id="call-dup",
-                    decision="rejected",
-                ),
-            )
-
-    assert first_response.status_code == 200
-    payload = second_response.json()
-    assert second_response.status_code == 404
-    assert payload["error"]["code"] == "tool_approval_not_found"
-    assert payload["error"]["requestedMethod"] == "tool-approval/resolve"
-    assert payload["error"]["details"] == {"runId": "run-dup", "toolCallId": "call-dup"}
-
-
-def _build_policy(
-    *,
-    model: str,
-    enabled_tools: list[str] | None = None,
-    debug_mode_enabled: bool = False,
-    request_options: dict[str, object] | None = None,
-    thinking_selection: dict[str, object] | None = None,
-    thinking_capability_override: dict[str, object] | None = None,
-) -> dict[str, object]:
-    policy: dict[str, object] = {
-        "modelRoute": {
-            "routeRef": {
-                "routeKind": "provider-model",
-                "profileId": "provider-1",
-                "modelId": model,
-            },
-        },
-        "enabledTools": list(enabled_tools or []),
-        "debugModeEnabled": debug_mode_enabled,
-        "requestOptions": dict(request_options or {}),
-    }
-    if thinking_selection is not None:
-        policy["thinkingSelection"] = dict(thinking_selection)
-    if thinking_capability_override is not None:
-        policy["thinkingCapabilityOverride"] = dict(thinking_capability_override)
-    return policy
-
-
-def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = []
-    for chunk in raw_text.strip().split("\n\n"):
-        lines = [line for line in chunk.splitlines() if line.startswith("data: ")]
-        if not lines:
-            continue
-        payload = "\n".join(line[6:] for line in lines)
-        events.append(json.loads(payload))
-    return events

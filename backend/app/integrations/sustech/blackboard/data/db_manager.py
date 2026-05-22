@@ -7,21 +7,23 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
 from urllib.parse import urlparse
+from typing import Any, Iterator
 
 from app.desktop_runtime.config import ENV_DATABASE_DIR
 from app.integrations.sustech.blackboard.shared.logging import BlackboardLogger
 
-from sqlalchemy import create_engine, event, func, select
+from sqlalchemy import create_engine, event, func, inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.integrations.sustech.blackboard.data.course_matcher import (
     resolve_course_id_by_course_name as data_resolve_course_id_by_course_name,
 )
+from app.integrations.sustech.blackboard.api.dto import CalendarEventDTO
 from app.integrations.sustech.blackboard.data.results import SyncStats
 from app.integrations.sustech.blackboard.data.sync_operations import (
     get_calendar_subscription as data_get_calendar_subscription,
+    list_all_calendar_events as data_list_all_calendar_events,
     list_calendar_events as data_list_calendar_events,
     sync_announcements as data_sync_announcements,
     sync_assignments as data_sync_assignments,
@@ -106,6 +108,55 @@ class DatabaseManager:
 
     def create_tables(self) -> None:
         Base.metadata.create_all(self.engine)
+        self._ensure_schema_compatibility()
+
+    def _ensure_schema_compatibility(self) -> None:
+        inspector = inspect(self.engine)
+        table_names = set(inspector.get_table_names())
+        compatibility_columns: dict[str, tuple[tuple[str, str], ...]] = {
+            "assignments": (("description_html", "TEXT"),),
+            "announcements": (
+                ("content_html", "TEXT"),
+                ("relation_type", "VARCHAR(64)"),
+                ("relation_confidence", "VARCHAR(64)"),
+            ),
+        }
+
+        with self.engine.begin() as connection:
+            for table_name, required_columns in compatibility_columns.items():
+                if table_name not in table_names:
+                    continue
+
+                existing_columns = {
+                    str(column["name"]) for column in inspector.get_columns(table_name)
+                }
+                for column_name, column_sql_type in required_columns:
+                    if column_name in existing_columns:
+                        continue
+                    connection.exec_driver_sql(
+                        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql_type}"
+                    )
+
+            if "announcement_assignment_links" in table_names:
+                existing_indexes = {
+                    str(index["name"])
+                    for index in inspector.get_indexes("announcement_assignment_links")
+                }
+                required_indexes = {
+                    "idx_announcement_assignment_links_course": ("course_id",),
+                    "idx_announcement_assignment_links_confidence": ("confidence",),
+                    "idx_announcement_assignment_links_announcement": (
+                        "announcement_id",
+                    ),
+                    "idx_announcement_assignment_links_assignment": ("assignment_id",),
+                }
+                for index_name, columns in required_indexes.items():
+                    if index_name in existing_indexes:
+                        continue
+                    connection.exec_driver_sql(
+                        "CREATE INDEX "
+                        f"{index_name} ON announcement_assignment_links ({', '.join(columns)})"
+                    )
 
     @contextmanager
     def _session_scope(self) -> Iterator[Session]:
@@ -161,7 +212,8 @@ class DatabaseManager:
             return text
 
         if cls._looks_like_url(text):
-            return text
+            parsed = urlparse(text)
+            return parsed._replace(fragment="").geturl()
 
         return None
 
@@ -269,12 +321,14 @@ class DatabaseManager:
         self,
         announcements_data: list[dict[str, Any]],
         *,
+        links_data: list[dict[str, Any]] | None = None,
         logger: BlackboardLogger | None = None,
     ) -> SyncStats:
         with self._session_scope() as session:
             return data_sync_announcements(
                 session,
                 announcements_data,
+                links_data=links_data,
                 normalize_url=self._normalize_url,
                 parse_datetime=lambda value: parse_loose_datetime(
                     None if value is None else str(value)
@@ -323,10 +377,19 @@ class DatabaseManager:
 
     def list_calendar_events(
         self, feed_url: str, *, include_deleted: bool = False
-    ) -> list[dict[str, Any]]:
+    ) -> list[CalendarEventDTO]:
         with self._session_scope() as session:
             return data_list_calendar_events(
                 session, feed_url, include_deleted=include_deleted
+            )
+
+    def list_all_calendar_events(
+        self, *, include_deleted: bool = False
+    ) -> list[CalendarEventDTO]:
+        """列出所有订阅的日历事件，供统一日立同步使用。"""
+        with self._session_scope() as session:
+            return data_list_all_calendar_events(
+                session, include_deleted=include_deleted
             )
 
     def get_table_counts(self) -> dict[str, dict[str, int]]:

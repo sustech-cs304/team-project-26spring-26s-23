@@ -12,6 +12,7 @@ import {
 } from 'react'
 
 import type { AssistantSessionShell } from '../types'
+import { gsap } from '../animation-utils'
 import type {
   AssistantSessionContextMenuState,
   AssistantSessionDragState,
@@ -47,109 +48,58 @@ interface UseAssistantSessionInteractionStateResult {
   selectSessionContextSubmenu: (sessionId: string, submenu: 'copy' | 'export' | null) => void
 }
 
-export function useAssistantSessionInteractionState({
-  sessionListState,
+// ---------------------------------------------------------------------------
+// Sub-hook: Drag gesture state management – extracted to keep the main
+// interaction hook under the max-lines-per-function limit.
+// ---------------------------------------------------------------------------
+
+interface UseAssistantSessionDragHandlersInput {
+  setSessionListState: Dispatch<SetStateAction<AssistantSessionListState>>
+}
+
+interface UseAssistantSessionDragHandlersResult {
+  sessionDragState: AssistantSessionDragState | null
+  sessionListRef: MutableRefObject<HTMLUListElement | null>
+  sessionDragGhostRef: MutableRefObject<HTMLDivElement | null>
+  suppressSessionClickRef: MutableRefObject<boolean>
+  handleSessionPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => void
+}
+
+function useAssistantSessionDragHandlers({
   setSessionListState,
-  activateSession,
-}: UseAssistantSessionInteractionStateInput): UseAssistantSessionInteractionStateResult {
-  const [sessionContextMenu, setSessionContextMenu] = useState<AssistantSessionContextMenuState | null>(null)
+}: UseAssistantSessionDragHandlersInput): UseAssistantSessionDragHandlersResult {
   const [sessionDragState, setSessionDragState] = useState<AssistantSessionDragState | null>(null)
   const sessionListRef = useRef<HTMLUListElement | null>(null)
   const sessionDragGhostRef = useRef<HTMLDivElement | null>(null)
   const sessionDragStateRef = useRef<AssistantSessionDragState | null>(null)
   const pendingSessionPointerRef = useRef<{
-    sessionId: string
-    startX: number
-    startY: number
-    pointerOffsetX: number
-    pointerOffsetY: number
+    sessionId: string; startX: number; startY: number; pointerOffsetX: number; pointerOffsetY: number
   } | null>(null)
   const sessionPointerCleanupRef = useRef<(() => void) | null>(null)
-  const sessionDragGhostFrameRef = useRef<number | null>(null)
   const suppressSessionClickRef = useRef(false)
+  const ghostLiftedRef = useRef(false)
+
+  useEffect(() => { sessionDragStateRef.current = sessionDragState }, [sessionDragState])
+
+  useEffect(() => () => {
+    sessionPointerCleanupRef.current?.()
+  }, [])
 
   useEffect(() => {
-    if (sessionContextMenu === null) {
-      return undefined
-    }
-
-    const handleWindowMouseDown = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest('[data-testid="assistant-session-context-menu"]') !== null) {
-        return
-      }
-
-      setSessionContextMenu(null)
-    }
-
-    const handleWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setSessionContextMenu(null)
-        setSessionDragState(null)
-        pendingSessionPointerRef.current = null
-      }
-    }
-
-    const handleWindowBlur = () => {
-      setSessionDragState(null)
-      pendingSessionPointerRef.current = null
-    }
-
-    window.addEventListener('mousedown', handleWindowMouseDown)
-    window.addEventListener('keydown', handleWindowKeyDown)
-    window.addEventListener('blur', handleWindowBlur)
-
-    return () => {
-      window.removeEventListener('mousedown', handleWindowMouseDown)
-      window.removeEventListener('keydown', handleWindowKeyDown)
-      window.removeEventListener('blur', handleWindowBlur)
-    }
-  }, [sessionContextMenu])
-
-  useEffect(() => {
-    sessionDragStateRef.current = sessionDragState
+    if (sessionDragState === null) { return undefined }
+    const onBlur = () => { setSessionDragState(null); pendingSessionPointerRef.current = null }
+    window.addEventListener('blur', onBlur)
+    return () => { window.removeEventListener('blur', onBlur) }
   }, [sessionDragState])
 
-  useEffect(() => {
-    return () => {
-      sessionPointerCleanupRef.current?.()
-      if (sessionDragGhostFrameRef.current !== null) {
-        cancelAnimationFrame(sessionDragGhostFrameRef.current)
-      }
-    }
-  }, [])
-
-  const scheduleSessionDragGhostPosition = useCallback((
-    pointerX: number,
-    pointerY: number,
-    pointerOffsetX: number,
-    pointerOffsetY: number,
-  ) => {
-    if (sessionDragGhostFrameRef.current !== null) {
-      cancelAnimationFrame(sessionDragGhostFrameRef.current)
-    }
-
-    sessionDragGhostFrameRef.current = requestAnimationFrame(() => {
-      if (sessionDragGhostRef.current !== null) {
-        sessionDragGhostRef.current.style.transform = `translate3d(${pointerX - pointerOffsetX}px, ${pointerY - pointerOffsetY}px, 0)`
-      }
-      sessionDragGhostFrameRef.current = null
-    })
-  }, [])
-
   const handleSessionPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>, sessionId: string) => {
-    if (event.button !== 0) {
-      return
-    }
-
-    setSessionContextMenu(null)
+    if (event.button !== 0) { return }
     sessionPointerCleanupRef.current?.()
 
     const previousUserSelect = document.body.style.userSelect
     const currentTargetRect = event.currentTarget.getBoundingClientRect()
     pendingSessionPointerRef.current = {
-      sessionId,
-      startX: event.clientX,
-      startY: event.clientY,
+      sessionId, startX: event.clientX, startY: event.clientY,
       pointerOffsetX: event.clientX - currentTargetRect.left,
       pointerOffsetY: event.clientY - currentTargetRect.top,
     }
@@ -165,52 +115,37 @@ export function useAssistantSessionInteractionState({
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const pending = pendingSessionPointerRef.current
-      if (pending === null) {
-        return
-      }
-
+      if (pending === null) { return }
       const pointerTravel = Math.abs(moveEvent.clientX - pending.startX) + Math.abs(moveEvent.clientY - pending.startY)
-      if (pointerTravel < 4 && sessionDragStateRef.current === null) {
-        return
-      }
+      if (pointerTravel < 4 && sessionDragStateRef.current === null) { return }
 
       suppressSessionClickRef.current = true
       document.body.style.userSelect = 'none'
-      scheduleSessionDragGhostPosition(
-        moveEvent.clientX,
-        moveEvent.clientY,
-        pending.pointerOffsetX,
-        pending.pointerOffsetY,
-      )
+      if (!ghostLiftedRef.current && sessionDragGhostRef.current) {
+        ghostLiftedRef.current = true
+        gsap.from(sessionDragGhostRef.current, { scale: 0.8, opacity: 0, duration: 0.18, ease: 'back.out(2)' })
+      }
+      gsap.set(sessionDragGhostRef.current, {
+        x: moveEvent.clientX - pending.pointerOffsetX,
+        y: moveEvent.clientY - pending.pointerOffsetY,
+      })
 
       const listElement = sessionListRef.current
       const nextPreviewIndex = listElement === null
         ? 0
-        : computeAssistantSessionPreviewIndex(
-            listElement,
-            moveEvent.clientY - pending.pointerOffsetY + (currentTargetRect.height / 2),
-          )
+        : computeAssistantSessionPreviewIndex(listElement, moveEvent.clientY - pending.pointerOffsetY + (currentTargetRect.height / 2))
 
-      setSessionDragState({
-        draggingSessionId: pending.sessionId,
-        previewIndex: nextPreviewIndex,
-      })
+      setSessionDragState({ draggingSessionId: pending.sessionId, previewIndex: nextPreviewIndex })
     }
 
     const handlePointerUp = () => {
+      ghostLiftedRef.current = false
       const dragSnapshot = sessionDragStateRef.current
       if (dragSnapshot !== null) {
-        setSessionListState((current) => moveAssistantSessionShellToIndex(
-          current,
-          dragSnapshot.draggingSessionId,
-          dragSnapshot.previewIndex,
-        ))
+        setSessionListState((current) => moveAssistantSessionShellToIndex(current, dragSnapshot.draggingSessionId, dragSnapshot.previewIndex))
         setSessionDragState(null)
-        requestAnimationFrame(() => {
-          suppressSessionClickRef.current = false
-        })
+        requestAnimationFrame(() => { suppressSessionClickRef.current = false })
       }
-
       cleanup()
     }
 
@@ -218,7 +153,43 @@ export function useAssistantSessionInteractionState({
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
     window.addEventListener('pointercancel', handlePointerUp)
-  }, [scheduleSessionDragGhostPosition, setSessionListState])
+  }, [setSessionListState])
+
+  return { sessionDragState, sessionListRef, sessionDragGhostRef, suppressSessionClickRef, handleSessionPointerDown }
+}
+
+// ---------------------------------------------------------------------------
+// Main hook
+// ---------------------------------------------------------------------------
+
+export function useAssistantSessionInteractionState({
+  sessionListState,
+  setSessionListState,
+  activateSession,
+}: UseAssistantSessionInteractionStateInput): UseAssistantSessionInteractionStateResult {
+  const [sessionContextMenu, setSessionContextMenu] = useState<AssistantSessionContextMenuState | null>(null)
+
+  const {
+    sessionDragState, sessionListRef, sessionDragGhostRef,
+    suppressSessionClickRef, handleSessionPointerDown,
+  } = useAssistantSessionDragHandlers({ setSessionListState })
+
+  useEffect(() => {
+    if (sessionContextMenu === null) { return undefined }
+    const handleWindowMouseDown = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest('[data-testid="assistant-session-context-menu"]') !== null) { return }
+      setSessionContextMenu(null)
+    }
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setSessionContextMenu(null) }
+    }
+    window.addEventListener('mousedown', handleWindowMouseDown)
+    window.addEventListener('keydown', handleWindowKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', handleWindowMouseDown)
+      window.removeEventListener('keydown', handleWindowKeyDown)
+    }
+  }, [sessionContextMenu])
 
   const handleSessionClick = useCallback((sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => {
     if (suppressSessionClickRef.current) {
@@ -227,47 +198,28 @@ export function useAssistantSessionInteractionState({
       suppressSessionClickRef.current = false
       return
     }
-
     setSessionContextMenu(null)
     activateSession(sessionEntry)
-  }, [activateSession])
+  }, [activateSession, suppressSessionClickRef])
 
   const handleSessionContextMenu = useCallback((sessionEntry: AssistantSessionShell, event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     activateSession(sessionEntry)
-    setSessionContextMenu(createAssistantSessionContextMenuState({
-      sessionEntry,
-      x: event.clientX,
-      y: event.clientY,
-    }))
+    setSessionContextMenu(createAssistantSessionContextMenuState({ sessionEntry, x: event.clientX, y: event.clientY }))
   }, [activateSession])
 
-  const dismissSessionContextMenu = useCallback(() => {
-    setSessionContextMenu(null)
-  }, [])
+  const dismissSessionContextMenu = useCallback(() => { setSessionContextMenu(null) }, [])
 
   const selectSessionContextSubmenu = useCallback((sessionId: string, submenu: 'copy' | 'export' | null) => {
     setSessionContextMenu((current) => {
-      if (current === null || current.sessionId !== sessionId) {
-        return current
-      }
-
-      if (current.activeSubmenu === submenu) {
-        return current
-      }
-
-      return {
-        ...current,
-        activeSubmenu: submenu,
-      }
+      if (current === null || current.sessionId !== sessionId) { return current }
+      if (current.activeSubmenu === submenu) { return current }
+      return { ...current, activeSubmenu: submenu }
     })
   }, [])
 
   const renderedSessionState = useMemo(
-    () => createAssistantRenderedSessionState({
-      sessions: sessionListState.sessions,
-      sessionDragState,
-    }),
+    () => createAssistantRenderedSessionState({ sessions: sessionListState.sessions, sessionDragState }),
     [sessionDragState, sessionListState.sessions],
   )
 

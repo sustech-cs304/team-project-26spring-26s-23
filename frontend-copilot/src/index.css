@@ -1,3 +1,5 @@
+@import './styles/tokens.css';
+
 :root {
   font-family: Inter, 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   line-height: 1.5;
@@ -95,7 +97,7 @@ body {
   border-radius: 999px;
   border: 3px solid var(--startup-shell-spinner-track);
   border-top-color: var(--startup-shell-spinner-accent);
-  animation: startup-loading-spin 0.9s linear infinite;
+  animation: startup-loading-spin var(--anim-duration-spin) var(--easing-linear) infinite;
 }
 
 .startup-loading__message {
@@ -120,6 +122,11 @@ body {
 
 .startup-shell__card--warning {
   border-color: rgba(217, 119, 6, 0.2);
+}
+
+.startup-shell__card--error,
+.startup-shell__card--warning {
+  animation: startup-card-enter 0.3s var(--easing-enter) both;
 }
 
 .startup-shell__card--error {
@@ -176,7 +183,7 @@ body {
   color: var(--startup-shell-primary-action-text);
   font-size: 14px;
   font-weight: 600;
-  transition: opacity 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+  transition: transform 0.2s var(--easing-spring), opacity var(--transition-duration-standard) var(--easing-standard), background-color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .startup-shell__button:hover:not(:disabled) {
@@ -211,7 +218,124 @@ body {
   }
 }
 
+@keyframes startup-card-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 a {
   color: inherit;
   text-decoration: none;
+}
+
+:root {
+  --desktop-titlebar-height: 34px;
+  --desktop-titlebar-bg: var(--rail-bg, #f8fafc);
+  --desktop-titlebar-border: transparent;
+  --desktop-titlebar-control-hover: color-mix(in srgb, var(--text-primary, #172033) 7%, transparent);
+  --desktop-titlebar-control-active: color-mix(in srgb, var(--text-primary, #172033) 12%, transparent);
+}
+
+:root[data-theme='dark'] {
+  --desktop-titlebar-bg: var(--rail-bg, #171c24);
+  --desktop-titlebar-border: transparent;
+  --desktop-titlebar-control-hover: rgba(255, 255, 255, 0.07);
+  --desktop-titlebar-control-active: rgba(255, 255, 255, 0.11);
+}
+
+.desktop-chrome {
+  display: grid;
+  grid-template-rows: var(--desktop-titlebar-height) minmax(0, 1fr);
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--app-bg, #f3f5f8);
+  color: var(--text-primary, #172033);
+}
+
+.desktop-chrome__content {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.desktop-chrome__content > .startup-shell {
+  height: 100%;
+  min-height: 100%;
+}
+
+.window-titlebar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  height: var(--desktop-titlebar-height);
+  border-bottom: 0 solid var(--desktop-titlebar-border);
+  background: var(--desktop-titlebar-bg);
+  color: var(--text-secondary, #4d5b70);
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.window-titlebar__drag-region {
+  align-self: stretch;
+  min-width: 0;
+}
+
+.window-titlebar__controls {
+  display: inline-flex;
+  align-items: stretch;
+  align-self: stretch;
+  -webkit-app-region: no-drag;
+}
+
+.window-titlebar__control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  color: var(--text-secondary, #4d5b70);
+  background: transparent;
+  transition:
+    background-color var(--transition-duration-fast) var(--easing-standard),
+    color var(--transition-duration-fast) var(--easing-standard);
+  -webkit-app-region: no-drag;
+}
+
+.window-titlebar__control:hover {
+  background: var(--desktop-titlebar-control-hover);
+  color: var(--text-primary, #172033);
+}
+
+.window-titlebar__control:active {
+  background: var(--desktop-titlebar-control-active);
+}
+
+.window-titlebar__control--close:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
+.window-titlebar__control--close:active {
+  background: #c50f1f;
+  color: #ffffff;
+}
+
+.window-titlebar__control-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
+}
+
+.window-titlebar__control:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent, #2563eb) 52%, transparent);
+  outline-offset: -3px;
 }

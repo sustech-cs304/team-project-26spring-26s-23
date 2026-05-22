@@ -14,28 +14,6 @@ from app.desktop_runtime.config import DEFAULT_USER_DATA_DIR, ENV_USER_DATA_DIR
 from .constants import DEFAULT_WEATHER_LOCATION, WEATHER_SAMPLE_RESULTS
 
 
-class FileConvertToolResult(TypedDict, total=False):
-    path: str
-    suffix: str
-    content: str
-    notice: str
-
-
-async def execute_default_file_convert_tool(
-    arguments: Mapping[str, Any] | None,
-) -> dict[str, Any]:
-    payload = dict(arguments or {})
-    file_path = payload.get("path")
-    if not isinstance(file_path, str) or file_path.strip() == "":
-        raise ValueError("path must be a non-empty string")
-    normalized: FileConvertToolResult = {
-        "path": file_path,
-        "suffix": Path(file_path).suffix.lower(),
-        "content": convert_file_to_str(file_path),
-    }
-    return dict(normalized)
-
-
 async def execute_weather_current_tool(
     arguments: Mapping[str, Any] | None,
     *,

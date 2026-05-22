@@ -41,10 +41,6 @@ from .constants import (
     DEFAULT_TOOLSET_NAME,
     DEFAULT_TOOL_AVAILABILITY,
     DEFAULT_TOOL_KIND,
-    FILE_CONVERT_TOOL_DESCRIPTION,
-    FILE_CONVERT_TOOL_DISPLAY_NAME,
-    FILE_CONVERT_TOOL_ID,
-    FILE_CONVERT_TOOL_PROMPT,
     FILE_TOOL_EDIT_DESCRIPTION,
     FILE_TOOL_EDIT_DISPLAY_NAME,
     FILE_TOOL_EDIT_ID,
@@ -96,7 +92,6 @@ from .constants import (
 from .executors import (
     execute_campus_docs_ensure_ready_tool,
     execute_campus_docs_search_tool,
-    execute_default_file_convert_tool,
     execute_default_weather_tool,
     execute_request_user_form_tool,
 )
@@ -272,18 +267,6 @@ def build_default_tool_registry(
                     execute=file_switch_root_binding.execute,
                     function_name=file_switch_root_binding.function_name,
                     parameters_json_schema=file_switch_root_binding.parameters_json_schema,
-                ),
-                ExecutableTool(
-                    descriptor=ToolDescriptor(
-                        tool_id=FILE_CONVERT_TOOL_ID,
-                        kind=DEFAULT_TOOL_KIND,
-                        display_name=FILE_CONVERT_TOOL_DISPLAY_NAME,
-                        description=FILE_CONVERT_TOOL_DESCRIPTION,
-                        availability=DEFAULT_TOOL_AVAILABILITY,
-                        prompt=FILE_CONVERT_TOOL_PROMPT,
-                        presentation=TOOL_PRESENTATION_BY_ID[FILE_CONVERT_TOOL_ID],
-                    ),
-                    execute=execute_default_file_convert_tool,
                 ),
                 ExecutableTool(
                     descriptor=ToolDescriptor(

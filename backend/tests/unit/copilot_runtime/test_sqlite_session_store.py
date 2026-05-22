@@ -98,6 +98,69 @@ def test_sqlite_session_store_persists_history_and_allocates_event_sequences(
         second_store.dispose()
 
 
+def test_sqlite_session_store_projects_cancelled_run_interrupted_draft_from_events(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+
+    first_store = SQLiteSessionStore(db_path=db_path)
+    try:
+        first_store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        first_store.create_run(
+            thread_id="thread-1",
+            run_id="run-cancelled",
+            request=_build_stored_run_input(user_text="please continue"),
+        )
+        first_store.record_run_event(
+            "run-cancelled",
+            event_type="run_started",
+            payload={"assistantMessageId": "run-cancelled:assistant"},
+            sequence=1,
+        )
+        first_store.record_run_event(
+            "run-cancelled",
+            event_type="text_delta",
+            payload={"delta": "partial cancelled draft"},
+            sequence=2,
+        )
+        first_store.mark_run_cancelled(
+            "run-cancelled",
+            metadata={
+                "terminal_event": "run_cancelled",
+                "terminal_payload": {"reason": "cancelled"},
+            },
+        )
+
+        assert [
+            (event.event_type, event.payload)
+            for event in first_store.list_run_events("run-cancelled")
+        ] == [
+            ("run_started", {"assistantMessageId": "run-cancelled:assistant"}),
+            ("text_delta", {"delta": "partial cancelled draft"}),
+        ]
+        assert [
+            (message.role, message.content)
+            for message in first_store.list_messages("thread-1")
+        ] == [
+            ("user", "please continue"),
+            ("assistant", "partial cancelled draft"),
+        ]
+    finally:
+        first_store.dispose()
+
+    second_store = SQLiteSessionStore(db_path=db_path)
+    try:
+        assert [
+            (message.role, message.content)
+            for message in second_store.list_messages("thread-1")
+        ] == [
+            ("user", "please continue"),
+            ("assistant", "partial cancelled draft"),
+        ]
+    finally:
+        second_store.dispose()
+
+
 def test_sqlite_session_store_persists_tool_permission_policy_round_trip(
     tmp_path: Path,
 ) -> None:
@@ -485,6 +548,648 @@ def test_sqlite_session_store_restricts_backup_restore_paths_to_backups_director
         assert restore_result.sourcePath == str(
             (tmp_path / "backups" / "named-backup.bak").resolve()
         )
+    finally:
+        store.dispose()
+
+
+def test_create_thread_and_get_thread_round_trip(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        created = store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        assert created.thread_id == "thread-1"
+        assert created.bound_agent_id == "default"
+
+        retrieved = store.get_thread("thread-1")
+        assert retrieved is not None
+        assert retrieved.thread_id == "thread-1"
+        assert retrieved.bound_agent_id == "default"
+    finally:
+        store.dispose()
+
+
+def test_get_thread_returns_none_for_missing(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        assert store.get_thread("nonexistent") is None
+    finally:
+        store.dispose()
+
+
+def test_create_thread_duplicate_raises(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        with pytest.raises(ValueError, match="Thread 'thread-1' already exists."):
+            store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    finally:
+        store.dispose()
+
+
+def test_create_thread_auto_generates_thread_id(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        created = store.create_thread(bound_agent_id="default")
+        assert created.thread_id.startswith("thread-")
+        assert len(created.thread_id) > len("thread-")
+    finally:
+        store.dispose()
+
+
+def test_create_thread_rejects_empty_bound_agent_id(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        with pytest.raises(ValueError, match="must be a non-empty string"):
+            store.create_thread(bound_agent_id="  ")
+        with pytest.raises(ValueError, match="must be a non-empty string"):
+            store.create_thread(bound_agent_id="")
+    finally:
+        store.dispose()
+
+
+def test_get_or_create_thread_creates_when_missing(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        thread, created = store.get_or_create_thread(
+            thread_id="thread-1", bound_agent_id="default"
+        )
+        assert created is True
+        assert thread.thread_id == "thread-1"
+    finally:
+        store.dispose()
+
+
+def test_get_or_create_thread_returns_existing(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        first, created_first = store.get_or_create_thread(
+            thread_id="thread-1", bound_agent_id="default"
+        )
+        assert created_first is True
+        second, created_second = store.get_or_create_thread(
+            thread_id="thread-1", bound_agent_id="default"
+        )
+        assert created_second is False
+        assert second.thread_id == first.thread_id
+    finally:
+        store.dispose()
+
+
+def test_get_or_create_thread_rejects_bound_agent_mismatch(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.get_or_create_thread(thread_id="thread-1", bound_agent_id="default")
+        with pytest.raises(RuntimeError):
+            store.get_or_create_thread(thread_id="thread-1", bound_agent_id="other-agent")
+    finally:
+        store.dispose()
+
+
+def test_create_run_round_trip(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        created = store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="test message"),
+        )
+        assert created.run_id == "run-1"
+        assert created.thread_id == "thread-1"
+        assert created.request.message_content == "test message"
+        assert created.status == "pending"
+    finally:
+        store.dispose()
+
+
+def test_get_run_returns_none_for_missing(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        assert store.get_run("nonexistent") is None
+    finally:
+        store.dispose()
+
+
+def test_create_run_duplicate_raises(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="first"),
+        )
+        with pytest.raises(ValueError, match="Run 'run-1' already exists."):
+            store.create_run(
+                thread_id="thread-1",
+                run_id="run-1",
+                request=_build_stored_run_input(user_text="second"),
+            )
+    finally:
+        store.dispose()
+
+
+def test_create_run_auto_generates_run_id(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        created = store.create_run(
+            thread_id="thread-1",
+            request=_build_stored_run_input(user_text="test"),
+        )
+        assert created.run_id.startswith("run-")
+    finally:
+        store.dispose()
+
+
+def test_create_run_rejects_empty_thread_id(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        with pytest.raises(ValueError, match="must be a non-empty string"):
+            store.create_run(
+                thread_id="",
+                request=_build_stored_run_input(user_text="test"),
+            )
+    finally:
+        store.dispose()
+
+
+def test_list_runs_returns_correct_order(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="first"),
+        )
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-2",
+            request=_build_stored_run_input(user_text="second"),
+        )
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-3",
+            request=_build_stored_run_input(user_text="third"),
+        )
+
+        runs = store.list_runs("thread-1")
+        assert len(runs) == 3
+        assert [r.run_id for r in runs] == ["run-1", "run-2", "run-3"]
+    finally:
+        store.dispose()
+
+
+def test_list_run_events_returns_empty_for_run_without_events(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="test"),
+        )
+        events = store.list_run_events("run-1")
+        assert events == ()
+    finally:
+        store.dispose()
+
+
+def test_list_run_events_raises_for_missing_run(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        with pytest.raises(LookupError, match="Run 'nonexistent' does not exist."):
+            store.list_run_events("nonexistent")
+    finally:
+        store.dispose()
+
+
+def test_append_run_event_and_retrieve(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="test"),
+        )
+        store.record_run_event(
+            "run-1",
+            event_type="custom_event",
+            payload={"key": "value"},
+        )
+        events = store.list_run_events("run-1")
+        assert len(events) == 1
+        assert events[0].event_type == "custom_event"
+        assert events[0].payload == {"key": "value"}
+        assert events[0].sequence == 1
+    finally:
+        store.dispose()
+
+
+def test_append_multiple_run_events_sequences_increment(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="test"),
+        )
+        store.record_run_event("run-1", event_type="event_a")
+        store.record_run_event("run-1", event_type="event_b")
+        store.record_run_event("run-1", event_type="event_c")
+
+        events = store.list_run_events("run-1")
+        assert len(events) == 3
+        assert [(e.event_type, e.sequence) for e in events] == [
+            ("event_a", 1), ("event_b", 2), ("event_c", 3),
+        ]
+    finally:
+        store.dispose()
+
+
+def test_list_messages_returns_empty_for_missing_thread(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        assert store.list_messages("nonexistent") == ()
+    finally:
+        store.dispose()
+
+
+def test_list_messages_returns_user_and_assistant_messages(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="user request"),
+        )
+        store.record_run_event(
+            "run-1",
+            event_type="run_started",
+            payload={"assistantMessageId": "run-1:assistant"},
+        )
+        store.record_run_event(
+            "run-1",
+            event_type="text_delta",
+            payload={"delta": "assistant reply"},
+        )
+        store.mark_run_completed("run-1", assistant_text="assistant reply")
+
+        messages = store.list_messages("thread-1")
+        assert len(messages) == 2
+        assert [(m.role, m.content) for m in messages] == [
+            ("user", "user request"),
+            ("assistant", "assistant reply"),
+        ]
+    finally:
+        store.dispose()
+
+
+def test_get_latest_run_for_thread(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="first"),
+        )
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-2",
+            request=_build_stored_run_input(user_text="second"),
+        )
+
+        latest = store.get_latest_run_for_thread("thread-1")
+        assert latest is not None
+        assert latest.run_id == "run-2"
+    finally:
+        store.dispose()
+
+
+def test_get_latest_run_for_thread_returns_none_for_missing(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        assert store.get_latest_run_for_thread("nonexistent") is None
+    finally:
+        store.dispose()
+
+
+def test_mark_run_states_transition(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="test"),
+        )
+
+        assert store.get_run("run-1").status == "pending"
+
+        streaming = store.mark_run_streaming("run-1")
+        assert streaming.status == "streaming"
+
+        completed = store.mark_run_completed("run-1", assistant_text="done")
+        assert completed.status == "completed"
+        assert completed.assistant_text == "done"
+    finally:
+        store.dispose()
+
+
+def test_mark_run_failed_state(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="test"),
+        )
+        failed = store.mark_run_failed("run-1")
+        assert failed.status == "failed"
+    finally:
+        store.dispose()
+
+
+def test_mark_run_cancelled_state(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="test"),
+        )
+        cancelled = store.mark_run_cancelled("run-1")
+        assert cancelled.status == "cancelled"
+    finally:
+        store.dispose()
+
+
+def test_touch_run(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        created = store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="test"),
+        )
+        touched = store.touch_run("run-1", metadata={"extra": "data"})
+        assert touched.run_id == created.run_id
+        assert touched.metadata.get("extra") == "data"
+    finally:
+        store.dispose()
+
+
+def test_request_run_cancel(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="test"),
+        )
+        store.mark_run_streaming("run-1")
+        run_record, changed = store.request_run_cancel("run-1")
+        assert changed is True
+        assert run_record.cancel_requested is True
+    finally:
+        store.dispose()
+
+
+def test_request_run_cancel_no_change_when_already_cancelled(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="test"),
+        )
+        run_record, changed = store.request_run_cancel("run-1")
+        assert changed is True
+        _run_record2, changed2 = store.request_run_cancel("run-1")
+        assert changed2 is False
+    finally:
+        store.dispose()
+
+
+def test_delete_thread_removes_from_store(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        result = store.delete_thread("thread-1")
+        assert result.ok is True
+        assert result.threadId == "thread-1"
+        assert store.get_thread("thread-1") is None
+    finally:
+        store.dispose()
+
+
+def test_delete_thread_raises_for_missing(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        with pytest.raises(LookupError, match="Thread 'nonexistent' does not exist."):
+            store.delete_thread("nonexistent")
+    finally:
+        store.dispose()
+
+
+def test_backup_database_creates_backup_file(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        result = store.backup_database()
+        assert result.ok is True
+        assert Path(result.backupPath).is_file()
+        assert result.databasePath == str(store.db_path)
+    finally:
+        store.dispose()
+
+
+def test_backup_database_with_custom_path(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        result = store.backup_database(target_path="custom-backup.db")
+        assert result.ok is True
+        assert Path(result.backupPath).is_file()
+        assert Path(result.backupPath).name == "custom-backup.db"
+    finally:
+        store.dispose()
+
+
+def test_restore_database_rejects_missing_source(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        with pytest.raises(ValueError, match="does not exist"):
+            store.restore_database(source_path="nonexistent-backup.db")
+    finally:
+        store.dispose()
+
+
+def test_create_thread_sets_default_title(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        thread = store.get_thread("thread-1")
+        assert thread is not None
+        assert thread.metadata.get("title") is None
+
+        from app.copilot_runtime.persistence.db import create_session_factory
+        from app.copilot_runtime.persistence.repositories import run_lifecycle_transaction
+
+        session_factory = create_session_factory(store.engine)
+        with run_lifecycle_transaction(session_factory) as repositories:
+            model = repositories.threads.get("thread-1")
+            assert model is not None
+            assert model.title is not None
+    finally:
+        store.dispose()
+
+
+def test_create_thread_assigns_default_chinese_title(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        thread = store.create_thread(bound_agent_id="default")
+        from app.copilot_runtime.persistence.db import create_session_factory
+        from app.copilot_runtime.persistence.repositories import run_lifecycle_transaction
+
+        session_factory = create_session_factory(store.engine)
+        with run_lifecycle_transaction(session_factory) as repositories:
+            model = repositories.threads.get(thread.thread_id)
+            assert model is not None
+            assert model.title == "新话题"
+            assert model.title_source == "deterministic"
+    finally:
+        store.dispose()
+
+
+def test_rename_thread_updates_title_and_source(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        result_id = store.rename_thread("thread-1", title="My New Title")
+        assert result_id == "thread-1"
+        from app.copilot_runtime.persistence.db import create_session_factory
+        from app.copilot_runtime.persistence.repositories import run_lifecycle_transaction
+
+        session_factory = create_session_factory(store.engine)
+        with run_lifecycle_transaction(session_factory) as repositories:
+            model = repositories.threads.get("thread-1")
+            assert model is not None
+            assert model.title == "My New Title"
+            assert model.title_source == "manual"
+    finally:
+        store.dispose()
+
+
+def test_events_preserve_sequence_order(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="order test"),
+        )
+        for i in range(5):
+            store.record_run_event("run-1", event_type=f"event_{i}")
+        events = store.list_run_events("run-1")
+        assert len(events) == 5
+        assert [e.sequence for e in events] == [1, 2, 3, 4, 5]
+        assert [e.event_type for e in events] == ["event_0", "event_1", "event_2", "event_3", "event_4"]
+    finally:
+        store.dispose()
+
+
+def test_create_run_requires_existing_thread(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        with pytest.raises(LookupError, match="Thread 'nonexistent' does not exist."):
+            store.create_run(
+                thread_id="nonexistent",
+                run_id="run-1",
+                request=_build_stored_run_input(user_text="test"),
+            )
+    finally:
+        store.dispose()
+
+
+def test_backup_restore_preserves_all_data(tmp_path: Path) -> None:
+    db_path = tmp_path / "database" / "chat.db"
+    store = SQLiteSessionStore(db_path=db_path)
+    try:
+        store.create_thread(bound_agent_id="default", thread_id="thread-1")
+        store.create_run(
+            thread_id="thread-1",
+            run_id="run-1",
+            request=_build_stored_run_input(user_text="backup roundtrip"),
+        )
+        store.record_run_event("run-1", event_type="run_started")
+        store.record_run_event("run-1", event_type="text_delta", payload={"delta": "preserved"})
+        store.mark_run_completed("run-1", assistant_text="preserved")
+
+        original_threads = store.create_history_query_service().list_threads()
+
+        backup_result = store.backup_database(target_path="roundtrip-bak.db")
+        store.delete_thread("thread-1")
+        store.restore_database(source_path=backup_result.backupPath)
+
+        restored_threads = store.create_history_query_service().list_threads()
+        restored_detail = store.create_history_query_service().get_thread_detail("thread-1")
+        restored_messages = store.list_messages("thread-1")
+
+        assert len(restored_threads.threads) == 1
+        assert restored_threads.threads[0].threadId == "thread-1"
+        assert restored_detail.runSummaries[0].assistantText == "preserved"
+        assert [(m.role, m.content) for m in restored_messages] == [
+            ("user", "backup roundtrip"),
+            ("assistant", "preserved"),
+        ]
     finally:
         store.dispose()
 

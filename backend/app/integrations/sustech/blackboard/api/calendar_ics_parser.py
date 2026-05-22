@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.integrations.sustech.blackboard.api.dto import CalendarEventDTO
 from app.integrations.sustech.blackboard.shared import (
@@ -147,7 +147,11 @@ class BlackboardCalendarICSParser:
             if end_at_raw is None:
                 end_at_raw = start_at_raw
 
-            start_at = to_utc_naive(start_at_raw)
+            start_at = (
+                start_at_raw
+                if start_at_raw.tzinfo is None
+                else start_at_raw.astimezone(UTC).replace(tzinfo=None)
+            )
             end_at = to_utc_naive(end_at_raw)
 
             uid = self.stable_uid(raw_uid, summary, end_at)

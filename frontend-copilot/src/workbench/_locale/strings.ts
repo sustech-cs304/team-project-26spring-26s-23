@@ -13,6 +13,7 @@ const workspaceLabels: Record<WorkbenchLanguage, Record<WorkspaceView, string>> 
     assistant: '助手',
     capabilities: '能力',
     files: '文件',
+    sustech: 'SUSTech',
     developer: '开发',
     settings: '设置',
   },
@@ -20,6 +21,7 @@ const workspaceLabels: Record<WorkbenchLanguage, Record<WorkspaceView, string>> 
     assistant: 'Assistant',
     capabilities: 'Capabilities',
     files: 'Files',
+    sustech: 'SUSTech',
     developer: 'Developer',
     settings: 'Settings',
   },
@@ -32,11 +34,9 @@ const settingsSectionLabels: Record<WorkbenchLanguage, Record<SettingsSection, s
     'default-model': '默认模型',
     general: '常规设置',
     display: '显示设置',
-    data: '数据设置',
-    mcp: 'MCP 服务器',
-    search: '网络搜索',
-    memory: '全局记忆',
     api: 'API 服务器',
+    search: '搜索设置',
+    mcp: 'MCP 设置',
     docs: '文档处理',
     'external-source': '外部源',
   },
@@ -46,11 +46,9 @@ const settingsSectionLabels: Record<WorkbenchLanguage, Record<SettingsSection, s
     'default-model': 'Default Models',
     general: 'General',
     display: 'Display',
-    data: 'Data',
-    mcp: 'MCP Servers',
-    search: 'Web Search',
-    memory: 'Memory',
     api: 'API Server',
+    search: 'Search Settings',
+    mcp: 'MCP Settings',
     docs: 'Document Processing',
     'external-source': 'External Sources',
   },
@@ -82,27 +80,21 @@ const settingsShellCopy: Record<WorkbenchLanguage, {
 const generalSettingsCopy: Record<WorkbenchLanguage, {
   title: string
   languageLabel: string
-  proxyModeLabel: string
   notificationsLabel: string
-  backupLabel: string
   debugModeLabel: string
   debugModeDescription: string
 }> = {
   'zh-CN': {
     title: '常规设置',
     languageLabel: '界面语言',
-    proxyModeLabel: '代理模式',
     notificationsLabel: '助手消息通知',
-    backupLabel: '自动备份',
     debugModeLabel: '启用调试模式',
     debugModeDescription: '开启后会显示更多问题排查信息。',
   },
   'en-US': {
     title: 'General Settings',
     languageLabel: 'Interface Language',
-    proxyModeLabel: 'Proxy Mode',
     notificationsLabel: 'Assistant Notifications',
-    backupLabel: 'Automatic Backup',
     debugModeLabel: 'Enable Debug Mode',
     debugModeDescription: 'Show more diagnostics and troubleshooting details.',
   },
@@ -131,9 +123,10 @@ const sustechInfoCopy: Record<WorkbenchLanguage, {
   casPasswordLabel: string
   casPasswordPlaceholder: string
   blackboardInfoTitle: string
-  autoDownloadLabel: string
-  downloadLimitLabel: string
-  downloadLimitDescription: string
+  currentTermOnlyLabel: string
+  currentTermOnlyDescription: string
+  parallelSyncWorkersLabel: string
+  parallelSyncWorkersDescription: string
   tisInfoTitle: string
   comingSoon: string
 }> = {
@@ -146,9 +139,10 @@ const sustechInfoCopy: Record<WorkbenchLanguage, {
     casPasswordLabel: 'CAS 密码',
     casPasswordPlaceholder: '输入 CAS 密码',
     blackboardInfoTitle: 'Blackboard 信息',
-    autoDownloadLabel: '自动下载 Blackboard 文件',
-    downloadLimitLabel: '下载文件大小限制（MB）',
-    downloadLimitDescription: '0为不限制',
+    currentTermOnlyLabel: '仅抓取本学期课程（推荐）',
+    currentTermOnlyDescription: '勾选后会按当前时间识别学期，仅同步 Blackboard 中属于当前学期的课程。',
+    parallelSyncWorkersLabel: '并行 Blackboard 更新线程',
+    parallelSyncWorkersDescription: '可填写 1~6，建议按网络与设备性能逐步调高。',
     tisInfoTitle: 'TIS 信息',
     comingSoon: '敬请期待',
   },
@@ -161,37 +155,12 @@ const sustechInfoCopy: Record<WorkbenchLanguage, {
     casPasswordLabel: 'CAS Password',
     casPasswordPlaceholder: 'Enter CAS password',
     blackboardInfoTitle: 'Blackboard Information',
-    autoDownloadLabel: 'Download Blackboard files automatically',
-    downloadLimitLabel: 'Download Size Limit (MB)',
-    downloadLimitDescription: '0 means unlimited',
+    currentTermOnlyLabel: 'Only sync current-term courses (recommended)',
+    currentTermOnlyDescription: 'When enabled, the sync flow uses the current date to keep only Blackboard courses that belong to the current term.',
+    parallelSyncWorkersLabel: 'Parallel Blackboard Update Workers',
+    parallelSyncWorkersDescription: 'Enter a value from 1 to 6 and increase gradually based on network and device performance.',
     tisInfoTitle: 'TIS Information',
     comingSoon: 'Coming soon',
-  },
-}
-
-const dataSettingsCopy: Record<WorkbenchLanguage, {
-  title: string
-  dataPathLabel: string
-  dataPathPlaceholder: string
-  backupCycleLabel: string
-  backupEnabledLabel: string
-  launchSyncLabel: string
-}> = {
-  'zh-CN': {
-    title: '数据设置',
-    dataPathLabel: '数据目录',
-    dataPathPlaceholder: '输入本地目录',
-    backupCycleLabel: '备份周期',
-    backupEnabledLabel: '启用自动备份',
-    launchSyncLabel: '启动时同步',
-  },
-  'en-US': {
-    title: 'Data Settings',
-    dataPathLabel: 'Data Directory',
-    dataPathPlaceholder: 'Enter local directory',
-    backupCycleLabel: 'Backup Cycle',
-    backupEnabledLabel: 'Enable Automatic Backup',
-    launchSyncLabel: 'Sync on Launch',
   },
 }
 
@@ -224,43 +193,29 @@ const defaultModelRoutesCopy: Record<WorkbenchLanguage, {
   },
 }
 
-const mcpSettingsCopy: Record<WorkbenchLanguage, {
+const dataSettingsCopy: Record<WorkbenchLanguage, {
   title: string
-  permissionStrategyLabel: string
-  autoDiscoveryLabel: string
+  dataPathLabel: string
+  dataPathPlaceholder: string
+  backupCycleLabel: string
+  backupEnabledLabel: string
+  launchSyncLabel: string
 }> = {
   'zh-CN': {
-    title: 'MCP 服务器',
-    permissionStrategyLabel: '工具权限策略',
-    autoDiscoveryLabel: '自动发现 MCP 服务',
+    title: '数据设置',
+    dataPathLabel: '数据目录',
+    dataPathPlaceholder: '选择或输入本地数据目录',
+    backupCycleLabel: '备份周期',
+    backupEnabledLabel: '启用自动备份',
+    launchSyncLabel: '启动时同步数据',
   },
   'en-US': {
-    title: 'MCP Servers',
-    permissionStrategyLabel: 'Tool Permission Policy',
-    autoDiscoveryLabel: 'Auto-discover MCP services',
-  },
-}
-
-const searchSettingsCopy: Record<WorkbenchLanguage, {
-  providerTitle: string
-  defaultEngineLabel: string
-  resultCountLabel: string
-  configTitle: string
-  compressionLabel: string
-}> = {
-  'zh-CN': {
-    providerTitle: '搜索服务商',
-    defaultEngineLabel: '默认搜索引擎',
-    resultCountLabel: '结果数量',
-    configTitle: '网络搜索配置',
-    compressionLabel: '压缩方式',
-  },
-  'en-US': {
-    providerTitle: 'Search Provider',
-    defaultEngineLabel: 'Default Search Engine',
-    resultCountLabel: 'Result Count',
-    configTitle: 'Web Search Configuration',
-    compressionLabel: 'Compression Mode',
+    title: 'Data Settings',
+    dataPathLabel: 'Data directory',
+    dataPathPlaceholder: 'Choose or enter local data directory',
+    backupCycleLabel: 'Backup cycle',
+    backupEnabledLabel: 'Enable automatic backup',
+    launchSyncLabel: 'Sync data on launch',
   },
 }
 
@@ -270,14 +225,14 @@ const memorySettingsCopy: Record<WorkbenchLanguage, {
   cleanupLabel: string
 }> = {
   'zh-CN': {
-    title: '全局记忆',
+    title: '记忆设置',
     strategyLabel: '记忆策略',
-    cleanupLabel: '自动清理陈旧记忆',
+    cleanupLabel: '自动清理过期记忆',
   },
   'en-US': {
-    title: 'Memory',
-    strategyLabel: 'Memory Strategy',
-    cleanupLabel: 'Automatically clean stale memory',
+    title: 'Memory Settings',
+    strategyLabel: 'Memory strategy',
+    cleanupLabel: 'Clean up stale memory automatically',
   },
 }
 
@@ -291,87 +246,124 @@ const apiSettingsCopy: Record<WorkbenchLanguage, {
   apiBaseUrlLabel: string
   reconnectPolicyLabel: string
   healthPollingLabel: string
-  bootstrapStatusLabels: Record<
-    'loading' | 'empty' | 'incomplete' | 'starting' | 'ready' | 'failed' | 'degraded' | 'error',
-    string
-  >
   bootstrapRetryLabels: {
     retrying: string
     idle: string
+  }
+  bootstrapStatusLabels: {
+    loading: string
+    empty: string
+    incomplete: string
+    starting: string
+    ready: string
+    failed: string
+    degraded: string
+    error: string
   }
 }> = {
   'zh-CN': {
     title: 'API 服务器',
     summaryTitle: '根层启动摘要',
     currentStatusLabel: '当前状态',
-    retryActionLabel: '重试动作',
-    retryingText: '正在重试…',
-    retryIdleText: '重试读取运行态',
-    apiBaseUrlLabel: '后端地址',
+    retryActionLabel: '重连状态',
+    retryingText: '正在重新连接…',
+    retryIdleText: '重新连接服务',
+    apiBaseUrlLabel: '运行时覆盖地址',
     reconnectPolicyLabel: '重连策略',
     healthPollingLabel: '启用健康检查轮询',
-    bootstrapStatusLabels: {
-      loading: '根层读取中',
-      empty: '尚未配置',
-      incomplete: '配置缺失',
-      starting: '宿主启动中',
-      ready: '运行态已就绪',
-      failed: '宿主启动失败',
-      degraded: '运行态降级',
-      error: '读取失败',
-    },
     bootstrapRetryLabels: {
-      retrying: '根层重试中',
-      idle: '由根层统一持有',
+      retrying: '重试中',
+      idle: '空闲',
+    },
+    bootstrapStatusLabels: {
+      loading: '加载中',
+      empty: '未配置',
+      incomplete: '配置不完整',
+      starting: '启动中',
+      ready: '就绪',
+      failed: '启动失败',
+      degraded: '降级运行',
+      error: '错误',
     },
   },
   'en-US': {
     title: 'API Server',
-    summaryTitle: 'Root Bootstrap Summary',
-    currentStatusLabel: 'Current Status',
-    retryActionLabel: 'Retry Action',
-    retryingText: 'Retrying…',
-    retryIdleText: 'Retry runtime bootstrap',
-    apiBaseUrlLabel: 'Backend URL',
-    reconnectPolicyLabel: 'Reconnect Policy',
+    summaryTitle: 'Root startup summary',
+    currentStatusLabel: 'Current status',
+    retryActionLabel: 'Reconnect state',
+    retryingText: 'Reconnecting…',
+    retryIdleText: 'Reconnect service',
+    apiBaseUrlLabel: 'Runtime override URL',
+    reconnectPolicyLabel: 'Reconnect policy',
     healthPollingLabel: 'Enable health polling',
-    bootstrapStatusLabels: {
-      loading: 'Root loading',
-      empty: 'Not configured',
-      incomplete: 'Configuration missing',
-      starting: 'Host starting',
-      ready: 'Runtime ready',
-      failed: 'Host startup failed',
-      degraded: 'Runtime degraded',
-      error: 'Load failed',
-    },
     bootstrapRetryLabels: {
-      retrying: 'Root retry in progress',
-      idle: 'Managed by the root shell',
+      retrying: 'Retrying',
+      idle: 'Idle',
     },
+    bootstrapStatusLabels: {
+      loading: 'Loading',
+      empty: 'Not configured',
+      incomplete: 'Incomplete',
+      starting: 'Starting',
+      ready: 'Ready',
+      failed: 'Failed',
+      degraded: 'Degraded',
+      error: 'Error',
+    },
+  },
+}
+
+const searchSettingsCopy: Record<WorkbenchLanguage, {
+  providerTitle: string
+  defaultEngineLabel: string
+  resultCountLabel: string
+  configTitle: string
+  compressionLabel: string
+}> = {
+  'zh-CN': {
+    providerTitle: '搜索设置',
+    defaultEngineLabel: '默认搜索引擎',
+    resultCountLabel: '默认结果数量',
+    configTitle: '结果处理',
+    compressionLabel: '压缩策略',
+  },
+  'en-US': {
+    providerTitle: 'Search Settings',
+    defaultEngineLabel: 'Default search engine',
+    resultCountLabel: 'Default result count',
+    configTitle: 'Result processing',
+    compressionLabel: 'Compression strategy',
+  },
+}
+
+const mcpSettingsCopy: Record<WorkbenchLanguage, {
+  title: string
+  permissionStrategyLabel: string
+  autoDiscoveryLabel: string
+}> = {
+  'zh-CN': {
+    title: 'MCP 设置',
+    permissionStrategyLabel: '工具权限策略',
+    autoDiscoveryLabel: '自动发现 MCP 服务',
+  },
+  'en-US': {
+    title: 'MCP Settings',
+    permissionStrategyLabel: 'Tool permission strategy',
+    autoDiscoveryLabel: 'Auto-discover MCP servers',
   },
 }
 
 const docsSettingsCopy: Record<WorkbenchLanguage, {
   title: string
   formatLabel: string
-  outputDirectoryLabel: string
-  outputDirectoryPlaceholder: string
-  autoFileNameLabel: string
 }> = {
   'zh-CN': {
     title: '文档处理',
     formatLabel: '默认导出格式',
-    outputDirectoryLabel: '输出目录',
-    outputDirectoryPlaceholder: '输入导出目录',
-    autoFileNameLabel: '自动生成文件名',
   },
   'en-US': {
     title: 'Document Processing',
     formatLabel: 'Default Export Format',
-    outputDirectoryLabel: 'Output Directory',
-    outputDirectoryPlaceholder: 'Enter export directory',
-    autoFileNameLabel: 'Generate file names automatically',
   },
 }
 
@@ -379,11 +371,22 @@ const externalSourcesCopy: Record<WorkbenchLanguage, {
   title: string
   linkLabel: string
   linkPlaceholder: string
+  importIcsButton: string
+  importIcsAriaLabel: string
+  icsLoadedHint: string
+  icsEmptyHint: string
   parseLinkAriaLabel: string
   dialogAriaLabel: string
   dialogTitle: string
   closeDialogAriaLabel: string
   parseFailureText: string
+  parseFailureSeparator: string
+  importSuccessText: (parsed: number) => string
+  missingIcsError: string
+  invalidIcsError: string
+  desktopRuntimeUnavailableError: string
+  importFailedFallbackError: string
+  emptyParsedEventsError: string
   keepWakeupButton: string
   keepTisButton: string
   smartResolveButton: string
@@ -392,12 +395,23 @@ const externalSourcesCopy: Record<WorkbenchLanguage, {
   'zh-CN': {
     title: 'WakeUP 课程群同步',
     linkLabel: 'WakeUP 分享链接',
-    linkPlaceholder: '输入 WakeUP 分享链接',
+    linkPlaceholder: '输入 WakeUP 分享链接或导入 .ics',
+    importIcsButton: '导入 .ics 文件',
+    importIcsAriaLabel: '导入 WakeUP .ics 文件',
+    icsLoadedHint: '已加载 .ics 内容',
+    icsEmptyHint: '未选择 .ics 文件',
     parseLinkAriaLabel: '解析链接',
     dialogAriaLabel: 'WakeUP 链接解析',
     dialogTitle: '解析链接',
     closeDialogAriaLabel: '关闭解析弹窗',
     parseFailureText: '解析未成功',
+    parseFailureSeparator: '：',
+    importSuccessText: (parsed) => `已导入 ${parsed} 条事件`,
+    missingIcsError: '未选择 .ics 文件',
+    invalidIcsError: '不是有效的 .ics 内容',
+    desktopRuntimeUnavailableError: '桌面运行时 IPC 不可用',
+    importFailedFallbackError: '导入失败',
+    emptyParsedEventsError: '未解析到任何事件',
     keepWakeupButton: '保留 WakeUP版本',
     keepTisButton: '保留 TIS 版本',
     smartResolveButton: '尝试智能解析',
@@ -406,12 +420,23 @@ const externalSourcesCopy: Record<WorkbenchLanguage, {
   'en-US': {
     title: 'WakeUP Course Sync',
     linkLabel: 'WakeUP Share Link',
-    linkPlaceholder: 'Enter WakeUP share link',
+    linkPlaceholder: 'Enter WakeUP share link or import .ics',
+    importIcsButton: 'Import .ics file',
+    importIcsAriaLabel: 'Import WakeUP .ics file',
+    icsLoadedHint: 'Loaded .ics content',
+    icsEmptyHint: 'No .ics file selected',
     parseLinkAriaLabel: 'Parse link',
     dialogAriaLabel: 'WakeUP link parsing',
     dialogTitle: 'Parse Link',
     closeDialogAriaLabel: 'Close parsing dialog',
     parseFailureText: 'Parsing failed',
+    parseFailureSeparator: ': ',
+    importSuccessText: (parsed) => `Imported ${parsed} ${parsed === 1 ? 'event' : 'events'}`,
+    missingIcsError: 'No .ics file selected',
+    invalidIcsError: 'The selected file is not valid .ics content',
+    desktopRuntimeUnavailableError: 'Desktop runtime IPC is unavailable',
+    importFailedFallbackError: 'Import failed',
+    emptyParsedEventsError: 'No events were parsed',
     keepWakeupButton: 'Keep WakeUP version',
     keepTisButton: 'Keep TIS version',
     smartResolveButton: 'Try smart merge',
@@ -1064,16 +1089,16 @@ const workbenchShellCopy: Record<WorkbenchLanguage, {
   reloadPage: string
 }> = {
   'zh-CN': {
-    railAriaLabel: '主图标栏',
-    workspaceLoadFailureDescription: '当前工作区模块未能完成懒加载或渲染，但工作台外壳仍保持可解释失败态，不会退化为纯白屏。',
-    retryCurrentWorkspace: '重试当前工作区',
-    switchBackToAssistant: '切换回助手工作区',
+    railAriaLabel: '导航栏',
+    workspaceLoadFailureDescription: '当前页面加载失败，请尝试切换到其他页面或重试。',
+    retryCurrentWorkspace: '重试当前页面',
+    switchBackToAssistant: '切换回助手页面',
     reloadPage: '重新加载页面',
   },
   'en-US': {
-    railAriaLabel: 'Primary workspace rail',
-    workspaceLoadFailureDescription: 'The current workspace module failed to lazy-load or render, but the workbench shell stays visible with an explainable failure state instead of a blank screen.',
-    retryCurrentWorkspace: 'Retry current workspace',
+    railAriaLabel: 'Navigation bar',
+    workspaceLoadFailureDescription: 'The current page failed to load. Please try switching to another page or retry.',
+    retryCurrentWorkspace: 'Retry current page',
     switchBackToAssistant: 'Switch back to Assistant',
     reloadPage: 'Reload page',
   },
@@ -1083,99 +1108,95 @@ const workspaceMetaByLanguage: Record<WorkbenchLanguage, Record<WorkspaceView, {
   'zh-CN': {
     assistant: {
       label: '助手',
-      loadingDescription: '助手工作区已从工作台壳拆分为独立懒加载模块；当前仅加载默认首屏所需代码。',
+      loadingDescription: '正在加载助手页面…',
     },
     settings: {
       label: '设置',
-      loadingDescription: '设置工作区已从入口壳层剥离，仅在切换到设置时再按需加载。',
+      loadingDescription: '正在加载设置页面…',
     },
     capabilities: {
       label: '能力',
-      loadingDescription: '能力工作区模块正在按需加载，不再与默认助手首屏共同打包在一个超级入口文件中。',
+      loadingDescription: '正在加载能力页面…',
     },
     files: {
       label: '文件',
-      loadingDescription: '文件工作区模块正在按需加载，以缩短默认首屏装配链。',
+      loadingDescription: '正在加载文件管理页面…',
+    },
+    sustech: {
+      label: 'SUSTech',
+      loadingDescription: '正在加载 SUSTech 页面…',
     },
     developer: {
-      label: '开发',
-      loadingDescription: '开发工作区模块正在按需加载，避免与默认助手首屏形成死耦合。',
+      label: '日历',
+      loadingDescription: '正在加载日历页面…',
     },
   },
   'en-US': {
     assistant: {
       label: 'Assistant',
-      loadingDescription: 'The assistant workspace is split into a standalone lazy-loaded module so the default first screen only loads what it immediately needs.',
+      loadingDescription: 'Loading assistant page…',
     },
     settings: {
       label: 'Settings',
-      loadingDescription: 'The settings workspace is split out of the entry shell and is loaded on demand only when the user switches to it.',
+      loadingDescription: 'Loading settings page…',
     },
     capabilities: {
       label: 'Capabilities',
-      loadingDescription: 'The capabilities workspace is loaded on demand instead of being bundled together with the default assistant first screen in one oversized entry module.',
+      loadingDescription: 'Loading capabilities page…',
     },
     files: {
       label: 'Files',
-      loadingDescription: 'The files workspace is loaded on demand to shorten the default first-screen bootstrap chain.',
+      loadingDescription: 'Loading file management page…',
+    },
+    sustech: {
+      label: 'SUSTech',
+      loadingDescription: 'Loading SUSTech page…',
     },
     developer: {
-      label: 'Developer',
-      loadingDescription: 'The developer workspace is loaded on demand to avoid hard-coupling it with the default assistant first screen.',
+      label: 'Calendar',
+      loadingDescription: 'Loading calendar page…',
     },
   },
 }
 
 const hubWorkspaceContentByLanguage: Record<WorkbenchLanguage, Record<HubWorkspaceView, HubWorkspaceContent>> = {
   'zh-CN': {
-    files: {
-      eyebrow: '文件工作区',
-      title: '知识文件与资料入口',
-      panelTitle: '文件分区',
-      spotlightTitle: '课程资料与上下文挂载',
-      highlights: ['课程资料库', '会话附件管理', '知识索引与标签'],
-      entries: [
-        { id: 'files-courseware', title: '课程课件目录' },
-        { id: 'files-notes', title: '个人笔记区' },
-        { id: 'files-attachments', title: '对话附件' },
-      ],
-    },
     developer: {
-      eyebrow: '开发工作台',
-      title: '开发任务与联调面板',
-      panelTitle: '开发活动',
-      spotlightTitle: '代码实现与验证流程',
-      highlights: ['任务队列', '构建与测试反馈', '提交与发布记录'],
+      eyebrow: '日历工作台',
+      title: '统一日历与时间轴',
+      panelTitle: '事件源筛选',
+      spotlightTitle: '统一事件视图',
+      highlights: ['全部', 'bb', '课程', '自定义'],
       entries: [
-        { id: 'dev-tasks', title: '实现任务看板' },
-        { id: 'dev-builds', title: '构建与验证' },
-        { id: 'dev-history', title: '变更历史' },
+        { id: 'calendar-all', title: '全部' },
+        { id: 'calendar-bb', title: 'bb' },
+        { id: 'calendar-course', title: '课程' },
+        { id: 'calendar-custom', title: '自定义' },
+      ],
+      sections: [
+        { id: 'calendar-timeline', title: '时间轴视图' },
+        { id: 'calendar-list', title: '列表视图' },
+        { id: 'calendar-summary', title: '事件概览' },
       ],
     },
   },
   'en-US': {
-    files: {
-      eyebrow: 'Files',
-      title: 'Knowledge Files and Resource Entry',
-      panelTitle: 'File Areas',
-      spotlightTitle: 'Course Resources and Context Mounting',
-      highlights: ['Course material library', 'Session attachment management', 'Knowledge indexing and tags'],
-      entries: [
-        { id: 'files-courseware', title: 'Course Material Directory' },
-        { id: 'files-notes', title: 'Personal Notes' },
-        { id: 'files-attachments', title: 'Conversation Attachments' },
-      ],
-    },
     developer: {
-      eyebrow: 'Developer',
-      title: 'Development Tasks and Integration Panel',
-      panelTitle: 'Development Activity',
-      spotlightTitle: 'Code Delivery and Validation Flow',
-      highlights: ['Task queue', 'Build and validation feedback', 'Commit and release history'],
+      eyebrow: 'Calendar Workspace',
+      title: 'Unified Calendar and Timeline',
+      panelTitle: 'Source Filters',
+      spotlightTitle: 'Unified Event View',
+      highlights: ['All', 'bb', 'Courses', 'Custom'],
       entries: [
-        { id: 'dev-tasks', title: 'Implementation Board' },
-        { id: 'dev-builds', title: 'Builds and Validation' },
-        { id: 'dev-history', title: 'Change History' },
+        { id: 'calendar-all', title: 'All' },
+        { id: 'calendar-bb', title: 'bb' },
+        { id: 'calendar-course', title: 'Courses' },
+        { id: 'calendar-custom', title: 'Custom' },
+      ],
+      sections: [
+        { id: 'calendar-timeline', title: 'Timeline View' },
+        { id: 'calendar-list', title: 'List View' },
+        { id: 'calendar-summary', title: 'Event Summary' },
       ],
     },
   },
@@ -1195,8 +1216,6 @@ export {
   externalSourcesCopy,
   generalSettingsCopy,
   hubWorkspaceContentByLanguage,
-  mcpSettingsCopy,
-  memorySettingsCopy,
   providerContextMenuCopy,
   providerDetailsCopy,
   providerListCopy,
@@ -1204,6 +1223,8 @@ export {
   providerModelListCopy,
   providerSecretCopy,
   providerSecretsFeedbackCopy,
+  mcpSettingsCopy,
+  memorySettingsCopy,
   searchSettingsCopy,
   settingsSectionLabels,
   settingsShellCopy,

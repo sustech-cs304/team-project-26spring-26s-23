@@ -8,6 +8,13 @@ import type { ManagedRuntimeSnapshot } from '../../../electron/managed-runtime/t
 import { clickElement, renderWithRoot, waitForNextFrame } from '../settings/test-support/SettingsWorkspaceTestSupport'
 import { useManagedRuntime } from './use-managed-runtime'
 
+// Duplicate-string constants extracted for sonarjs/no-duplicate-string
+const LABEL_MANAGED_RUNTIME = 'managed-runtime-uv-status'
+const LABEL_MANAGED_RUNTIME_2 = 'managed-runtime-uv-version'
+const LABEL_MANAGED_RUNTIME_OVERALL = 'managed-runtime-overall-status'
+const LABEL_PYTHON = 'python-3.12.10_uv-0.11.7'
+
+
 const OUTDATED_SNAPSHOT: ManagedRuntimeSnapshot = {
   manifestVersion: 1,
   overallStatus: 'outdated',
@@ -35,7 +42,7 @@ const OUTDATED_SNAPSHOT: ManagedRuntimeSnapshot = {
       family: 'uv',
       status: 'outdated',
       pinnedVersion: 'python-3.12.13_uv-0.11.7',
-      activeVersion: 'python-3.12.10_uv-0.11.7',
+      activeVersion: LABEL_PYTHON,
       updateRecommended: true,
       installRootDir: 'uv/install',
       stagingDir: 'uv/staging',
@@ -78,9 +85,9 @@ function ManagedRuntimeProbe({ enabled }: { enabled: boolean }) {
       <span data-testid="managed-runtime-loading">{String(state.loading)}</span>
       <span data-testid="managed-runtime-busy">{String(state.busy)}</span>
       <span data-testid="managed-runtime-has-snapshot">{String(state.snapshot !== null)}</span>
-      <span data-testid="managed-runtime-overall-status">{state.snapshot?.overallStatus ?? ''}</span>
-      <span data-testid="managed-runtime-uv-status">{state.snapshot?.families.uv.status ?? ''}</span>
-      <span data-testid="managed-runtime-uv-version">{state.snapshot?.families.uv.activeVersion ?? ''}</span>
+      <span data-testid={LABEL_MANAGED_RUNTIME_OVERALL}>{state.snapshot?.overallStatus ?? ''}</span>
+      <span data-testid={LABEL_MANAGED_RUNTIME}>{state.snapshot?.families.uv.status ?? ''}</span>
+      <span data-testid={LABEL_MANAGED_RUNTIME_2}>{state.snapshot?.families.uv.activeVersion ?? ''}</span>
       <button type="button" onClick={() => void state.refresh()}>refresh</button>
       <button type="button" onClick={() => void state.installOrRepair()}>install-or-repair</button>
     </div>
@@ -126,9 +133,9 @@ describe('useManagedRuntime', () => {
       await Promise.resolve()
     })
 
-    expect(rendered.getByTestId('managed-runtime-overall-status').textContent).toBe('outdated')
-    expect(rendered.getByTestId('managed-runtime-uv-status').textContent).toBe('outdated')
-    expect(rendered.getByTestId('managed-runtime-uv-version').textContent).toBe('python-3.12.10_uv-0.11.7')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME_OVERALL).textContent).toBe('outdated')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME).textContent).toBe('outdated')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME_2).textContent).toBe(LABEL_PYTHON)
 
     await act(async () => {
       await clickElement(rendered.getByText('install-or-repair'))
@@ -137,9 +144,9 @@ describe('useManagedRuntime', () => {
     })
 
     expect(rendered.getByTestId('managed-runtime-error').textContent).toBe('')
-    expect(rendered.getByTestId('managed-runtime-overall-status').textContent).toBe('ready')
-    expect(rendered.getByTestId('managed-runtime-uv-status').textContent).toBe('ready')
-    expect(rendered.getByTestId('managed-runtime-uv-version').textContent).toBe('python-3.12.13_uv-0.11.7')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME_OVERALL).textContent).toBe('ready')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME).textContent).toBe('ready')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME_2).textContent).toBe('python-3.12.13_uv-0.11.7')
 
     rendered.unmount()
   })
@@ -160,9 +167,9 @@ describe('useManagedRuntime', () => {
       await Promise.resolve()
     })
 
-    expect(rendered.getByTestId('managed-runtime-overall-status').textContent).toBe('outdated')
-    expect(rendered.getByTestId('managed-runtime-uv-status').textContent).toBe('outdated')
-    expect(rendered.getByTestId('managed-runtime-uv-version').textContent).toBe('python-3.12.10_uv-0.11.7')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME_OVERALL).textContent).toBe('outdated')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME).textContent).toBe('outdated')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME_2).textContent).toBe(LABEL_PYTHON)
 
     await act(async () => {
       await clickElement(rendered.getByText('install-or-repair'))
@@ -171,9 +178,9 @@ describe('useManagedRuntime', () => {
     })
 
     expect(rendered.getByTestId('managed-runtime-error').textContent).toBe('repair failed')
-    expect(rendered.getByTestId('managed-runtime-overall-status').textContent).toBe('outdated')
-    expect(rendered.getByTestId('managed-runtime-uv-status').textContent).toBe('outdated')
-    expect(rendered.getByTestId('managed-runtime-uv-version').textContent).toBe('python-3.12.10_uv-0.11.7')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME_OVERALL).textContent).toBe('outdated')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME).textContent).toBe('outdated')
+    expect(rendered.getByTestId(LABEL_MANAGED_RUNTIME_2).textContent).toBe(LABEL_PYTHON)
 
     rendered.unmount()
   })

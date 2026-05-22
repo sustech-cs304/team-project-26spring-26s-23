@@ -66,7 +66,7 @@ def test_debug_log_routes_require_local_token_and_support_recent_list_detail_and
         )
 
     assert unauthorized.status_code == 401
-    assert unauthorized.json()["detail"]["code"] == "invalid_local_token"
+    assert unauthorized.json()["detail"]["code"] == "missing_local_token"
 
     assert recent.status_code == 200
     assert recent_payload["ok"] is True
@@ -129,7 +129,7 @@ def test_debug_log_routes_expose_protected_maintenance_status(tmp_path: Path) ->
         )
 
     assert unauthorized.status_code == 401
-    assert unauthorized.json()["detail"]["code"] == "invalid_local_token"
+    assert unauthorized.json()["detail"]["code"] == "missing_local_token"
 
     payload = authorized.json()
     assert authorized.status_code == 200

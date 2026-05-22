@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import closing
 from typing import Literal, TypedDict, cast
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -14,8 +15,10 @@ from app.copilot_runtime.agent_registry import (
 )
 from app.copilot_runtime.bridge import (
     AgentNotFoundError,
+    RunNotFoundError,
     RuntimeBridge,
     SessionNotFoundError,
+    ThreadNotFoundError,
 )
 from app.copilot_runtime.contracts import (
     RuntimeMessageExecutionPolicy,
@@ -27,7 +30,12 @@ from app.copilot_runtime.contracts import (
     RuntimeToolPermissionPolicy,
     build_runtime_scaffold,
 )
-from app.copilot_runtime.model_routes import RuntimeModelRoute, RuntimeModelRouteRef
+from app.copilot_runtime.model_routes import (
+    ResolvedRuntimeModelRoute,
+    RuntimeModelRoute,
+    RuntimeModelRouteRef,
+    RuntimeModelRouteResolver,
+)
 from app.copilot_runtime.run_events import (
     RUN_CANCELLED_EVENT_TYPE,
     RUN_COMPLETED_EVENT_TYPE,
@@ -305,7 +313,7 @@ def test_resolve_tool_approval_calls_coordinator_and_builds_response() -> None:
         approval_coordinator.create_request(
             run_id="run-approve",
             tool_call_id="call-approve",
-            tool_id="tool.file-convert",
+            tool_id="tool.fs.read",
             mode="ask",
         )
 
@@ -325,7 +333,7 @@ def test_resolve_tool_approval_calls_coordinator_and_builds_response() -> None:
     assert payload["status"] == "approved"
     assert payload["source"] == "manual"
     assert payload["details"] == {
-        "toolId": "tool.file-convert",
+        "toolId": "tool.fs.read",
         "mode": "ask",
     }
     assert payload["resolvedAt"]
@@ -712,7 +720,10 @@ def test_stream_run_honors_cancel_requested_state_for_started_runs() -> None:
     ]
     assert updated_run.status == "cancelled"
     assert updated_run.cancel_requested is True
-    assert store.list_messages("thread-1") == ()
+    assert [(message.role, message.content) for message in store.list_messages("thread-1")] == [
+        ("user", "Hello"),
+        ("assistant", "partial"),
+    ]
 
 
 def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> None:
@@ -731,13 +742,13 @@ def test_get_capabilities_returns_tool_catalog_recommendations_and_version() -> 
     assert capabilities.sessionId == thread.thread_id
     assert capabilities.boundAgent.agentId == "default"
     assert capabilities.toolSelectionMode == "recommendation-only"
-    assert capabilities.recommendedTools == ("tool.file-convert",)
+    assert capabilities.recommendedTools == ("tool.fs.read",)
     assert capabilities.capabilitiesVersion == "capabilities:agents-v1:tools-v1"
     tool_ids = {tool.toolId for tool in capabilities.tools}
-    assert "tool.file-convert" in tool_ids
+    assert "tool.fs.read" in tool_ids
     assert any(
-        tool.toolId == "tool.file-convert"
-        and tool.displayName in {"File Convert", "文件转换"}
+        tool.toolId == "tool.fs.read"
+        and tool.displayName in {"File Read", "文件读取"}
         for tool in capabilities.tools
     )
 
@@ -836,3 +847,290 @@ def _build_run_start_request(
         ),
         agent_id="default",
     )
+
+
+class _FakeModelRouteResolver:
+    def __init__(self, resolved_route: ResolvedRuntimeModelRoute) -> None:
+        self._resolved_route = resolved_route
+
+    async def resolve(
+        self, model_route: RuntimeModelRoute
+    ) -> ResolvedRuntimeModelRoute:
+        return self._resolved_route
+
+
+def test_create_thread_happy_path() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    thread = bridge.create_thread(agent_id="default")
+    assert thread.bound_agent_id == "default"
+    stored = store.get_thread(thread.thread_id)
+    assert stored is not None
+    assert stored.bound_agent_id == "default"
+
+
+def test_create_thread_raises_agent_not_found_error() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    with pytest.raises(AgentNotFoundError, match="Unknown agent 'nonexistent'."):
+        bridge.create_thread(agent_id="nonexistent")
+
+
+def test_get_thread_returns_existing_thread() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    thread = store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    result = bridge.get_thread(thread_id="thread-1")
+    assert result == thread
+    assert result.thread_id == "thread-1"
+    assert result.bound_agent_id == "default"
+
+
+def test_get_thread_raises_thread_not_found_error() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    with pytest.raises(ThreadNotFoundError, match="Unknown thread 'missing-thread'."):
+        bridge.get_thread(thread_id="missing-thread")
+
+
+def test_cancel_run_successful() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    run = bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
+    record, changed = bridge.cancel_run(run_id=run.run_id)
+    assert record.run_id == run.run_id
+    assert changed is True
+    assert record.cancel_requested is True
+
+
+def test_cancel_run_raises_run_not_found_error() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    with pytest.raises(RunNotFoundError, match="Unknown run 'nonexistent'."):
+        bridge.cancel_run(run_id="nonexistent")
+
+
+def test_get_run_returns_existing_run() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    run = bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
+    result = bridge.get_run(run_id=run.run_id)
+    assert result == run
+    assert result.run_id == run.run_id
+
+
+def test_get_run_raises_run_not_found_error() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    with pytest.raises(RunNotFoundError, match="Unknown run 'nonexistent'."):
+        bridge.get_run(run_id="nonexistent")
+
+
+def test_set_debug_event_logger_writes_events() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+
+    mock_logger = MagicMock()
+    bridge.set_debug_event_logger(mock_logger)
+    bridge.create_thread(agent_id="default")
+
+    assert mock_logger.write.call_count >= 1
+    call_kwargs = mock_logger.write.call_args_list[-1][1]
+    assert call_kwargs["event_name"] == "runtime.thread.create.succeeded"
+
+
+def test_set_debug_event_logger_clears_correctly() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+
+    mock_logger = MagicMock()
+    bridge.set_debug_event_logger(mock_logger)
+    bridge.create_thread(agent_id="default")
+    assert mock_logger.write.called
+
+    mock_logger.reset_mock()
+    bridge.set_debug_event_logger(None)
+    bridge.create_thread(agent_id="default")
+    mock_logger.write.assert_not_called()
+
+
+def test_get_thinking_capability_happy_path() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+
+    resolved_route = ResolvedRuntimeModelRoute(
+        provider_profile_id="provider-1",
+        provider="openai",
+        endpoint_type="openai-compatible",
+        base_url="https://example.com/v1",
+        model_id="gpt-4.1",
+        api_key="sk-test",
+    )
+    fake_resolver = _FakeModelRouteResolver(resolved_route)
+
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        model_route_resolver=cast(RuntimeModelRouteResolver, fake_resolver),
+    )
+
+    model_route = RuntimeModelRoute(
+        provider_profile_id="provider-1",
+        route_ref=RuntimeModelRouteRef(
+            route_kind="provider-model",
+            profile_id="provider-1",
+            model_id="gpt-4.1",
+        ),
+    )
+
+    result = asyncio.run(
+        bridge.get_thinking_capability(
+            session_id="thread-1",
+            model_route=model_route,
+        )
+    )
+
+    assert result.ok is True
+    assert result.sessionId == "thread-1"
+    assert "capability" in result.to_dict()
+
+
+def test_get_thinking_capability_raises_when_scaffold_none() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+
+    model_route = RuntimeModelRoute(
+        provider_profile_id="provider-1",
+        route_ref=RuntimeModelRouteRef(
+            route_kind="provider-model",
+            profile_id="provider-1",
+            model_id="gpt-4.1",
+        ),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Runtime scaffold is required for thinking capability queries.",
+    ):
+        asyncio.run(
+            bridge.get_thinking_capability(
+                session_id="thread-1",
+                model_route=model_route,
+            )
+        )
+
+
+def test_get_thinking_capability_raises_when_thread_not_found() -> None:
+    store = InMemorySessionStore()
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+    )
+
+    model_route = RuntimeModelRoute(
+        provider_profile_id="provider-1",
+        route_ref=RuntimeModelRouteRef(
+            route_kind="provider-model",
+            profile_id="provider-1",
+            model_id="gpt-4.1",
+        ),
+    )
+
+    with pytest.raises(
+        SessionNotFoundError,
+        match="Unknown session 'missing-thread'.",
+    ):
+        asyncio.run(
+            bridge.get_thinking_capability(
+                session_id="missing-thread",
+                model_route=model_route,
+            )
+        )
+
+
+def test_prime_run_metadata_without_resolver() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    bridge = RuntimeBridge(session_store=store, agent_registry=registry)
+    run = bridge.start_run(request=_build_run_start_request(thread_id="thread-1"))
+
+    updated = asyncio.run(
+        bridge.prime_run_metadata(
+            run_id=run.run_id,
+            runtime_method="run/start",
+            request_id="req-1",
+        )
+    )
+
+    assert updated.run_id == run.run_id
+    assert "requestedThinkingSelection" in updated.metadata
+    assert updated.metadata["requestedThinkingSelection"] is None
+
+
+def test_prime_run_metadata_with_thinking_selection() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="thread-1")
+    registry = build_default_agent_registry()
+    scaffold = _build_scaffold(agent_registry=registry, session_store=store)
+
+    resolved_route = ResolvedRuntimeModelRoute(
+        provider_profile_id="provider-1",
+        provider="openai",
+        endpoint_type="openai-compatible",
+        base_url="https://example.com/v1",
+        model_id="gpt-4.1",
+        api_key="sk-test",
+    )
+    fake_resolver = _FakeModelRouteResolver(resolved_route)
+
+    bridge = RuntimeBridge(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=scaffold,
+        model_route_resolver=cast(RuntimeModelRouteResolver, fake_resolver),
+    )
+
+    thinking_selection = RuntimeThinkingSelection(
+        series="compat-discrete-selection-v1",
+        level="medium",
+        labelZh="medium",
+    )
+    run = bridge.start_run(
+        request=_build_run_start_request(
+            thread_id="thread-1",
+            thinking_selection=thinking_selection,
+        )
+    )
+
+    updated = asyncio.run(
+        bridge.prime_run_metadata(
+            run_id=run.run_id,
+            runtime_method="run/start",
+            request_id="req-1",
+        )
+    )
+
+    assert updated.run_id == run.run_id
+    assert "requestedThinkingSelection" in updated.metadata
+    assert updated.metadata["requestedThinkingSelection"] == thinking_selection.to_dict()
+    assert "resolvedModelRoute" in updated.metadata

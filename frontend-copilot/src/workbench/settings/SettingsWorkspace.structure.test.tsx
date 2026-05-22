@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
@@ -98,8 +100,11 @@ describe('SettingsWorkspace structure', () => {
     expect(sustechHtml).toContain('基本信息')
     expect(sustechHtml).toContain('CAS 密码')
     expect(sustechHtml).toContain('Blackboard 信息')
+    expect(sustechHtml).toContain('仅抓取本学期课程（推荐）')
+    expect(sustechHtml).not.toContain('自动下载 Blackboard 文件')
+    expect(sustechHtml).not.toContain('下载文件大小限制')
     expect(externalSourceHtml).toContain('WakeUP 课程群同步')
-    expect(externalSourceHtml).toContain('WakeUP 分享链接')
+    expect(externalSourceHtml).toContain('导入 .ics 文件')
   })
 
   it('removes safe search and mcp sandbox toggles from their sections', () => {
@@ -112,5 +117,20 @@ describe('SettingsWorkspace structure', () => {
 
     expect(searchHtml).not.toContain('启用安全搜索')
     expect(mcpHtml).not.toContain('启用沙箱保护')
+  })
+
+  it('raises an open form field above following settings controls so select menus are not obscured', () => {
+    const controlsCss = readFileSync(join(process.cwd(), 'src/styles/controls.css'), 'utf8')
+
+    const openFormFieldMatch = controlsCss.match(
+      /\.form-field--open\s*\{[\s\S]*?\bz-index:\s*(\d+)\s*;[\s\S]*?\}/,
+    )
+    const selectDropdownMatch = controlsCss.match(
+      /\.select-dropdown\s*\{[\s\S]*?\bz-index:\s*(\d+)\s*;[\s\S]*?\}/,
+    )
+
+    expect(openFormFieldMatch).not.toBeNull()
+    expect(selectDropdownMatch).not.toBeNull()
+    expect(Number(openFormFieldMatch?.[1])).toBeGreaterThan(Number(selectDropdownMatch?.[1]))
   })
 })
