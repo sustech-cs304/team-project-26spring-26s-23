@@ -28,10 +28,10 @@
   background: var(--surface-subtle, var(--vscode-editorWidget-background));
   overflow: hidden;
 
-  --g-bar-color: #64748b;
-  --g-bar-border: color-mix(in srgb, white 8%, transparent);
-  --g-progress-color: #94a3b8;
-  --g-handle-color: color-mix(in srgb, #cbd5e1 76%, transparent);
+  --g-bar-color: color-mix(in srgb, var(--text-muted, var(--vscode-descriptionForeground)) 88%, transparent);
+  --g-bar-border: color-mix(in srgb, var(--text-primary, var(--vscode-foreground)) 10%, transparent);
+  --g-progress-color: color-mix(in srgb, var(--accent-color, var(--vscode-textLink-foreground)) 42%, var(--surface-subtle, var(--vscode-editorWidget-background)));
+  --g-handle-color: color-mix(in srgb, var(--text-primary, var(--vscode-foreground)) 24%, transparent);
   --g-header-background: transparent;
   --g-row-color: transparent;
   --g-row-border-color: var(--border-color, var(--vscode-widget-border));

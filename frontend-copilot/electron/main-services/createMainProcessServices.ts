@@ -271,27 +271,17 @@ async function fetchRemoteCalendarEvents(
   runtimeUrl: string,
   options: CreateMainProcessServicesOptions,
 ): Promise<UnifiedCalendarEvent[] | null> {
-  const apiUrl = new URL(CALENDAR_EVENTS_PATH, normalizeRuntimeBaseUrl(runtimeUrl)).toString()
-  const headers = new Headers()
-
-  try {
-    const service = await options.ensureHostedBackendService()
-    const token = normalizeOptionalString(service.getLocalToken())
-    if (token !== null) {
-      headers.set(LOCAL_RUNTIME_TOKEN_HEADER, token)
-    }
-  } catch (error) {
-    await appendTimelineLog(options, 'warn', 'Unable to resolve local runtime token for calendar events request.', {
-      runtimeUrl,
-      error: formatUnknownError(error),
-    })
+  const request = await buildTrustedCalendarEventsRequest(runtimeUrl, options)
+  if (request === null) {
+    return null
   }
 
   try {
-    const response = await fetch(apiUrl, { headers })
+    const response = await fetch(request.apiUrl, { headers: request.headers })
     if (!response.ok) {
       await appendTimelineLog(options, 'warn', 'Calendar API responded with a non-success status.', {
-        runtimeUrl,
+        runtimeUrl: request.requestedRuntimeUrl,
+        trustedRuntimeUrl: request.trustedRuntimeUrl,
         status: response.status,
         statusText: response.statusText,
       })
@@ -302,10 +292,98 @@ async function fetchRemoteCalendarEvents(
     return Array.isArray(payload.items) ? payload.items : []
   } catch (error) {
     await appendTimelineLog(options, 'warn', 'Failed to fetch backend calendar events.', {
-      runtimeUrl,
+      runtimeUrl: request.requestedRuntimeUrl,
+      trustedRuntimeUrl: request.trustedRuntimeUrl,
       error: formatUnknownError(error),
     })
     return null
+  }
+}
+
+interface TrustedCalendarEventsRequest {
+  apiUrl: string
+  headers: Headers
+  requestedRuntimeUrl: string
+  trustedRuntimeUrl: string
+}
+
+async function buildTrustedCalendarEventsRequest(
+  requestedRuntimeUrl: string,
+  options: CreateMainProcessServicesOptions,
+): Promise<TrustedCalendarEventsRequest | null> {
+  const requestedRuntimeBaseUrl = parseRuntimeBaseUrl(requestedRuntimeUrl)
+  if (requestedRuntimeBaseUrl === null) {
+    await appendTimelineLog(options, 'warn', 'Invalid renderer runtime URL for calendar events request.', {
+      runtimeUrl: requestedRuntimeUrl,
+    })
+    return null
+  }
+
+  let service: Awaited<ReturnType<CreateMainProcessServicesOptions['ensureHostedBackendService']>>
+  try {
+    service = await options.ensureHostedBackendService()
+  } catch (error) {
+    await appendTimelineLog(options, 'warn', 'Unable to resolve hosted runtime for calendar events request.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+      error: formatUnknownError(error),
+    })
+    return null
+  }
+
+  let trustedRuntimeUrl: string | null
+  try {
+    trustedRuntimeUrl = normalizeOptionalString(service.getRuntimeBaseUrl())
+  } catch (error) {
+    await appendTimelineLog(options, 'warn', 'Unable to resolve trusted backend calendar events base URL.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+      error: formatUnknownError(error),
+    })
+    return null
+  }
+
+  if (trustedRuntimeUrl === null) {
+    await appendTimelineLog(options, 'warn', 'Trusted backend calendar events base URL is empty.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+    })
+    return null
+  }
+
+  const trustedRuntimeBaseUrl = parseRuntimeBaseUrl(trustedRuntimeUrl)
+  if (trustedRuntimeBaseUrl === null) {
+    await appendTimelineLog(options, 'warn', 'Failed to build trusted backend calendar events URL.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+      trustedRuntimeUrl,
+    })
+    return null
+  }
+
+  if (requestedRuntimeBaseUrl.origin !== trustedRuntimeBaseUrl.origin) {
+    await appendTimelineLog(options, 'warn', 'Renderer calendar runtime URL does not match trusted hosted runtime; using trusted runtime URL.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+      trustedRuntimeUrl: trustedRuntimeBaseUrl.toString(),
+    })
+  }
+
+  const apiUrl = new URL(CALENDAR_EVENTS_PATH, trustedRuntimeBaseUrl).toString()
+  const headers = new Headers()
+  try {
+    const token = normalizeOptionalString(service.getLocalToken())
+    if (token !== null) {
+      headers.set(LOCAL_RUNTIME_TOKEN_HEADER, token)
+    }
+  } catch (error) {
+    await appendTimelineLog(options, 'warn', 'Unable to resolve local runtime token for calendar events request.', {
+      runtimeUrl: requestedRuntimeBaseUrl.toString(),
+      trustedRuntimeUrl: trustedRuntimeBaseUrl.toString(),
+      error: formatUnknownError(error),
+    })
+  }
+
+  return {
+    apiUrl,
+    headers,
+    requestedRuntimeUrl: requestedRuntimeBaseUrl.toString(),
+    trustedRuntimeUrl: trustedRuntimeBaseUrl.toString(),
   }
 }
 
@@ -313,15 +391,17 @@ function mergeCalendarEvents(
   localItems: UnifiedCalendarEvent[],
   remoteItems: UnifiedCalendarEvent[],
 ): UnifiedCalendarEvent[] {
-  const combinedEvents = [...localItems]
-  const localKeys = new Set(combinedEvents.map((event) => buildCompositeKey(event)))
+  const eventsByKey = new Map<string, UnifiedCalendarEvent>()
 
-  for (const remoteEvent of remoteItems) {
-    if (!localKeys.has(buildCompositeKey(remoteEvent))) {
-      combinedEvents.push(remoteEvent)
-    }
+  for (const localEvent of localItems) {
+    eventsByKey.set(buildCompositeKey(localEvent), localEvent)
   }
 
+  for (const remoteEvent of remoteItems) {
+    eventsByKey.set(buildCompositeKey(remoteEvent), remoteEvent)
+  }
+
+  const combinedEvents = Array.from(eventsByKey.values())
   combinedEvents.sort(compareCalendarEvents)
   return combinedEvents
 }
@@ -343,6 +423,14 @@ function buildCompositeKey(event: {
     return `${String(event.source)}:${String(event.source_id)}`
   }
   return `${String(event.source)}:${String(event.title ?? '')}:${String(event.start_time ?? '')}`
+}
+
+function parseRuntimeBaseUrl(runtimeBaseUrl: string): URL | null {
+  try {
+    return new URL(normalizeRuntimeBaseUrl(runtimeBaseUrl))
+  } catch {
+    return null
+  }
 }
 
 function normalizeRuntimeBaseUrl(runtimeBaseUrl: string): string {
