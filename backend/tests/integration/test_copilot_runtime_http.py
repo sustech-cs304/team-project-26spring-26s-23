@@ -1631,6 +1631,14 @@ def _build_run_start_request(
     }
 
 
+def _build_allow_tool_permission_policy(*tool_ids: str) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "defaultMode": "allow",
+        "toolModes": {tool_id: "allow" for tool_id in tool_ids},
+    }
+
+
 def _build_run_stream_request(*, run_id: str) -> dict[str, Any]:
     return {
         "method": "run/stream",
