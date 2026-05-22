@@ -8,6 +8,7 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from app.copilot_runtime.agent import AwaitingUserInputError, AgentExecutionError, PydanticAIAgentExecutor, RuntimeToolLifecycleEvent
+from app.copilot_runtime._tool_registry.constants import INTERNAL_TOOL_IDS
 from app.copilot_runtime.execution_event_graph import RuntimeExecutionEvent, RuntimeExecutionEventType
 from app.copilot_runtime.execution_support import ThreadNotFoundError, build_message_history, build_runtime_user_prompt
 from app.copilot_runtime.message_runs import RuntimeMessageRunOrchestrator
@@ -32,6 +33,10 @@ from app.copilot_runtime.session_store import InMemorySessionStore, RuntimeTextM
 from app.copilot_runtime.tool_approval_coordinator import RuntimeToolApprovalCoordinator
 from app.copilot_runtime.tool_permissions import RuntimeToolPermissionResolver
 from app.copilot_runtime.tool_registry import REQUEST_USER_FORM_TOOL_ID, WEATHER_CURRENT_TOOL_ID, build_default_tool_registry
+
+
+def _strip_internal_tool_ids(tool_ids: Sequence[str]) -> list[str]:
+    return [tool_id for tool_id in tool_ids if tool_id not in INTERNAL_TOOL_IDS]
 
 
 class _ExecutorCallRecord(TypedDict):
@@ -479,19 +484,19 @@ def test_stream_events_success_projects_completed_assistant_message_without_arch
     assert [event.sequence for event in events] == [1, 2, 3, 4, 5]
     _assert_unknown_route_run_metadata(events[1], requested_thinking_level=None, applied_thinking_level=None)
     assert events[-1].payload["assistantText"] == "Hello world"
-    assert executor.calls == [
-        {
-            "run_id": events[0].runId,
-            "agent_name": "default",
-            "user_prompt": "Hello",
-            "message_history": [],
-            "model_id": "gpt-4.1",
-            "enabled_tools": [],
-            "debug_enabled": True,
-            "request_options": {},
-            "model_settings": {},
-        }
-    ]
+    assert len(executor.calls) == 1
+    call = executor.calls[0]
+    assert _strip_internal_tool_ids(call["enabled_tools"]) == []
+    assert {key: value for key, value in call.items() if key != "enabled_tools"} == {
+        "run_id": events[0].runId,
+        "agent_name": "default",
+        "user_prompt": "Hello",
+        "message_history": [],
+        "model_id": "gpt-4.1",
+        "debug_enabled": True,
+        "request_options": {},
+        "model_settings": {},
+    }
     assert store.list_messages("thread-1") == ()
 
 
@@ -555,7 +560,9 @@ def test_stream_events_emits_tool_started_completed_before_terminal_success() ->
     assert events[2].payload["phase"] == "started"
     assert events[3].payload["phase"] == "completed"
     assert events[3].payload["toolId"] == WEATHER_CURRENT_TOOL_ID
-    assert events[-1].payload["resolvedToolIds"] == [WEATHER_CURRENT_TOOL_ID]
+    assert _strip_internal_tool_ids(events[-1].payload["resolvedToolIds"]) == [
+        WEATHER_CURRENT_TOOL_ID
+    ]
 
 
 
@@ -790,7 +797,9 @@ def test_stream_events_filters_denied_tools_from_enabled_tools() -> None:
     events = asyncio.run(_collect_events(orchestrator, request))
 
     assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
-    assert executor.calls[0]["enabled_tools"] == ["tool.file-convert"]
+    assert _strip_internal_tool_ids(executor.calls[0]["enabled_tools"]) == [
+        "tool.file-convert"
+    ]
     assert not any(WEATHER_CURRENT_TOOL_ID in call["enabled_tools"] for call in executor.calls)
 
 
@@ -931,19 +940,21 @@ def test_stream_events_projects_raw_tool_call_diagnostics_and_tool_events() -> N
     assert events[5].payload["phase"] == "started"
     assert events[6].payload["phase"] == "completed"
     assert events[-1].payload["assistantText"] == "我先查一下。查到了。"
-    assert executor.calls == [
-        {
-            "run_id": events[0].runId,
-            "agent_name": "default",
-            "user_prompt": "Hello",
-            "message_history": [],
-            "model_id": "gpt-4.1",
-            "enabled_tools": [WEATHER_CURRENT_TOOL_ID],
-            "debug_enabled": False,
-            "request_options": {},
-            "model_settings": {},
-        }
+    assert len(executor.calls) == 1
+    call = executor.calls[0]
+    assert _strip_internal_tool_ids(call["enabled_tools"]) == [
+        WEATHER_CURRENT_TOOL_ID
     ]
+    assert {key: value for key, value in call.items() if key != "enabled_tools"} == {
+        "run_id": events[0].runId,
+        "agent_name": "default",
+        "user_prompt": "Hello",
+        "message_history": [],
+        "model_id": "gpt-4.1",
+        "debug_enabled": False,
+        "request_options": {},
+        "model_settings": {},
+    }
 
 
 
