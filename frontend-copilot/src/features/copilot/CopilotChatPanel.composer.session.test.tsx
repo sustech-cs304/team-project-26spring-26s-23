@@ -163,6 +163,116 @@ describe('CopilotChatPanel composer interactions', () => {
     rendered.unmount()
   })
 
+  it('re-scrolls to the latest message when a kept-alive session becomes visible again', async () => {
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const sessionShell = createSessionShell()
+    const scrollIntoView = vi.fn()
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    try {
+      const historyState = createLiveReadyButEmptyPersistedHistoryState({
+        hasLoadedDetail: true,
+        detailStatus: 'ready',
+        runSummaries: [
+          {
+            runId: 'run-1',
+            threadId: 'session-1',
+            status: 'completed',
+            createdAt: LABEL_2026_14T08_2,
+            updatedAt: LABEL_2026_14T08,
+            startedAt: LABEL_2026_14T08_3,
+            terminalAt: LABEL_2026_14T08,
+            resolvedModelId: LABEL_OPENAI_GPT,
+            requestedMessageText: '你好',
+            assistantText: '这是助手回显',
+          },
+        ],
+        timelineItems: [],
+        replayStatus: 'idle',
+        replay: null,
+      })
+
+      const rendered = renderWithRoot(
+        <CopilotChatPanel
+          state={createReadyState()}
+          retrying={false}
+          retry={() => {}}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={sessionShell}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={historyState}
+          messageSurfaceVisible
+          loadWorkspaceState={loadWorkspaceState}
+        />,
+      )
+
+      await act(async () => {
+        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      scrollIntoView.mockClear()
+
+      rendered.rerender(
+        <CopilotChatPanel
+          state={createReadyState()}
+          retrying={false}
+          retry={() => {}}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={sessionShell}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={historyState}
+          messageSurfaceVisible={false}
+          loadWorkspaceState={loadWorkspaceState}
+        />,
+      )
+
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      rendered.rerender(
+        <CopilotChatPanel
+          state={createReadyState()}
+          retrying={false}
+          retry={() => {}}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={sessionShell}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={historyState}
+          messageSurfaceVisible
+          loadWorkspaceState={loadWorkspaceState}
+        />,
+      )
+
+      await act(async () => {
+        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('你好')
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('这是助手回显')
+      expect(scrollIntoView).toHaveBeenCalled()
+
+      rendered.unmount()
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: originalScrollIntoView,
+      })
+    }
+  })
+ 
   /* eslint-disable-next-line max-lines-per-function -- complex integration test covering debug handoff logging across topic switches with session state verification */
   it('emits debug handoff logs when retained transient state waits for persisted replay across a topic switch', async () => {
     const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})

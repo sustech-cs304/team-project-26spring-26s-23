@@ -32,6 +32,8 @@ const assistantPlaceholderExitMs = ANIM.DURATION_SLOW
 
 export interface CopilotMessagesShellProps {
   language?: string
+  sessionId?: string | null
+  messageSurfaceVisible?: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
@@ -58,6 +60,8 @@ export interface CopilotMessagesShellProps {
 
 export function CopilotMessagesShell({
   language = 'zh-CN',
+  sessionId = null,
+  messageSurfaceVisible = true,
   conversation,
   assistantPlaceholder = null,
   models = [],
@@ -70,6 +74,7 @@ export function CopilotMessagesShell({
 }: CopilotMessagesShellProps) {
   const copy = getCopilotChatCopy(language)
   const messageListRef = useRef<HTMLDivElement>(null)
+  const bottomAnchorRef = useRef<HTMLDivElement>(null)
   const visibleConversation = useMemo(
     () => buildVisibleConversation({
       conversation,
@@ -77,12 +82,33 @@ export function CopilotMessagesShell({
     }),
     [conversation, transientError],
   )
+  const latestVisibleMessage = visibleConversation[visibleConversation.length - 1]
+  const latestVisibleMessageId = latestVisibleMessage?.id ?? null
   useStaggerListEnter({
     scope: messageListRef,
     selector: '.copilot-chat__message',
     itemCount: visibleConversation.length,
   })
   const renderedAssistantPlaceholder = useAssistantPlaceholderState(assistantPlaceholder)
+
+  useEffect(() => {
+    if (!messageSurfaceVisible || visibleConversation.length === 0) {
+      return
+    }
+
+    const bottomAnchor = bottomAnchorRef.current
+    if (typeof bottomAnchor?.scrollIntoView !== 'function') {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      bottomAnchor.scrollIntoView({ block: 'end' })
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [messageSurfaceVisible, sessionId, latestVisibleMessageId, visibleConversation.length])
 
   return (
     <div
@@ -117,6 +143,7 @@ export function CopilotMessagesShell({
             />
           ))}
       {renderedAssistantPlaceholder.visible && renderAssistantPlaceholder(renderedAssistantPlaceholder)}
+      <div ref={bottomAnchorRef} aria-hidden="true" data-testid="chat-message-scroll-anchor" />
     </div>
   )
 }

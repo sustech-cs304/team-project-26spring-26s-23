@@ -72,6 +72,7 @@ export interface CopilotPanelShellProps {
   onRetrySessionHistory?: () => void
   onSelectSessionHistoryRun?: (runId: string | null) => void
   renderLoadingSkeleton?: boolean
+  messageSurfaceVisible?: boolean
   sendError: CopilotTransientErrorState | null
   modelGroups: CopilotModelGroup[]
   thinkingCapability: RuntimeThinkingCapability | null
@@ -286,6 +287,7 @@ function renderActiveSessionShell(
     ? 'messages'
     : props.persistedHistoryViewState
   const persistedConversationSource = props.persistedSelectedRunConversationSource ?? 'none'
+  const messageSurfaceSessionKey = resolveMessageSurfaceSessionKey(props, persistedConversationSource)
 
   return (
     <section className="copilot-chat-workspace" aria-live="polite" data-testid="chat-session-shell-ready">
@@ -317,7 +319,10 @@ function renderActiveSessionShell(
               ? renderPersistedHistoryRetryPrompt(props.onRetrySessionHistory)
               : (
                   <CopilotMessagesShell
+                    key={messageSurfaceSessionKey}
                     language={props.language}
+                    sessionId={messageSurfaceSessionKey}
+                    messageSurfaceVisible={props.messageSurfaceVisible ?? true}
                     conversation={props.conversation}
                     assistantPlaceholder={props.assistantPlaceholder}
                     models={props.modelGroups.flatMap((group) => group.models)}
@@ -359,6 +364,27 @@ function renderActiveSessionShell(
       </section>
     </section>
   )
+}
+
+function resolveMessageSurfaceSessionKey(
+  props: ConnectableCopilotPanelShellProps,
+  persistedConversationSource: PersistedConversationSource,
+): string | null {
+  const threadId = props.sessionHistory?.summary.threadId?.trim() ?? props.sessionShell?.sessionId?.trim() ?? ''
+  if (threadId === '') {
+    return null
+  }
+
+  const selectedRunId = props.sessionHistory?.selectedRunId?.trim() ?? ''
+  const conversationSource = props.persistedSelectedRunConversationPending === true
+    ? 'pending'
+    : persistedConversationSource
+  return [
+    'surface',
+    threadId,
+    selectedRunId === '' ? 'thread' : selectedRunId,
+    conversationSource,
+  ].join('::')
 }
 
 function resolveEffectivePersistedHistoryViewState(input: {

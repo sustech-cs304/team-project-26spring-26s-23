@@ -142,6 +142,121 @@ describe('CopilotPanelShell diagnostic visibility', () => {
     })
   })
 
+  it('scrolls a restored persisted conversation to the latest message when history detail becomes ready', async () => {
+    const scrollIntoView = vi.fn()
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    try {
+      const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+        sessionId: 'thread-1',
+        detailStatus: 'ready',
+        hasLoadedDetail: true,
+        conversation: [
+          {
+            id: 'history:user-1',
+            kind: 'user',
+            title: '',
+            content: '天气如何',
+            status: 'completed',
+          },
+          {
+            id: 'history:assistant-1',
+            kind: 'assistant',
+            runId: 'run-1',
+            sequence: 1,
+            title: '助手响应',
+            content: '天气晴朗。',
+            status: 'completed',
+            resolvedModelId: null,
+            resolvedModelRoute: null,
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+          {
+            id: 'history:user-2',
+            kind: 'user',
+            title: '',
+            content: '后天呢',
+            status: 'completed',
+          },
+          {
+            id: 'history:assistant-2',
+            kind: 'assistant',
+            runId: 'run-2',
+            sequence: 2,
+            title: '助手响应',
+            content: '后天继续晴朗。',
+            status: 'completed',
+            resolvedModelId: null,
+            resolvedModelRoute: null,
+            resolvedToolIds: [],
+            requestOptions: {},
+          },
+        ],
+      }))
+
+      await act(async () => {
+        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('后天呢')
+      expect(scrollIntoView).toHaveBeenCalled()
+
+      rendered.unmount()
+    } finally {
+      if (originalScrollIntoView === undefined) {
+        delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView
+      } else {
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+          configurable: true,
+          value: originalScrollIntoView,
+        })
+      }
+    }
+  })
+
+  it('does not scroll when the restored conversation has no messages yet', async () => {
+    const scrollIntoView = vi.fn()
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    try {
+      const rendered = renderWithRoot(buildHistoryLoadingGateShell({
+        sessionId: 'thread-empty',
+        detailStatus: 'ready',
+        hasLoadedDetail: true,
+        conversation: [],
+      }))
+
+      await act(async () => {
+        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).not.toContain('助手响应')
+      expect(scrollIntoView).not.toHaveBeenCalled()
+
+      rendered.unmount()
+    } finally {
+      if (originalScrollIntoView === undefined) {
+        delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView
+      } else {
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+          configurable: true,
+          value: originalScrollIntoView,
+        })
+      }
+    }
+  })
+
   // 包含 3 个紧密相关的 history loading gate 测试，需共享 fake timers 和复杂 shell 构建
   /* eslint-disable-next-line max-lines-per-function */
   describe('history loading gate', () => {
