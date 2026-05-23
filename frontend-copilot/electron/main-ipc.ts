@@ -97,6 +97,8 @@ export function registerMainProcessIpcHandlers(
     copyTextToClipboard: services.copyTextToClipboard,
     loadTimelineEvents: services.loadTimelineEvents,
     addTimelineEvent: services.addTimelineEvent,
+    updateTimelineEvent: services.updateTimelineEvent,
+    deleteTimelineEvent: services.deleteTimelineEvent,
     notifyDesktopNotification,
     loadDesktopWindowState,
     minimizeDesktopWindow,

@@ -3,7 +3,7 @@
 import type { ReactElement } from 'react'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { KanbanTracker } from './KanbanTracker'
 import type { UnifiedCalendarEvent } from '../calendar-types'
@@ -51,6 +51,102 @@ describe('KanbanTracker', () => {
 
     rendered.unmount()
   })
+
+  it('excludes wakeup-sourced events from the kanban view while keeping non-wakeup events', () => {
+    const rendered = renderWithRoot(
+      <KanbanTracker
+        events={[
+          createCalendarEvent({ id: 1, source: 'wakeup', title: 'WakeUp Task', status: 'not_started' }),
+          createCalendarEvent({ id: 2, source: 'wakeup', title: 'WakeUp Task 2', status: 'in_progress' }),
+          createCalendarEvent({ id: 3, source: 'bb', title: 'Normal Task', status: 'not_started' }),
+          createCalendarEvent({ id: 4, source: 'course', title: 'Course Task', status: 'in_progress' }),
+          createCalendarEvent({ id: 5, source: 'custom', title: 'Custom Task', status: 'completed' }),
+        ]}
+      />,
+    )
+
+    const notStartedBody = rendered.getByTestId('kanban-column-body-warn')
+    const inProgressBody = rendered.getByTestId('kanban-column-body-active')
+    const completedBody = rendered.getByTestId('kanban-column-body-done')
+
+    const notStartedCards = notStartedBody.querySelectorAll('.kanban-card')
+    expect(notStartedCards).toHaveLength(1)
+    expect(notStartedCards[0].textContent).toContain('Normal Task')
+
+    const inProgressCards = inProgressBody.querySelectorAll('.kanban-card')
+    expect(inProgressCards).toHaveLength(1)
+    expect(inProgressCards[0].textContent).toContain('Course Task')
+
+    const completedCards = completedBody.querySelectorAll('.kanban-card')
+    expect(completedCards).toHaveLength(1)
+    expect(completedCards[0].textContent).toContain('Custom Task')
+
+    rendered.unmount()
+  })
+
+  it('opens an inline create form and submits a custom event draft for not-started tasks', async () => {
+    const handleCreateEvent = vi.fn(async () => undefined)
+    const rendered = renderWithRoot(<KanbanTracker events={[]} onCreateEvent={handleCreateEvent} />)
+
+    await act(async () => {
+      rendered.getByTestId('kanban-add-event-warn').click()
+    })
+
+    const form = rendered.getByTestId('kanban-new-event-form-warn')
+    const titleInput = rendered.getByTestId('kanban-new-event-title-warn') as HTMLInputElement
+    const startInput = rendered.getByTestId('kanban-new-event-start-warn') as HTMLInputElement
+    const endInput = rendered.getByTestId('kanban-new-event-end-warn') as HTMLInputElement
+
+    expect(form.textContent).toContain('CUSTOM')
+
+    await act(async () => {
+      changeInputValue(titleInput, 'Read paper')
+    })
+    await act(async () => {
+      changeInputValue(startInput, '2026-05-10T09:30')
+    })
+    await act(async () => {
+      changeInputValue(endInput, '2026-05-10T11:45')
+    })
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+
+    expect(startInput.type).toBe('datetime-local')
+    expect(endInput.type).toBe('datetime-local')
+    expect(startInput.step).toBe('60')
+    expect(endInput.step).toBe('60')
+    expect(handleCreateEvent).toHaveBeenCalledWith({
+      title: 'Read paper',
+      status: 'not_started',
+      startDateTime: '2026-05-10T09:30',
+      endDateTime: '2026-05-10T11:45',
+    })
+    expect(rendered.container.querySelector('[data-testid="kanban-new-event-form-warn"]')).toBeNull()
+
+    rendered.unmount()
+  })
+
+  it('validates the inline create form before submitting', async () => {
+    const handleCreateEvent = vi.fn(async () => undefined)
+    const rendered = renderWithRoot(<KanbanTracker events={[]} onCreateEvent={handleCreateEvent} />)
+
+    await act(async () => {
+      rendered.getByTestId('kanban-add-event-active').click()
+    })
+
+    const form = rendered.getByTestId('kanban-new-event-form-active')
+
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(handleCreateEvent).not.toHaveBeenCalled()
+    expect(rendered.container.textContent).toContain('请输入事件标题。')
+
+    rendered.unmount()
+  })
 })
 
 function createCalendarEvent(overrides: Partial<UnifiedCalendarEvent> = {}): UnifiedCalendarEvent {
@@ -68,6 +164,12 @@ function createCalendarEvent(overrides: Partial<UnifiedCalendarEvent> = {}): Uni
     metadata_payload: null,
     ...overrides,
   }
+}
+
+function changeInputValue(input: HTMLInputElement, value: string): void {
+  const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  valueSetter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 function renderWithRoot(element: ReactElement) {

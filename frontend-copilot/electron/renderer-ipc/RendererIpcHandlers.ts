@@ -98,10 +98,14 @@ import type {
   WatchDirectoriesRequest,
 } from '../file-manager/ipc'
 import type {
-  LoadTimelineEventsRequest,
-  LoadTimelineEventsResult,
   AddTimelineEventRequest,
   AddTimelineEventResult,
+  DeleteTimelineEventRequest,
+  DeleteTimelineEventResult,
+  LoadTimelineEventsRequest,
+  LoadTimelineEventsResult,
+  UpdateTimelineEventRequest,
+  UpdateTimelineEventResult,
 } from '../timeline-database/ipc'
 
 export interface RendererIpcHandlers {
@@ -193,4 +197,6 @@ export interface RendererIpcHandlers {
   copyTextToClipboard: (request: CopyTextToClipboardRequest) => Promise<FileOperationResult>
   loadTimelineEvents: (request?: LoadTimelineEventsRequest) => Promise<LoadTimelineEventsResult>
   addTimelineEvent: (request: AddTimelineEventRequest) => Promise<AddTimelineEventResult>
+  updateTimelineEvent: (request: UpdateTimelineEventRequest) => Promise<UpdateTimelineEventResult>
+  deleteTimelineEvent: (request: DeleteTimelineEventRequest) => Promise<DeleteTimelineEventResult>
 }

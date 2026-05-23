@@ -119,6 +119,8 @@ vi.mock('better-sqlite3', () => ({
 vi.mock('./timeline-database/service', () => ({
   getCalendarEvents: vi.fn(),
   addCalendarEvent: vi.fn(),
+  updateCalendarEvent: vi.fn(),
+  deleteCalendarEvent: vi.fn(),
 }))
 
 vi.mock('./config-center/main-process', () => ({

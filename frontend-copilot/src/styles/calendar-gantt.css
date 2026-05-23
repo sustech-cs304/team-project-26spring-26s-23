@@ -90,6 +90,148 @@
   background: color-mix(in srgb, var(--vscode-list-warningForeground, #cca700) 8%, transparent);
 }
 
+.calendar-gantt-card__notice--danger {
+  color: var(--vscode-inputValidation-errorForeground, #f48771);
+  border-color: color-mix(in srgb, var(--vscode-inputValidation-errorBorder, #f14c4c) 58%, transparent);
+  background: color-mix(in srgb, var(--vscode-inputValidation-errorBackground, #5a1d1d) 28%, transparent);
+}
+
+.calendar-gantt-settings {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.calendar-gantt-settings__trigger {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--border-muted, var(--border-color)) 82%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-bg, #111827) 84%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    color var(--transition-duration-fast) var(--easing-standard),
+    background var(--transition-duration-fast) var(--easing-standard),
+    border-color var(--transition-duration-fast) var(--easing-standard),
+    box-shadow var(--transition-duration-fast) var(--easing-standard),
+    transform var(--transition-duration-fast) var(--easing-standard);
+}
+
+.calendar-gantt-settings__trigger:hover,
+.calendar-gantt-settings--open .calendar-gantt-settings__trigger {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent-strong, #8fb1dc) 34%, var(--border-muted, var(--border-color)));
+  background: color-mix(in srgb, var(--accent-strong, #8fb1dc) 9%, var(--surface-bg, #111827));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-strong, #8fb1dc) 9%, transparent);
+}
+
+.calendar-gantt-settings__trigger:active {
+  transform: translateY(1px);
+}
+
+.calendar-gantt-settings__menu {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 30;
+  width: min(286px, calc(100vw - 2rem));
+  padding: 0.42rem;
+  border: 1px solid color-mix(in srgb, var(--border-muted, var(--border-color)) 88%, transparent);
+  border-radius: 12px;
+  background: var(--vscode-editorHoverWidget-background, var(--panel-solid-bg, var(--surface-bg)));
+  box-shadow: 0 18px 34px color-mix(in srgb, black 18%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px) scale(0.98);
+  transform-origin: top right;
+  transition:
+    opacity var(--transition-duration-fast) var(--easing-standard),
+    transform var(--transition-duration-fast) var(--easing-standard);
+}
+
+.calendar-gantt-settings__menu--open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.calendar-gantt-settings__toggle {
+  width: 100%;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  gap: 0.72rem;
+  padding: 0.62rem 0.66rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-gantt-settings__toggle:hover {
+  background: color-mix(in srgb, var(--accent-strong, #8fb1dc) 8%, transparent);
+}
+
+.calendar-gantt-settings__toggle-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.calendar-gantt-settings__toggle-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.calendar-gantt-settings__toggle-detail {
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.calendar-gantt-settings__switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 20px;
+  border: 1px solid color-mix(in srgb, var(--border-muted, var(--border-color)) 92%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  transition:
+    background var(--transition-duration-fast) var(--easing-standard),
+    border-color var(--transition-duration-fast) var(--easing-standard);
+}
+
+.calendar-gantt-settings__switch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--vscode-editor-background, var(--surface-bg));
+  box-shadow: 0 2px 5px color-mix(in srgb, black 28%, transparent);
+  content: '';
+  transition: transform var(--transition-duration-fast) var(--easing-standard);
+}
+
+.calendar-gantt-settings__switch--on {
+  border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 62%, transparent);
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 68%, var(--accent-strong, #8fb1dc));
+}
+
+.calendar-gantt-settings__switch--on::after {
+  transform: translateX(14px);
+}
+
 .calendar-gantt-card__chart-shell {
   position: relative;
   flex: 0 0 auto;
@@ -303,6 +445,324 @@
   text-anchor: start;
 }
 
+/* ──────────── context menu and edit dialog ──────────── */
+
+.calendar-gantt-context-menu {
+  position: fixed;
+  z-index: 10020;
+  max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 20px);
+  padding: 0.42rem;
+  border: 1px solid color-mix(in srgb, var(--border-muted, var(--border-color)) 88%, transparent);
+  border-radius: 12px;
+  background: var(--vscode-editorHoverWidget-background, var(--panel-solid-bg, var(--surface-bg)));
+  color: var(--text-primary);
+  box-shadow: 0 18px 38px color-mix(in srgb, black 24%, transparent);
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.calendar-gantt-context-menu__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.14rem;
+  padding: 0.48rem 0.58rem 0.54rem;
+}
+
+.calendar-gantt-context-menu__title {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-gantt-context-menu__meta {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-gantt-context-menu__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  padding-top: 0.36rem;
+  border-top: 1px solid color-mix(in srgb, var(--border-muted, var(--border-color)) 62%, transparent);
+}
+
+.calendar-gantt-context-menu__group + .calendar-gantt-context-menu__group {
+  margin-top: 0.34rem;
+}
+
+.calendar-gantt-context-menu__section-label {
+  padding: 0.22rem 0.58rem 0.26rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.calendar-gantt-context-menu__item {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.46rem 0.58rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--transition-duration-fast) var(--easing-standard),
+    color var(--transition-duration-fast) var(--easing-standard),
+    opacity var(--transition-duration-fast) var(--easing-standard);
+}
+
+.calendar-gantt-context-menu__item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-strong, #8fb1dc) 9%, transparent);
+}
+
+.calendar-gantt-context-menu__item:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.calendar-gantt-context-menu__item--danger {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.calendar-gantt-context-menu__item--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--vscode-inputValidation-errorBackground, #5a1d1d) 34%, transparent);
+}
+
+.calendar-gantt-context-menu__status {
+  position: relative;
+}
+
+.calendar-gantt-context-menu__status--active {
+  background: color-mix(in srgb, var(--accent-strong, #8fb1dc) 13%, transparent);
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+.calendar-gantt-context-menu__status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.calendar-gantt-context-menu__status-dot--not-started {
+  background: var(--vscode-list-warningForeground, #cca700);
+}
+
+.calendar-gantt-context-menu__status-dot--in-progress {
+  background: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.calendar-gantt-context-menu__status-dot--completed {
+  background: var(--vscode-testing-iconPassed, #73c991);
+}
+
+.calendar-gantt-context-menu__check {
+  margin-left: auto;
+  color: var(--accent-strong, var(--vscode-textLink-foreground));
+}
+
+.calendar-gantt-edit-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 10030;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: color-mix(in srgb, black 48%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.calendar-gantt-edit-dialog__panel {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.72rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--border-muted, var(--border-color)) 88%, transparent);
+  border-radius: 14px;
+  background: var(--vscode-editorHoverWidget-background, var(--panel-solid-bg, var(--surface-bg)));
+  color: var(--text-primary);
+  box-shadow: 0 24px 54px color-mix(in srgb, black 34%, transparent);
+}
+
+.calendar-gantt-edit-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.12rem;
+}
+
+.calendar-gantt-edit-dialog__eyebrow {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.calendar-gantt-edit-dialog__title {
+  margin: 0.08rem 0 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 780;
+}
+
+.calendar-gantt-edit-dialog__source {
+  flex: 0 0 auto;
+  padding: 0.18rem 0.46rem;
+  border: 1px solid color-mix(in srgb, var(--vscode-charts-orange, #d18616) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-charts-orange, #d18616) 12%, transparent);
+  color: color-mix(in srgb, var(--vscode-charts-orange, #d18616) 82%, var(--text-primary));
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.calendar-gantt-edit-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.calendar-gantt-edit-dialog__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.6rem;
+}
+
+.calendar-gantt-edit-dialog__input,
+.calendar-gantt-edit-dialog__textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--vscode-input-border, var(--border-color)) 82%, transparent);
+  border-radius: 7px;
+  background: var(--vscode-input-background, color-mix(in srgb, var(--surface-bg) 88%, black));
+  color: var(--vscode-input-foreground, var(--text-primary));
+  font: inherit;
+  font-size: 0.82rem;
+  box-sizing: border-box;
+  transition:
+    border-color var(--transition-duration-fast) var(--easing-standard),
+    box-shadow var(--transition-duration-fast) var(--easing-standard);
+}
+
+.calendar-gantt-edit-dialog__input {
+  height: 36px;
+  padding: 0 0.62rem;
+}
+
+.calendar-gantt-edit-dialog__textarea {
+  min-height: 78px;
+  padding: 0.52rem 0.62rem;
+  resize: vertical;
+}
+
+.calendar-gantt-edit-dialog__input:focus,
+.calendar-gantt-edit-dialog__textarea:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 78%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 14%, transparent);
+}
+
+.calendar-gantt-edit-dialog__input:disabled,
+.calendar-gantt-edit-dialog__textarea:disabled {
+  opacity: 0.62;
+}
+
+.calendar-gantt-edit-dialog__error {
+  margin: 0;
+  padding: 0.48rem 0.58rem;
+  border: 1px solid color-mix(in srgb, var(--vscode-inputValidation-errorBorder, #f14c4c) 58%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--vscode-inputValidation-errorBackground, #5a1d1d) 34%, transparent);
+  color: var(--vscode-inputValidation-errorForeground, #f48771);
+  font-size: 0.76rem;
+  line-height: 1.38;
+}
+
+.calendar-gantt-edit-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.16rem;
+}
+
+.calendar-gantt-edit-dialog__primary,
+.calendar-gantt-edit-dialog__secondary {
+  min-height: 32px;
+  padding: 0.36rem 0.78rem;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--transition-duration-fast) var(--easing-standard),
+    border-color var(--transition-duration-fast) var(--easing-standard),
+    transform var(--transition-duration-fast) var(--easing-standard),
+    opacity var(--transition-duration-fast) var(--easing-standard);
+}
+
+.calendar-gantt-edit-dialog__primary {
+  border: 1px solid color-mix(in srgb, var(--vscode-button-background, #0e639c) 92%, transparent);
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
+.calendar-gantt-edit-dialog__primary:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.calendar-gantt-edit-dialog__secondary {
+  border: 1px solid color-mix(in srgb, var(--vscode-button-secondaryBorder, var(--border-color)) 84%, transparent);
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--text-secondary));
+}
+
+.calendar-gantt-edit-dialog__secondary:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, var(--interactive-hover-bg));
+}
+
+.calendar-gantt-edit-dialog__primary:active:not(:disabled),
+.calendar-gantt-edit-dialog__secondary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.calendar-gantt-edit-dialog__primary:disabled,
+.calendar-gantt-edit-dialog__secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 /* ──────────── popup ──────────── */
 
 .calendar-gantt-popup {
@@ -435,20 +895,181 @@
 }
 
 .kanban-column__add-btn {
-  padding: 0.32rem 0.5rem;
-  border: 1px dashed var(--vscode-widget-border, var(--border-color));
-  border-radius: 4px;
-  background: transparent;
+  min-height: 38px;
+  padding: 0.45rem 0.65rem;
+  border: 1px dashed color-mix(in srgb, var(--vscode-widget-border, var(--border-color)) 78%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background, var(--surface-subtle)) 42%, transparent);
   color: var(--vscode-textLink-foreground, var(--accent-color));
   font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
   text-align: center;
-  transition: background var(--transition-duration-fast) var(--easing-standard), border-color var(--transition-duration-fast) var(--easing-standard);
+  transition:
+    background var(--transition-duration-fast) var(--easing-standard),
+    border-color var(--transition-duration-fast) var(--easing-standard),
+    color var(--transition-duration-fast) var(--easing-standard),
+    transform var(--transition-duration-fast) var(--easing-standard);
 }
 
-.kanban-column__add-btn:hover {
-  border-color: var(--vscode-textLink-foreground, var(--accent-color));
-  background: color-mix(in srgb, var(--vscode-textLink-foreground, #3794ff) 8%, transparent);
+.kanban-column__add-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--vscode-textLink-foreground, #3794ff) 62%, var(--vscode-widget-border, var(--border-color)));
+  background: color-mix(in srgb, var(--vscode-textLink-foreground, #3794ff) 9%, transparent);
+}
+
+.kanban-column__add-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.kanban-column__add-btn:focus-visible,
+.kanban-column__composer-input:focus-visible,
+.kanban-column__composer-submit:focus-visible,
+.kanban-column__composer-cancel:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 78%, transparent);
+  outline-offset: 2px;
+}
+
+.kanban-column__add-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.kanban-column__composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.58rem;
+  padding: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border, var(--border-color)) 82%, transparent);
+  border-radius: 5px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--vscode-editorWidget-background, var(--surface-subtle)) 88%, transparent), transparent 160%),
+    var(--vscode-editor-background, var(--surface-bg));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
+}
+
+.kanban-column__composer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.kanban-column__composer-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.kanban-column__composer-source {
+  padding: 0.12rem 0.38rem;
+  border: 1px solid color-mix(in srgb, var(--vscode-charts-orange, #d18616) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-charts-orange, #d18616) 12%, transparent);
+  color: color-mix(in srgb, var(--vscode-charts-orange, #d18616) 82%, var(--text-primary));
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.kanban-column__composer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.24rem;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.kanban-column__composer-input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--vscode-input-border, var(--border-color)) 78%, transparent);
+  border-radius: 4px;
+  background: var(--vscode-input-background, color-mix(in srgb, var(--surface-bg) 88%, black));
+  color: var(--vscode-input-foreground, var(--text-primary));
+  font: inherit;
+  font-size: 0.8rem;
+  box-sizing: border-box;
+}
+
+.kanban-column__composer-input::placeholder {
+  color: color-mix(in srgb, var(--text-muted) 72%, transparent);
+}
+
+.kanban-column__composer-input:disabled {
+  opacity: 0.62;
+}
+
+.kanban-column__composer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.kanban-column__composer-error {
+  margin: 0;
+  padding: 0.42rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--vscode-inputValidation-errorBorder, #f14c4c) 58%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-inputValidation-errorBackground, #5a1d1d) 34%, transparent);
+  color: var(--vscode-inputValidation-errorForeground, #f48771);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.kanban-column__composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.kanban-column__composer-submit,
+.kanban-column__composer-cancel {
+  min-height: 30px;
+  padding: 0.28rem 0.65rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background var(--transition-duration-fast) var(--easing-standard),
+    border-color var(--transition-duration-fast) var(--easing-standard),
+    transform var(--transition-duration-fast) var(--easing-standard),
+    opacity var(--transition-duration-fast) var(--easing-standard);
+}
+
+.kanban-column__composer-submit {
+  border: 1px solid color-mix(in srgb, var(--vscode-button-background, #0e639c) 92%, transparent);
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
+.kanban-column__composer-submit:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.kanban-column__composer-cancel {
+  border: 1px solid color-mix(in srgb, var(--vscode-button-secondaryBorder, var(--border-color)) 84%, transparent);
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--text-secondary));
+}
+
+.kanban-column__composer-cancel:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, var(--interactive-hover-bg));
+}
+
+.kanban-column__composer-submit:active:not(:disabled),
+.kanban-column__composer-cancel:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.kanban-column__composer-submit:disabled,
+.kanban-column__composer-cancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 /* ──────────── kanban card ──────────── */
@@ -558,6 +1179,40 @@
 }
 
 /* ──────────── responsive ──────────── */
+
+@media (max-width: 640px) {
+  .calendar-gantt-card__header {
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  .calendar-gantt-card__meta {
+    flex: 1 1 auto;
+    white-space: normal;
+  }
+
+  .calendar-gantt-edit-dialog {
+    align-items: flex-end;
+    padding: 0.75rem;
+  }
+
+  .calendar-gantt-edit-dialog__panel {
+    border-radius: 14px;
+  }
+
+  .calendar-gantt-edit-dialog__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .calendar-gantt-edit-dialog__actions {
+    flex-direction: column-reverse;
+  }
+
+  .calendar-gantt-edit-dialog__primary,
+  .calendar-gantt-edit-dialog__secondary {
+    width: 100%;
+  }
+}
 
 @media (max-width: 900px) {
   .calendar-gantt-card__controls {

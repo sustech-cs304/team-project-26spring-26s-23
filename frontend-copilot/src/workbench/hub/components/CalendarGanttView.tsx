@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MutableRefObject, type RefObject } from 'react'
 import Gantt, { type GanttOptions, type GanttTask } from 'frappe-gantt'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Pencil, Settings, Trash2 } from 'lucide-react'
 
 import type { CalendarEventPatch, UnifiedCalendarEvent } from '../calendar-types'
 import {
@@ -12,20 +12,50 @@ import {
 
 interface CalendarGanttViewProps {
   events?: UnifiedCalendarEvent[]
-  onEventChange: (eventId: string | number, patch: CalendarEventPatch) => void
+  onEventChange: (eventId: string | number, patch: CalendarEventPatch) => void | Promise<void>
+  onEventDelete?: (eventId: string | number) => void | Promise<void>
 }
 
-export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttViewProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null)
+interface CalendarGanttContextMenuState {
+  event: UnifiedCalendarEvent
+  x: number
+  y: number
+}
+
+interface CalendarGanttEventEditDraft {
+  title: string
+  description: string
+  location: string
+  startDateTime: string
+  endDateTime: string
+}
+
+export function CalendarGanttView({ events = [], onEventChange, onEventDelete }: CalendarGanttViewProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const ganttRef = useRef<Gantt | null>(null)
   const onEventChangeRef = useRef(onEventChange)
-  const viewModeSelectRef = useRef<HTMLDivElement | null>(null)
+  const viewModeSelectRef = useRef<HTMLDivElement>(null)
+  const settingsMenuRef = useRef<HTMLDivElement>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
   const viewModeRef = useRef<CalendarGanttViewMode>(DEFAULT_GANTT_VIEW_MODE)
   const wheelInteractionRef = useRef<GanttWheelInteractionState>(createGanttWheelInteractionState())
   const [renderError, setRenderError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<CalendarGanttViewMode>(DEFAULT_GANTT_VIEW_MODE)
   const [viewModeMenuOpen, setViewModeMenuOpen] = useState(false)
-  const mapping = useMemo(() => mapCalendarEventsToGanttTasks(events), [events])
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
+  const [showWakeupCourses, setShowWakeupCourses] = useState(true)
+  const [contextMenu, setContextMenu] = useState<CalendarGanttContextMenuState | null>(null)
+  const [editingEvent, setEditingEvent] = useState<UnifiedCalendarEvent | null>(null)
+  const [editDraft, setEditDraft] = useState<CalendarGanttEventEditDraft | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [eventActionError, setEventActionError] = useState<string | null>(null)
+  const [mutatingEventId, setMutatingEventId] = useState<string | number | null>(null)
+  const displayedEvents = useMemo(
+    () => (showWakeupCourses ? events : events.filter((event) => !isWakeupCalendarEvent(event))),
+    [events, showWakeupCourses],
+  )
+  const hiddenWakeupCount = events.length - displayedEvents.length
+  const mapping = useMemo(() => mapCalendarEventsToGanttTasks(displayedEvents), [displayedEvents])
   const tasks = mapping.tasks
   const hideChart = tasks.length === 0 || renderError !== null
   const selectedViewModeOption = GANTT_VIEW_MODE_OPTIONS.find((option) => option.value === viewMode) ?? GANTT_VIEW_MODE_OPTIONS[0]
@@ -38,18 +68,43 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
   }, [onEventChange])
 
   useEffect(() => {
-    if (!viewModeMenuOpen) {
+    if (editingEvent === null) {
+      return
+    }
+
+    const latestEvent = events.find((event) => String(event.id) === String(editingEvent.id))
+    if (latestEvent === undefined) {
+      setEditingEvent(null)
+      setEditDraft(null)
+      setEditError(null)
+      return
+    }
+
+    setEditingEvent(latestEvent)
+  }, [editingEvent, events])
+
+  useEffect(() => {
+    if (!viewModeMenuOpen && !settingsMenuOpen && contextMenu === null) {
       return undefined
     }
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (viewModeSelectRef.current !== null && !viewModeSelectRef.current.contains(event.target as Node)) {
+      const target = event.target as Node
+      if (viewModeSelectRef.current !== null && !viewModeSelectRef.current.contains(target)) {
         setViewModeMenuOpen(false)
+      }
+      if (settingsMenuRef.current !== null && !settingsMenuRef.current.contains(target)) {
+        setSettingsMenuOpen(false)
+      }
+      if (contextMenuRef.current !== null && !contextMenuRef.current.contains(target)) {
+        setContextMenu(null)
       }
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setViewModeMenuOpen(false)
+        setSettingsMenuOpen(false)
+        setContextMenu(null)
       }
     }
 
@@ -60,7 +115,7 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
       document.removeEventListener('pointerdown', handlePointerDown)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [viewModeMenuOpen])
+  }, [contextMenu, settingsMenuOpen, viewModeMenuOpen])
 
   useEffect(() => {
     const container = containerRef.current
@@ -155,6 +210,98 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
     }
   }, [])
 
+  const openEventContextMenu = useCallback((event: UnifiedCalendarEvent, x: number, y: number) => {
+    setContextMenu({ event, x, y })
+    setSettingsMenuOpen(false)
+    setViewModeMenuOpen(false)
+    setEventActionError(null)
+  }, [])
+
+  const closeEditDialog = useCallback(() => {
+    if (mutatingEventId !== null) {
+      return
+    }
+
+    setEditingEvent(null)
+    setEditDraft(null)
+    setEditError(null)
+  }, [mutatingEventId])
+
+  const openEditDialog = useCallback((event: UnifiedCalendarEvent) => {
+    setContextMenu(null)
+    setEventActionError(null)
+    setEditingEvent(event)
+    setEditDraft(createCalendarGanttEventEditDraft(event))
+    setEditError(null)
+  }, [])
+
+  const applyEventPatch = useCallback(async (eventId: string | number, patch: CalendarEventPatch) => {
+    setMutatingEventId(eventId)
+    setEventActionError(null)
+    try {
+      await onEventChangeRef.current(eventId, patch)
+    } catch (error) {
+      setEventActionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setMutatingEventId(null)
+    }
+  }, [])
+
+  const handleStatusChange = useCallback((event: UnifiedCalendarEvent, status: CalendarGanttCustomStatus) => {
+    setContextMenu(null)
+    void applyEventPatch(event.id, buildCalendarStatusPatch(status))
+  }, [applyEventPatch])
+
+  const handleDeleteEvent = useCallback(async (event: UnifiedCalendarEvent) => {
+    setContextMenu(null)
+    if (onEventDelete === undefined) {
+      setEventActionError('无法删除事件：日历数据库桥接不可用。')
+      return
+    }
+
+    setMutatingEventId(event.id)
+    setEventActionError(null)
+    try {
+      await onEventDelete(event.id)
+    } catch (error) {
+      setEventActionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setMutatingEventId(null)
+    }
+  }, [onEventDelete])
+
+  const handleEditDraftChange = useCallback((patch: Partial<CalendarGanttEventEditDraft>) => {
+    setEditDraft((currentDraft) => currentDraft === null ? currentDraft : { ...currentDraft, ...patch })
+    setEditError(null)
+  }, [])
+
+  const handleEditSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (editingEvent === null || editDraft === null) {
+      return
+    }
+
+    const validationError = validateCalendarGanttEventEditDraft(editDraft)
+    if (validationError !== null) {
+      setEditError(validationError)
+      return
+    }
+
+    const patch = buildCalendarGanttEventEditPatch(editDraft)
+    setMutatingEventId(editingEvent.id)
+    setEventActionError(null)
+    try {
+      await onEventChangeRef.current(editingEvent.id, patch)
+      setEditingEvent(null)
+      setEditDraft(null)
+      setEditError(null)
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setMutatingEventId(null)
+    }
+  }, [editDraft, editingEvent])
+
   const handleViewModeChange = useCallback((nextViewMode: CalendarGanttViewMode) => {
     try {
       ganttRef.current?.change_view_mode(nextViewMode, true)
@@ -175,13 +322,58 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
     <section className="calendar-gantt-card" aria-label="日历甘特视图">
       <header className="calendar-gantt-card__header">
         <p className="calendar-gantt-card__meta">
-          共 {events.length} 个事件{mapping.skippedEventCount > 0 ? `，${mapping.skippedEventCount} 个无法渲染` : ''}
+          共 {displayedEvents.length} 个时间轴事件{!showWakeupCourses && hiddenWakeupCount > 0 ? `，已隐藏 ${hiddenWakeupCount} 个 Wakeup 课程` : ''}{mapping.skippedEventCount > 0 ? `，${mapping.skippedEventCount} 个无法渲染` : ''}
         </p>
+        <div
+          ref={settingsMenuRef}
+          className={`calendar-gantt-settings${settingsMenuOpen ? ' calendar-gantt-settings--open' : ''}`}
+        >
+          <button
+            type="button"
+            className="calendar-gantt-settings__trigger"
+            aria-haspopup="menu"
+            aria-label={settingsMenuOpen ? '关闭时间轴显示设置' : '打开时间轴显示设置'}
+            data-testid="calendar-gantt-settings-trigger"
+            onClick={() => {
+              setSettingsMenuOpen((open) => !open)
+              setViewModeMenuOpen(false)
+              setContextMenu(null)
+            }}
+          >
+            <Settings size={15} aria-hidden="true" />
+          </button>
+          <div
+            className={`calendar-gantt-settings__menu${settingsMenuOpen ? ' calendar-gantt-settings__menu--open' : ''}`}
+            role="menu"
+            aria-label="时间轴显示设置"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={settingsMenuOpen ? 0 : -1}
+              className="calendar-gantt-settings__toggle"
+              data-testid="calendar-gantt-toggle-wakeup"
+              onClick={() => setShowWakeupCourses((visible) => !visible)}
+            >
+              <span className="calendar-gantt-settings__toggle-copy">
+                <span className="calendar-gantt-settings__toggle-title">显示 Wakeup 课程</span>
+                <span className="calendar-gantt-settings__toggle-detail">关闭后仅隐藏时间轴中的 Wakeup 事件</span>
+              </span>
+              <span className={`calendar-gantt-settings__switch${showWakeupCourses ? ' calendar-gantt-settings__switch--on' : ''}`} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
       </header>
 
       {mapping.skippedEventCount > 0 ? (
         <p className="calendar-gantt-card__notice" role="status">
           部分事件缺少有效开始或结束时间，已从甘特图中跳过。
+        </p>
+      ) : null}
+
+      {eventActionError !== null ? (
+        <p className="calendar-gantt-card__notice calendar-gantt-card__notice--danger" role="alert">
+          {eventActionError}
         </p>
       ) : null}
 
@@ -216,7 +408,7 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
               type="button"
               className={`select-trigger calendar-gantt-view-mode__trigger${viewModeMenuOpen ? ' select-trigger--open' : ''}`}
               aria-haspopup="listbox"
-              aria-expanded={viewModeMenuOpen}
+              aria-expanded={viewModeMenuOpen ? 'true' : 'false'}
               aria-label="切换时间尺度"
               data-testid="calendar-gantt-view-mode-trigger"
               onClick={() => setViewModeMenuOpen((open) => !open)}
@@ -229,7 +421,7 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
             <div
               className={`select-dropdown calendar-gantt-view-mode__menu${viewModeMenuOpen ? ' select-dropdown--open' : ''}`}
               role="listbox"
-              aria-hidden={!viewModeMenuOpen}
+              aria-hidden={viewModeMenuOpen ? 'false' : 'true'}
               aria-label="时间尺度选项"
             >
               {GANTT_VIEW_MODE_OPTIONS.map((option) => {
@@ -240,7 +432,7 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
                     key={option.value}
                     type="button"
                     role="option"
-                    aria-selected={active}
+                    aria-selected={active ? 'true' : 'false'}
                     tabIndex={viewModeMenuOpen ? 0 : -1}
                     className={`select-option calendar-gantt-view-mode__option${active ? ' select-option--active' : ''}`}
                     data-testid={`calendar-gantt-view-mode-option-${option.value}`}
@@ -260,8 +452,56 @@ export function CalendarGanttView({ events = [], onEventChange }: CalendarGanttV
           ref={containerRef}
           className="calendar-gantt-card__chart"
           data-testid="calendar-gantt-container"
+          onMouseDownCapture={(event) => {
+            if (!shouldSuppressCalendarGanttPopupMouseEvent(event)) {
+              return
+            }
+
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onMouseUpCapture={(event) => {
+            if (!shouldSuppressCalendarGanttPopupMouseEvent(event)) {
+              return
+            }
+
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onContextMenu={(event) => {
+            const calendarEvent = resolveCalendarEventFromContextMenuTarget(event.target, displayedEvents)
+            if (calendarEvent === null) {
+              return
+            }
+
+            event.preventDefault()
+            openEventContextMenu(calendarEvent, event.clientX, event.clientY)
+          }}
         />
       </div>
+
+      {contextMenu !== null ? (
+        <CalendarGanttContextMenu
+          refElement={contextMenuRef}
+          state={contextMenu}
+          mutatingEventId={mutatingEventId}
+          onEdit={openEditDialog}
+          onDelete={handleDeleteEvent}
+          onStatusChange={handleStatusChange}
+        />
+      ) : null}
+
+      {editingEvent !== null && editDraft !== null ? (
+        <CalendarGanttEventEditDialog
+          event={editingEvent}
+          draft={editDraft}
+          error={editError}
+          submitting={mutatingEventId !== null}
+          onDraftChange={handleEditDraftChange}
+          onClose={closeEditDialog}
+          onSubmit={handleEditSubmit}
+        />
+      ) : null}
     </section>
   )
 }
@@ -295,6 +535,390 @@ const GANTT_POPUP_VIEWPORT_MARGIN = 12
 const GANTT_POPUP_POINTER_OFFSET = 10
 const GANTT_POPUP_GAP = 10
 const GANTT_LABEL_OUTSIDE_GAP = 6
+
+type CalendarGanttCustomStatus = 'not_started' | 'in_progress' | 'completed'
+
+interface CalendarGanttStatusOption {
+  value: CalendarGanttCustomStatus
+  label: string
+  progress: number
+}
+
+const CALENDAR_GANTT_CUSTOM_STATUS_OPTIONS: CalendarGanttStatusOption[] = [
+  { value: 'not_started', label: '未开始', progress: 0 },
+  { value: 'in_progress', label: '进行中', progress: 50 },
+  { value: 'completed', label: '已完成', progress: 100 },
+]
+
+const CALENDAR_GANTT_CONTEXT_MENU_WIDTH = 226
+const CALENDAR_GANTT_CONTEXT_MENU_VIEWPORT_MARGIN = 10
+const WAKEUP_SOURCE_KEYS = new Set(['wakeup', 'wake-up', 'wake_up'])
+
+function CalendarGanttContextMenu({
+  refElement,
+  state,
+  mutatingEventId,
+  onEdit,
+  onDelete,
+  onStatusChange,
+}: {
+  refElement: RefObject<HTMLDivElement>
+  state: CalendarGanttContextMenuState
+  mutatingEventId: string | number | null
+  onEdit: (event: UnifiedCalendarEvent) => void
+  onDelete: (event: UnifiedCalendarEvent) => void
+  onStatusChange: (event: UnifiedCalendarEvent, status: CalendarGanttCustomStatus) => void
+}) {
+  const isMutating = mutatingEventId !== null
+  const eventIsMutating = mutatingEventId !== null && String(mutatingEventId) === String(state.event.id)
+  const isCustomEvent = isCustomCalendarEvent(state.event)
+  const style = buildCalendarGanttContextMenuStyle(state.x, state.y)
+
+  return (
+    <div
+      ref={refElement}
+      className="calendar-gantt-context-menu"
+      style={style}
+      aria-label={`${state.event.title} 事件操作菜单`}
+      data-testid="calendar-gantt-context-menu"
+    >
+      <div className="calendar-gantt-context-menu__summary">
+        <span className="calendar-gantt-context-menu__title">{state.event.title}</span>
+        <span className="calendar-gantt-context-menu__meta">{state.event.source.toUpperCase()} · {formatCalendarEventRange(state.event)}</span>
+      </div>
+
+      <div className="calendar-gantt-context-menu__group" aria-label="事件操作">
+        <button
+          type="button"
+          className="calendar-gantt-context-menu__item"
+          disabled={isMutating}
+          data-testid="calendar-gantt-context-menu-edit"
+          onClick={() => onEdit(state.event)}
+        >
+          <Pencil size={15} aria-hidden="true" />
+          <span>修改事件信息</span>
+        </button>
+        <button
+          type="button"
+          className="calendar-gantt-context-menu__item calendar-gantt-context-menu__item--danger"
+          disabled={isMutating}
+          data-testid="calendar-gantt-context-menu-delete"
+          onClick={() => onDelete(state.event)}
+        >
+          <Trash2 size={15} aria-hidden="true" />
+          <span>{eventIsMutating ? '删除中…' : '删除事件'}</span>
+        </button>
+      </div>
+
+      {isCustomEvent ? (
+        <div className="calendar-gantt-context-menu__group calendar-gantt-context-menu__status-group" aria-label="自定义事件状态">
+          <span className="calendar-gantt-context-menu__section-label">设置状态</span>
+          {CALENDAR_GANTT_CUSTOM_STATUS_OPTIONS.map((option) => {
+            const active = state.event.status === option.value
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className={`calendar-gantt-context-menu__item calendar-gantt-context-menu__status calendar-gantt-context-menu__status--${option.value.replace('_', '-')}${active ? ' calendar-gantt-context-menu__status--active' : ''}`}
+                disabled={isMutating || active}
+                data-testid={`calendar-gantt-context-menu-status-${option.value}`}
+                onClick={() => onStatusChange(state.event, option.value)}
+              >
+                <span className={`calendar-gantt-context-menu__status-dot calendar-gantt-context-menu__status-dot--${option.value.replace('_', '-')}`} aria-hidden="true" />
+                <span>{option.label}</span>
+                {active ? <Check size={14} className="calendar-gantt-context-menu__check" aria-hidden="true" /> : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function CalendarGanttEventEditDialog({
+  event,
+  draft,
+  error,
+  submitting,
+  onDraftChange,
+  onClose,
+  onSubmit,
+}: {
+  event: UnifiedCalendarEvent
+  draft: CalendarGanttEventEditDraft
+  error: string | null
+  submitting: boolean
+  onDraftChange: (patch: Partial<CalendarGanttEventEditDraft>) => void
+  onClose: () => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  useEffect(() => {
+    const handleKeyDown = (keyboardEvent: KeyboardEvent) => {
+      if (keyboardEvent.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  return (
+    <div
+      className="calendar-gantt-edit-dialog"
+      role="presentation"
+      data-testid="calendar-gantt-edit-dialog"
+      onPointerDown={(pointerEvent) => {
+        if (pointerEvent.target === pointerEvent.currentTarget) {
+          onClose()
+        }
+      }}
+    >
+      <form className="calendar-gantt-edit-dialog__panel" role="dialog" aria-modal="true" aria-label="修改事件信息" onSubmit={onSubmit}>
+        <header className="calendar-gantt-edit-dialog__header">
+          <div>
+            <p className="calendar-gantt-edit-dialog__eyebrow">Edit Event</p>
+            <h3 className="calendar-gantt-edit-dialog__title">修改事件信息</h3>
+          </div>
+          <span className="calendar-gantt-edit-dialog__source">{event.source.toUpperCase()}</span>
+        </header>
+
+        <label className="calendar-gantt-edit-dialog__field">
+          <span>标题</span>
+          <input
+            className="calendar-gantt-edit-dialog__input"
+            data-testid="calendar-gantt-edit-title"
+            value={draft.title}
+            disabled={submitting}
+            autoFocus
+            onChange={(changeEvent) => onDraftChange({ title: changeEvent.currentTarget.value })}
+          />
+        </label>
+
+        <label className="calendar-gantt-edit-dialog__field">
+          <span>描述</span>
+          <textarea
+            className="calendar-gantt-edit-dialog__textarea"
+            data-testid="calendar-gantt-edit-description"
+            rows={3}
+            value={draft.description}
+            disabled={submitting}
+            placeholder="可选"
+            onChange={(changeEvent) => onDraftChange({ description: changeEvent.currentTarget.value })}
+          />
+        </label>
+
+        <label className="calendar-gantt-edit-dialog__field">
+          <span>地点</span>
+          <input
+            className="calendar-gantt-edit-dialog__input"
+            data-testid="calendar-gantt-edit-location"
+            value={draft.location}
+            disabled={submitting}
+            placeholder="可选"
+            onChange={(changeEvent) => onDraftChange({ location: changeEvent.currentTarget.value })}
+          />
+        </label>
+
+        <div className="calendar-gantt-edit-dialog__grid">
+          <label className="calendar-gantt-edit-dialog__field">
+            <span>开始时间</span>
+            <input
+              className="calendar-gantt-edit-dialog__input"
+              data-testid="calendar-gantt-edit-start"
+              type="datetime-local"
+              step="60"
+              value={draft.startDateTime}
+              disabled={submitting}
+              onChange={(changeEvent) => onDraftChange({ startDateTime: changeEvent.currentTarget.value })}
+            />
+          </label>
+          <label className="calendar-gantt-edit-dialog__field">
+            <span>结束时间</span>
+            <input
+              className="calendar-gantt-edit-dialog__input"
+              data-testid="calendar-gantt-edit-end"
+              type="datetime-local"
+              step="60"
+              min={draft.startDateTime}
+              value={draft.endDateTime}
+              disabled={submitting}
+              onChange={(changeEvent) => onDraftChange({ endDateTime: changeEvent.currentTarget.value })}
+            />
+          </label>
+        </div>
+
+        {error !== null ? (
+          <p className="calendar-gantt-edit-dialog__error" role="alert">{error}</p>
+        ) : null}
+
+        <footer className="calendar-gantt-edit-dialog__actions">
+          <button type="button" className="calendar-gantt-edit-dialog__secondary" disabled={submitting} onClick={onClose}>
+            取消
+          </button>
+          <button type="submit" className="calendar-gantt-edit-dialog__primary" disabled={submitting} data-testid="calendar-gantt-edit-submit">
+            {submitting ? '保存中…' : '保存修改'}
+          </button>
+        </footer>
+      </form>
+    </div>
+  )
+}
+
+function isWakeupCalendarEvent(event: UnifiedCalendarEvent): boolean {
+  return containsWakeupMarker(event.source) || containsWakeupMarker(event.source_id) || containsWakeupMetadataMarker(event.metadata_payload)
+}
+
+function isCustomCalendarEvent(event: UnifiedCalendarEvent): boolean {
+  return normalizeCalendarMarker(event.source) === 'custom'
+}
+
+function resolveCalendarEventFromContextMenuTarget(target: EventTarget | null, events: readonly UnifiedCalendarEvent[]): UnifiedCalendarEvent | null {
+  if (!(target instanceof Element)) {
+    return null
+  }
+
+  const barWrapper = target.closest<SVGGElement>('.bar-wrapper[data-id]')
+  const taskId = barWrapper?.getAttribute('data-id')
+  if (taskId === null || taskId === undefined) {
+    return null
+  }
+
+  const eventId = getCalendarEventIdFromGanttTaskId(taskId)
+  return events.find((event) => String(event.id) === String(eventId)) ?? null
+}
+
+function shouldSuppressCalendarGanttPopupMouseEvent(event: { button: number; target: EventTarget | null }): boolean {
+  if (event.button !== 2) {
+    return false
+  }
+
+  if (!(event.target instanceof Element)) {
+    return false
+  }
+
+  return event.target.closest('.bar-wrapper, .handle') !== null
+}
+
+function buildCalendarStatusPatch(status: CalendarGanttCustomStatus): CalendarEventPatch {
+  const option = CALENDAR_GANTT_CUSTOM_STATUS_OPTIONS.find((item) => item.value === status)
+
+  return {
+    status,
+    progress: option?.progress ?? 0,
+  }
+}
+
+function createCalendarGanttEventEditDraft(event: UnifiedCalendarEvent): CalendarGanttEventEditDraft {
+  return {
+    title: event.title,
+    description: event.description ?? '',
+    location: event.location ?? '',
+    startDateTime: formatDateTimeInputValue(new Date(event.start_time)),
+    endDateTime: formatDateTimeInputValue(event.end_time === null ? new Date(Number.NaN) : new Date(event.end_time)),
+  }
+}
+
+function validateCalendarGanttEventEditDraft(draft: CalendarGanttEventEditDraft): string | null {
+  if (draft.title.trim().length === 0) {
+    return '请输入事件标题。'
+  }
+
+  if (!isDateTimeInputValue(draft.startDateTime) || !isDateTimeInputValue(draft.endDateTime)) {
+    return '请选择有效的开始和结束时间。'
+  }
+
+  if (Date.parse(draft.endDateTime) <= Date.parse(draft.startDateTime)) {
+    return '结束时间必须晚于开始时间。'
+  }
+
+  return null
+}
+
+function buildCalendarGanttEventEditPatch(draft: CalendarGanttEventEditDraft): CalendarEventPatch {
+  return {
+    title: draft.title.trim(),
+    description: normalizeOptionalText(draft.description),
+    location: normalizeOptionalText(draft.location),
+    start_time: new Date(draft.startDateTime).toISOString(),
+    end_time: new Date(draft.endDateTime).toISOString(),
+  }
+}
+
+function buildCalendarGanttContextMenuStyle(x: number, y: number): CSSProperties {
+  const maxLeft = Math.max(
+    CALENDAR_GANTT_CONTEXT_MENU_VIEWPORT_MARGIN,
+    window.innerWidth - CALENDAR_GANTT_CONTEXT_MENU_WIDTH - CALENDAR_GANTT_CONTEXT_MENU_VIEWPORT_MARGIN,
+  )
+
+  return {
+    left: `${clampNumber(x, CALENDAR_GANTT_CONTEXT_MENU_VIEWPORT_MARGIN, maxLeft)}px`,
+    top: `${Math.max(CALENDAR_GANTT_CONTEXT_MENU_VIEWPORT_MARGIN, y)}px`,
+    width: `${CALENDAR_GANTT_CONTEXT_MENU_WIDTH}px`,
+  }
+}
+
+function formatCalendarEventRange(event: UnifiedCalendarEvent): string {
+  const start = new Date(event.start_time)
+  const end = event.end_time === null ? null : new Date(event.end_time)
+
+  return end === null ? formatDate(start) : `${formatDate(start)} - ${formatDate(end)}`
+}
+
+function containsWakeupMetadataMarker(payload: UnifiedCalendarEvent['metadata_payload']): boolean {
+  if (payload === null || payload === undefined) {
+    return false
+  }
+
+  const relevantKeys = new Set(['source', 'source_id', 'tag', 'tags', 'label', 'labels', 'category', 'categories', 'origin', 'type'])
+  return Object.entries(payload).some(([key, value]) => relevantKeys.has(key.toLowerCase()) && containsWakeupMarker(value))
+}
+
+function containsWakeupMarker(value: unknown): boolean {
+  if (typeof value === 'string') {
+    const normalized = normalizeCalendarMarker(value)
+    return WAKEUP_SOURCE_KEYS.has(normalized) || normalized.includes('wakeup')
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => containsWakeupMarker(item))
+  }
+
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value).some((item) => containsWakeupMarker(item))
+  }
+
+  return false
+}
+
+function normalizeCalendarMarker(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
+}
+
+function normalizeOptionalText(value: string): string | null {
+  const trimmedValue = value.trim()
+  return trimmedValue.length === 0 ? null : trimmedValue
+}
+
+function isDateTimeInputValue(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
+}
+
+function formatDateTimeInputValue(date: Date): string {
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
 
 interface GanttWheelInteractionState {
   panAnimationFrame: number | null
