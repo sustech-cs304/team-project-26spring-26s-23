@@ -9,7 +9,7 @@ from app.integrations.sustech.teaching_information_system.shared import _clean_t
 def test_clean_text_preserves_legitimate_falsy_values() -> None:
     assert _clean_text(None) == ""
     assert _clean_text(0) == "0"
-    assert _clean_text(False) == "False"
+    assert _clean_text(False) == ""
 
 
 

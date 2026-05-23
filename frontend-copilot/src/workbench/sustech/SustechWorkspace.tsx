@@ -6,6 +6,7 @@ import { loadSettingsWorkspaceState } from '../settings/workspace-state'
 import { BlackboardDataBrowser } from './BlackboardDataBrowser'
 import { BlackboardSyncPanel } from './BlackboardSyncPanel'
 import { useBlackboardSync, type SyncState } from './use-blackboard-sync'
+import { ANIM } from '../animation-utils'
 
 function resolveRuntimeBaseUrl(state: CopilotBootstrapController['state']): string {
   if (state && 'runtimeUrl' in state && state.runtimeUrl) {
@@ -16,7 +17,7 @@ function resolveRuntimeBaseUrl(state: CopilotBootstrapController['state']): stri
 
 type SustechModule = 'blackboard' | 'tis'
 
-const SUSTECH_MODULE_FADE_OUT_MS = 120
+const SUSTECH_MODULE_FADE_OUT_MS = ANIM.DURATION_FEEDBACK
 
 interface SustechWorkspaceProps {
   bootstrap: CopilotBootstrapController

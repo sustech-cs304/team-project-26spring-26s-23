@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 
+import { getExternalSourcesCopy } from '../locale'
 import type { WakeupDialogState } from './ExternalSourcesSection'
+import { normalizeWakeupIcsText } from './wakeup-ics-text'
 import {
   clearSettingsWorkspaceSustechCasPassword,
   saveSettingsWorkspaceSustechCasPassword,
@@ -8,6 +10,7 @@ import {
 
 interface UseSettingsWorkspaceSideflowsArgs {
   hydratedCasPasswordValue: string
+  language: string
   wakeupShareLink: string
 }
 
@@ -17,13 +20,14 @@ interface UseSettingsWorkspaceSideflowsResult {
   setCasPasswordDraft: (value: string) => void
   persistCasPasswordDraft: () => Promise<void>
   wakeupDialogState: WakeupDialogState
-  handleWakeupLinkParse: () => Promise<void>
+  handleWakeupLinkParse: (value?: string) => Promise<void>
   handleWakeupDialogClose: () => void
   handleWakeupConflictChoice: () => void
 }
 
 export function useSettingsWorkspaceSideflows({
   hydratedCasPasswordValue,
+  language,
   wakeupShareLink,
 }: UseSettingsWorkspaceSideflowsArgs): UseSettingsWorkspaceSideflowsResult {
   const [casPasswordDraft, setCasPasswordDraft] = useState('')
@@ -89,9 +93,14 @@ export function useSettingsWorkspaceSideflows({
       setCasPasswordFeedback('已自动保存 CAS 密码')
     },
     wakeupDialogState,
-    handleWakeupLinkParse: async () => {
-      const parseStatus = await resolveWakeupShareLinkParseStatus(wakeupShareLink)
-      setWakeupDialogState(parseStatus === 'success' ? { status: 'success' } : { status: 'failure' })
+    handleWakeupLinkParse: async (value?: string) => {
+      const result = await resolveWakeupIcsImportResult(value ?? wakeupShareLink, language)
+      if (!result.ok) {
+        setWakeupDialogState({ status: 'failure', error: result.error })
+        return
+      }
+      setWakeupDialogState({ status: 'success', parsed: result.parsed })
+      window.dispatchEvent(new Event('candue:calendar-refresh'))
     },
     handleWakeupDialogClose: () => {
       setWakeupDialogState(null)
@@ -102,12 +111,37 @@ export function useSettingsWorkspaceSideflows({
   }
 }
 
-export async function resolveWakeupShareLinkParseStatus(value: string): Promise<'success' | 'failure'> {
-  const normalizedValue = value.trim()
+export async function resolveWakeupIcsImportResult(
+  value: string,
+  language = 'zh-CN',
+): Promise<{ ok: true; parsed: number } | { ok: false; error: string }> {
+  const copy = getExternalSourcesCopy(language)
+  const normalizedValue = normalizeWakeupIcsText(value)
 
   if (!normalizedValue) {
-    return 'failure'
+    return { ok: false, error: copy.missingIcsError }
   }
 
-  return normalizedValue.includes('success') || normalizedValue.includes('wakeup') ? 'success' : 'failure'
+  if (!normalizedValue.startsWith('BEGIN:VCALENDAR')) {
+    return { ok: false, error: copy.invalidIcsError }
+  }
+
+  try {
+    const desktopRuntime = window.desktopRuntime
+    if (!desktopRuntime || typeof desktopRuntime.importWakeupIcs !== 'function') {
+      return { ok: false, error: copy.desktopRuntimeUnavailableError }
+    }
+
+    const data = await desktopRuntime.importWakeupIcs({ icsText: normalizedValue })
+    if (data.ok !== true) {
+      return { ok: false, error: (typeof data.error === 'string' ? data.error : copy.importFailedFallbackError) }
+    }
+    const parsed = typeof data.parsed === 'number' ? data.parsed : 0
+    if (parsed <= 0) {
+      return { ok: false, error: copy.emptyParsedEventsError }
+    }
+    return { ok: true, parsed }
+  } catch (error: unknown) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }

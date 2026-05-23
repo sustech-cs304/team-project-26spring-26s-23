@@ -65,7 +65,7 @@ class ResolvedRuntimeModelRoute:
     runtime_status: str = "enabled"
     catalog_revision: str = ""
     endpoint_family: str = ""
-    auth_kind: str = "api-key"
+    auth_kind: str = ""
     capability_hints: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

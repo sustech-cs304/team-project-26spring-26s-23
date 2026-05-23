@@ -21,6 +21,10 @@ import {
 } from './copilot-history'
 import { COPILOT_RUNTIME_LOAD_CHANNEL, COPILOT_RUNTIME_RETRY_CHANNEL } from './copilot-runtime'
 import {
+  DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+  DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
+} from './desktop-runtime'
+import {
   MANAGED_RUNTIME_INSTALL_OR_REPAIR_CHANNEL,
   MANAGED_RUNTIME_LOAD_CHANNEL,
 } from './managed-runtime/ipc'
@@ -67,6 +71,7 @@ import {
   FILE_MANAGER_SAVE_LAST_ROOT_DIRECTORY_CHANNEL,
   FILE_MANAGER_CLEAR_LAST_ROOT_DIRECTORY_CHANNEL,
 } from './file-manager/ipc'
+import { TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL, TIMELINE_DATABASE_ADD_EVENT_CHANNEL } from './renderer-ipc/timeline-database.ipc'
 import { registerMainProcessIpcHandlers } from './main-ipc'
 import type { MainProcessServices } from './main-services'
 import { createRendererIpcHandlers } from './renderer-ipc-handlers.test-support'
@@ -120,6 +125,8 @@ const EXPECTED_REMOVE_CHANNELS = [
   TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
+  DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+  DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
   ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
   ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
   ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
@@ -147,6 +154,8 @@ const EXPECTED_REMOVE_CHANNELS = [
   FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
   FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
   FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+  TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
 ]
 
 const EXPECTED_HANDLE_CHANNELS = [
@@ -185,6 +194,8 @@ const EXPECTED_HANDLE_CHANNELS = [
   TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
+  DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+  DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
   ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
   ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
   ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
@@ -212,6 +223,8 @@ const EXPECTED_HANDLE_CHANNELS = [
   FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
   FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
   FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+  TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
 ]
 
 function setupRegistration() {
@@ -327,7 +340,7 @@ describe('registerRendererIpcHandlers', () => {
     )
   })
 
-  it('wires runtime and tool catalog handlers', async () => {
+  it('wires runtime, desktop runtime, and tool catalog handlers', async () => {
     const { registeredHandlers, handlers } = setupRegistration()
 
     await expect(getRegisteredHandler(registeredHandlers, TOOL_CATALOG_LOAD_CHANNEL)(undefined, { language: 'en-US' })).resolves.toEqual(
@@ -335,6 +348,12 @@ describe('registerRendererIpcHandlers', () => {
     )
     await expect(getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_LOAD_CHANNEL)()).resolves.toEqual(await handlers.loadCopilotRuntime())
     await expect(getRegisteredHandler(registeredHandlers, COPILOT_RUNTIME_RETRY_CHANNEL)()).resolves.toEqual(await handlers.retryCopilotRuntime())
+    await expect(getRegisteredHandler(registeredHandlers, DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL)()).resolves.toEqual(
+      await handlers.loadDesktopRuntimeCalendarEvents(),
+    )
+    await expect(getRegisteredHandler(registeredHandlers, DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL)(undefined, { icsText: 'BEGIN:VCALENDAR' })).resolves.toEqual(
+      await handlers.importDesktopRuntimeWakeupIcs({ icsText: 'BEGIN:VCALENDAR' }),
+    )
   })
 
   it('wires attachment manager handlers', async () => {

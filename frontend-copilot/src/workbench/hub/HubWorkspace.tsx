@@ -18,9 +18,19 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
   const [events, setEvents] = useState<UnifiedCalendarEvent[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshToken, setRefreshToken] = useState(0)
 
   useEffect(() => {
-    const controller = new AbortController()
+    const handler = () => {
+      setRefreshToken((value) => value + 1)
+    }
+    window.addEventListener('candue:calendar-refresh', handler)
+    return () => {
+      window.removeEventListener('candue:calendar-refresh', handler)
+    }
+  }, [])
+
+  useEffect(() => {
     let active = true
 
     let actualRuntimeUrl = 'http://127.0.0.1:8765'
@@ -28,7 +38,7 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       if (bootstrap.state.status === 'ready' || bootstrap.state.status === 'degraded') {
         actualRuntimeUrl = bootstrap.state.runtimeUrl
       } else {
-        return
+        return undefined
       }
     }
 
@@ -36,21 +46,17 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
       setIsLoading(true)
       setError(null)
       try {
-        const response = await fetch(`${actualRuntimeUrl}/calendar/events`, {
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          const errText = await response.text().catch(() => 'No text')
-          throw new Error(`Failed to fetch events: ${response.status} ${response.statusText} ${errText}`)
+        const timelineDb = window.timelineDatabase
+        if (timelineDb === undefined || typeof timelineDb.loadEvents !== 'function') {
+          throw new Error('无法加载日历事件：日历数据库桥接不可用。')
         }
-        const data = await response.json()
+
+        const response = await timelineDb.loadEvents({ runtimeUrl: actualRuntimeUrl })
+
         if (active) {
-          setEvents(data.items || [])
+          setEvents(response.items || [])
         }
       } catch (err: unknown) {
-        if (controller.signal.aborted) {
-          return
-        }
         if (active) {
           setError(err instanceof Error ? err.message : String(err))
         }
@@ -60,13 +66,12 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
         }
       }
     }
-    fetchEvents()
+    void fetchEvents()
 
     return () => {
       active = false
-      controller.abort()
     }
-  }, [bootstrap])
+  }, [bootstrap, refreshToken])
 
   const handleCalendarEventChange = useCallback((eventId: string | number, patch: CalendarEventPatch) => {
     setEvents((currentEvents) => mergeCalendarEventPatch(currentEvents, eventId, patch))
@@ -100,12 +105,14 @@ function CalendarDebugPanel({ events, error, isLoading }: {
   isLoading: boolean
 }) {
   return (
-    <details className="calendar-debug-panel">
+    <details className="calendar-debug-panel" hidden>
       <summary className="calendar-debug-panel__summary">
         后端原始事件数据 Debug (Error: {error || 'None'})
       </summary>
       <div className="calendar-debug-panel__body">
-        {isLoading ? (
+        {error ? (
+          <p style={{ color: 'red' }}>错误: {error}</p>
+        ) : isLoading ? (
           <p>Loading events...</p>
         ) : events.length === 0 ? (
           <p>No events found.</p>

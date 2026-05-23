@@ -231,6 +231,24 @@ class RunEventRepository:
         )
         return tuple(result.scalars())
 
+    def list_for_runs_batch(
+        self, run_ids: tuple[str, ...]
+    ) -> dict[str, tuple[RunEventModel, ...]]:
+        """Load events for multiple runs in a single query, grouped by run_id."""
+        if not run_ids:
+            return {}
+        result = self._session.execute(
+            select(RunEventModel)
+            .where(RunEventModel.run_id.in_(run_ids))
+            .order_by(RunEventModel.seq.asc(), RunEventModel.id.asc())
+        )
+        events_by_run: dict[str, list[RunEventModel]] = {}
+        for event_model in result.scalars():
+            events_by_run.setdefault(event_model.run_id, []).append(event_model)
+        return {
+            run_id: tuple(events_by_run.get(run_id, ())) for run_id in run_ids
+        }
+
     def append_event(
         self,
         *,

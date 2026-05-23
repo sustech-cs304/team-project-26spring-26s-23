@@ -26,6 +26,7 @@ import remarkGfm from 'remark-gfm'
 import type { WorkbenchLanguage } from '../_locale/types'
 import { ContextMenu } from '../files/ContextMenu'
 import type { ContextMenuItem } from '../files/context-menu-items'
+import { ANIM, gsap, useGSAP } from '../animation-utils'
 
 interface Course {
   id: number
@@ -238,7 +239,7 @@ const TAB_CONFIG: { key: DetailTab; labelZh: string; labelEn: string; icon: type
   { key: 'resources', labelZh: '资源', labelEn: 'Resources', icon: FolderOpen },
 ]
 
-const DETAIL_TAB_FADE_OUT_MS = 110
+const DETAIL_TAB_FADE_OUT_MS = ANIM.DURATION_FEEDBACK
 
 interface DetailTabState {
   items: DataItem[]
@@ -1236,6 +1237,39 @@ function ResourceTreeRow({
   const actionState = resourceUrl ? resourceDownloadActionByUrl[resourceUrl] ?? null : null
   const downloadButtonTitle = resolveDownloadButtonTitle(downloadState.state, isEnglish)
 
+  const progressRef = useRef<HTMLSpanElement>(null)
+  const percentRef = useRef<HTMLSpanElement>(null)
+  const prevPercentRef = useRef(0)
+
+  useGSAP(() => {
+    if (progressRef.current && downloadState.progressPercent != null) {
+      gsap.fromTo(progressRef.current,
+        { width: `${prevPercentRef.current}%` },
+        {
+          width: `${downloadState.progressPercent}%`,
+          duration: 0.35,
+          ease: 'power2.out',
+          overwrite: 'auto',
+        },
+      )
+      prevPercentRef.current = downloadState.progressPercent
+    }
+    if (percentRef.current && downloadState.progressPercent != null) {
+      const counter = { value: Number.parseFloat(percentRef.current.textContent ?? '0') || 0 }
+      gsap.to(counter, {
+        value: downloadState.progressPercent,
+        duration: 0.35,
+        ease: 'power2.out',
+        overwrite: 'auto',
+        onUpdate: () => {
+          if (percentRef.current) {
+            percentRef.current.textContent = `${counter.value.toFixed(1)}%`
+          }
+        },
+      })
+    }
+  }, { dependencies: [downloadState.progressPercent, downloadState.state] })
+
   const rowClassNames = [
     'file-tree__row sustech-resource-tree__row',
     isDirectory ? 'sustech-resource-tree__row--directory' : 'sustech-resource-tree__row--file',
@@ -1264,11 +1298,15 @@ function ResourceTreeRow({
     >
       {!isDirectory && downloadState.state === 'downloading' && (
         <span
+          ref={progressRef}
           className="sustech-resource-tree__progress"
           data-testid={`blackboard-resource-progress-${resourceId}`}
           style={{ width: `${downloadState.progressPercent ?? 0}%` }}
           aria-hidden="true"
         />
+      )}
+      {!isDirectory && downloadState.state === 'downloading' && downloadState.progressPercent != null && (
+        <span ref={percentRef} className="sustech-resource-tree__percent">0%</span>
       )}
       {isDirectory ? (
         <button
@@ -1393,6 +1431,39 @@ function AssignmentAttachmentRow({
     download_failed: false,
   })
 
+  const attachmentProgressRef = useRef<HTMLSpanElement>(null)
+  const attachmentPercentRef = useRef<HTMLSpanElement>(null)
+  const attachmentPrevPercentRef = useRef(0)
+
+  useGSAP(() => {
+    if (attachmentProgressRef.current && downloadState.progressPercent != null) {
+      gsap.fromTo(attachmentProgressRef.current,
+        { width: `${attachmentPrevPercentRef.current}%` },
+        {
+          width: `${downloadState.progressPercent}%`,
+          duration: 0.35,
+          ease: 'power2.out',
+          overwrite: 'auto',
+        },
+      )
+      attachmentPrevPercentRef.current = downloadState.progressPercent
+    }
+    if (attachmentPercentRef.current && downloadState.progressPercent != null) {
+      const counter = { value: Number.parseFloat(attachmentPercentRef.current.textContent ?? '0') || 0 }
+      gsap.to(counter, {
+        value: downloadState.progressPercent,
+        duration: 0.35,
+        ease: 'power2.out',
+        overwrite: 'auto',
+        onUpdate: () => {
+          if (attachmentPercentRef.current) {
+            attachmentPercentRef.current.textContent = `${counter.value.toFixed(1)}%`
+          }
+        },
+      })
+    }
+  }, { dependencies: [downloadState.progressPercent, downloadState.state] })
+
   return (
     <div
       key={attachmentKey}
@@ -1406,11 +1477,15 @@ function AssignmentAttachmentRow({
     >
       {downloadState.state === 'downloading' && (
         <span
+          ref={attachmentProgressRef}
           className="sustech-resource-tree__progress"
           data-testid={`blackboard-assignment-attachment-progress-${attachment.resource_id ?? attachmentIndex}`}
           style={{ width: `${downloadState.progressPercent ?? 0}%` }}
           aria-hidden="true"
         />
+      )}
+      {downloadState.state === 'downloading' && downloadState.progressPercent != null && (
+        <span ref={attachmentPercentRef} className="sustech-resource-tree__percent">0%</span>
       )}
       <span className="file-tree__expand file-tree__expand--spacer" />
       <span className={`file-tree__icon sustech-resource-tree__icon sustech-resource-tree__icon--${kind}`} aria-hidden="true">

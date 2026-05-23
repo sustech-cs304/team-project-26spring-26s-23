@@ -23,6 +23,10 @@ import type {
 } from './copilot-history'
 import type { CopilotRuntimeLoadResult } from './copilot-runtime'
 import type {
+  DesktopRuntimeCalendarEventsLoadResult,
+  DesktopRuntimeWakeupIcsImportResult,
+} from './desktop-runtime'
+import type {
   McpDeleteServerResult,
   McpRefreshCatalogResult,
   McpRegistryLoadResult,
@@ -95,6 +99,14 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
     ...createAttachmentManagerFixtures(),
     ...createDesktopWindowFixtures(),
     ...createFileManagerFixtures(),
+    ...createTimelineDatabaseFixtures(),
+  }
+}
+
+function createTimelineDatabaseFixtures(): Pick<RendererIpcHandlers, 'loadTimelineEvents' | 'addTimelineEvent'> {
+  return {
+    loadTimelineEvents: vi.fn(async () => ({ items: [] })),
+    addTimelineEvent: vi.fn(async (_request) => ({ id: 1 })),
   }
 }
 
@@ -371,7 +383,8 @@ function createToolCatalogFixtures(): Pick<RendererIpcHandlers, 'loadToolCatalog
 }
 
 function createCopilotRuntimeFixtures(): Pick<RendererIpcHandlers,
-  'loadCopilotRuntime' | 'retryCopilotRuntime'> {
+  'loadCopilotRuntime' | 'retryCopilotRuntime'
+  | 'loadDesktopRuntimeCalendarEvents' | 'importDesktopRuntimeWakeupIcs'> {
   return {
     loadCopilotRuntime: vi.fn(async (): Promise<CopilotRuntimeLoadResult> => ({
       ok: true,
@@ -380,6 +393,14 @@ function createCopilotRuntimeFixtures(): Pick<RendererIpcHandlers,
     retryCopilotRuntime: vi.fn(async (): Promise<CopilotRuntimeLoadResult> => ({
       ok: true,
       snapshot: createCopilotRuntimeSnapshotFixture('starting', null),
+    })),
+    loadDesktopRuntimeCalendarEvents: vi.fn(async (): Promise<DesktopRuntimeCalendarEventsLoadResult> => ({
+      ok: true,
+      items: [],
+    })),
+    importDesktopRuntimeWakeupIcs: vi.fn(async (): Promise<DesktopRuntimeWakeupIcsImportResult> => ({
+      ok: true,
+      parsed: 1,
     })),
   }
 }

@@ -50,7 +50,7 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--text-muted) 42%, transparent);
   transform: translate(-50%, -50%);
-  transition: background-color 0.16s ease, transform 0.16s ease;
+  transition: background-color var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .copilot-chat__composer-resize-handle:hover::after {
@@ -1284,12 +1284,12 @@
   background: color-mix(in srgb, var(--surface-bg) 82%, var(--surface-muted) 18%);
   color: var(--text-primary);
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
-  animation: copilot-chat-attachment-trigger-enter 170ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: copilot-chat-attachment-trigger-enter var(--anim-duration-standard) var(--easing-enter) both;
   transition:
-    transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease;
+    transform var(--transition-duration-standard) var(--easing-enter),
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    border-color var(--transition-duration-standard) var(--easing-standard),
+    box-shadow var(--transition-duration-standard) var(--easing-standard);
 }
 
 .copilot-chat__attachment-trigger:hover:not(:disabled) {
@@ -1335,13 +1335,13 @@
   -webkit-backdrop-filter: blur(14px) saturate(118%);
   backdrop-filter: blur(14px) saturate(118%);
   transform-origin: right bottom;
-  animation: copilot-chat-attachment-panel-enter 170ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: copilot-chat-attachment-panel-enter var(--anim-duration-standard) var(--easing-enter) both;
   will-change: opacity, transform;
 }
 
 .copilot-chat__attachment-panel--closing {
   pointer-events: none;
-  animation: copilot-chat-attachment-panel-exit 130ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: copilot-chat-attachment-panel-exit var(--anim-duration-fast) var(--easing-exit) both;
 }
 
 .copilot-chat__attachment-panel-header {
@@ -1380,9 +1380,9 @@
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-bg) 92%, transparent);
   transition:
-    border-color 150ms ease,
-    background-color 150ms ease,
-    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    border-color var(--transition-duration-fast) var(--easing-standard),
+    background-color var(--transition-duration-fast) var(--easing-standard),
+    transform var(--transition-duration-fast) var(--easing-enter);
 }
 
 .copilot-chat__attachment-item:hover {
@@ -1455,9 +1455,9 @@
   background: transparent;
   color: var(--text-secondary);
   transition:
-    color 140ms ease,
-    background-color 140ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    color var(--transition-duration-fast) var(--easing-standard),
+    background-color var(--transition-duration-fast) var(--easing-standard),
+    transform var(--transition-duration-fast) var(--easing-enter);
 }
 
 .copilot-chat__attachment-remove:hover:not(:disabled),
@@ -1476,7 +1476,7 @@
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
   font-size: 0.75rem;
   transform: translateX(-50%);
-  animation: copilot-chat-attachment-pill-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: copilot-chat-attachment-pill-enter var(--anim-duration-standard) var(--easing-enter) both;
   will-change: opacity, transform;
 }
 
@@ -1503,12 +1503,12 @@
   background: rgba(15, 23, 42, 0.42);
   -webkit-backdrop-filter: blur(12px) saturate(118%);
   backdrop-filter: blur(12px) saturate(118%);
-  animation: copilot-chat-attachment-backdrop-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: copilot-chat-attachment-backdrop-enter var(--anim-duration-slow) var(--easing-enter) both;
 }
 
 .copilot-chat__attachment-preview-backdrop--closing {
   pointer-events: none;
-  animation: copilot-chat-attachment-backdrop-exit 150ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: copilot-chat-attachment-backdrop-exit var(--anim-duration-fast) var(--easing-exit) both;
 }
 
 .copilot-chat__attachment-preview-backdrop--image {
@@ -1527,11 +1527,11 @@
   border-radius: 18px;
   background: color-mix(in srgb, var(--modal-bg) 96%, var(--surface-bg) 4%);
   box-shadow: var(--modal-shadow);
-  animation: copilot-chat-attachment-dialog-enter 190ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: copilot-chat-attachment-dialog-enter var(--anim-duration-slow) var(--easing-enter) both;
 }
 
 .copilot-chat__attachment-preview-dialog--closing {
-  animation: copilot-chat-attachment-dialog-exit 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: copilot-chat-attachment-dialog-exit var(--anim-duration-fast) var(--easing-exit) both;
 }
 
 .copilot-chat__attachment-preview-dialog--image {
@@ -1622,9 +1622,9 @@
   -webkit-user-select: none;
   user-select: none;
   transition:
-    transform 0.16s ease,
-    opacity 0.16s ease,
-    box-shadow 0.16s ease;
+    transform var(--transition-duration-standard) var(--easing-standard),
+    opacity var(--transition-duration-standard) var(--easing-standard),
+    box-shadow var(--transition-duration-standard) var(--easing-standard);
 }
 
 .copilot-chat__send-button:hover:not(:disabled) {

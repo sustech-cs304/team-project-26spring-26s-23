@@ -22,10 +22,10 @@
   user-select: none;
   box-shadow: none;
   transition:
-    background-color 0.16s ease,
-    color 0.16s ease,
-    opacity 0.16s ease,
-    transform 0.16s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    color var(--transition-duration-standard) var(--easing-standard),
+    opacity var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .copilot-model-picker__trigger-value {
@@ -95,7 +95,7 @@
   border-radius: 10px;
   background: var(--panel-solid-bg);
   box-shadow: var(--shadow-md);
-  animation: copilot-model-picker-panel-enter 0.16s ease;
+  animation: copilot-model-picker-panel-enter var(--anim-duration-standard) var(--easing-standard);
 }
 
 .copilot-model-picker__search-shell {
@@ -137,10 +137,10 @@
   -webkit-user-select: none;
   user-select: none;
   transition:
-    background-color 0.14s ease,
-    color 0.14s ease,
-    border-color 0.14s ease,
-    transform 0.14s ease;
+    background-color var(--transition-duration-fast) var(--easing-standard),
+    color var(--transition-duration-fast) var(--easing-standard),
+    border-color var(--transition-duration-fast) var(--easing-standard),
+    transform var(--transition-duration-fast) var(--easing-standard);
 }
 
 .copilot-model-picker__tag:hover {
@@ -271,9 +271,9 @@
   -webkit-user-select: none;
   user-select: none;
   transition:
-    background-color 0.14s ease,
-    color 0.14s ease,
-    transform 0.14s ease;
+    background-color var(--transition-duration-fast) var(--easing-standard),
+    color var(--transition-duration-fast) var(--easing-standard),
+    transform var(--transition-duration-fast) var(--easing-standard);
 }
 
 .copilot-model-picker__option:hover {
@@ -321,9 +321,9 @@
   font-size: 0.68rem;
   line-height: 1.2;
   transition:
-    background-color 0.14s ease,
-    color 0.14s ease,
-    border-color 0.14s ease;
+    background-color var(--transition-duration-fast) var(--easing-standard),
+    color var(--transition-duration-fast) var(--easing-standard),
+    border-color var(--transition-duration-fast) var(--easing-standard);
 }
 
 .copilot-model-picker__icon {

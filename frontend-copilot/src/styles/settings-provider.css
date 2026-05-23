@@ -42,8 +42,8 @@
   padding: 0.9rem;
   text-align: left;
   transition:
-    background-color 0.18s ease,
-    transform 0.18s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-standard) var(--easing-standard);
   -webkit-user-select: none;
   user-select: none;
 }

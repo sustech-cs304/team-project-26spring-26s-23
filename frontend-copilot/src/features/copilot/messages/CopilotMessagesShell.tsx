@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { ANIM, useStaggerListEnter } from '../../../workbench/animation-utils'
 import { getCopilotChatCopy } from '../../../workbench/locale'
 import { ModelPickerIcon } from '../components/ModelPicker'
 import type { CopilotTransientErrorState } from '../copilot-chat-helpers'
@@ -27,7 +28,7 @@ import {
 
 import { renderAssistantMarkdownMessageBody } from './assistant-markdown'
 
-const assistantPlaceholderExitMs = 180
+const assistantPlaceholderExitMs = ANIM.DURATION_SLOW
 
 export interface CopilotMessagesShellProps {
   language?: string
@@ -77,6 +78,7 @@ export function CopilotMessagesShell({
   emptyState = null,
 }: CopilotMessagesShellProps) {
   const copy = getCopilotChatCopy(language)
+  const messageListRef = useRef<HTMLDivElement>(null)
   const visibleConversation = useMemo(
     () => buildVisibleConversation({
       conversation,
@@ -84,11 +86,17 @@ export function CopilotMessagesShell({
     }),
     [conversation, transientError],
   )
+  useStaggerListEnter({
+    scope: messageListRef,
+    selector: '.copilot-chat__message',
+    itemCount: visibleConversation.length,
+  })
   const renderedAssistantPlaceholder = useAssistantPlaceholderState(assistantPlaceholder)
 
   return (
     <div
       className="copilot-chat__stream copilot-chat__stream--scrollbarless"
+      ref={messageListRef}
       data-testid="chat-message-scroll-region"
       data-scrollbar-visibility="hidden"
     >
@@ -216,8 +224,6 @@ function MessageListItem({
   onOpenErrorDetail: CopilotMessagesShellProps['onOpenErrorDetail']
 }) {
   const detailRows = buildDetailRows()
-  const enterDelay = Math.min(index * 35, 300)
-
   return (
     <article
       className={[
@@ -226,7 +232,6 @@ function MessageListItem({
         turn.status ? `copilot-chat__message--${turn.status}` : '',
       ].filter((className) => className !== '').join(' ')}
       data-testid={`chat-message-${turn.kind}-${index}`}
-      style={{ animationDelay: `${enterDelay}ms` }}
     >
       {turn.kind === 'inline-form'
         ? (

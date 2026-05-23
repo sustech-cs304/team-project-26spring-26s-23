@@ -10,6 +10,7 @@ describe('preload renderer bridge', () => {
 
     expect(exposedKeys).toEqual([
       'copilotRuntime',
+      'desktopRuntime',
       'copilotHistory',
       'configCenterPublicSnapshot',
       'configCenterPublicSnapshotSubscription',
@@ -27,6 +28,7 @@ describe('preload renderer bridge', () => {
       'windowControls',
       'bootstrapWindow',
       'fileManager',
+      'timelineDatabase',
     ])
     expect(exposedKeys).not.toContain('copilotSettings')
   })

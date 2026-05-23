@@ -89,6 +89,13 @@ export default defineConfig({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
+        vite: {
+          build: {
+            rollupOptions: {
+              external: ['better-sqlite3'],
+            },
+          },
+        },
         onstart({ startup }) {
           patchElectronDevStartupExit(startup as ElectronStartup)
           return startup([

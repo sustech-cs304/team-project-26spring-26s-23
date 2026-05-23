@@ -285,6 +285,7 @@ export function useSettingsWorkspaceSectionsDomain({
 
   const sideflows = useSettingsWorkspaceSideflows({
     hydratedCasPasswordValue: casPasswordValue,
+    language: formState.language,
     wakeupShareLink: formState.wakeupShareLink,
   })
   const {

@@ -22,6 +22,7 @@ import { useManagedRuntime } from './use-managed-runtime'
 import { useMcpRegistry } from './use-mcp-registry'
 import { useSkillRegistry } from './use-skill-registry'
 import { useToolPermissionsSync } from './use-tool-permissions-sync'
+import { ANIM } from '../animation-utils'
 
 import type { McpServerEditorState } from './mcp-section'
 import type { ToolCatalogLoadState } from './shared-status'
@@ -32,7 +33,7 @@ import {
 } from './tool-permissions-section'
 
 
-const CAPABILITIES_SECTION_TRANSITION_MS = 180
+const CAPABILITIES_SECTION_TRANSITION_MS = ANIM.DURATION_SLOW
 
 // eslint-disable-next-line max-lines-per-function
 export function CapabilitiesWorkspace() {
@@ -271,6 +272,7 @@ export function CapabilitiesWorkspace() {
             {renderSectionPanel('skills', (
               <SkillsPanel
                 skills={skillRegistry.skills}
+                statusMessage={skillRegistry.statusMessage}
                 importValidationErrors={skillRegistry.importValidationErrors}
                 onToggleEnabled={skillRegistry.toggleSkillEnabled}
                 onDelete={skillRegistry.deleteSkill}

@@ -35,13 +35,14 @@
 
 .settings-section-keepalive-panel--active {
   z-index: 2;
-  animation: settings-section-fade-in 130ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: settings-curtain-rise var(--anim-duration-slow) var(--easing-enter) both,
+             settings-section-fade-in var(--anim-duration-fast) var(--easing-enter) both;
 }
 
 .settings-section-keepalive-panel--exiting {
   z-index: 1;
   pointer-events: none;
-  animation: settings-section-fade-out 110ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: settings-section-fade-out var(--anim-duration-feedback) var(--easing-exit) both;
 }
 
 .settings-section-keepalive-panel--exiting .settings-card,
@@ -64,7 +65,7 @@
 .toggle-row,
 .form-field,
 .select-option {
-  animation: settings-item-enter 165ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: settings-item-enter var(--anim-duration-standard) var(--easing-enter) both;
 }
 
 .settings-nav-list > li:nth-child(1),
@@ -86,7 +87,7 @@
 .toggle-row:nth-child(2),
 .form-field:nth-child(2),
 .select-option:nth-child(2) {
-  animation-delay: 24ms;
+  animation-delay: var(--stagger-step-each);
 }
 
 .settings-nav-list > li:nth-child(3),
@@ -97,7 +98,7 @@
 .toggle-row:nth-child(3),
 .form-field:nth-child(3),
 .select-option:nth-child(3) {
-  animation-delay: 48ms;
+  animation-delay: calc(var(--stagger-step-each) * 2);
 }
 
 .settings-nav-list > li:nth-child(4),
@@ -108,8 +109,18 @@
 .toggle-row:nth-child(4),
 .form-field:nth-child(4),
 .select-option:nth-child(4) {
-  animation-delay: 72ms;
+  animation-delay: calc(var(--stagger-step-each) * 3);
 }
+
+.settings-nav-list__item {
+  animation: settings-nav-slide-in var(--anim-duration-slow) var(--easing-enter) both;
+}
+.settings-nav-list__item:nth-child(1) { animation-delay: 0ms; }
+.settings-nav-list__item:nth-child(2) { animation-delay: var(--stagger-step-each); }
+.settings-nav-list__item:nth-child(3) { animation-delay: calc(var(--stagger-step-each) * 2); }
+.settings-nav-list__item:nth-child(4) { animation-delay: calc(var(--stagger-step-each) * 3); }
+.settings-nav-list__item:nth-child(5) { animation-delay: calc(var(--stagger-step-each) * 4); }
+.settings-nav-list__item:nth-child(n+6) { animation-delay: calc(var(--stagger-step-each) * 5); }
 
 .settings-nav-list > li:nth-child(n+5),
 .settings-card:nth-child(n+5),
@@ -119,7 +130,7 @@
 .toggle-row:nth-child(n+5),
 .form-field:nth-child(n+5),
 .select-option:nth-child(n+5) {
-  animation-delay: 96ms;
+  animation-delay: calc(var(--stagger-step-each) * 4);
 }
 
 :root[data-animations='disabled'] .settings-section-keepalive-panel,
@@ -167,6 +178,26 @@
   }
 }
 
+@keyframes settings-nav-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes settings-curtain-rise {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0% 0);
+  }
+}
+
 .settings-page--split {
   display: grid;
   grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
@@ -177,9 +208,21 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+@keyframes settings-detail-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .settings-detail-column {
   display: flex;
   flex-direction: column;
   gap: 1rem;
   min-width: 0;
+  animation: settings-detail-slide-in var(--anim-duration-slow) var(--easing-enter) both;
 }

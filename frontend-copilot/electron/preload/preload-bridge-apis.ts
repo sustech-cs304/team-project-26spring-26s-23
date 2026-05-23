@@ -45,6 +45,11 @@ import {
   type CopilotRuntimeApi,
 } from '../copilot-runtime'
 import {
+  DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+  DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
+  type DesktopRuntimeApi,
+} from '../desktop-runtime'
+import {
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
   type DesktopNotificationApi,
 } from '../desktop-notification'
@@ -108,9 +113,15 @@ import {
   type DirectoryChangedEvent,
   type FileManagerApi,
 } from '../file-manager/ipc'
+import {
+  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+  TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+  type TimelineDatabaseApi,
+} from '../renderer-ipc/timeline-database.ipc'
 
 export interface PreloadBridgeApis {
   copilotRuntime: CopilotRuntimeApi
+  desktopRuntime: DesktopRuntimeApi
   copilotHistory: CopilotHistoryApi
   configCenterPublicSnapshot: ConfigCenterPublicSnapshotApi
   configCenterPublicSnapshotSubscription: ConfigCenterPublicSnapshotSubscriptionApi
@@ -128,6 +139,7 @@ export interface PreloadBridgeApis {
   windowControls: DesktopWindowControlsApi
   bootstrapWindow: BootstrapWindowApi
   fileManager: FileManagerApi
+  timelineDatabase: TimelineDatabaseApi
 }
 
 type IpcRendererLike = Pick<IpcRenderer, 'invoke' | 'on' | 'off'>
@@ -136,6 +148,13 @@ function buildCopilotRuntimeApi(ipcRenderer: IpcRendererLike): CopilotRuntimeApi
   return {
     load() { return ipcRenderer.invoke(COPILOT_RUNTIME_LOAD_CHANNEL) },
     retry() { return ipcRenderer.invoke(COPILOT_RUNTIME_RETRY_CHANNEL) },
+  }
+}
+
+function buildDesktopRuntimeApi(ipcRenderer: IpcRendererLike): DesktopRuntimeApi {
+  return {
+    loadCalendarEvents() { return ipcRenderer.invoke(DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL) },
+    importWakeupIcs(request) { return ipcRenderer.invoke(DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL, request) },
   }
 }
 
@@ -287,6 +306,17 @@ function buildFileManagerApi(ipcRenderer: IpcRendererLike): FileManagerApi {
   }
 }
 
+function buildTimelineDatabaseApi(ipcRenderer: IpcRendererLike): TimelineDatabaseApi {
+  return {
+    loadEvents(request) {
+      return request === undefined
+        ? ipcRenderer.invoke(TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL)
+        : ipcRenderer.invoke(TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL, request)
+    },
+    addEvent(request) { return ipcRenderer.invoke(TIMELINE_DATABASE_ADD_EVENT_CHANNEL, request) },
+  }
+}
+
 export function createPreloadBridgeApis(
   ipcRenderer: IpcRendererLike,
   helpers: {
@@ -295,6 +325,7 @@ export function createPreloadBridgeApis(
 ): PreloadBridgeApis {
   return {
     copilotRuntime: buildCopilotRuntimeApi(ipcRenderer),
+    desktopRuntime: buildDesktopRuntimeApi(ipcRenderer),
     copilotHistory: buildCopilotHistoryApi(ipcRenderer),
     configCenterPublicSnapshot: buildConfigCenterPublicSnapshotApi(ipcRenderer),
     configCenterPublicSnapshotSubscription: createConfigCenterPublicSnapshotSubscriptionApi(ipcRenderer),
@@ -312,5 +343,6 @@ export function createPreloadBridgeApis(
     windowControls: buildWindowControlsApi(ipcRenderer),
     bootstrapWindow: buildBootstrapWindowApi(ipcRenderer),
     fileManager: buildFileManagerApi(ipcRenderer),
+    timelineDatabase: buildTimelineDatabaseApi(ipcRenderer),
   }
 }

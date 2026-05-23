@@ -57,6 +57,13 @@ import {
   type CopilotRuntimeLoadResult,
 } from '../copilot-runtime'
 import {
+  DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+  DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
+  type DesktopRuntimeCalendarEventsLoadResult,
+  type DesktopRuntimeWakeupIcsImportRequest,
+  type DesktopRuntimeWakeupIcsImportResult,
+} from '../desktop-runtime'
+import {
   DESKTOP_NOTIFICATION_SHOW_CHANNEL,
   type DesktopNotificationRequest,
 } from '../desktop-notification'
@@ -168,6 +175,16 @@ import {
   type UnwatchDirectoriesRequest,
   type WatchDirectoriesRequest,
 } from '../file-manager/ipc'
+import {
+  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+  TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+} from './timeline-database.ipc'
+import type {
+  AddTimelineEventRequest,
+  AddTimelineEventResult,
+  LoadTimelineEventsRequest,
+  LoadTimelineEventsResult,
+} from '../timeline-database/ipc'
 import type { RendererIpcHandlers } from './RendererIpcHandlers'
 
 export type IpcMainLike = Pick<IpcMain, 'handle' | 'removeHandler'>
@@ -208,6 +225,8 @@ const RENDERER_IPC_CHANNELS = [
   TOOL_CATALOG_LOAD_CHANNEL,
   COPILOT_RUNTIME_LOAD_CHANNEL,
   COPILOT_RUNTIME_RETRY_CHANNEL,
+  DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+  DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
   ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL,
   ATTACHMENT_MANAGER_WRITE_TEMP_FILE_CHANNEL,
   ATTACHMENT_MANAGER_READ_PREVIEW_CHANNEL,
@@ -235,6 +254,8 @@ const RENDERER_IPC_CHANNELS = [
   FILE_MANAGER_OPEN_ENTRY_WITH_SYSTEM_CHANNEL,
   FILE_MANAGER_REVEAL_ENTRY_IN_FOLDER_CHANNEL,
   FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
+  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+  TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
 ] as const
 
 export function registerRendererIpcHandlers(
@@ -251,9 +272,11 @@ export function registerRendererIpcHandlers(
   registerSkillRegistryHandlers(ipcMain, handlers)
   registerCopilotHistoryHandlers(ipcMain, handlers)
   registerToolAndRuntimeHandlers(ipcMain, handlers)
+  registerDesktopRuntimeHandlers(ipcMain, handlers)
   registerAttachmentManagerHandlers(ipcMain, handlers)
   registerDesktopNotificationAndWindowHandlers(ipcMain, handlers)
   registerFileManagerHandlers(ipcMain, handlers)
+  registerTimelineDatabaseHandlers(ipcMain, handlers)
 }
 
 function registerConfigAndSettingsHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
@@ -518,6 +541,22 @@ function registerToolAndRuntimeHandlers(ipcMain: IpcMainLike, handlers: Renderer
   })
 }
 
+function registerDesktopRuntimeHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
+  ipcMain.handle(
+    DESKTOP_RUNTIME_CALENDAR_EVENTS_LOAD_CHANNEL,
+    async (): Promise<DesktopRuntimeCalendarEventsLoadResult> => {
+      return await handlers.loadDesktopRuntimeCalendarEvents()
+    },
+  )
+
+  ipcMain.handle(
+    DESKTOP_RUNTIME_WAKEUP_ICS_IMPORT_CHANNEL,
+    async (_event, request: DesktopRuntimeWakeupIcsImportRequest): Promise<DesktopRuntimeWakeupIcsImportResult> => {
+      return await handlers.importDesktopRuntimeWakeupIcs(request)
+    },
+  )
+}
+
 function registerAttachmentManagerHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
   ipcMain.handle(ATTACHMENT_MANAGER_READ_CLIPBOARD_DATA_CHANNEL, async (): Promise<ReadClipboardAttachmentDataResult> => {
     return await handlers.readClipboardAttachmentData()
@@ -684,6 +723,22 @@ function registerFileManagerHandlers(ipcMain: IpcMainLike, handlers: RendererIpc
     FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
     async (_event, request: CopyTextToClipboardRequest): Promise<FileOperationResult> => {
       return await handlers.copyTextToClipboard(request)
+    },
+  )
+}
+
+function registerTimelineDatabaseHandlers(ipcMain: IpcMainLike, handlers: RendererIpcHandlers): void {
+  ipcMain.handle(
+    TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+    async (_event, request?: LoadTimelineEventsRequest): Promise<LoadTimelineEventsResult> => {
+      return await handlers.loadTimelineEvents(request)
+    },
+  )
+
+  ipcMain.handle(
+    TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+    async (_event, request: AddTimelineEventRequest): Promise<AddTimelineEventResult> => {
+      return await handlers.addTimelineEvent(request)
     },
   )
 }

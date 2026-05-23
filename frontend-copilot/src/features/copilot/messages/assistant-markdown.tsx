@@ -1,6 +1,8 @@
 import { Check, Copy, Download, TextWrap } from 'lucide-react'
-import { isValidElement, useEffect, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
+import { isValidElement, useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
+
+import { gsap } from '../../../workbench/animation-utils'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeMathjax from 'rehype-mathjax/svg'
 import remarkGfm from 'remark-gfm'
@@ -75,6 +77,7 @@ function AssistantCodeBlock({ node, className, children, ...props }: AssistantCo
   const codeText = useMemo(() => extractTextFromReactNode(children), [children])
   const [isWrapped, setIsWrapped] = useState(true)
   const [copyStatus, setCopyStatus] = useState<CodeCopyStatus>('idle')
+  const copyBtnRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (copyStatus === 'idle') {
@@ -91,6 +94,7 @@ function AssistantCodeBlock({ node, className, children, ...props }: AssistantCo
   const handleCopyCode = async () => {
     const copied = await copyCodeTextToClipboard(codeText)
     setCopyStatus(copied ? 'copied' : 'failed')
+    gsap.fromTo(copyBtnRef.current, { scale: 0.85 }, { scale: 1, duration: 0.25, ease: 'back.out(2)' })
   }
 
   const handleDownloadCode = () => {
@@ -114,6 +118,7 @@ function AssistantCodeBlock({ node, className, children, ...props }: AssistantCo
         <span className="copilot-chat__code-block-language">{languageLabel}</span>
         <span className="copilot-chat__code-block-actions" aria-label="代码块操作">
           <button
+            ref={copyBtnRef}
             type="button"
             className={joinClassNames(
               'copilot-chat__code-block-action',

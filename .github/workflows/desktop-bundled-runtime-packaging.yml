@@ -130,6 +130,17 @@ jobs:
         working-directory: frontend-copilot
         run: npm ci
 
+      - name: Ensure app-builder is executable (macos-arm64)
+        if: matrix.target_id == 'macos-arm64'
+        working-directory: frontend-copilot
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la node_modules/app-builder-bin/mac || true
+          chmod +x node_modules/app-builder-bin/mac/app-builder_arm64 || true
+          xattr -dr com.apple.quarantine node_modules/app-builder-bin/mac/app-builder_arm64 2>/dev/null || true
+          file node_modules/app-builder-bin/mac/app-builder_arm64 || true
+
       - name: Read frontend package version
         id: package_version
         working-directory: frontend-copilot

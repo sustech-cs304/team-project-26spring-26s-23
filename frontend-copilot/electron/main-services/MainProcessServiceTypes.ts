@@ -27,6 +27,11 @@ import type {
 } from '../copilot-history'
 import type { ElectronCopilotHistoryService } from '../copilot-history-service'
 import type { HostedBackendService } from '../runtime/hosted-backend-service'
+import type {
+  DesktopRuntimeCalendarEventsLoadResult,
+  DesktopRuntimeWakeupIcsImportRequest,
+  DesktopRuntimeWakeupIcsImportResult,
+} from '../desktop-runtime'
 import type { ManagedRuntimeLoadResponse } from '../managed-runtime/ipc'
 import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import type {
@@ -104,6 +109,12 @@ import type {
   UnwatchDirectoriesRequest,
   WatchDirectoriesRequest,
 } from '../file-manager/ipc'
+import type {
+  LoadTimelineEventsRequest,
+  LoadTimelineEventsResult,
+  AddTimelineEventRequest,
+  AddTimelineEventResult,
+} from '../timeline-database/ipc'
 
 export type MainProcessServiceLogLevel = 'info' | 'warn' | 'error'
 
@@ -137,6 +148,10 @@ export interface CreateMainProcessServicesOptions {
 export interface MainProcessServices {
   loadConfigCenterPublicSnapshot: () => Promise<ConfigCenterPublicSnapshotLoadResult>
   loadToolCatalog: () => Promise<ToolCatalogLoadResult>
+  loadDesktopRuntimeCalendarEvents: () => Promise<DesktopRuntimeCalendarEventsLoadResult>
+  importDesktopRuntimeWakeupIcs: (
+    request: DesktopRuntimeWakeupIcsImportRequest,
+  ) => Promise<DesktopRuntimeWakeupIcsImportResult>
   applyConfigCenterPublicPatch: (patch: ConfigCenterPublicPatch) => Promise<ConfigCenterPublicPatchResult>
   loadSettingsWorkspaceState: () => Promise<SettingsWorkspaceStateLoadResult>
   saveSettingsWorkspaceState: (input: SettingsWorkspaceStateSaveInput) => Promise<SettingsWorkspaceStateSaveResult>
@@ -216,4 +231,6 @@ export interface MainProcessServices {
   openEntryWithSystem: (request: OpenEntryWithSystemRequest) => Promise<FileOperationResult>
   revealEntryInFolder: (request: RevealEntryInFolderRequest) => Promise<FileOperationResult>
   copyTextToClipboard: (request: CopyTextToClipboardRequest) => Promise<FileOperationResult>
+  loadTimelineEvents: (request?: LoadTimelineEventsRequest) => Promise<LoadTimelineEventsResult>
+  addTimelineEvent: (request: AddTimelineEventRequest) => Promise<AddTimelineEventResult>
 }

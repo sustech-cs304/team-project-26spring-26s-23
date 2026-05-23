@@ -421,7 +421,7 @@ def test_history_routes_require_local_token_and_handle_missing_records(tmp_path:
         )
 
     assert unauthorized.status_code == 401
-    assert unauthorized.json()["detail"]["code"] == "invalid_local_token"
+    assert unauthorized.json()["detail"]["code"] == "missing_local_token"
     assert missing_thread.status_code == 404
     assert missing_thread.json()["detail"]["code"] == "thread_not_found"
     assert missing_run.status_code == 404

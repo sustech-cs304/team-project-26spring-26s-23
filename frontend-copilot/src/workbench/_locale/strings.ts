@@ -371,11 +371,22 @@ const externalSourcesCopy: Record<WorkbenchLanguage, {
   title: string
   linkLabel: string
   linkPlaceholder: string
+  importIcsButton: string
+  importIcsAriaLabel: string
+  icsLoadedHint: string
+  icsEmptyHint: string
   parseLinkAriaLabel: string
   dialogAriaLabel: string
   dialogTitle: string
   closeDialogAriaLabel: string
   parseFailureText: string
+  parseFailureSeparator: string
+  importSuccessText: (parsed: number) => string
+  missingIcsError: string
+  invalidIcsError: string
+  desktopRuntimeUnavailableError: string
+  importFailedFallbackError: string
+  emptyParsedEventsError: string
   keepWakeupButton: string
   keepTisButton: string
   smartResolveButton: string
@@ -384,12 +395,23 @@ const externalSourcesCopy: Record<WorkbenchLanguage, {
   'zh-CN': {
     title: 'WakeUP 课程群同步',
     linkLabel: 'WakeUP 分享链接',
-    linkPlaceholder: '输入 WakeUP 分享链接',
+    linkPlaceholder: '输入 WakeUP 分享链接或导入 .ics',
+    importIcsButton: '导入 .ics 文件',
+    importIcsAriaLabel: '导入 WakeUP .ics 文件',
+    icsLoadedHint: '已加载 .ics 内容',
+    icsEmptyHint: '未选择 .ics 文件',
     parseLinkAriaLabel: '解析链接',
     dialogAriaLabel: 'WakeUP 链接解析',
     dialogTitle: '解析链接',
     closeDialogAriaLabel: '关闭解析弹窗',
     parseFailureText: '解析未成功',
+    parseFailureSeparator: '：',
+    importSuccessText: (parsed) => `已导入 ${parsed} 条事件`,
+    missingIcsError: '未选择 .ics 文件',
+    invalidIcsError: '不是有效的 .ics 内容',
+    desktopRuntimeUnavailableError: '桌面运行时 IPC 不可用',
+    importFailedFallbackError: '导入失败',
+    emptyParsedEventsError: '未解析到任何事件',
     keepWakeupButton: '保留 WakeUP版本',
     keepTisButton: '保留 TIS 版本',
     smartResolveButton: '尝试智能解析',
@@ -398,12 +420,23 @@ const externalSourcesCopy: Record<WorkbenchLanguage, {
   'en-US': {
     title: 'WakeUP Course Sync',
     linkLabel: 'WakeUP Share Link',
-    linkPlaceholder: 'Enter WakeUP share link',
+    linkPlaceholder: 'Enter WakeUP share link or import .ics',
+    importIcsButton: 'Import .ics file',
+    importIcsAriaLabel: 'Import WakeUP .ics file',
+    icsLoadedHint: 'Loaded .ics content',
+    icsEmptyHint: 'No .ics file selected',
     parseLinkAriaLabel: 'Parse link',
     dialogAriaLabel: 'WakeUP link parsing',
     dialogTitle: 'Parse Link',
     closeDialogAriaLabel: 'Close parsing dialog',
     parseFailureText: 'Parsing failed',
+    parseFailureSeparator: ': ',
+    importSuccessText: (parsed) => `Imported ${parsed} ${parsed === 1 ? 'event' : 'events'}`,
+    missingIcsError: 'No .ics file selected',
+    invalidIcsError: 'The selected file is not valid .ics content',
+    desktopRuntimeUnavailableError: 'Desktop runtime IPC is unavailable',
+    importFailedFallbackError: 'Import failed',
+    emptyParsedEventsError: 'No events were parsed',
     keepWakeupButton: 'Keep WakeUP version',
     keepTisButton: 'Keep TIS version',
     smartResolveButton: 'Try smart merge',

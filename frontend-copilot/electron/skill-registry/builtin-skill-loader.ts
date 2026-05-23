@@ -5,13 +5,27 @@ import { fileURLToPath } from 'node:url'
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url))
 const BUILTIN_SKILLS_DIR_NAME = 'builtin-skills'
 
-function buildBuiltinSkillRootCandidates(): string[] {
+interface BuiltinSkillRootCandidateContext {
+  moduleDir: string
+  cwd: string
+}
+
+interface ResolveBuiltinSkillsSourceRootOptions {
+  candidates?: readonly string[]
+  candidateContext?: Partial<BuiltinSkillRootCandidateContext>
+}
+
+export function buildBuiltinSkillRootCandidates(
+  context: Partial<BuiltinSkillRootCandidateContext> = {},
+): string[] {
+  const moduleDir = context.moduleDir ?? MODULE_DIR
+  const cwd = context.cwd ?? process.cwd()
   const rawCandidates = [
-    path.join(path.resolve(MODULE_DIR, '..', '..'), BUILTIN_SKILLS_DIR_NAME),
-    path.join(path.resolve(MODULE_DIR, '..', '..', '..'), 'frontend-copilot', BUILTIN_SKILLS_DIR_NAME),
-    path.join(path.resolve(MODULE_DIR, '..', '..', '..'), BUILTIN_SKILLS_DIR_NAME),
-    path.join(process.cwd(), BUILTIN_SKILLS_DIR_NAME),
-    path.join(process.cwd(), 'frontend-copilot', BUILTIN_SKILLS_DIR_NAME),
+    path.join(path.resolve(moduleDir, '..', '..'), BUILTIN_SKILLS_DIR_NAME),
+    path.join(path.resolve(moduleDir, '..', '..', '..'), 'frontend-copilot', BUILTIN_SKILLS_DIR_NAME),
+    path.join(path.resolve(moduleDir, '..', '..', '..'), BUILTIN_SKILLS_DIR_NAME),
+    path.join(cwd, BUILTIN_SKILLS_DIR_NAME),
+    path.join(cwd, 'frontend-copilot', BUILTIN_SKILLS_DIR_NAME),
   ]
 
   return [...new Set(rawCandidates.map((candidate) => path.resolve(candidate)))]
@@ -23,8 +37,10 @@ export interface BuiltinSkillSource {
   enabledByDefault: boolean
 }
 
-export async function resolveBuiltinSkillsSourceRoot(): Promise<string> {
-  const candidates = buildBuiltinSkillRootCandidates()
+export async function resolveBuiltinSkillsSourceRoot(
+  options: ResolveBuiltinSkillsSourceRootOptions = {},
+): Promise<string> {
+  const candidates = options.candidates ?? buildBuiltinSkillRootCandidates(options.candidateContext)
 
   for (const candidate of candidates) {
     try {
@@ -38,8 +54,10 @@ export async function resolveBuiltinSkillsSourceRoot(): Promise<string> {
   throw new Error(`Builtin skills source directory was not found. Checked: ${candidates.join(', ')}`)
 }
 
-export async function discoverBuiltinSkillSources(): Promise<BuiltinSkillSource[]> {
-  const rootDirectory = await resolveBuiltinSkillsSourceRoot()
+export async function discoverBuiltinSkillSources(
+  options: ResolveBuiltinSkillsSourceRootOptions = {},
+): Promise<BuiltinSkillSource[]> {
+  const rootDirectory = await resolveBuiltinSkillsSourceRoot(options)
   const entries = await readdir(rootDirectory, { withFileTypes: true })
   return entries
     .filter((entry) => entry.isDirectory())

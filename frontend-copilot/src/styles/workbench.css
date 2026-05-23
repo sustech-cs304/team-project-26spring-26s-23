@@ -1,6 +1,6 @@
 .topic-list__item {
   position: relative;
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  transition: transform var(--transition-duration-slow) var(--easing-standard), opacity var(--transition-duration-slow) var(--easing-standard);
 }
 
 .topic-list__drop-gap {
@@ -8,8 +8,8 @@
   border: 1px dashed color-mix(in srgb, var(--accent-strong) 55%, transparent);
   background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
   opacity: 0.92;
-  animation: topic-drop-gap-enter 0.18s ease-out;
-  transition: height 0.18s ease, opacity 0.18s ease, transform 0.18s ease;
+  animation: topic-drop-gap-enter var(--anim-duration-slow) var(--easing-spring);
+  transition: height var(--transition-duration-standard) var(--easing-standard), opacity var(--transition-duration-standard) var(--easing-standard), transform var(--transition-duration-standard) var(--easing-standard);
 }
 
 .assistant-card {
@@ -76,7 +76,7 @@
   box-shadow: none;
   -webkit-user-select: none;
   user-select: none;
-  transition: background-color 0.18s ease;
+  transition: background-color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .new-thread-button[aria-busy='true'] {
@@ -95,10 +95,10 @@
   text-align: left;
   cursor: grab;
   transition:
-    transform 0.2s ease,
-    opacity 0.2s ease,
-    background-color 0.18s ease,
-    box-shadow 0.2s ease;
+    transform var(--transition-duration-slow) var(--easing-standard),
+    opacity var(--transition-duration-slow) var(--easing-standard),
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    box-shadow var(--transition-duration-slow) var(--easing-standard);
 }
 
 .topic-card:active {
@@ -132,7 +132,7 @@
   border: 1px solid var(--border-color);
   background: var(--surface-bg);
   box-shadow: var(--shadow-md);
-  animation: session-context-menu-enter 0.18s ease-out;
+  animation: session-context-menu-enter var(--anim-duration-slow) var(--easing-spring);
   transform-origin: top left;
 }
 
@@ -176,9 +176,9 @@
   -webkit-user-select: none;
   user-select: none;
   transition:
-    background-color 0.16s ease,
-    transform 0.16s ease,
-    color 0.16s ease;
+    background-color var(--transition-duration-standard) var(--easing-standard),
+    transform var(--transition-duration-standard) var(--easing-standard),
+    color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .session-context-menu__item:hover {
@@ -204,7 +204,7 @@
 .session-context-menu__submenu-caret {
   color: var(--text-muted);
   font-size: 0.92rem;
-  transition: transform 0.16s ease, color 0.16s ease;
+  transition: transform var(--transition-duration-standard) var(--easing-standard), color var(--transition-duration-standard) var(--easing-standard);
 }
 
 .session-context-menu__item--submenu[aria-expanded='true'] .session-context-menu__submenu-caret {
@@ -229,7 +229,7 @@
   border: 1px solid var(--border-color);
   background: var(--surface-bg);
   box-shadow: var(--shadow-md);
-  animation: session-context-submenu-enter 0.16s ease-out;
+  animation: session-context-submenu-enter var(--anim-duration-standard) var(--easing-standard);
   transform-origin: left top;
 }
 
