@@ -33,6 +33,7 @@ const assistantPlaceholderExitMs = ANIM.DURATION_SLOW
 export interface CopilotMessagesShellProps {
   language?: string
   sessionId?: string | null
+  messageSurfaceVisible?: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder?: CopilotAssistantPlaceholderState | null
   models?: CopilotModelOption[]
@@ -60,6 +61,7 @@ export interface CopilotMessagesShellProps {
 export function CopilotMessagesShell({
   language = 'zh-CN',
   sessionId = null,
+  messageSurfaceVisible = true,
   conversation,
   assistantPlaceholder = null,
   models = [],
@@ -90,7 +92,7 @@ export function CopilotMessagesShell({
   const renderedAssistantPlaceholder = useAssistantPlaceholderState(assistantPlaceholder)
 
   useEffect(() => {
-    if (visibleConversation.length === 0) {
+    if (!messageSurfaceVisible || visibleConversation.length === 0) {
       return
     }
 
@@ -106,7 +108,7 @@ export function CopilotMessagesShell({
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [sessionId, latestVisibleMessageId, visibleConversation.length])
+  }, [messageSurfaceVisible, sessionId, latestVisibleMessageId, visibleConversation.length])
 
   return (
     <div
