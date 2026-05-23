@@ -77,6 +77,82 @@ describe('calendar gantt model', () => {
     expect(getCalendarEventIdFromGanttTaskId('calendar-event-abc')).toBe('abc')
     expect(getCalendarEventIdFromGanttTaskId('external')).toBe('external')
   })
+
+  it('preserves original ISO times on mapped tasks for popup consistency', () => {
+    const mapping = mapCalendarEventsToGanttTasks([
+      createCalendarEvent({
+        id: 1,
+        start_time: '2026-05-23T00:00:00.000Z',
+        end_time: '2026-05-23T00:59:00.000Z',
+      }),
+    ])
+
+    expect(mapping.tasks).toHaveLength(1)
+    expect(mapping.tasks[0]._originalStartIso).toBe('2026-05-23T00:00:00.000Z')
+    expect(mapping.tasks[0]._originalEndIso).toBe('2026-05-23T00:59:00.000Z')
+  })
+
+  it('maps sub-day events correctly without skipping them', () => {
+    const mapping = mapCalendarEventsToGanttTasks([
+      createCalendarEvent({
+        id: 1,
+        start_time: '2026-05-23T00:00:00.000Z',
+        end_time: '2026-05-23T00:59:00.000Z',
+      }),
+    ])
+
+    expect(mapping.skippedEventCount).toBe(0)
+    expect(mapping.tasks).toHaveLength(1)
+
+    const task = mapping.tasks[0]
+    // start and end should be valid Date objects
+    expect(task.start).toBeInstanceOf(Date)
+    expect(task.end).toBeInstanceOf(Date)
+    // the 59-min difference should be preserved in the date objects
+    expect(task.end.getTime() - task.start.getTime()).toBe(59 * 60 * 1000)
+  })
+
+  it('maps multi-day events with correct ISO preservation', () => {
+    const mapping = mapCalendarEventsToGanttTasks([
+      createCalendarEvent({
+        id: 1,
+        start_time: '2026-05-01T00:00:00.000Z',
+        end_time: '2026-05-03T00:00:00.000Z',
+      }),
+      createCalendarEvent({
+        id: 2,
+        start_time: '2026-05-04T08:00:00.000Z',
+        end_time: '2026-05-04T10:30:00.000Z',
+      }),
+    ])
+
+    expect(mapping.skippedEventCount).toBe(0)
+    expect(mapping.tasks).toHaveLength(2)
+
+    // Multi-day event
+    expect(mapping.tasks[0]._originalStartIso).toBe('2026-05-01T00:00:00.000Z')
+    expect(mapping.tasks[0]._originalEndIso).toBe('2026-05-03T00:00:00.000Z')
+
+    // Sub-day event (2.5 hours)
+    expect(mapping.tasks[1]._originalStartIso).toBe('2026-05-04T08:00:00.000Z')
+    expect(mapping.tasks[1]._originalEndIso).toBe('2026-05-04T10:30:00.000Z')
+    expect(mapping.tasks[1].end.getTime() - mapping.tasks[1].start.getTime()).toBe(2.5 * 60 * 60 * 1000)
+  })
+
+  it('skips events with invalid or missing end_time', () => {
+    const mapping = mapCalendarEventsToGanttTasks([
+      createCalendarEvent({ id: 1, end_time: null }),
+      createCalendarEvent({
+        id: 2,
+        start_time: '2026-05-01T10:00:00.000Z',
+        end_time: '2026-05-01T09:00:00.000Z', // end before start
+      }),
+      createCalendarEvent({ id: 3, start_time: 'invalid-date' }),
+    ])
+
+    expect(mapping.skippedEventCount).toBe(3)
+    expect(mapping.tasks).toHaveLength(0)
+  })
 })
 
 function createCalendarEvent(overrides: Partial<UnifiedCalendarEvent> = {}): UnifiedCalendarEvent {

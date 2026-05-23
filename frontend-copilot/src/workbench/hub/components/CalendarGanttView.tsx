@@ -1144,7 +1144,12 @@ function correctGanttBarDurations(gantt: Gantt): void {
     const msPer = GANTT_DURATION_MS_PER_UNIT[config.unit] ?? 86400000
     bar.duration = (msDiff / msPer) / config.step
     bar.width = config.column_width * bar.duration
-    bar.update_bar_position({})
+
+    // Directly update the SVG bar width to avoid triggering update_bar_position({}),
+    // which calls date_changed() → compute_start_end_date() → date_utils.add().
+    // date_utils.add() uses parseInt which truncates fractional day durations,
+    // corrupting task._end for sub-day events (e.g. 59 minutes → same-day 00:00).
+    bar.$bar.setAttribute('width', String(Math.max(1, bar.width)))
   }
 }
 
@@ -1386,8 +1391,19 @@ function clampNumber(value: number, min: number, max: number): number {
 }
 
 function buildPopupHtml(task: GanttTask): string {
-  const start = task._start instanceof Date ? task._start : new Date(task.start)
-  const end = task._end instanceof Date ? task._end : new Date(task.end)
+  const originalStartIso = typeof task._originalStartIso === 'string' ? task._originalStartIso : null
+  const originalEndIso = typeof task._originalEndIso === 'string' ? task._originalEndIso : null
+
+  // Prefer original ISO strings to avoid displaying Gantt-runtime-mutated dates.
+  // When task._start / task._end are polluted by date_utils.add() truncation,
+  // the popup would show a different time than the edit dialog and the actual DB.
+  const start = originalStartIso !== null
+    ? new Date(originalStartIso)
+    : task._start instanceof Date ? task._start : new Date(task.start)
+  const end = originalEndIso !== null
+    ? new Date(originalEndIso)
+    : task._end instanceof Date ? task._end : new Date(task.end)
+
   const progress = typeof task.progress === 'number' ? task.progress : 0
   const description = typeof task.description === 'string' && task.description.length > 0
     ? `<p class="calendar-gantt-popup__description">${escapeHtml(task.description)}</p>`
