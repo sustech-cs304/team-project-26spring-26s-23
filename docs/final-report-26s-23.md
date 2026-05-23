@@ -51,7 +51,7 @@ python scripts/metrics.py
 ### 1.3 分析
 
 - 后端的平均圈复杂度为 **3.25**，处于健康范围内（通常 < 10 被视为低风险）。最大圈复杂度 20 集中在持久化层和集成层，这符合数据同步与 Blackboard API 交互的固有复杂性。
-- 前端的平均圈复杂度较低，为 **1.78**，但最大值为 **30**，位于 [`electron/capability-bridge/protocol.ts`](../frontend-copilot/electron/capability-bridge/protocol.ts)。该文件负责 Electron 主进程与 Python 后端之间的通信协议，包含大量条件分支。建议持续关注此文件，必要时进行重构。
+- 前端的平均圈复杂度较低，为 **1.78**，但最大值为 **30**，位于 [`electron/capability-bridge/protocol.ts`](https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/frontend-copilot/electron/capability-bridge/protocol.ts)。该文件负责 Electron 主进程与 Python 后端之间的通信协议，包含大量条件分支。建议持续关注此文件，必要时进行重构。
 - 前端的源文件数（451 vs. 248）和代码行数（77,801 vs. 56,166）明显多于后端，这反映了更丰富的 UI 层和 Electron 桌面外壳。
 
 ---
@@ -60,7 +60,7 @@ python scripts/metrics.py
 
 我们的项目使用 **GitHub Actions** 作为 CI/CD 平台。管道由 **6 个工作流** 组成，涵盖静态分析、测试、文档部署、桌面打包以及 AI 辅助代码审查。
 
-所有工作流配置文件均位于 [`.github/workflows/`](../.github/workflows/) 目录下。
+所有工作流配置文件均位于 [`.github/workflows/`](https://github.com/sustech-cs304/team-project-26spring-26s-23/tree/main/.github/workflows/) 目录下。
 
 ### 2.1 管道总览
 
@@ -130,7 +130,7 @@ python scripts/metrics.py
 
 #### 2.2.1 后端静态检查（`backend-static-checks`）
 
-**触发条件**：Push/PR 涉及 `backend/**` 路径 | **配置文件**：[`.github/workflows/backend-static-checks.yml`](../.github/workflows/backend-static-checks.yml)
+**触发条件**：Push/PR 涉及 `backend/**` 路径 | **配置文件**：[`.github/workflows/backend-static-checks.yml`](https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/.github/workflows/backend-static-checks.yml)
 
 该工作流包含 **3 个并行作业**：
 
@@ -140,11 +140,11 @@ python scripts/metrics.py
 | **业务域 pytest** | [pytest](https://pytest.org/) + [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) | Blackboard 和教务系统业务逻辑的单元测试（API、数据、Provider、共享层），排除 `live` 和 `e2e` 标记 |
 | **运行时与冒烟 pytest** | [pytest](https://pytest.org/) + [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) | Copilot 运行时和桌面运行时模块的单元测试，以及 CI 安全的集成冒烟测试 |
 
-**环境配置**：Python 版本来自 [`.python-version`](../backend/.python-version)，依赖通过 `uv sync --frozen` 安装，由 [astral-sh/setup-uv](https://github.com/astral-sh/setup-uv) 管理。
+**环境配置**：Python 版本来自 [`.python-version`](https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/backend/.python-version)，依赖通过 `uv sync --frozen` 安装，由 [astral-sh/setup-uv](https://github.com/astral-sh/setup-uv) 管理。
 
 #### 2.2.2 前端验证（`frontend-validation`）
 
-**触发条件**：Push/PR 涉及 `frontend-copilot/**` 路径 | **配置文件**：[`.github/workflows/frontend-validation.yml`](../.github/workflows/frontend-validation.yml)
+**触发条件**：Push/PR 涉及 `frontend-copilot/**` 路径 | **配置文件**：[`.github/workflows/frontend-validation.yml`](https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/.github/workflows/frontend-validation.yml)
 
 | 步骤 | 工具 | 说明 |
 |---|---|---|
@@ -156,7 +156,7 @@ python scripts/metrics.py
 
 #### 2.2.3 网站验证（`website-validation`）
 
-**触发条件**：Push/PR 涉及 `website/**` 或 `docs/**` 路径 | **配置文件**：[`.github/workflows/website-validation.yml`](../.github/workflows/website-validation.yml)
+**触发条件**：Push/PR 涉及 `website/**` 或 `docs/**` 路径 | **配置文件**：[`.github/workflows/website-validation.yml`](https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/.github/workflows/website-validation.yml)
 
 | 步骤 | 工具 | 说明 |
 |---|---|---|
@@ -165,7 +165,7 @@ python scripts/metrics.py
 
 #### 2.2.4 文档部署至 GitHub Pages（`deploy-docs-to-github-pages`）
 
-**触发条件**：Push 到 `main` 分支，涉及 `website/**` 或 `docs/**` 变更 | **配置文件**：[`.github/workflows/deploy-docs-to-github-pages.yml`](../.github/workflows/deploy-docs-to-github-pages.yml)
+**触发条件**：Push 到 `main` 分支，涉及 `website/**` 或 `docs/**` 变更 | **配置文件**：[`.github/workflows/deploy-docs-to-github-pages.yml`](https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/.github/workflows/deploy-docs-to-github-pages.yml)
 
 | 步骤 | 工具 | 说明 |
 |---|---|---|
@@ -176,7 +176,7 @@ python scripts/metrics.py
 
 #### 2.2.5 桌面端多平台打包（`desktop-bundled-runtime-packaging`）
 
-**触发条件**：手动触发 (`workflow_dispatch`) 或 Push/PR 涉及桌面端相关路径 | **配置文件**：[`.github/workflows/desktop-bundled-runtime-packaging.yml`](../.github/workflows/desktop-bundled-runtime-packaging.yml)
+**触发条件**：手动触发 (`workflow_dispatch`) 或 Push/PR 涉及桌面端相关路径 | **配置文件**：[`.github/workflows/desktop-bundled-runtime-packaging.yml`](https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/.github/workflows/desktop-bundled-runtime-packaging.yml)
 
 采用 **矩阵构建策略**，覆盖 4 个目标平台：
 
@@ -189,14 +189,14 @@ python scripts/metrics.py
 
 | 步骤 | 工具 | 说明 |
 |---|---|---|
-| **下载 Python** | [`.github/scripts/download-distributable-python.ps1`](../.github/scripts/download-distributable-python.ps1) / `.sh` | 下载并解压独立的 Python 3.12.10 发行版用于打包 |
+| **下载 Python** | [`.github/scripts/download-distributable-python.ps1`](https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/.github/scripts/download-distributable-python.ps1) / `.sh` | 下载并解压独立的 Python 3.12.10 发行版用于打包 |
 | **构建后端** | [uv](https://docs.astral.sh/uv/) | 安装后端依赖并准备 Python 运行时 |
 | **构建前端** | [Vite](https://vitejs.dev/) + [electron-builder](https://www.electron.build/) | 构建 React 前端并打包 Electron 桌面应用 |
 | **打包** | [electron-builder](https://www.electron.build/) | 生成包含内嵌 Python 运行时的平台特定安装包 |
 
 #### 2.2.6 PR AI 审查（`pr-agent`）
 
-**触发条件**：PR 创建/重新打开/更新，或 Issue 评论中使用 `/` 命令 | **配置文件**：[`.github/workflows/pr-agent.yml`](../.github/workflows/pr-agent.yml)
+**触发条件**：PR 创建/重新打开/更新，或 Issue 评论中使用 `/` 命令 | **配置文件**：[`.github/workflows/pr-agent.yml`](https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/.github/workflows/pr-agent.yml)
 
 | 工具 | 说明 |
 |---|---|
