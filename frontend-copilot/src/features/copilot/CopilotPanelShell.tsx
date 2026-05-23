@@ -318,6 +318,7 @@ function renderActiveSessionShell(
               : (
                   <CopilotMessagesShell
                     language={props.language}
+                    sessionId={props.sessionShell?.sessionId}
                     conversation={props.conversation}
                     assistantPlaceholder={props.assistantPlaceholder}
                     models={props.modelGroups.flatMap((group) => group.models)}
