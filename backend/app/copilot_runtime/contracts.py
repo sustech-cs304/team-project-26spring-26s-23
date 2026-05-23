@@ -30,6 +30,9 @@ CAPABILITIES_GET_METHOD = "capabilities/get"
 GLOBAL_TOOL_CATALOG_GET_METHOD = "tools/catalog/get"
 THINKING_CAPABILITY_GET_METHOD = "thinking/capability/get"
 TOOL_APPROVAL_RESOLVE_METHOD = "tool-approval/resolve"
+SHELL_SESSION_START_METHOD = "shell-session/start"
+SHELL_SESSION_EXEC_METHOD = "shell-session/exec"
+SHELL_SESSION_CLOSE_METHOD = "shell-session/close"
 THINKING_CAPABILITY_SCHEMA_VERSION = "canonical-thinking-capability-v2"
 DEFAULT_RUNTIME_PROTOCOL = "single-endpoint"
 DEFAULT_RUNTIME_STAGE = "phase3-run-bridge"
@@ -824,6 +827,9 @@ def build_runtime_scaffold(
             GLOBAL_TOOL_CATALOG_GET_METHOD,
             THINKING_CAPABILITY_GET_METHOD,
             TOOL_APPROVAL_RESOLVE_METHOD,
+            SHELL_SESSION_START_METHOD,
+            SHELL_SESSION_EXEC_METHOD,
+            SHELL_SESSION_CLOSE_METHOD,
         ),
         default_agent=resolved_agent_registry.get_default().name,
         agent_directory_version=resolved_agent_registry.directory_version,

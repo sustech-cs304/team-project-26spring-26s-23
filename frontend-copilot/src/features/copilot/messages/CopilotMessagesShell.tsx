@@ -36,6 +36,13 @@ export interface CopilotMessagesShellProps {
   models?: CopilotModelOption[]
   transientError?: CopilotTransientErrorState | null
   runtimeUrl?: string | null
+  shellPassthrough?: {
+    enabled: boolean
+    sessionId: string | null
+    shell: string | null
+    cwd: string | null
+  } | null
+  onActivateShellPassthrough?: ((input: { sessionId: string; shell: string; cwd: string | null }) => void) | null
   onSubmitInlineForm?: ((input: {
     toolCallId: string
     formId: string
@@ -62,6 +69,8 @@ export function CopilotMessagesShell({
   models = [],
   transientError = null,
   runtimeUrl = null,
+  shellPassthrough = null,
+  onActivateShellPassthrough = null,
   onSubmitInlineForm = null,
   onResolveToolApproval = null,
   onOpenErrorDetail = null,
@@ -103,6 +112,8 @@ export function CopilotMessagesShell({
               models={models}
               language={language}
               runtimeUrl={runtimeUrl}
+              shellPassthrough={shellPassthrough}
+              onActivateShellPassthrough={onActivateShellPassthrough}
               onSubmitInlineForm={onSubmitInlineForm}
               onResolveToolApproval={onResolveToolApproval}
               onOpenErrorDetail={onOpenErrorDetail}
@@ -187,6 +198,8 @@ function MessageListItem({
   models,
   language,
   runtimeUrl,
+  shellPassthrough,
+  onActivateShellPassthrough,
   onSubmitInlineForm,
   onResolveToolApproval,
   onOpenErrorDetail,
@@ -196,6 +209,8 @@ function MessageListItem({
   models: CopilotModelOption[]
   language: string
   runtimeUrl: string | null
+  shellPassthrough: CopilotMessagesShellProps['shellPassthrough']
+  onActivateShellPassthrough: CopilotMessagesShellProps['onActivateShellPassthrough']
   onSubmitInlineForm: CopilotMessagesShellProps['onSubmitInlineForm']
   onResolveToolApproval: CopilotMessagesShellProps['onResolveToolApproval']
   onOpenErrorDetail: CopilotMessagesShellProps['onOpenErrorDetail']
@@ -227,6 +242,8 @@ function MessageListItem({
               turn={turn}
               index={index}
               runtimeUrl={runtimeUrl}
+              shellPassthrough={shellPassthrough}
+              onActivateShellPassthrough={onActivateShellPassthrough}
               onResolveToolApproval={onResolveToolApproval}
               onOpenErrorDetail={onOpenErrorDetail}
               language={language}

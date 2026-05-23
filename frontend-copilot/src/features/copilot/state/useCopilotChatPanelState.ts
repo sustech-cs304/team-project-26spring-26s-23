@@ -26,6 +26,7 @@ import type { AssistantSessionHistoryState } from '../../../workbench/assistant/
 import { loadSettingsWorkspaceState } from '../../../workbench/settings/workspace-state'
 import {
   cancelRuntimeRun,
+  execRuntimeShellSession,
   getRuntimeThinkingCapability,
   RuntimeRequestError,
   type RuntimeThinkingCapability,
@@ -58,6 +59,7 @@ import {
 } from '../persisted-history-view-model'
 import {
   buildCopilotMessageListItems,
+  createUserMessageListItem,
   resolveCopilotAssistantPlaceholderState,
   type CopilotAssistantPlaceholderState,
   type CopilotMessageListItem,
@@ -150,6 +152,14 @@ export interface CopilotChatPanelState {
   hasTransientConversation: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
+  shellPassthrough: {
+    enabled: boolean
+    sessionId: string | null
+    shell: string | null
+    cwd: string | null
+  }
+  onActivateShellPassthrough: (input: { sessionId: string; shell: string; cwd: string | null }) => void
+  onDeactivateShellPassthrough: () => void
   runtimeUrl: string | null
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
@@ -203,6 +213,12 @@ export function useCopilotChatPanelState({
   const thinkingCapability = activeTransientState.thinkingCapability
   const sendError = activeTransientState.sendError
   const historyRebindAcknowledged = activeTransientState.historyRebindAcknowledged
+  const shellPassthroughEnabled = activeTransientState.shellPassthroughEnabled
+  const shellPassthroughSessionId = activeTransientState.shellPassthroughSessionId
+  const shellPassthroughShell = activeTransientState.shellPassthroughShell
+  const shellPassthroughCwd = activeTransientState.shellPassthroughCwd
+  const shellPassthroughSequence = activeTransientState.shellPassthroughSequence
+  const shellPassthroughInFlight = activeTransientState.shellPassthroughInFlight
 
   const updateSessionTransientStateById = useCallback((
     sessionId: string | null | undefined,
@@ -478,7 +494,9 @@ export function useCopilotChatPanelState({
     [runState],
   )
   const composerLockedReason = useMemo(() => null, [])
-  const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
+  const sendStatus = shellPassthroughInFlight || runState.phase === 'starting' || runState.phase === 'streaming'
+    ? 'sending'
+    : 'idle'
   const canCancelSend = activeAbortController !== null && sendStatus === 'sending'
   const historyDrift = useMemo(
     () => sessionHistory?.selectedRunId === null
@@ -1087,6 +1105,122 @@ export function useCopilotChatPanelState({
       return
     }
 
+    if (
+      shellPassthroughEnabled
+      && shellPassthroughSessionId !== null
+      && isCopilotConnectableState(state)
+      && state.runtimeUrl.trim() !== ''
+    ) {
+      const commandText = effectiveComposerDraft.messageText.trim()
+      if (commandText === '') {
+        return
+      }
+
+      const abortController = new AbortController()
+      const boundSessionId = sessionShell?.sessionId ?? null
+      const {
+        setBoundConversation,
+        setBoundComposerDraft,
+        setBoundRunState,
+        setBoundSendError,
+      } = createBoundSessionDispatchers(boundSessionId)
+
+      const passthroughRunId = `shell-passthrough:${shellPassthroughSessionId}`
+      const passthroughSequence = shellPassthroughSequence
+      const passthroughToolCallId = `shell-passthrough:${shellPassthroughSessionId}:${passthroughSequence}`
+      const toolItemId = `tool:${passthroughRunId}:${passthroughToolCallId}`
+      const pendingToolTurn: Extract<CopilotMessageListItem, { kind: 'tool' }> = {
+        id: toolItemId,
+        kind: 'tool',
+        runId: passthroughRunId,
+        sequence: passthroughSequence,
+        status: 'streaming',
+        title: '终端执行',
+        content: '执行中…',
+        toolCallId: passthroughToolCallId,
+        toolId: 'tool.shell-session.exec',
+        toolPhase: 'started',
+        inputSummary: commandText,
+        resultSummary: null,
+        errorSummary: null,
+        approval: null,
+      }
+
+      updateSessionTransientStateById(boundSessionId, (sessionState) => ({
+        ...sessionState,
+        activeAbortController: abortController,
+        shellPassthroughInFlight: true,
+      }))
+
+      setBoundComposerDraft((current) => ({
+        ...current,
+        messageText: '',
+      }))
+
+      setBoundSendError(null)
+      setBoundRunState(createIdleCopilotRunState())
+      setBoundConversation((current) => [
+        ...current,
+        createUserMessageListItem(commandText),
+        pendingToolTurn,
+      ])
+
+      try {
+        const response = await execRuntimeShellSession({
+          runtimeUrl: state.runtimeUrl,
+          sessionId: shellPassthroughSessionId,
+          input: commandText,
+          signal: abortController.signal,
+        })
+        const stdout = (response.stdout ?? '').trim()
+        const stderr = (response.stderr ?? '').trim()
+        const content = stdout !== '' ? stdout : (stderr !== '' ? '(无标准输出)' : '(无输出)')
+        const resultSummary = JSON.stringify(response)
+        setBoundConversation((current) => current.map((item) => {
+          if (item.id !== toolItemId || item.kind !== 'tool') {
+            return item
+          }
+          return {
+            ...item,
+            status: 'completed',
+            toolPhase: 'completed',
+            content,
+            errorSummary: stderr !== '' ? stderr : null,
+            resultSummary,
+            title: '终端执行',
+          }
+        }))
+        updateSessionTransientStateById(boundSessionId, (sessionState) => ({
+          ...sessionState,
+          shellPassthroughSequence: sessionState.shellPassthroughSequence + 1,
+          shellPassthroughInFlight: false,
+          activeAbortController: null,
+        }))
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '命令执行失败。'
+        setBoundConversation((current) => current.map((item) => {
+          if (item.id !== toolItemId || item.kind !== 'tool') {
+            return item
+          }
+          return {
+            ...item,
+            status: 'failed',
+            toolPhase: 'failed',
+            content: '执行失败。',
+            errorSummary: message,
+            title: '终端执行',
+          }
+        }))
+        updateSessionTransientStateById(boundSessionId, (sessionState) => ({
+          ...sessionState,
+          shellPassthroughSequence: sessionState.shellPassthroughSequence + 1,
+          shellPassthroughInFlight: false,
+          activeAbortController: null,
+        }))
+      }
+      return
+    }
+
     const abortController = new AbortController()
     const boundSessionId = sessionShell?.sessionId ?? null
     const {
@@ -1238,6 +1372,29 @@ export function useCopilotChatPanelState({
     })
   }
 
+  const handleActivateShellPassthrough = useCallback(
+    (input: { sessionId: string; shell: string; cwd: string | null }) => {
+      setActiveSessionTransientState((sessionState) => ({
+        ...sessionState,
+        shellPassthroughEnabled: true,
+        shellPassthroughSessionId: input.sessionId,
+        shellPassthroughShell: input.shell,
+        shellPassthroughCwd: input.cwd,
+      }))
+    },
+    [setActiveSessionTransientState],
+  )
+
+  const handleDeactivateShellPassthrough = useCallback(() => {
+    setActiveSessionTransientState((sessionState) => ({
+      ...sessionState,
+      shellPassthroughEnabled: false,
+      shellPassthroughSessionId: null,
+      shellPassthroughShell: null,
+      shellPassthroughCwd: null,
+    }))
+  }, [setActiveSessionTransientState])
+
   return {
     sendError,
     modelGroups: modelCatalog.groups,
@@ -1265,6 +1422,14 @@ export function useCopilotChatPanelState({
     hasTransientConversation,
     conversation: projectedConversation,
     assistantPlaceholder,
+    shellPassthrough: {
+      enabled: shellPassthroughEnabled,
+      sessionId: shellPassthroughSessionId,
+      shell: shellPassthroughShell,
+      cwd: shellPassthroughCwd,
+    },
+    onActivateShellPassthrough: handleActivateShellPassthrough,
+    onDeactivateShellPassthrough: handleDeactivateShellPassthrough,
     runtimeUrl: isCopilotConnectableState(state) ? state.runtimeUrl : null,
     composerInputRef,
     composerHeight,
