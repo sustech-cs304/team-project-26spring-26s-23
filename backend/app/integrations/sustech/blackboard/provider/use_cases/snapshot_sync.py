@@ -7,7 +7,7 @@ import re
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Collection
+from collections.abc import Collection, Iterable, Mapping
 from typing import Any, cast
 from urllib.parse import urljoin
 
@@ -1637,6 +1637,25 @@ def _normalize_blackboard_credentials(
     raise ValueError("缺少 CAS 用户名或密码")
 
 
+def _import_session_cookies(
+    cas_client: CASClient,
+    session_cookies: Mapping[str, str] | Iterable[Mapping[str, Any]] | None,
+    *,
+    logger: BlackboardLogger,
+) -> None:
+    if session_cookies is None:
+        return
+    try:
+        cas_client.import_cookies(session_cookies)
+    except Exception as exc:
+        logger.warning(
+            "⚠ 导入 Blackboard 浏览器 Cookie 失败，将继续尝试常规 CAS 登录",
+            payload={"error": str(exc)},
+        )
+        return
+    logger.info("✅ 已导入 Blackboard 浏览器 Cookie，优先尝试复用会话")
+
+
 def _login_cas_or_raise(
     cas_client: CASClient,
     username: str,
@@ -2052,6 +2071,7 @@ def fetch_blackboard_snapshot(
     parallel_workers: int = 1,
     progress: ProgressCallback | None = None,
     enable_console_logging: bool = False,
+    session_cookies: Mapping[str, str] | Iterable[Mapping[str, Any]] | None = None,
     _log_session: BlackboardLogSession | None = None,
 ) -> BlackboardSnapshotFetchResult:
     log_session = _log_session or create_log_session(console=enable_console_logging)
@@ -2072,6 +2092,7 @@ def fetch_blackboard_snapshot(
     cas_client = CASClient(logger=logger.child("provider.use_cases.snapshot_sync.cas"))
     try:
         _emit(progress, "使用 CASClient 认证")
+        _import_session_cookies(cas_client, session_cookies, logger=logger)
         logger.info("▶ 开始 Blackboard 基础 snapshot 抓取")
         _login_cas_or_raise(
             cas_client,
@@ -2148,6 +2169,7 @@ def run_blackboard_snapshot_sync(
     parallel_workers: int = 1,
     progress: ProgressCallback | None = None,
     enable_console_logging: bool = False,
+    session_cookies: Mapping[str, str] | Iterable[Mapping[str, Any]] | None = None,
 ) -> BlackboardSnapshotSyncReport:
     log_session = create_log_session(console=enable_console_logging)
     normalized_parallel_workers = _normalize_parallel_workers(parallel_workers)
@@ -2166,6 +2188,7 @@ def run_blackboard_snapshot_sync(
         current_term_only=current_term_only,
         parallel_workers=normalized_parallel_workers,
         progress=progress,
+        session_cookies=session_cookies,
         _log_session=log_session,
     )
     logger.info("▶ 开始构建 Blackboard 基础 sync payloads")
@@ -2414,6 +2437,7 @@ def run_blackboard_course_resources_sync(
     reset_schema: bool = False,
     progress: ProgressCallback | None = None,
     enable_console_logging: bool = False,
+    session_cookies: Mapping[str, str] | Iterable[Mapping[str, Any]] | None = None,
 ) -> BlackboardCourseResourcesSyncReport:
     normalized_course_ids = _normalize_requested_course_ids(course_ids)
     log_session = create_log_session(console=enable_console_logging)
@@ -2432,6 +2456,7 @@ def run_blackboard_course_resources_sync(
     )
     try:
         _emit(progress, "使用 CASClient 认证")
+        _import_session_cookies(cas_client, session_cookies, logger=logger)
         logger.info(
             "▶ 开始 Blackboard 课程资源同步",
             payload={"requested_course_ids": normalized_course_ids},

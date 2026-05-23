@@ -1,5 +1,6 @@
 """Shared SUSTech CAS authentication client."""
 
+from collections.abc import Iterable, Mapping
 from typing import Any, Optional, Protocol
 from urllib.parse import urlparse
 
@@ -54,7 +55,8 @@ class CASClient:
 
     def login(self, username: str, password: str, service_url: str) -> bool:
         """
-        执行 CAS 登录
+        执行 CAS 登录。若当前 HTTP 会话已有目标服务有效 Cookie，则优先复用 Cookie，
+        避免重新进入 CAS 人机验证流程。
 
         Args:
             username: 学号/工号
@@ -66,6 +68,14 @@ class CASClient:
         """
         self.last_login_failure_reason = None
         self.last_login_failure_message = None
+        if self.has_service_session(service_url):
+            if self.logger is not None:
+                self.logger.info(
+                    "✅ 已复用目标服务 Cookie 会话",
+                    payload={"service_url": service_url},
+                )
+            return True
+
         params = {"service": service_url}
         response = self.client.get(self.cas_login_url, params=params)
 
@@ -115,6 +125,9 @@ class CASClient:
         invalid_credentials = self._contains_invalid_credential_markers(
             response.text or ""
         )
+        human_verification_required = self._contains_human_verification_markers(
+            response.text or ""
+        )
         success = (
             service_domain in final_url
             and not has_login_form
@@ -127,6 +140,11 @@ class CASClient:
                 self.last_login_failure_reason = "invalid_credentials"
                 self.last_login_failure_message = (
                     "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。"
+                )
+            elif human_verification_required:
+                self.last_login_failure_reason = "human_verification_required"
+                self.last_login_failure_message = (
+                    "CAS 登录需要人机验证，请在弹出的浏览器窗口中手动完成验证后重试。"
                 )
             else:
                 self.last_login_failure_reason = "login_failed"
@@ -141,6 +159,7 @@ class CASClient:
                 "has_execution": has_execution,
                 "hit_authentication_require": hit_authentication_require,
                 "hit_session_invalid": hit_session_invalid,
+                "human_verification_required": human_verification_required,
             }
             if success:
                 self.logger.info("✅ CAS 登录成功", payload=payload)
@@ -166,6 +185,82 @@ class CASClient:
                 "invalid credentials",
             )
         )
+
+    def _contains_human_verification_markers(self, html: str) -> bool:
+        lowered = str(html or "").lower()
+        return any(
+            marker in lowered
+            for marker in (
+                "captcha",
+                "g-recaptcha-response",
+                "captcha/api/check",
+                "进行人机身份验证",
+                "人机身份验证",
+                "人机验证",
+                "验证码",
+                "blockpuzzle",
+                "slider",
+            )
+        )
+
+    def has_service_session(self, service_url: str) -> bool:
+        """检查当前 Cookie 是否已经能访问目标服务，且不落回 CAS 登录页。"""
+        self.last_login_failure_reason = None
+        self.last_login_failure_message = None
+        try:
+            response = self.client.get(service_url)
+        except httpx.HTTPError as exc:
+            self.last_login_failure_reason = "session_probe_failed"
+            self.last_login_failure_message = str(exc)
+            return False
+        return self._is_service_authenticated_response(response, service_url)
+
+    def _is_service_authenticated_response(
+        self, response: httpx.Response, service_url: str
+    ) -> bool:
+        service_domain = urlparse(service_url).netloc
+        final_url = str(response.url)
+        final_path = urlparse(final_url).path or "/"
+        lowered_body = (response.text or "").lower()
+        redirect_chain = [str(item.url) for item in response.history] + [final_url]
+        has_login_form = (
+            'name="username"' in lowered_body and 'name="password"' in lowered_body
+        )
+        has_execution = 'name="execution"' in lowered_body
+        hit_authentication_require = any(
+            "/authentication/require" in item for item in redirect_chain
+        )
+        hit_session_invalid = "/session/invalid" in final_path
+        return (
+            service_domain in final_url
+            and not has_login_form
+            and not has_execution
+            and not hit_authentication_require
+            and not hit_session_invalid
+        )
+
+    def import_cookies(
+        self,
+        cookies: Mapping[str, str] | Iterable[Mapping[str, Any]],
+    ) -> None:
+        """导入浏览器或持久化会话 Cookie 到当前 httpx 会话。"""
+        if isinstance(cookies, Mapping):
+            for name, value in cookies.items():
+                normalized_name = str(name or "").strip()
+                if normalized_name:
+                    self.client.cookies.set(normalized_name, str(value or ""))
+            return
+
+        for cookie in cookies:
+            if not isinstance(cookie, Mapping):
+                continue
+            name = str(cookie.get("name") or "").strip()
+            value = str(cookie.get("value") or "")
+            if not name:
+                continue
+            domain = str(cookie.get("domain") or "").strip() or None
+            path = str(cookie.get("path") or "").strip() or "/"
+            self.client.cookies.set(name, value, domain=domain, path=path)
 
     def _extract_execution(self, html: str) -> Optional[str]:
         """从 CAS 登录页面提取 execution token。"""

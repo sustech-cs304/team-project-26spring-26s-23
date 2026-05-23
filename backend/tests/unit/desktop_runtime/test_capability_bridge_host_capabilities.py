@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any, TypeVar, cast
 
 import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
+from app.desktop_runtime.routes import blackboard_ui
 from pydantic_ai.models.test import TestModel
 
 from app.integrations.sustech.blackboard.api.dto import CourseCatalogResultDTO
@@ -65,6 +66,7 @@ class _RecordingBridgeClient:
         self.events: list[dict[str, Any]] = []
         self.browser_open_requests: list[tuple[str, str, bool, bool, str | None, str | None]] = []
         self.browser_screenshot_requests: list[tuple[str, str, str | None]] = []
+        self.browser_cookie_requests: list[tuple[str, str | None, str | None]] = []
 
     async def get_secret(
         self,
@@ -275,6 +277,24 @@ class _RecordingBridgeClient:
         )
         return HostBrowserScreenshot(page=page, artifact=artifact)
 
+    async def get_browser_cookies(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str | None = None,
+        url: str | None = None,
+    ) -> list[dict[str, Any]]:
+        self.browser_cookie_requests.append((context.invocation_id, tab_id, url))
+        return [
+            {
+                "name": "JSESSIONID",
+                "value": "session-value",
+                "domain": ".bb.sustech.edu.cn",
+                "path": "/",
+                "httpOnly": True,
+            }
+        ]
+
     async def aclose(self) -> None:
         return None
 
@@ -395,6 +415,12 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
             data={"artifactCount": 1},
         )
     )
+    browser_cookies = _run_awaitable(
+        host.browser_controller.get_cookies(
+            tab_id="manual-login-tab",
+            url="https://bb.sustech.edu.cn/",
+        )
+    )
 
     assert secret_value == "bridge-secret"
     assert has_secret is True
@@ -405,6 +431,22 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
     assert described_artifact.metadata["described"] is True
     assert tool_state == {"ok": True}
     assert run_state == {"done": False}
+    assert browser_cookies == [
+        {
+            "name": "JSESSIONID",
+            "value": "session-value",
+            "domain": ".bb.sustech.edu.cn",
+            "path": "/",
+            "httpOnly": True,
+        }
+    ]
+    assert bridge_client.browser_cookie_requests == [
+        (
+            invocation_context.invocation_id,
+            "manual-login-tab",
+            "https://bb.sustech.edu.cn/",
+        )
+    ]
     assert bridge_client.secret_requests == [
         (
             invocation_context.invocation_id,
@@ -495,7 +537,7 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
         )
 
     monkeypatch.setattr(
-        blackboard_facade_tools,
+        blackboard_ui,
         "run_blackboard_snapshot_sync",
         fake_sync,
     )

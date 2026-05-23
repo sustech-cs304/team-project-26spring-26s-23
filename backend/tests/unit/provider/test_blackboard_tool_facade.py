@@ -20,6 +20,7 @@ from app.integrations.sustech.blackboard.api.dto import (
     GradeDTO,
 )
 from app.integrations.sustech.blackboard.facade import tools as facade_tools
+from app.desktop_runtime.routes import blackboard_ui
 from app.integrations.sustech.blackboard.facade.tools import (
     BlackboardCalendarRefreshTool,
     BlackboardCourseCatalogSearchTool,
@@ -540,11 +541,12 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        current_term_only: bool = False,
         parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
-        _ = enable_console_logging
+        _ = (enable_console_logging, current_term_only)
         captured.update(
             {
                 "username": username,
@@ -629,7 +631,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
             logs=[_build_log_event("test.snapshot.sync")],
         )
 
-    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _fake_sync)
 
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),
@@ -758,7 +760,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "progressMessages",
     }
     assert "resourceCourseLimit" not in persisted_artifact_output
-    assert persisted_artifact_output["progressMessages"] == ["fetching courses", "syncing sqlite"]
+    assert persisted_artifact_output["progressMessages"] == ["开始同步...", "fetching courses", "syncing sqlite"]
     assert persisted_artifact_output["scrapedCounts"]["resources"] == 0
     assert persisted_artifact_output["tableCounts"]["resources"] == {"total": 0, "active": 0}
     assert "resourcePayloadsByCourse" not in persisted_artifact_output
@@ -768,7 +770,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert latest_status["lastSyncError"] is None
     assert latest_status["progressMessage"] is None
     assert latest_status["progressStage"] is None
-    assert latest_status["progressLogs"] == ["fetching courses", "syncing sqlite"]
+    assert latest_status["progressLogs"] == ["开始同步...", "fetching courses", "syncing sqlite"]
     assert [event.event_type for event in event_sink.events] == [
         "blackboard.snapshot.sync.started",
         "blackboard.snapshot.sync.completed",
@@ -781,7 +783,7 @@ def test_snapshot_sync_tool_persists_failed_latest_status(monkeypatch: Any) -> N
     def _boom_sync(*_args: Any, **_kwargs: Any) -> BlackboardSnapshotSyncReport:
         raise RuntimeError("snapshot boom")
 
-    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _boom_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _boom_sync)
 
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),
@@ -806,7 +808,7 @@ def test_snapshot_sync_tool_persists_failed_latest_status(monkeypatch: Any) -> N
     assert latest_status["lastSyncError"] == "snapshot boom"
     assert latest_status["progressMessage"] == "snapshot boom"
     assert latest_status["progressStage"] is None
-    assert latest_status["progressLogs"] == ["snapshot boom"]
+    assert latest_status["progressLogs"] == ["开始同步...", "snapshot boom"]
 
 
 def test_course_resources_sync_tool_requires_course_ids_and_persists_artifact_and_state(
@@ -1017,11 +1019,12 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        current_term_only: bool = False,
         parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
-        _ = (progress, enable_console_logging)
+        _ = (progress, enable_console_logging, current_term_only)
         captured.update(
             {
                 "username": username,
@@ -1075,7 +1078,7 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
             logs=[_build_log_event("test.snapshot.sync.default-secrets")],
         )
 
-    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _fake_sync)
 
     database = StubDatabaseResolver(tmp_path / "database-root")
 
@@ -1207,6 +1210,7 @@ def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        current_term_only: bool = False,
         parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
@@ -1217,13 +1221,14 @@ def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
             db_path,
             reset_schema,
             verify_second_sync,
+            current_term_only,
             parallel_workers,
             progress,
             enable_console_logging,
         )
         raise httpx.ConnectTimeout("timed out")
 
-    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _timeout_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _timeout_sync)
 
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),
@@ -1255,6 +1260,7 @@ def test_snapshot_sync_tool_maps_explicit_invalid_credentials_message(monkeypatc
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        current_term_only: bool = False,
         parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
@@ -1265,13 +1271,14 @@ def test_snapshot_sync_tool_maps_explicit_invalid_credentials_message(monkeypatc
             db_path,
             reset_schema,
             verify_second_sync,
+            current_term_only,
             parallel_workers,
             progress,
             enable_console_logging,
         )
         raise RuntimeError("CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。")
 
-    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _invalid_credentials_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _invalid_credentials_sync)
 
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),

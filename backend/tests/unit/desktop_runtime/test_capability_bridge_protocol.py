@@ -25,6 +25,8 @@ from app.desktop_runtime.capability_bridge_protocol import (
     _BridgePayloadModel,
     _BridgeResultModel,
     _BrowserCloseTabPayload,
+    _BrowserCookiesPayload,
+    _BrowserCookiesResult,
     _BrowserExecutePayload,
     _BrowserExecuteResult,
     _BrowserListTabsPayload,
@@ -79,7 +81,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
         "state": ("get_value", "put_value", "delete_value"),
         "event": ("emit_event",),
         "mcp": ("call_tool",),
-        "browser": ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "reset", "snapshot"),
+        "browser": ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "cookies", "reset", "snapshot"),
     }
     assert get_desktop_capability_operations("secret") == ("get_secret", "has_secret")
     assert get_desktop_capability_operations("workspace") == (
@@ -99,7 +101,7 @@ def test_capability_bridge_protocol_covers_all_whitelisted_capabilities() -> Non
     )
     assert get_desktop_capability_operations("event") == ("emit_event",)
     assert get_desktop_capability_operations("mcp") == ("call_tool",)
-    assert get_desktop_capability_operations("browser") == ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "reset", "snapshot")
+    assert get_desktop_capability_operations("browser") == ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "cookies", "reset", "snapshot")
     assert {
         operation
         for operations in DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY.values()
@@ -1468,6 +1470,35 @@ def test_browser_execute_payload_rejects_missing_script() -> None:
 
 
 # ---------------------------------------------------------------------------
+# _BrowserCookiesPayload
+# ---------------------------------------------------------------------------
+
+
+def test_browser_cookies_payload_full_construction() -> None:
+    p = _BrowserCookiesPayload.model_validate(
+        {"tabId": " tab-1 ", "url": " https://bb.sustech.edu.cn/ "}
+    )
+    assert p.tab_id == "tab-1"
+    assert p.url == "https://bb.sustech.edu.cn/"
+    assert p.to_bridge_payload() == {
+        "tabId": "tab-1",
+        "url": "https://bb.sustech.edu.cn/",
+    }
+
+
+def test_browser_cookies_payload_empty_construction() -> None:
+    p = _BrowserCookiesPayload()
+    assert p.tab_id is None
+    assert p.url is None
+    assert p.to_bridge_payload() == {}
+
+
+def test_browser_cookies_payload_rejects_extra_fields() -> None:
+    with pytest.raises(ValueError, match="unexpected fields"):
+        _BrowserCookiesPayload.model_validate({"tabId": "tab-1", "domain": "bb.sustech.edu.cn"})
+
+
+# ---------------------------------------------------------------------------
 # _BrowserResetPayload
 # ---------------------------------------------------------------------------
 
@@ -1677,6 +1708,63 @@ def test_browser_execute_result_with_tab_id() -> None:
     )
     assert r.tab_id == "tab-1"
     assert r.to_bridge_result() == {"result": "done", "tabId": "tab-1"}
+
+
+# ---------------------------------------------------------------------------
+# _BrowserCookiesResult
+# ---------------------------------------------------------------------------
+
+
+def test_browser_cookies_result_full_construction() -> None:
+    r = _BrowserCookiesResult.model_validate(
+        {
+            "tabId": " tab-1 ",
+            "currentUrl": " https://bb.sustech.edu.cn/ ",
+            "cookies": [
+                {
+                    "name": " JSESSIONID ",
+                    "value": "session-value",
+                    "domain": ".bb.sustech.edu.cn",
+                    "path": "/",
+                    "secure": True,
+                    "httpOnly": True,
+                    "sameSite": "no_restriction",
+                    "expirationDate": 1799999999,
+                    "ignored": "not serialized",
+                }
+            ],
+        }
+    )
+    assert r.tab_id == "tab-1"
+    assert r.current_url == "https://bb.sustech.edu.cn/"
+    assert r.cookies == [
+        {
+            "name": "JSESSIONID",
+            "value": "session-value",
+            "domain": ".bb.sustech.edu.cn",
+            "path": "/",
+            "sameSite": "no_restriction",
+            "secure": True,
+            "httpOnly": True,
+            "expirationDate": 1799999999,
+        }
+    ]
+    assert r.to_bridge_result() == {
+        "tabId": "tab-1",
+        "currentUrl": "https://bb.sustech.edu.cn/",
+        "cookies": r.cookies,
+    }
+
+
+def test_browser_cookies_result_rejects_cookie_without_string_value() -> None:
+    with pytest.raises(ValueError, match="cookie field 'value' must be a string"):
+        _BrowserCookiesResult.model_validate(
+            {
+                "tabId": "tab-1",
+                "currentUrl": "https://bb.sustech.edu.cn/",
+                "cookies": [{"name": "JSESSIONID", "value": 123}],
+            }
+        )
 
 
 # ---------------------------------------------------------------------------

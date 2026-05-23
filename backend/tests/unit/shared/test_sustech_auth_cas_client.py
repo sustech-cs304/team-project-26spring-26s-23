@@ -53,8 +53,11 @@ class _FakeHTTPClient:
         self._post_response = post_response
         self.cookies = httpx.Cookies({"CASTGC": "cookie-value"})
         self.closed = False
+        self.get_calls: list[tuple[str, dict[str, Any] | None]] = []
+        self.post_calls: list[tuple[str, dict[str, Any] | None, dict[str, Any] | None]] = []
 
     def get(self, url: str, *, params: dict[str, Any] | None = None) -> httpx.Response:
+        self.get_calls.append((url, params))
         return self._get_response
 
     def post(
@@ -64,6 +67,7 @@ class _FakeHTTPClient:
         params: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
     ) -> httpx.Response:
+        self.post_calls.append((url, params, data))
         return self._post_response
 
     def close(self) -> None:
@@ -324,3 +328,114 @@ def test_login_returns_false_with_invalid_credential_markers_and_records_explici
     assert logger.events[-1][2] is not None
     assert logger.events[-1][2]["failure_reason"] == "invalid_credentials"
     assert logger.events[-1][2]["failure_message"] == "CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。"
+
+
+
+def test_login_reuses_existing_service_cookie_session_without_posting_credentials() -> None:
+    logger = _RecordingLogger()
+    fake_http_client = _FakeHTTPClient(
+        get_response=httpx.Response(
+            200,
+            text="<html><body>portal ready</body></html>",
+            request=httpx.Request("GET", "https://portal.sustech.edu.cn/home"),
+        ),
+        post_response=httpx.Response(
+            500,
+            text="<html><body>should not post</body></html>",
+            request=httpx.Request("POST", "https://cas.sustech.edu.cn/cas/login"),
+        ),
+    )
+    cas_client = _build_cas_client(fake_http_client, logger=logger)
+
+    try:
+        assert cas_client.login("123", "secret", "https://portal.sustech.edu.cn/home") is True
+    finally:
+        cas_client.close()
+
+    assert fake_http_client.get_calls == [("https://portal.sustech.edu.cn/home", None)]
+    assert fake_http_client.post_calls == []
+    assert logger.events == [
+        (
+            "info",
+            "✅ 已复用目标服务 Cookie 会话",
+            {"service_url": "https://portal.sustech.edu.cn/home"},
+            None,
+        )
+    ]
+
+
+
+def test_import_cookies_accepts_browser_cookie_objects_and_has_service_session() -> None:
+    fake_http_client = _FakeHTTPClient(
+        get_response=httpx.Response(
+            200,
+            text="<html><body>portal ready</body></html>",
+            request=httpx.Request("GET", "https://portal.sustech.edu.cn/home"),
+        ),
+        post_response=httpx.Response(
+            200,
+            text="<html><body>unused</body></html>",
+            request=httpx.Request("POST", "https://cas.sustech.edu.cn/cas/login"),
+        ),
+    )
+    fake_http_client.cookies = httpx.Cookies()
+    cas_client = _build_cas_client(fake_http_client)
+
+    try:
+        cas_client.import_cookies(
+            [
+                {
+                    "name": "JSESSIONID",
+                    "value": "session-value",
+                    "domain": "portal.sustech.edu.cn",
+                    "path": "/",
+                    "httpOnly": True,
+                },
+                {"name": "", "value": "ignored"},
+            ]
+        )
+        assert cas_client.get_cookies() == {"JSESSIONID": "session-value"}
+        assert cas_client.has_service_session("https://portal.sustech.edu.cn/home") is True
+    finally:
+        cas_client.close()
+
+
+
+def test_login_returns_false_with_human_verification_markers_and_records_explicit_failure_message() -> None:
+    logger = _RecordingLogger()
+    fake_http_client = _FakeHTTPClient(
+        get_response=httpx.Response(
+            200,
+            text='<html><input name="execution" value="e1s1" /></html>',
+            request=httpx.Request("GET", "https://cas.sustech.edu.cn/cas/login"),
+        ),
+        post_response=httpx.Response(
+            200,
+            text='''
+            <html>
+                <div>请进行人机验证</div>
+                <textarea name="g-recaptcha-response"></textarea>
+                <form>
+                    <input name="username" />
+                    <input name="password" />
+                    <input name="execution" value="e1s2" />
+                </form>
+            </html>
+            ''',
+            request=httpx.Request("GET", "https://cas.sustech.edu.cn/cas/login"),
+        ),
+    )
+    cas_client = _build_cas_client(fake_http_client, logger=logger)
+
+    try:
+        assert cas_client.login("123", "secret", "https://portal.sustech.edu.cn/home") is False
+    finally:
+        cas_client.close()
+
+    assert cas_client.last_login_failure_reason == "human_verification_required"
+    assert cas_client.last_login_failure_message == "CAS 登录需要人机验证，请在弹出的浏览器窗口中手动完成验证后重试。"
+    assert logger.events[-1][0] == "warning"
+    assert logger.events[-1][1] == "❌ CAS 登录失败"
+    assert logger.events[-1][2] is not None
+    assert logger.events[-1][2]["human_verification_required"] is True
+    assert logger.events[-1][2]["failure_reason"] == "human_verification_required"

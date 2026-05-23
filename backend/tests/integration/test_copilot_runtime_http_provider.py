@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from pydantic_ai.models.test import TestModel
 
 import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
+from app.desktop_runtime.routes import blackboard_ui
 import app.integrations.sustech.teaching_information_system.facade.tools as tis_facade_tools
 from app.integrations.sustech.blackboard.api.dto import (
     AnnouncementDTO,
@@ -207,7 +208,7 @@ def test_post_root_run_stream_keeps_run_alive_for_contract_execution_failure(
         _ = (args, kwargs)
         raise RuntimeError("blackboard sync exploded")
 
-    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", _boom_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _boom_sync)
 
     app = _create_app(
         host_capability_bridge_client=_create_recording_bridge_client(
@@ -284,7 +285,7 @@ def test_post_root_run_stream_keeps_run_alive_for_recoverable_contract_tool_fail
         _ = (args, kwargs)
         raise ValueError("maxConcurrency must be a positive integer.")
 
-    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", _invalid_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _invalid_sync)
 
     app = _create_app(
         host_capability_bridge_client=_create_recording_bridge_client(
@@ -378,7 +379,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
             db_path=Path("database-root/blackboard/sustech.db") if db_path is None else db_path
         )
 
-    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _fake_sync)
 
     app = _create_app(
         host_capability_bridge_client=_create_recording_bridge_client(
@@ -440,10 +441,11 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_bridge_back
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
         ("event", "emit_event"),
-        ("state", "put_value"),
         ("secret", "get_secret"),
         ("secret", "get_secret"),
         ("database", "resolve_path"),
+        ("state", "put_value"),
+        ("state", "put_value"),
         ("state", "put_value"),
         ("state", "put_value"),
         ("state", "put_value"),
@@ -508,7 +510,7 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
             db_path=Path("database-root/blackboard/sustech.db") if db_path is None else db_path
         )
 
-    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _fake_sync)
 
     app = _create_app(
         host_capability_bridge_client=_create_recording_bridge_client(
@@ -568,10 +570,11 @@ def test_post_root_run_stream_executes_blackboard_snapshot_sync_with_default_bri
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
     assert [(item["capability"], item["operation"]) for item in captured_bridge_payloads] == [
         ("event", "emit_event"),
-        ("state", "put_value"),
         ("secret", "get_secret"),
         ("secret", "get_secret"),
         ("database", "resolve_path"),
+        ("state", "put_value"),
+        ("state", "put_value"),
         ("state", "put_value"),
         ("state", "put_value"),
         ("state", "put_value"),

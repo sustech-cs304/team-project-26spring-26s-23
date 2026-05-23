@@ -8,7 +8,7 @@ import os
 import re
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +25,7 @@ from app.integrations.sustech.blackboard.data.db_manager import (
     DatabaseManager,
     resolve_default_blackboard_db_path,
 )
+from app.integrations.sustech.blackboard.provider.results import BlackboardSnapshotSyncReport
 from app.integrations.sustech.blackboard.provider.use_cases.snapshot_sync import (
     rebuild_announcement_assignment_links,
     run_blackboard_snapshot_sync,
@@ -36,6 +37,13 @@ _SYNC_LOCK = threading.Lock()
 _MAX_PROGRESS_LOGS = 200
 _SYNC_TIMEOUT_SECONDS = 60 * 8
 _BLACKBOARD_LOGIN_SERVICE_URL = "https://bb.sustech.edu.cn/webapps/login/"
+_BLACKBOARD_MANUAL_LOGIN_URL = "https://bb.sustech.edu.cn/webapps/portal/execute/defaultTab"
+_BLACKBOARD_COOKIE_URLS = (
+    "https://bb.sustech.edu.cn/",
+    "https://cas.sustech.edu.cn/",
+)
+_MANUAL_LOGIN_TIMEOUT_SECONDS = 60 * 5
+_MANUAL_LOGIN_POLL_INTERVAL_SECONDS = 2.0
 _sync_cancel_event = threading.Event()
 _RESOURCE_DOWNLOAD_TASKS_LOCK = threading.Lock()
 _RESOURCE_DOWNLOAD_TASKS_BY_ID: dict[str, "_ResourceDownloadTask"] = {}
@@ -960,14 +968,192 @@ def _sync_status_snapshot(
     }
 
 
-def _run_blackboard_sync_job(
+SyncStatusPersistor = Callable[[Mapping[str, Any]], None]
+
+
+def _persist_sync_status_snapshot(
+    persist_status: SyncStatusPersistor | None,
+) -> None:
+    if persist_status is None:
+        return
+    try:
+        persist_status(_sync_status_snapshot())
+    except Exception:
+        return
+
+
+def _current_progress_logs() -> tuple[str, ...]:
+    logs = _sync_status.get("progressLogs")
+    if not isinstance(logs, list):
+        return ()
+    return tuple(str(item) for item in logs if str(item).strip())
+
+
+def _is_human_verification_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return any(
+        marker in message
+        for marker in (
+            "human_verification_required",
+            "人机验证",
+            "人机身份验证",
+            "验证码",
+            "captcha",
+        )
+    )
+
+
+def _bridge_supports_manual_login(bridge: Any) -> bool:
+    return bridge is not None and all(
+        hasattr(bridge, method_name)
+        for method_name in ("open_browser_page", "get_browser_cookies")
+    )
+
+
+def _run_bridge_async(coro: Any) -> Any:
+    return asyncio.run(coro)
+
+
+def _collect_bridge_browser_cookies(
+    bridge: Any,
+    *,
+    tab_id: str | None,
+) -> list[dict[str, Any]]:
+    context = _synthetic_invocation_context()
+    cookies: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for url in _BLACKBOARD_COOKIE_URLS:
+        raw_items = _run_bridge_async(
+            bridge.get_browser_cookies(context=context, tab_id=tab_id, url=url)
+        )
+        if not isinstance(raw_items, list):
+            continue
+        for item in raw_items:
+            if not isinstance(item, Mapping):
+                continue
+            name = str(item.get("name") or "").strip()
+            value = str(item.get("value") or "")
+            domain = str(item.get("domain") or "").strip()
+            path = str(item.get("path") or "/").strip() or "/"
+            if not name:
+                continue
+            dedupe_key = (name, domain, path)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            cookie = dict(item)
+            cookie["name"] = name
+            cookie["value"] = value
+            if domain:
+                cookie["domain"] = domain
+            cookie["path"] = path
+            cookies.append(cookie)
+    return cookies
+
+
+def _cookies_authenticate_blackboard(cookies: list[dict[str, Any]]) -> bool:
+    if not cookies:
+        return False
+    cas_client = CASClient(logger=None)
+    try:
+        cas_client.import_cookies(cookies)
+        return cas_client.has_service_session(_BLACKBOARD_LOGIN_SERVICE_URL)
+    finally:
+        cas_client.close()
+
+
+def _wait_for_manual_blackboard_login(
+    bridge: Any,
+    *,
+    progress_callback: Callable[[str], None],
+) -> list[dict[str, Any]]:
+    if not _bridge_supports_manual_login(bridge):
+        raise RuntimeError("CAS 需要人机验证，但当前桌面桥接不可用，无法打开浏览器完成验证。")
+
+    context = _synthetic_invocation_context()
+    progress_callback("CAS 需要人机验证，正在打开浏览器窗口，请在窗口中完成登录验证...")
+    page = _run_bridge_async(
+        bridge.open_browser_page(
+            context=context,
+            url=_BLACKBOARD_MANUAL_LOGIN_URL,
+            show_window=True,
+            new_tab=True,
+        )
+    )
+    tab_id = str(getattr(page, "tab_id", "") or "").strip() or None
+    deadline = time.monotonic() + _MANUAL_LOGIN_TIMEOUT_SECONDS
+    last_cookie_count = 0
+
+    while time.monotonic() < deadline:
+        if _sync_cancel_event.is_set():
+            raise TimeoutError("同步已取消")
+        cookies = _collect_bridge_browser_cookies(bridge, tab_id=tab_id)
+        last_cookie_count = len(cookies)
+        if _cookies_authenticate_blackboard(cookies):
+            progress_callback("✅ 已获取 Blackboard 浏览器登录会话，继续自动同步...")
+            return cookies
+        remaining_seconds = max(0, int(deadline - time.monotonic()))
+        progress_callback(
+            f"等待用户完成 CAS 人机验证与 Blackboard 登录...（剩余约 {remaining_seconds} 秒，已读取 {last_cookie_count} 个 Cookie）"
+        )
+        time.sleep(_MANUAL_LOGIN_POLL_INTERVAL_SECONDS)
+
+    raise TimeoutError(
+        f"等待用户完成 CAS 人机验证超时（已读取 {last_cookie_count} 个 Cookie）。"
+    )
+
+
+def _run_blackboard_snapshot_sync_with_optional_manual_login(
+    username: str,
+    password: str,
+    *,
+    db_path: Path,
+    reset_schema: bool,
+    verify_second_sync: bool,
+    current_term_only: bool,
+    parallel_workers: int,
+    progress_callback: Callable[[str], None],
+    bridge: Any = None,
+) -> BlackboardSnapshotSyncReport:
+    sync_kwargs = {
+        "db_path": db_path,
+        "reset_schema": reset_schema,
+        "verify_second_sync": verify_second_sync,
+        "current_term_only": current_term_only,
+        "parallel_workers": parallel_workers,
+        "progress": progress_callback,
+    }
+    try:
+        return run_blackboard_snapshot_sync(username, password, **sync_kwargs)
+    except Exception as exc:
+        if not _is_human_verification_error(exc):
+            raise
+        cookies = _wait_for_manual_blackboard_login(
+            bridge,
+            progress_callback=progress_callback,
+        )
+        progress_callback("正在使用浏览器会话 Cookie 重新同步 Blackboard 数据...")
+        return run_blackboard_snapshot_sync(
+            username,
+            password,
+            **sync_kwargs,
+            session_cookies=cookies,
+        )
+
+
+def _execute_blackboard_sync_job(
     username: str,
     password: str,
     db_path: Path,
     current_term_only: bool,
     parallel_workers: int,
+    *,
+    reset_schema: bool,
+    verify_second_sync: bool,
+    persist_status: SyncStatusPersistor | None = None,
+    release_lock: bool = False,
     bridge: Any = None,
-) -> None:
+) -> tuple[BlackboardSnapshotSyncReport, tuple[str, ...]]:
     try:
         started_at = time.monotonic()
 
@@ -977,17 +1163,18 @@ def _run_blackboard_sync_job(
             if time.monotonic() - started_at > _SYNC_TIMEOUT_SECONDS:
                 raise TimeoutError(f"同步超时（>{_SYNC_TIMEOUT_SECONDS} 秒）")
             _update_sync_progress(_sync_status, message)
-            _persist_sync_status_via_bridge_blocking(bridge, _sync_status_snapshot())
+            _persist_sync_status_snapshot(persist_status)
 
-        report = run_blackboard_snapshot_sync(
+        report = _run_blackboard_snapshot_sync_with_optional_manual_login(
             username,
             password,
             db_path=db_path,
-            reset_schema=False,
-            verify_second_sync=True,
+            reset_schema=reset_schema,
+            verify_second_sync=verify_second_sync,
             current_term_only=current_term_only,
             parallel_workers=parallel_workers,
-            progress=progress_callback,
+            progress_callback=progress_callback,
+            bridge=bridge,
         )
         _reconcile_download_bindings_for_database(db_path)
         _apply_sync_status_patch(
@@ -1001,33 +1188,95 @@ def _run_blackboard_sync_job(
             progressMessage=None,
             canCancel=False,
         )
-        _persist_sync_status_via_bridge_blocking(bridge, _sync_status_snapshot())
+        _persist_sync_status_snapshot(persist_status)
+        return report, _current_progress_logs()
     except Exception as exc:
         error_message = str(exc)
-        if _sync_cancel_event.is_set() and error_message == "同步已取消":
-            _apply_sync_status_patch(
-                _sync_status,
-                status="failed",
-                lastSyncError=error_message,
-                progressStage=None,
-                progressMessage=error_message,
-                canCancel=False,
-            )
-            _update_sync_progress(_sync_status, error_message)
-        else:
-            _apply_sync_status_patch(
-                _sync_status,
-                status="failed",
-                lastSyncError=error_message,
-                progressStage=None,
-                progressMessage=error_message,
-                canCancel=False,
-            )
-            _update_sync_progress(_sync_status, error_message)
-        _persist_sync_status_via_bridge_blocking(bridge, _sync_status_snapshot())
+        _apply_sync_status_patch(
+            _sync_status,
+            status="failed",
+            lastSyncError=error_message,
+            progressStage=None,
+            progressMessage=error_message,
+            canCancel=False,
+        )
+        _update_sync_progress(_sync_status, error_message)
+        _persist_sync_status_snapshot(persist_status)
+        raise
     finally:
         _sync_cancel_event.clear()
-        _SYNC_LOCK.release()
+        if release_lock:
+            _SYNC_LOCK.release()
+
+
+def run_blackboard_panel_sync_for_agent(
+    username: str,
+    password: str,
+    db_path: Path,
+    *,
+    current_term_only: bool,
+    parallel_workers: int,
+    reset_schema: bool = False,
+    verify_second_sync: bool = True,
+    persist_status: SyncStatusPersistor | None = None,
+) -> tuple[BlackboardSnapshotSyncReport, tuple[str, ...]]:
+    """Run the same blocking sync path that backs the Blackboard panel sync button."""
+    if not _SYNC_LOCK.acquire(blocking=False):
+        raise RuntimeError("Blackboard panel sync is already running.")
+
+    _apply_sync_status_patch(
+        _sync_status,
+        status="running",
+        progressStage="authenticating",
+        progressMessage="开始同步...",
+        progressLogs=["开始同步..."],
+        lastSyncError=None,
+        canCancel=True,
+        timeoutSeconds=_SYNC_TIMEOUT_SECONDS,
+    )
+    _sync_cancel_event.clear()
+    _persist_sync_status_snapshot(persist_status)
+
+    return _execute_blackboard_sync_job(
+        username,
+        password,
+        db_path,
+        current_term_only,
+        parallel_workers,
+        reset_schema=reset_schema,
+        verify_second_sync=verify_second_sync,
+        persist_status=persist_status,
+        release_lock=True,
+        bridge=None,
+    )
+
+
+def _run_blackboard_sync_job(
+    username: str,
+    password: str,
+    db_path: Path,
+    current_term_only: bool,
+    parallel_workers: int,
+    bridge: Any = None,
+) -> None:
+    try:
+        _execute_blackboard_sync_job(
+            username,
+            password,
+            db_path,
+            current_term_only,
+            parallel_workers,
+            reset_schema=False,
+            verify_second_sync=True,
+            persist_status=lambda state: _persist_sync_status_via_bridge_blocking(
+                bridge,
+                state,
+            ),
+            release_lock=True,
+            bridge=bridge,
+        )
+    except Exception:
+        return
 
 
 def build_blackboard_ui_router() -> APIRouter:

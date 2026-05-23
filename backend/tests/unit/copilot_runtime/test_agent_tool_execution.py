@@ -26,6 +26,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 
 import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
+from app.desktop_runtime.routes import blackboard_ui
 from app.integrations.sustech.blackboard.api.dto import CourseCatalogResultDTO
 from app.integrations.sustech.blackboard.provider.results import CourseCatalogSearchResult
 from app.copilot_runtime.agent import (
@@ -554,7 +555,7 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
             second_sync_has_no_deleted_records=lambda: False,
         )
 
-    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", fake_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", fake_sync)
 
     registry = build_default_tool_registry(host_capabilities_factory=_make_noop_host_capabilities_factory())
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
@@ -601,7 +602,7 @@ def test_execute_bound_tool_returns_recoverable_contract_failure_without_raising
         _ = (args, kwargs)
         raise ValueError("maxConcurrency must be a positive integer.")
 
-    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", fake_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", fake_sync)
 
     registry = build_default_tool_registry(host_capabilities_factory=_make_noop_host_capabilities_factory())
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
@@ -648,7 +649,7 @@ def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
         _ = (args, kwargs)
         raise RuntimeError("blackboard sync exploded")
 
-    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", fake_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", fake_sync)
 
     registry = build_default_tool_registry(host_capabilities_factory=_make_noop_host_capabilities_factory())
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)

@@ -28,6 +28,11 @@ interface BrowserOpenRequestPayload {
   format: BrowserPageContentFormat | null
 }
 
+interface BrowserCookiesRequestPayload {
+  tabId: string | null
+  url: string | null
+}
+
 export interface DesktopCapabilityBrowserService {
   handle(request: DesktopCapabilityBridgeRequest): Promise<Record<string, unknown>>
 }
@@ -57,6 +62,8 @@ export function createDesktopCapabilityBrowserService(
           return await switchBrowserTab(registry, options, request)
         case 'execute':
           return await executeBrowserScript(registry, options, request)
+        case 'cookies':
+          return await getBrowserCookies(registry, options, request)
         case 'reset':
           return await resetBrowser(registry, options, request)
         case 'snapshot':
@@ -541,6 +548,13 @@ function normalizeOpenRequestPayload(payload: Record<string, unknown>): BrowserO
   }
 }
 
+function normalizeCookiesRequestPayload(payload: Record<string, unknown>): BrowserCookiesRequestPayload {
+  return {
+    tabId: normalizeOptionalString(payload.tabId),
+    url: normalizeOptionalString(payload.url),
+  }
+}
+
 function normalizeContentFormat(value: string): BrowserPageContentFormat {
   const normalized = value.trim().toLowerCase()
   if (!SUPPORTED_PAGE_CONTENT_FORMATS.has(normalized)) {
@@ -756,6 +770,74 @@ async function executeBrowserScript(
   }, { relayToRenderer: false })
 
   return { result, tabId: tab.tabId }
+}
+
+async function getBrowserCookies(
+  registry: BrowserTabRegistry,
+  options: CreateDesktopCapabilityBridgeServiceOptions,
+  request: DesktopCapabilityBridgeRequest,
+): Promise<Record<string, unknown>> {
+  const payload = normalizeCookiesRequestPayload(request.payload)
+  const tabId = payload.tabId ?? registry.activeTabId
+
+  if (payload.tabId !== null && !registry.tabs.has(payload.tabId)) {
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${payload.tabId}' not found.`, {
+      details: { tabId: payload.tabId },
+    })
+  }
+
+  const tab = tabId !== null && registry.tabs.has(tabId)
+    ? { tabId, targetWindow: registry.tabs.get(tabId)! }
+    : requireActiveBrowserTab(registry)
+
+  if (!isUsableBrowserWindow(tab.targetWindow)) {
+    throw new DesktopCapabilityBridgeError('not_found', `Tab '${tab.tabId}' has been destroyed.`, {
+      details: { tabId: tab.tabId },
+    })
+  }
+
+  const currentUrl = payload.url ?? tab.targetWindow.webContents.getURL()
+  let cookies: Electron.Cookie[]
+  try {
+    cookies = await tab.targetWindow.webContents.session.cookies.get(
+      currentUrl.trim() === '' ? {} : { url: currentUrl },
+    )
+  } catch (error) {
+    throw new DesktopCapabilityBridgeError('temporarily_unavailable', `Failed to read browser cookies: ${error instanceof Error ? error.message : String(error)}`, {
+      retryable: true,
+      details: {
+        tabId: tab.tabId,
+        url: currentUrl,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    })
+  }
+
+  await options.appendLog?.('info', '[capability-bridge] Browser cookies read.', {
+    capability: request.capability,
+    operation: request.operation,
+    toolId: request.toolId,
+    runId: request.runId,
+    toolCallId: request.toolCallId,
+    tabId: tab.tabId,
+    currentUrl,
+    cookieCount: cookies.length,
+  }, { relayToRenderer: false })
+
+  return {
+    tabId: tab.tabId,
+    currentUrl,
+    cookies: cookies.map((cookie) => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      secure: cookie.secure,
+      httpOnly: cookie.httpOnly,
+      expirationDate: cookie.expirationDate,
+      sameSite: cookie.sameSite,
+    })),
+  }
 }
 
 function serializeJavaScriptResult(value: unknown): unknown {
