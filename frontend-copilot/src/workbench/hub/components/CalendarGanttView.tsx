@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MutableRefObject, type RefObject } from 'react'
 import Gantt, { type GanttOptions, type GanttTask } from 'frappe-gantt'
-import { Check, ChevronDown, Pencil, Settings, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, Pencil, RefreshCw, Settings, Trash2 } from 'lucide-react'
 
 import type { CalendarEventPatch, UnifiedCalendarEvent } from '../calendar-types'
 import {
@@ -14,6 +14,7 @@ interface CalendarGanttViewProps {
   events?: UnifiedCalendarEvent[]
   onEventChange: (eventId: string | number, patch: CalendarEventPatch) => void | Promise<void>
   onEventDelete?: (eventId: string | number) => void | Promise<void>
+  onRefresh?: () => void
 }
 
 interface CalendarGanttContextMenuState {
@@ -30,7 +31,7 @@ interface CalendarGanttEventEditDraft {
   endDateTime: string
 }
 
-export function CalendarGanttView({ events = [], onEventChange, onEventDelete }: CalendarGanttViewProps) {
+export function CalendarGanttView({ events = [], onEventChange, onEventDelete, onRefresh }: CalendarGanttViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const ganttRef = useRef<Gantt | null>(null)
   const onEventChangeRef = useRef(onEventChange)
@@ -132,6 +133,8 @@ export function CalendarGanttView({ events = [], onEventChange, onEventDelete }:
       } else {
         ganttRef.current.refresh(tasks)
       }
+      fixGanttBarDurationComputation(ganttRef.current)
+      correctGanttBarDurations(ganttRef.current)
       scheduleGanttLabelStabilization(ganttRef.current)
       syncGanttVerticalScrollAffordance(container, tasks.length)
     } catch (error) {
@@ -324,7 +327,19 @@ export function CalendarGanttView({ events = [], onEventChange, onEventDelete }:
         <p className="calendar-gantt-card__meta">
           共 {displayedEvents.length} 个时间轴事件{!showWakeupCourses && hiddenWakeupCount > 0 ? `，已隐藏 ${hiddenWakeupCount} 个 Wakeup 课程` : ''}{mapping.skippedEventCount > 0 ? `，${mapping.skippedEventCount} 个无法渲染` : ''}
         </p>
-        <div
+        <div className="calendar-gantt-card__header-actions">
+          {onRefresh !== undefined ? (
+            <button
+              type="button"
+              className="calendar-gantt-card__refresh-button"
+              aria-label="刷新日历"
+              data-testid="calendar-gantt-refresh-button"
+              onClick={() => onRefresh()}
+            >
+              <RefreshCw size={15} aria-hidden="true" />
+            </button>
+          ) : null}
+          <div
           ref={settingsMenuRef}
           className={`calendar-gantt-settings${settingsMenuOpen ? ' calendar-gantt-settings--open' : ''}`}
         >
@@ -361,6 +376,7 @@ export function CalendarGanttView({ events = [], onEventChange, onEventDelete }:
               </span>
               <span className={`calendar-gantt-settings__switch${showWakeupCourses ? ' calendar-gantt-settings__switch--on' : ''}`} aria-hidden="true" />
             </button>
+          </div>
           </div>
         </div>
       </header>
@@ -934,6 +950,7 @@ interface GanttPrivateRuntime extends Gantt {
   popup?: CalendarGanttPopupController
   show_popup?: (options: CalendarGanttPopupShowOptions) => void
   __calendarGanttPopupEnhanced?: boolean
+  __calendarGanttDurationFixed?: boolean
 }
 
 interface CalendarGanttPopupController {
@@ -1059,6 +1076,75 @@ function cleanupGanttPopupPositioning(gantt: Gantt | null): void {
   const popupWrapper = runtime.popup?.parent ?? runtime.$popup_wrapper
   if (popupWrapper?.parentElement === document.body) {
     popupWrapper.remove()
+  }
+}
+
+interface GanttBar {
+  gantt: Gantt
+  task: GanttTask & { _start: Date; _end: Date }
+  x: number
+  y: number
+  width: number
+  height: number
+  duration: number
+  compute_duration: () => void
+  update_bar_position: (options: { x?: number | null; width?: number | null }) => void
+  $bar: SVGElement
+  $bar_progress: SVGElement
+}
+
+const GANTT_DURATION_MS_PER_UNIT: Record<string, number> = {
+  millisecond: 1,
+  second: 1000,
+  minute: 60000,
+  hour: 3600000,
+  day: 86400000,
+  month: 2592000000,
+  year: 31536000000,
+}
+
+function fixGanttBarDurationComputation(gantt: Gantt): void {
+  const runtime = gantt as GanttPrivateRuntime
+  if (runtime.__calendarGanttDurationFixed === true) {
+    return
+  }
+
+  const bars = (gantt as unknown as Record<string, unknown>).bars as GanttBar[] | undefined
+  const barPrototype = bars?.[0] !== undefined
+    ? Object.getPrototypeOf(bars[0])
+    : null
+
+  if (barPrototype === null) {
+    return
+  }
+
+  barPrototype.compute_duration = function (this: GanttBar) {
+    const config = (this.gantt as unknown as { config: { unit: string; step: number } }).config
+    const startMs = this.task._start.getTime()
+    const endMs = this.task._end.getTime()
+    const msDiff = endMs - startMs
+    const msPer = GANTT_DURATION_MS_PER_UNIT[config.unit] ?? 86400000
+    this.duration = (msDiff / msPer) / config.step
+  }
+
+  runtime.__calendarGanttDurationFixed = true
+}
+
+function correctGanttBarDurations(gantt: Gantt): void {
+  const bars = (gantt as unknown as Record<string, unknown>).bars as GanttBar[] | undefined
+  if (bars === undefined || bars.length === 0) {
+    return
+  }
+
+  for (const bar of bars) {
+    const config = (bar.gantt as unknown as { config: { unit: string; step: number; column_width: number } }).config
+    const startMs = bar.task._start.getTime()
+    const endMs = bar.task._end.getTime()
+    const msDiff = endMs - startMs
+    const msPer = GANTT_DURATION_MS_PER_UNIT[config.unit] ?? 86400000
+    bar.duration = (msDiff / msPer) / config.step
+    bar.width = config.column_width * bar.duration
+    bar.update_bar_position({})
   }
 }
 

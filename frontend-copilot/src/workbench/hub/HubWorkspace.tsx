@@ -134,7 +134,7 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
         </header>
 
         <section className="workspace-main__content calendar-workspace-content" style={{ display: 'flex', flexDirection: 'column' }}>
-          <CalendarGanttView events={events} onEventChange={handleCalendarEventChange} onEventDelete={handleCalendarEventDelete} />
+          <CalendarGanttView events={events} onEventChange={handleCalendarEventChange} onEventDelete={handleCalendarEventDelete} onRefresh={() => setRefreshToken((value) => value + 1)} />
 
           <KanbanTracker events={events} onCreateEvent={handleKanbanEventCreate} />
 

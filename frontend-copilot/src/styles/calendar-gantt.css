@@ -80,6 +80,37 @@
   white-space: nowrap;
 }
 
+.calendar-gantt-card__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.calendar-gantt-card__refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.calendar-gantt-card__refresh-button:hover {
+  color: var(--text-primary);
+  background: var(--interactive-hover-bg, rgba(255, 255, 255, 0.08));
+}
+
+.calendar-gantt-card__refresh-button:active {
+  color: var(--accent-color, var(--vscode-textLink-foreground));
+  transform: rotate(90deg);
+}
+
 .calendar-gantt-card__notice {
   margin: 0;
   padding: 0.4rem 0.65rem;
@@ -369,7 +400,7 @@
   height: min(100%, var(--calendar-gantt-visible-chart-height, 399px)) !important;
   max-height: var(--calendar-gantt-visible-chart-height, 399px);
   min-height: 0;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   overscroll-behavior: contain;
   border-radius: 4px;

@@ -333,6 +333,30 @@ describe('CalendarGanttView', () => {
     rendered.unmount()
     expect(gantt.$popup_wrapper.parentElement).toBeNull()
   })
+
+  it('renders a refresh button and fires onRefresh when clicked', () => {
+    const onRefresh = vi.fn()
+    const rendered = renderWithRoot(
+      <CalendarGanttView events={[createCalendarEvent()]} onEventChange={vi.fn()} onRefresh={onRefresh} />,
+    )
+
+    const refreshButton = rendered.getByTestId('calendar-gantt-refresh-button')
+    act(() => {
+      refreshButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onRefresh).toHaveBeenCalledTimes(1)
+
+    rendered.unmount()
+  })
+
+  it('does not render a refresh button when onRefresh is omitted', () => {
+    const rendered = renderWithRoot(<CalendarGanttView events={[createCalendarEvent()]} onEventChange={vi.fn()} />)
+
+    expect(rendered.queryByTestId('calendar-gantt-refresh-button')).toBeNull()
+
+    rendered.unmount()
+  })
 })
 
 function createCalendarEvent(overrides: Partial<UnifiedCalendarEvent> = {}): UnifiedCalendarEvent {

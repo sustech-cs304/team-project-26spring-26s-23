@@ -54,6 +54,7 @@ from app.tooling.file_tools import (
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 from app.tooling.browser_tools import get_browser_tool_contracts
+from app.tooling.calendar_tools import get_calendar_tool_contracts
 
 CONTRACT_TOOL_IDS = tuple(
     contract.metadata.tool_id
@@ -61,6 +62,7 @@ CONTRACT_TOOL_IDS = tuple(
         *get_blackboard_tool_contracts(),
         *get_tis_tool_contracts(),
         *get_browser_tool_contracts(),
+        *get_calendar_tool_contracts(),
     )
 )
 

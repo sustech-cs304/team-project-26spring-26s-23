@@ -7,18 +7,8 @@ from fastapi import APIRouter, Body, Request
 
 from app.desktop_runtime.config import DesktopRuntimeConfig
 from app.desktop_runtime.security import require_local_token
-from app.event_manager.data.db_manager import DatabaseManager, resolve_default_event_manager_db_path
 from app.integrations.wakeup.api import WakeupCalendarICSParser
-
-
-def _get_event_db_manager(request: Request | None = None) -> DatabaseManager:
-    if request is not None:
-        runtime_config = getattr(request.app.state, "runtime_config", None)
-        if runtime_config is not None:
-            database_dir: Path | None = getattr(runtime_config, "database_dir", None)
-            if database_dir is not None:
-                return DatabaseManager(resolve_default_event_manager_db_path(database_dir))
-    return DatabaseManager()
+from app.timeline_db import resolve_timeline_db_path, sync_timeline_events
 
 
 def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
@@ -26,6 +16,20 @@ def _get_runtime_config(request: Request) -> DesktopRuntimeConfig:
     if not isinstance(config, DesktopRuntimeConfig):
         raise RuntimeError("Desktop runtime config is not available on app.state.runtime_config")
     return config
+
+
+def _unified_event_to_timeline_row(event: Any) -> dict[str, Any]:
+    return {
+        "source_id": event.source_id,
+        "title": event.title,
+        "start_time": event.start_time.isoformat() if hasattr(event.start_time, "isoformat") else str(event.start_time),
+        "end_time": event.end_time.isoformat() if event.end_time and hasattr(event.end_time, "isoformat") else str(event.end_time) if event.end_time else None,
+        "description": event.description,
+        "is_all_day": event.is_all_day,
+        "location": None,
+        "status": event.status,
+        "metadata_payload": event.metadata_payload,
+    }
 
 
 def build_wakeup_ui_router() -> APIRouter:
@@ -47,16 +51,13 @@ def build_wakeup_ui_router() -> APIRouter:
             parser = WakeupCalendarICSParser()
             unified_events = parser.parse_to_unified_events(ics_text, source="wakeup")
 
-            event_db = _get_event_db_manager(request)
-            stats = event_db.sync_unified_calendar_events("wakeup", unified_events)
+            db_path = resolve_timeline_db_path(user_data_dir=runtime_config.user_data_dir)
+            timeline_rows = [_unified_event_to_timeline_row(e) for e in unified_events]
+            stats = sync_timeline_events(db_path, "wakeup", timeline_rows)
 
             marker_file = Path(runtime_config.database_dir) / ".calendar_initialized"
             marker_file.touch(exist_ok=True)
-            return {
-                "ok": True,
-                "parsed": len(unified_events),
-                "stats": stats,
-            }
+            return {"ok": True, "parsed": len(unified_events), "stats": stats}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
@@ -74,11 +75,7 @@ def build_wakeup_ui_router() -> APIRouter:
                 raise ValueError("icsText is required")
             parser = WakeupCalendarICSParser()
             unified_events = parser.parse_to_unified_events(ics_text, source="wakeup")
-            return {
-                "ok": True,
-                "parsed": len(unified_events),
-                "events": [event.to_dict() for event in unified_events],
-            }
+            return {"ok": True, "parsed": len(unified_events), "events": [e.to_dict() for e in unified_events]}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
@@ -86,4 +83,3 @@ def build_wakeup_ui_router() -> APIRouter:
 
 
 __all__ = ["build_wakeup_ui_router"]
-

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.tooling.prompts.file_tools import FILE_TOOL_PREFERENCE_GUIDE
 from app.tooling.prompts.domain.blackboard import BLACKBOARD_TOOL_PREFERENCE_GUIDE
+from app.tooling.prompts.domain.calendar import CALENDAR_TOOL_PREFERENCE_GUIDE
 from app.tooling.prompts.domain.tis import TIS_TOOL_PREFERENCE_GUIDE
 
 # ---------------------------------------------------------------------------
@@ -24,6 +25,8 @@ possible.
 {FILE_TOOL_PREFERENCE_GUIDE}
 
 {BLACKBOARD_TOOL_PREFERENCE_GUIDE}
+
+{CALENDAR_TOOL_PREFERENCE_GUIDE}
 
 {TIS_TOOL_PREFERENCE_GUIDE}
 

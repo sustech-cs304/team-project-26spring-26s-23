@@ -91,6 +91,13 @@ TIS_TOOL_GROUP = ToolPresentationGroup(
     order=20,
     source_kind="sustech-tis",
 )
+CALENDAR_TOOL_GROUP = ToolPresentationGroup(
+    group_id="calendar",
+    label_zh="日历工具",
+    label_en="Calendar Tools",
+    order=12,
+    source_kind="calendar",
+)
 SKILL_TOOL_GROUP = ToolPresentationGroup(
     group_id="runtime-skill",
     label_zh="Skill 工具",
@@ -119,6 +126,7 @@ TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     BROWSER_SNAPSHOT_TOOL_ID: BROWSER_TOOL_GROUP,
     SKILL_ACTIVATE_TOOL_ID: SKILL_TOOL_GROUP,
     SKILL_READ_RESOURCE_TOOL_ID: SKILL_TOOL_GROUP,
+    "calendar.sql.query": CALENDAR_TOOL_GROUP,
     "blackboard.sql.query": BLACKBOARD_TOOL_GROUP,
     "blackboard.snapshot.sync": BLACKBOARD_TOOL_GROUP,
     "tis.sql.query": TIS_TOOL_GROUP,
@@ -241,6 +249,18 @@ TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": SKILL_READ_RESOURCE_TOOL_DISPLAY_NAME,
         "description_zh": "读取已启用 Skill 资源索引中的 UTF-8 文本资源，不要求先激活。",
         "description_en": SKILL_READ_RESOURCE_TOOL_DESCRIPTION,
+    },
+    "calendar.sql.query": {
+        "display_name_zh": "日历 SQL 查询",
+        "display_name_en": "Calendar SQL Query",
+        "description_zh": (
+            "对统一日历数据库执行 SQL 查询和修改。可查看/修改/删除所有来源的事件，"
+            "但仅允许添加 source='custom' 的事件。"
+        ),
+        "description_en": (
+            "Execute SQL queries and mutations against the unified calendar database. "
+            "View/modify/delete all events; only INSERT source='custom' events."
+        ),
     },
     "blackboard.sql.query": {
         "display_name_zh": "Blackboard 数据查询",

@@ -474,6 +474,34 @@ def test_executor_inherits_default_workspace_root_from_tool_registry(tmp_path: P
 
 
 
+def test_bound_tool_execution_context_includes_runtime_user_data_dir(tmp_path: Path) -> None:
+    registry = build_default_tool_registry()
+    user_data_dir = tmp_path / "user-data"
+    executor = PydanticAIAgentExecutor(
+        model="test-model",
+        tool_registry=registry,
+        user_data_dir=user_data_dir,
+    )
+    deps = executor._build_runtime_deps(
+        enabled_tools=("calendar.sql.query",),
+        emit_tool_event=lambda _event: None,
+        run_id="run-calendar-context",
+    )
+
+    execution_context = executor._build_bound_tool_execution_context(
+        _build_tool_run_context(tool_call_id="calendar.sql.query:call-1", deps=deps),
+        tool_id="calendar.sql.query",
+        tool_call_id="calendar.sql.query:call-1",
+        display_name="Calendar SQL Query",
+        enabled_tool_ids=("calendar.sql.query",),
+    )
+
+    assert execution_context.metadata["runtimePaths"] == {
+        "userDataDir": user_data_dir.resolve(strict=False).as_posix()
+    }
+
+
+
 def test_build_bound_tool_execution_context_preserves_model_route_capability_hints() -> None:
     registry = build_default_tool_registry()
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)

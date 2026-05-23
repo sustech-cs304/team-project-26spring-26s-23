@@ -439,6 +439,23 @@ def test_build_default_runtime_dependencies_uses_runtime_root_for_file_tools(
     assert deps.default_root == expected_workspace_root
 
 
+def test_build_default_runtime_dependencies_passes_user_data_dir_to_agent_tools(
+    tmp_path: Path,
+) -> None:
+    runtime_config = _build_runtime_config(tmp_path)
+
+    dependencies = build_default_runtime_dependencies(runtime_config=runtime_config)
+    deps = dependencies.agent_executor._build_runtime_deps(
+        enabled_tools=("calendar.sql.query",),
+        emit_tool_event=lambda _event: None,
+        run_id="run-calendar-user-data",
+    )
+
+    assert deps.user_data_dir == runtime_config.user_data_dir.resolve(
+        strict=False
+    ).as_posix()
+
+
 def test_build_default_runtime_dependencies_merges_mcp_snapshot_into_global_tool_catalog(
     tmp_path: Path,
 ) -> None:

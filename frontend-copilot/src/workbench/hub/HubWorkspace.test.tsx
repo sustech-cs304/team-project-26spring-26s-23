@@ -21,11 +21,15 @@ interface MockCalendarGanttViewProps {
   events?: UnifiedCalendarEvent[]
   onEventChange?: (eventId: string | number, patch: Partial<UnifiedCalendarEvent>) => Promise<void> | void
   onEventDelete?: (eventId: string | number) => Promise<void> | void
+  onRefresh?: () => void
 }
 
 const { MockCalendarGanttView, MockKanbanTracker } = vi.hoisted(() => ({
-  MockCalendarGanttView: vi.fn(({ events = [] }: MockCalendarGanttViewProps) => (
-    <div data-testid="calendar-gantt-count">{String(events.length)}</div>
+  MockCalendarGanttView: vi.fn(({ events = [], onRefresh }: MockCalendarGanttViewProps) => (
+    <div data-testid="calendar-gantt-count">
+      {String(events.length)}
+      {typeof onRefresh === 'function' ? <button data-testid="calendar-gantt-refresh-button" aria-label="刷新日历" onClick={onRefresh} /> : null}
+    </div>
   )),
   MockKanbanTracker: vi.fn(({ events = [] }: MockKanbanTrackerProps) => (
     <div data-testid="kanban-count">{String(events.length)}</div>
