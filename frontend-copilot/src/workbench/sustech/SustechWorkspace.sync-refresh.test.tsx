@@ -283,6 +283,43 @@ describe('SustechWorkspace sync refresh', () => {
       }
     })
 
+    it('discovers sync runs started outside the Blackboard panel via background status polling', async () => {
+      vi.useFakeTimers()
+
+      let statusPollCount = 0
+      const fetchMock = vi.fn<(input: string | URL, init?: RequestInit) => Promise<Response>>()
+      fetchMock.mockImplementation(async (input) => {
+        const url = String(input)
+
+        if (url.endsWith('/api/blackboard/sync/status')) {
+          statusPollCount += 1
+          return jsonResponse(statusPollCount >= 2 ? runningSyncStatus() : idleSyncStatus())
+        }
+
+        throw new Error(`Unhandled fetch URL: ${url}`)
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      const rendered = renderSustechWorkspace()
+
+      try {
+        await act(async () => {
+          await Promise.resolve()
+        })
+
+        expect(rendered.getByTestId(TEST_ID_SYNC_STATE).textContent).toBe('idle')
+
+        await act(async () => {
+          vi.advanceTimersByTime(5000)
+          await Promise.resolve()
+        })
+
+        await waitForCondition(() => rendered.getByTestId(TEST_ID_SYNC_STATE).textContent === 'running')
+      } finally {
+        rendered.unmount()
+      }
+    })
+
     it('surfaces a concise error when sync status polling returns a non-2xx response', async () => {
       const fetchMock = vi.fn<(input: string | URL, init?: RequestInit) => Promise<Response>>()
       fetchMock.mockImplementation(async (input) => {
