@@ -15,10 +15,7 @@ _EXPECTED_ROOT_EXPORTS = (
 )
 
 _EXPECTED_BLACKBOARD_TOOL_IDS = {
-    "blackboard.course_catalog.search",
-    "blackboard.calendar.refresh",
     "blackboard.snapshot.sync",
-    "blackboard.course_resources.sync",
     "blackboard.sql.query",
 }
 

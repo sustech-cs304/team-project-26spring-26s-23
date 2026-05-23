@@ -200,21 +200,14 @@ def test_post_root_run_stream_keeps_run_alive_for_contract_execution_failure(
     captured_bridge_payloads: list[dict[str, Any]] = []
     captured_headers: list[str | None] = []
 
-    def _boom_search(
-        username: str,
-        password: str,
-        *,
-        keyword: str,
-        field: str = "CourseName",
-        operator: str = "Contains",
-        limit: int | None = None,
-        fetch_mode: str = "full",
-        max_pages: int = 30,
+    def _boom_sync(
+        *args: Any,
+        **kwargs: Any,
     ) -> Any:
-        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
-        raise RuntimeError("blackboard search exploded")
+        _ = (args, kwargs)
+        raise RuntimeError("blackboard sync exploded")
 
-    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", _boom_search)
+    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", _boom_sync)
 
     app = _create_app(
         host_capability_bridge_client=_create_recording_bridge_client(
@@ -228,9 +221,9 @@ def test_post_root_run_stream_keeps_run_alive_for_contract_execution_failure(
         assert app.state.copilot_runtime_agent_executor._tool_registry is app.state.copilot_runtime_tool_registry
         _configure_contract_tool_test_model(
             app,
-            tool_id="blackboard.course_catalog.search",
+            tool_id="blackboard.snapshot.sync",
             tool_arguments={
-                "keyword": "CS305",
+                "maxConcurrency": 1,
                 "username": "alice",
                 "password": "secret",
             },
@@ -243,10 +236,10 @@ def test_post_root_run_stream_keeps_run_alive_for_contract_execution_failure(
             json=_build_run_start_request(
                 thread_id=thread_id,
                 model_id="gpt-4.1",
-                user_text="Search Blackboard course catalog.",
-                enabled_tools=["blackboard.course_catalog.search"],
+                user_text="Sync Blackboard course data.",
+                enabled_tools=["blackboard.snapshot.sync"],
                 tool_permission_policy=_build_allow_tool_permission_policy(
-                    "blackboard.course_catalog.search"
+                    "blackboard.snapshot.sync"
                 ),
             ),
         )
@@ -271,10 +264,10 @@ def test_post_root_run_stream_keeps_run_alive_for_contract_execution_failure(
     assert diagnostic_events[0]["payload"]["code"] == "raw_tool_call_observed"
 
     assert [event["payload"]["phase"] for event in tool_events] == ["started", "failed"]
-    assert tool_events[1]["payload"]["toolId"] == "blackboard.course_catalog.search"
-    assert tool_events[1]["payload"]["errorSummary"] == "blackboard search exploded"
+    assert tool_events[1]["payload"]["toolId"] == "blackboard.snapshot.sync"
+    assert tool_events[1]["payload"]["errorSummary"] == "blackboard sync exploded"
     assert events[-1]["payload"]["assistantText"] == "unused"
-    assert events[-1]["payload"]["resolvedToolIds"] == ["blackboard.course_catalog.search"]
+    assert events[-1]["payload"]["resolvedToolIds"] == ["blackboard.snapshot.sync"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
 
 
@@ -284,21 +277,14 @@ def test_post_root_run_stream_keeps_run_alive_for_recoverable_contract_tool_fail
     captured_bridge_payloads: list[dict[str, Any]] = []
     captured_headers: list[str | None] = []
 
-    def _invalid_search(
-        username: str,
-        password: str,
-        *,
-        keyword: str,
-        field: str = "CourseName",
-        operator: str = "Contains",
-        limit: int | None = None,
-        fetch_mode: str = "full",
-        max_pages: int = 30,
+    def _invalid_sync(
+        *args: Any,
+        **kwargs: Any,
     ) -> Any:
-        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
-        raise ValueError("keyword must be a non-empty string.")
+        _ = (args, kwargs)
+        raise ValueError("maxConcurrency must be a positive integer.")
 
-    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", _invalid_search)
+    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", _invalid_sync)
 
     app = _create_app(
         host_capability_bridge_client=_create_recording_bridge_client(
@@ -312,9 +298,9 @@ def test_post_root_run_stream_keeps_run_alive_for_recoverable_contract_tool_fail
         assert app.state.copilot_runtime_agent_executor._tool_registry is app.state.copilot_runtime_tool_registry
         _configure_contract_tool_test_model(
             app,
-            tool_id="blackboard.course_catalog.search",
+            tool_id="blackboard.snapshot.sync",
             tool_arguments={
-                "keyword": "",
+                "maxConcurrency": 0,
                 "username": "alice",
                 "password": "secret",
             },
@@ -327,10 +313,10 @@ def test_post_root_run_stream_keeps_run_alive_for_recoverable_contract_tool_fail
             json=_build_run_start_request(
                 thread_id=thread_id,
                 model_id="gpt-4.1",
-                user_text="Search Blackboard course catalog.",
-                enabled_tools=["blackboard.course_catalog.search"],
+                user_text="Sync Blackboard course data.",
+                enabled_tools=["blackboard.snapshot.sync"],
                 tool_permission_policy=_build_allow_tool_permission_policy(
-                    "blackboard.course_catalog.search"
+                    "blackboard.snapshot.sync"
                 ),
             ),
         )
@@ -349,9 +335,9 @@ def test_post_root_run_stream_keeps_run_alive_for_recoverable_contract_tool_fail
     assert "run_failed" not in event_types
     assert event_types.count("tool_event") == 2
     assert [event["payload"]["phase"] for event in tool_events] == ["started", "failed"]
-    assert tool_events[1]["payload"]["errorSummary"] == "keyword must be a non-empty string."
+    assert tool_events[1]["payload"]["errorSummary"] == "maxConcurrency must be a positive integer."
     assert events[-1]["payload"]["assistantText"] == "I can explain the failure and continue."
-    assert events[-1]["payload"]["resolvedToolIds"] == ["blackboard.course_catalog.search"]
+    assert events[-1]["payload"]["resolvedToolIds"] == ["blackboard.snapshot.sync"]
     assert captured_headers == ["bridge-token-123"] * len(captured_headers)
 
 

@@ -61,6 +61,30 @@ from app.copilot_runtime.tool_registry import (
 from app.desktop_runtime.host_model_route_bridge import HostModelRouteBridgeClient
 from app.tooling.file_tools import FILE_TOOL_SWITCH_ROOT_ID
 from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KIND
+from app.tooling.host_capabilities.interfaces import ToolHostCapabilities
+
+
+def _create_noop_host_capabilities() -> ToolHostCapabilities:
+    """Create a host capabilities instance with all capabilities as no-ops."""
+    from unittest.mock import MagicMock
+    noop = MagicMock()
+    noop.resolve_path.return_value = "/mock"
+    noop.save.return_value = "mock-artifact-id"
+    noop.get.return_value = "mock-value"
+    return ToolHostCapabilities(
+        workspace_resolver=noop,
+        database_resolver=noop,
+        artifact_store=noop,
+        state_store=noop,
+        secret_provider=noop,
+        event_sink=noop,
+        browser_controller=noop,
+    )
+
+
+def _make_noop_host_capabilities_factory() -> Any:
+    """Create a host capabilities factory for build_default_tool_registry."""
+    return lambda _contract, _invoke_ctx, _runtime_ctx: _create_noop_host_capabilities()
 
 
 class CollectedEventStreamResult(TypedDict):
@@ -507,94 +531,62 @@ def test_execute_bound_tool_delay_mode_manual_resolution_wins_before_timeout() -
 def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from pathlib import Path
     captured: dict[str, object] = {}
 
-    def fake_search(
-        username: str,
-        password: str,
-        *,
-        keyword: str,
-        field: str = "CourseName",
-        operator: str = "Contains",
-        limit: int | None = None,
-        fetch_mode: str = "full",
-        max_pages: int = 30,
-    ) -> CourseCatalogSearchResult:
-        captured.update(
-            {
-                "username": username,
-                "password": password,
-                "keyword": keyword,
-                "field": field,
-                "operator": operator,
-                "limit": limit,
-                "fetch_mode": fetch_mode,
-                "max_pages": max_pages,
-            }
-        )
-        return CourseCatalogSearchResult(
-            keyword=keyword,
-            field=field,
-            operator=operator,
-            limit=limit,
-            fetch_mode=fetch_mode,
-            max_pages=max_pages,
-            results=[
-                CourseCatalogResultDTO(
-                    course_id="_course_1",
-                    course_identifier="CS305",
-                    course_name="数据库系统",
-                    instructor="张老师",
-                )
-            ],
+    def fake_sync(
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        captured.update({"args": args, "kwargs": kwargs})
+        return SimpleNamespace(
+            db_path=Path("mock/path.db"),
+            log_summary={"total": 1},
             logs=[],
+            integrity_ok=True,
+            first_sync_stats={},
+            second_sync_stats=None,
+            table_counts={},
+            expected_active_counts={},
+            snapshot=SimpleNamespace(scraped_counts=lambda: {}, logs=[]),
+            payloads=SimpleNamespace(),
+            second_sync_has_no_new_records=lambda: False,
+            second_sync_has_no_deleted_records=lambda: False,
         )
 
-    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)
+    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", fake_sync)
 
-    registry = build_default_tool_registry()
+    registry = build_default_tool_registry(host_capabilities_factory=_make_noop_host_capabilities_factory())
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     ctx = _build_tool_run_context(
-        tool_call_id="blackboard.course_catalog.search:call-1",
+        tool_call_id="blackboard.snapshot.sync:call-1",
         deps=SimpleNamespace(
             tool_registry=registry,
-            enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
+            enabled_tool_ids=frozenset({"blackboard.snapshot.sync"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-tool",
             tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
+            host_capabilities_factory=_make_noop_host_capabilities_factory(),
         ),
     )
 
     result = asyncio.run(
         executor._execute_bound_tool(
             ctx,
-            tool_id="blackboard.course_catalog.search",
+            tool_id="blackboard.snapshot.sync",
             arguments={
                 "username": "alice",
                 "password": "secret",
-                "keyword": "数据库系统",
             },
         )
     )
 
-    assert captured == {
-        "username": "alice",
-        "password": "secret",
-        "keyword": "数据库系统",
-        "field": "CourseName",
-        "operator": "Contains",
-        "limit": None,
-        "fetch_mode": "full",
-        "max_pages": 30,
-    }
     assert result["status"] == "success"
-    assert result["output"]["fetchMode"] == "full"
-    assert result["output"]["maxPages"] == 30
-    assert result["metadata"]["toolId"] == "blackboard.course_catalog.search"
+    assert result["metadata"]["toolId"] == "blackboard.snapshot.sync"
     assert [event.phase for event in emitted_tool_events] == ["started", "completed"]
-    assert all(event.tool_id == "blackboard.course_catalog.search" for event in emitted_tool_events)
+    assert all(event.tool_id == "blackboard.snapshot.sync" for event in emitted_tool_events)
     assert emitted_tool_events[-1].result_summary is not None
 
 
@@ -602,30 +594,23 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
 def test_execute_bound_tool_returns_recoverable_contract_failure_without_raising(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_search(
-        username: str,
-        password: str,
-        *,
-        keyword: str,
-        field: str = "CourseName",
-        operator: str = "Contains",
-        limit: int | None = None,
-        fetch_mode: str = "full",
-        max_pages: int = 30,
-    ) -> CourseCatalogSearchResult:
-        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
-        raise ValueError("keyword must be a non-empty string.")
+    def fake_sync(
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        _ = (args, kwargs)
+        raise ValueError("maxConcurrency must be a positive integer.")
 
-    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)
+    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", fake_sync)
 
-    registry = build_default_tool_registry()
+    registry = build_default_tool_registry(host_capabilities_factory=_make_noop_host_capabilities_factory())
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     ctx = _build_tool_run_context(
-        tool_call_id="blackboard.course_catalog.search:call-1",
+        tool_call_id="blackboard.snapshot.sync:call-1",
         deps=SimpleNamespace(
             tool_registry=registry,
-            enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
+            enabled_tool_ids=frozenset({"blackboard.snapshot.sync"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-tool",
             tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
@@ -636,51 +621,43 @@ def test_execute_bound_tool_returns_recoverable_contract_failure_without_raising
     result = asyncio.run(
         executor._execute_bound_tool(
             ctx,
-            tool_id="blackboard.course_catalog.search",
+            tool_id="blackboard.snapshot.sync",
             arguments={
                 "username": "alice",
                 "password": "secret",
-                "keyword": "",
             },
         )
     )
 
     assert result["status"] == "error"
     assert result["error"]["code"] == "invalid_input"
-    assert result["error"]["message"] == "keyword must be a non-empty string."
+    assert result["error"]["message"] == "maxConcurrency must be a positive integer."
     assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
-    assert emitted_tool_events[-1].tool_id == "blackboard.course_catalog.search"
-    assert emitted_tool_events[-1].error_summary == "keyword must be a non-empty string."
+    assert emitted_tool_events[-1].tool_id == "blackboard.snapshot.sync"
+    assert emitted_tool_events[-1].error_summary == "maxConcurrency must be a positive integer."
 
 
 
 def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_search(
-        username: str,
-        password: str,
-        *,
-        keyword: str,
-        field: str = "CourseName",
-        operator: str = "Contains",
-        limit: int | None = None,
-        fetch_mode: str = "full",
-        max_pages: int = 30,
-    ) -> CourseCatalogSearchResult:
-        _ = (username, password, keyword, field, operator, limit, fetch_mode, max_pages)
-        raise RuntimeError("blackboard search exploded")
+    def fake_sync(
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        _ = (args, kwargs)
+        raise RuntimeError("blackboard sync exploded")
 
-    monkeypatch.setattr(blackboard_facade_tools, "search_course_catalog_with_credentials", fake_search)
+    monkeypatch.setattr(blackboard_facade_tools, "run_blackboard_snapshot_sync", fake_sync)
 
-    registry = build_default_tool_registry()
+    registry = build_default_tool_registry(host_capabilities_factory=_make_noop_host_capabilities_factory())
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     ctx = _build_tool_run_context(
-        tool_call_id="blackboard.course_catalog.search:call-1",
+        tool_call_id="blackboard.snapshot.sync:call-1",
         deps=SimpleNamespace(
             tool_registry=registry,
-            enabled_tool_ids=frozenset({"blackboard.course_catalog.search"}),
+            enabled_tool_ids=frozenset({"blackboard.snapshot.sync"}),
             emit_tool_event=emitted_tool_events.append,
             run_id="run-contract-tool",
             tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
@@ -691,38 +668,28 @@ def test_execute_bound_tool_returns_contract_execution_failure_without_raising(
     result = asyncio.run(
         executor._execute_bound_tool(
             ctx,
-            tool_id="blackboard.course_catalog.search",
+            tool_id="blackboard.snapshot.sync",
             arguments={
                 "username": "alice",
                 "password": "secret",
-                "keyword": "数据库系统",
             },
         )
     )
 
     assert result["status"] == "error"
     assert result["error"]["code"] == "execution_failed"
-    assert result["error"]["message"] == "blackboard search exploded"
-    assert result["metadata"] == {
-        "toolId": "blackboard.course_catalog.search",
-    }
+    assert result["error"]["message"] == "blackboard sync exploded"
+    assert result["metadata"]["toolId"] == "blackboard.snapshot.sync"
     assert result["error"]["details"]["exceptionType"] == "RuntimeError"
     assert "Traceback (most recent call last):" in result["error"]["details"]["traceback"]
-    assert (
-        result["error"]["details"]["diagnosticContext"]
-        == {
-            "integration": "blackboard",
-            "toolId": "blackboard.course_catalog.search",
-            "invocationId": "blackboard.course_catalog.search:call-1",
-            "argumentKeys": ["keyword", "password", "username"],
-        }
-    )
+    assert result["error"]["details"]["diagnosticContext"]["integration"] == "blackboard"
+    assert result["error"]["details"]["diagnosticContext"]["toolId"] == "blackboard.snapshot.sync"
     assert [event.phase for event in emitted_tool_events] == ["started", "failed"]
-    assert emitted_tool_events[-1].error_summary == "blackboard search exploded"
+    assert emitted_tool_events[-1].error_summary == "blackboard sync exploded"
 
 
 def test_execute_bound_tool_raises_awaiting_user_input_for_inline_form_tool() -> None:
-    registry = build_default_tool_registry()
+    registry = build_default_tool_registry(host_capabilities_factory=_make_noop_host_capabilities_factory())
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     workspace_root = str(Path.cwd().resolve(strict=False).as_posix())

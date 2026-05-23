@@ -197,24 +197,15 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
     tool_ids = [tool.metadata.tool_id for tool in get_blackboard_tool_contracts()]
 
     assert tool_ids == [
-        "blackboard.course_catalog.search",
-        "blackboard.calendar.refresh",
         "blackboard.snapshot.sync",
-        "blackboard.course_resources.sync",
         "blackboard.sql.query",
     ]
 
-    course_catalog_tool = BlackboardCourseCatalogSearchTool()
-    calendar_tool = BlackboardCalendarRefreshTool()
     snapshot_tool = BlackboardSnapshotSyncTool()
-    resource_tool = BlackboardCourseResourcesSyncTool()
     requirements = {
         requirement.capability: requirement for requirement in snapshot_tool.metadata.capability_requirements
     }
-    course_catalog_input_schema = course_catalog_tool.metadata.input_schema.schema
-    calendar_input_schema = calendar_tool.metadata.input_schema.schema
     snapshot_input_schema = snapshot_tool.metadata.input_schema.schema
-    resource_input_schema = resource_tool.metadata.input_schema.schema
 
     assert requirements["secret_provider"].required is False
     assert requirements["database_resolver"].required is False
@@ -222,22 +213,8 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
     assert requirements["artifact_store"].required is False
     assert requirements["event_sink"].required is False
     assert snapshot_tool.metadata.idempotent is False
-    assert course_catalog_input_schema["properties"]["fetchMode"]["enum"] == ["quick", "full"]
-    assert course_catalog_input_schema["properties"]["fetchMode"]["default"] == "full"
-    assert course_catalog_input_schema["properties"]["maxPages"]["minimum"] == 1
-    assert course_catalog_input_schema["properties"]["maxPages"]["default"] == 30
-    assert calendar_input_schema["properties"]["refreshMode"]["enum"] == ["auto", "force"]
-    assert calendar_input_schema["properties"]["refreshMode"]["default"] == "auto"
     assert "resourceCourseLimit" not in snapshot_input_schema["properties"]
     assert "resourceCourseLimit" not in snapshot_input_schema.get("required", [])
-    assert resource_input_schema["required"] == ["courseIds"]
-    assert resource_input_schema["properties"]["courseIds"]["type"] == "array"
-    assert resource_input_schema["properties"]["courseIds"]["items"] == {
-        "type": "string",
-        "minLength": 1,
-    }
-    assert resource_input_schema["properties"]["courseIds"]["minItems"] == 1
-    assert resource_input_schema["properties"]["courseIds"]["uniqueItems"] is True
 
 
 def test_blackboard_tool_input_schemas_describe_each_parameter() -> None:

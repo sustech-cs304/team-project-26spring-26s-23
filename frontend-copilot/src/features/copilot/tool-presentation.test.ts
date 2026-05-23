@@ -109,10 +109,10 @@ describe('resolveCopilotToolPlatformGroup', () => {
     })
 
     expect(resolveCopilotToolPlatformGroup({
-      toolId: 'blackboard.course_catalog.search',
+      toolId: 'blackboard.snapshot.sync',
       kind: 'external',
-      displayName: 'Course Catalog Search',
-      description: 'Search Blackboard course catalog',
+      displayName: 'Snapshot Sync',
+      description: 'Sync all Blackboard course data',
       group: {
         id: 'blackboard',
         label: 'Blackboard 工具',

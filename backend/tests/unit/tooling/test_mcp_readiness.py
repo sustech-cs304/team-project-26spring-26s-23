@@ -167,13 +167,10 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
     reports = assess_default_contract_mcp_readiness()
 
     assert MCP_SUPPORTED_INPUT_SCHEMA_FORMATS == ("json-schema",)
-    assert len(reports) == 17
+    assert len(reports) == 14
     by_tool_id = {report.tool_id: report for report in reports}
     assert set(by_tool_id) == {
-        "blackboard.course_catalog.search",
-        "blackboard.calendar.refresh",
         "blackboard.snapshot.sync",
-        "blackboard.course_resources.sync",
         "blackboard.sql.query",
         "browser.close_tab",
         "browser.execute",
@@ -188,16 +185,6 @@ def test_assess_default_contract_mcp_readiness_reports_current_facade_tools_as_b
         "tis.selected_courses.fetch",
         "tis.sql.query",
     }
-
-    course_catalog_report = by_tool_id["blackboard.course_catalog.search"]
-    assert course_catalog_report.ready_for_exposure is True
-    assert course_catalog_report.supported_input_schema is True
-    assert course_catalog_report.requires_capability_bridge is True
-    assert course_catalog_report.blocking_reasons == ()
-    assert course_catalog_report.warnings == (
-        "Host capability 'secret_provider' is not directly satisfiable in bare MCP mode.",
-        "Host capability 'event_sink' is not directly satisfiable in bare MCP mode.",
-    )
 
     snapshot_report = by_tool_id["blackboard.snapshot.sync"]
     assert snapshot_report.ready_for_exposure is True

@@ -479,11 +479,11 @@ function createHostedCatalogOnlyLoadResult(): ToolCatalogLoadResult {
         },
       },
       {
-        toolId: 'blackboard.course_catalog.search',
+        toolId: 'blackboard.snapshot.sync',
         kind: 'contract',
         availability: 'available',
-        displayName: '课程目录搜索',
-        description: '搜索 Blackboard 课程目录。',
+        displayName: '数据全量同步',
+        description: '从 Blackboard 拉取所有已选课程数据并同步到本地数据库。',
         group: {
           id: 'blackboard',
           label: DESC_CN_009,
@@ -548,11 +548,11 @@ function createDynamicMcpGroupCatalogLoadResult(): ToolCatalogLoadResult {
         },
       },
       {
-        toolId: 'blackboard.course_catalog.search',
+        toolId: 'blackboard.snapshot.sync',
         kind: 'contract',
         availability: 'available',
-        displayName: '课程目录搜索',
-        description: '搜索 Blackboard 课程目录。',
+        displayName: '数据全量同步',
+        description: '从 Blackboard 拉取所有已选课程数据并同步到本地数据库。',
         group: {
           id: 'blackboard',
           label: DESC_CN_009,
@@ -720,7 +720,7 @@ describe('CapabilitiesWorkspace', () => {
         expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_GROUP).length).toBe(4)
         expect(groupLabels).toEqual(['内置基础工具', DESC_CN_009, 'TIS 工具', LABEL_FILESYSTEM_MCP])
         expect(rendered.container.textContent).toContain('读取文本文件')
-        expect(rendered.container.textContent).toContain('课程目录搜索')
+        expect(rendered.container.textContent).toContain('数据全量同步')
         expect(rendered.container.textContent).toContain('成绩查询')
 
         rendered.unmount()
@@ -778,7 +778,7 @@ describe('CapabilitiesWorkspace', () => {
         await waitForNextFrame()
 
         expect(rendered.container.querySelectorAll(SELECTOR_TOOL_PERMISSION_ROW).length).toBe(4)
-        expect(rendered.container.textContent).toContain('课程目录搜索')
+        expect(rendered.container.textContent).toContain('数据全量同步')
         expect(rendered.container.textContent).toContain('成绩查询')
         expect(rendered.container.textContent).toContain('校园活动')
         expect(rendered.container.textContent).not.toContain('尚未从运行时获取到可展示的工具目录。')

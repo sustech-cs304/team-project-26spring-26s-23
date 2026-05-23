@@ -194,33 +194,6 @@ function createDefaultToolCatalog(): RuntimeToolDirectoryEntry[] {
         sourceKind: 'builtin',
       },
     },
-    // ---- Blackboard Tools ----
-    {
-      toolId: 'blackboard.course_catalog.search',
-      kind: 'builtin',
-      availability: 'available',
-      displayName: '课程目录搜索',
-      displayNameZh: '课程目录搜索',
-      displayNameEn: 'Course Catalog Search',
-      description: '按关键词搜索 Blackboard 课程目录。',
-      descriptionZh: (
-        '按关键词搜索 Blackboard 课程目录。返回匹配课程的名称、ID、教师和描述。' +
-        '这是发现 Blackboard 上可用课程的入口工具。搜索到课程 ID 后，使用 ' +
-        'blackboard.course_resources.sync 拉取具体课程数据。'
-      ),
-      descriptionEn: (
-        'Search the Blackboard course catalog by keyword. Returns matching courses ' +
-        'with course IDs, names, instructors, and descriptions.'
-      ),
-      group: {
-        id: 'sustech-blackboard',
-        label: 'Blackboard',
-        labelZh: 'Blackboard',
-        labelEn: 'Blackboard',
-        order: 10,
-        sourceKind: 'sustech-blackboard',
-      },
-    },
     {
       toolId: 'blackboard.snapshot.sync',
       kind: 'builtin',
@@ -237,56 +210,6 @@ function createDefaultToolCatalog(): RuntimeToolDirectoryEntry[] {
       descriptionEn: (
         'Fetch and sync all Blackboard course data (announcements, assignments, grades) ' +
         'into a local SQLite database. This is the primary data sync tool.'
-      ),
-      group: {
-        id: 'sustech-blackboard',
-        label: 'Blackboard',
-        labelZh: 'Blackboard',
-        labelEn: 'Blackboard',
-        order: 10,
-        sourceKind: 'sustech-blackboard',
-      },
-    },
-    {
-      toolId: 'blackboard.course_resources.sync',
-      kind: 'builtin',
-      availability: 'available',
-      displayName: '课程资源同步',
-      displayNameZh: '课程资源同步',
-      displayNameEn: 'Course Resources Sync',
-      description: '按课程 ID 拉取指定课程的 Blackboard 资源。',
-      descriptionZh: (
-        '按课程 ID 拉取指定课程的 Blackboard 资源（公告、作业、资料）。' +
-        '比 blackboard.snapshot.sync 更精确——仅同步需要的课程。' +
-        '课程 ID 可通过 blackboard.course_catalog.search 获取。'
-      ),
-      descriptionEn: (
-        'Fetch and sync Blackboard resources for specific courses by course ID. ' +
-        'More targeted than blackboard.snapshot.sync.'
-      ),
-      group: {
-        id: 'sustech-blackboard',
-        label: 'Blackboard',
-        labelZh: 'Blackboard',
-        labelEn: 'Blackboard',
-        order: 10,
-        sourceKind: 'sustech-blackboard',
-      },
-    },
-    {
-      toolId: 'blackboard.calendar.refresh',
-      kind: 'builtin',
-      availability: 'available',
-      displayName: '日历刷新',
-      displayNameZh: '日历刷新',
-      displayNameEn: 'Calendar Refresh',
-      description: '刷新 Blackboard ICS 日历订阅到本地数据库。',
-      descriptionZh: (
-        '刷新 Blackboard ICS 日历订阅到本地 SQLite 存储。同步课程时间表、' +
-        '截止日期和事件。日历数据与 blackboard.snapshot.sync 互补。'
-      ),
-      descriptionEn: (
-        'Refresh a Blackboard ICS calendar subscription into the local SQLite calendar store.'
       ),
       group: {
         id: 'sustech-blackboard',
