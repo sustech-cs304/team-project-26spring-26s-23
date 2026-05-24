@@ -226,6 +226,8 @@ describe('SustechWorkspace sync refresh', () => {
   describe('sync status polling', () => {
     it('refreshes the Blackboard data browser after a sync completes via status polling', async () => {
       vi.useFakeTimers()
+      const calendarRefreshHandler = vi.fn()
+      window.addEventListener('candue:calendar-refresh', calendarRefreshHandler)
 
       let syncTriggered = false
       let statusPollCount = 0
@@ -278,7 +280,9 @@ describe('SustechWorkspace sync refresh', () => {
 
         await waitForCondition(() => rendered.getByTestId(TEST_ID_REFRESH_TOKEN).textContent === '1')
         expect(rendered.getByTestId(TEST_ID_SYNC_STATE).textContent).toBe('completed')
+        expect(calendarRefreshHandler).toHaveBeenCalledTimes(1)
       } finally {
+        window.removeEventListener('candue:calendar-refresh', calendarRefreshHandler)
         rendered.unmount()
       }
     })

@@ -194,6 +194,7 @@ export function useBlackboardSync(input: UseBlackboardSyncInput): UseBlackboardS
   useEffect(() => {
     if (syncState.status === 'completed' && previousSyncStatusRef.current !== 'completed') {
       setDataRefreshToken((value) => value + 1)
+      window.dispatchEvent(new Event('candue:calendar-refresh'))
     }
     previousSyncStatusRef.current = syncState.status
   }, [syncState.status])

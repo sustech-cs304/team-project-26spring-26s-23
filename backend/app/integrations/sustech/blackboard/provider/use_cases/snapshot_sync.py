@@ -264,7 +264,7 @@ def _build_assignment_payloads(
 
     def _assignment_row_score(
         row: dict[str, Any],
-    ) -> tuple[int, int, int, int, int, int, str]:
+    ) -> tuple[int, int, int, int, int, int, int, int, str]:
         assignment_id = str(row.get("assignment_id") or "").strip()
         url = str(row.get("url") or "").strip().lower()
         source_page = str(row.get("source_page") or "").strip().lower()
@@ -274,6 +274,8 @@ def _build_assignment_payloads(
             1 if _has_value(row.get("attachments")) else 0,
             1 if _has_value(row.get("submission_status")) else 0,
             1 if _has_value(row.get("due_date")) else 0,
+            1 if _has_value(row.get("start_time")) else 0,
+            1 if _has_value(row.get("end_time")) else 0,
             1 if "/webapps/assignment/" in url or "content_id=" in source_page else 0,
             assignment_id,
         )
@@ -340,6 +342,8 @@ def _build_assignment_payloads(
                     "assignment_id": assignment_id,
                     "title": title,
                     "due_date": due_date or None,
+                    "start_time": _value(item, "start_time"),
+                    "end_time": _value(item, "end_time"),
                     "status": _value(item, "status"),
                     "score": score,
                     "total_score": _value(item, "total_score") or total_score,
@@ -377,6 +381,8 @@ def _build_assignment_payloads(
             merged_row = dict(preferred)
             for field_name in (
                 "due_date",
+                "start_time",
+                "end_time",
                 "status",
                 "score",
                 "total_score",

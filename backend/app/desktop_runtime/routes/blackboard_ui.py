@@ -20,6 +20,7 @@ from fastapi import APIRouter, Body, Query, Request
 from markdownify import markdownify as html_to_markdown
 
 from app.desktop_runtime.capability_bridge_client import DesktopCapabilityBridgeClient
+from app.event_manager.sync_bridge import sync_blackboard_assignments_to_unified
 from app.integrations.sustech.blackboard.facade import tools as blackboard_facade_tools
 from app.integrations.sustech.blackboard.data.db_manager import (
     DatabaseManager,
@@ -198,6 +199,29 @@ def _get_db_manager(request: Request | None = None) -> DatabaseManager:
             if database_dir is not None:
                 return DatabaseManager(resolve_default_blackboard_db_path(database_dir))
     return DatabaseManager()
+
+
+def _resolve_timeline_user_data_dir(runtime_config: Any) -> Path | None:
+    if runtime_config is None:
+        return None
+    user_data_dir = getattr(runtime_config, "user_data_dir", None)
+    if user_data_dir is not None:
+        return Path(user_data_dir)
+    database_dir = getattr(runtime_config, "database_dir", None)
+    if database_dir is None:
+        return None
+    return _infer_timeline_user_data_dir_from_database_dir(Path(database_dir))
+
+
+def _infer_timeline_user_data_dir_from_blackboard_db_path(db_path: Path) -> Path:
+    database_dir = db_path.parent.parent if db_path.parent.name == "blackboard" else db_path.parent
+    return _infer_timeline_user_data_dir_from_database_dir(database_dir)
+
+
+def _infer_timeline_user_data_dir_from_database_dir(database_dir: Path) -> Path:
+    if database_dir.parent.name == "desktop-runtime":
+        return database_dir.parent.parent
+    return database_dir.parent
 
 
 def _synthetic_invocation_context() -> ToolInvocationContext:
@@ -1153,6 +1177,7 @@ def _execute_blackboard_sync_job(
     persist_status: SyncStatusPersistor | None = None,
     release_lock: bool = False,
     bridge: Any = None,
+    user_data_dir: Path | None = None,
 ) -> tuple[BlackboardSnapshotSyncReport, tuple[str, ...]]:
     try:
         started_at = time.monotonic()
@@ -1177,6 +1202,22 @@ def _execute_blackboard_sync_job(
             bridge=bridge,
         )
         _reconcile_download_bindings_for_database(db_path)
+        assignment_timeline_stats = sync_blackboard_assignments_to_unified(
+            DatabaseManager(db_path),
+            user_data_dir=(
+                user_data_dir
+                or _infer_timeline_user_data_dir_from_blackboard_db_path(db_path)
+            ),
+        )
+        _update_sync_progress(
+            _sync_status,
+            "Blackboard 作业已同步到统一日历："
+            f"新增 {assignment_timeline_stats['inserted']}，"
+            f"重复 {assignment_timeline_stats['skipped_existing']}，"
+            f"跳过 {assignment_timeline_stats['skipped_invalid_time']}，"
+            f"过期 {assignment_timeline_stats['skipped_too_old']}。",
+        )
+        _persist_sync_status_snapshot(persist_status)
         _apply_sync_status_patch(
             _sync_status,
             status="completed",
@@ -1219,6 +1260,7 @@ def run_blackboard_panel_sync_for_agent(
     reset_schema: bool = False,
     verify_second_sync: bool = True,
     persist_status: SyncStatusPersistor | None = None,
+    user_data_dir: Path | None = None,
 ) -> tuple[BlackboardSnapshotSyncReport, tuple[str, ...]]:
     """Run the same blocking sync path that backs the Blackboard panel sync button."""
     if not _SYNC_LOCK.acquire(blocking=False):
@@ -1248,6 +1290,7 @@ def run_blackboard_panel_sync_for_agent(
         persist_status=persist_status,
         release_lock=True,
         bridge=None,
+        user_data_dir=user_data_dir,
     )
 
 
@@ -1258,6 +1301,7 @@ def _run_blackboard_sync_job(
     current_term_only: bool,
     parallel_workers: int,
     bridge: Any = None,
+    user_data_dir: Path | None = None,
 ) -> None:
     try:
         _execute_blackboard_sync_job(
@@ -1274,6 +1318,7 @@ def _run_blackboard_sync_job(
             ),
             release_lock=True,
             bridge=bridge,
+            user_data_dir=user_data_dir,
         )
     except Exception:
         return
@@ -1348,6 +1393,8 @@ def build_blackboard_ui_router() -> APIRouter:
                 return {"ok": True, "message": "sync failed", **_sync_status_snapshot()}
 
             db_manager = _get_db_manager(request)
+            runtime_config = getattr(request.app.state, "runtime_config", None)
+            user_data_dir = _resolve_timeline_user_data_dir(runtime_config)
             worker = threading.Thread(
                 target=_run_blackboard_sync_job,
                 args=(
@@ -1357,6 +1404,7 @@ def build_blackboard_ui_router() -> APIRouter:
                     current_term_only,
                     parallel_workers,
                     bridge,
+                    user_data_dir,
                 ),
                 name="blackboard-ui-sync",
                 daemon=True,

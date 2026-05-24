@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from app.integrations.sustech.blackboard.data import (
@@ -505,6 +506,43 @@ def test_sync_assignments_keeps_distinct_assignments_with_same_title(tmp_path: P
     assert len(active_rows) == 2
 
 
+def test_sync_assignments_persists_start_and_end_time_fields(tmp_path: Path) -> None:
+    """assignment 的开始/结束时间应随同步结果写入数据库。"""
+    manager = DatabaseManager(_db_path(tmp_path, "test_assignments_start_end_persist"), reset_schema=True)
+    course_id = "course_assign_time"
+
+    manager.sync_courses(
+        [
+            {
+                "course_id": course_id,
+                "name": "Assignment Time Course",
+                "url": None,
+            }
+        ]
+    )
+
+    stats = manager.sync_assignments(
+        course_id,
+        [
+            {
+                "assignment_id": "asg_time_window",
+                "title": "Timed Homework",
+                "url": f"https://bb.sustech.edu.cn/webapps/assignment/uploadAssignment?course_id={course_id}&content_id=_300",
+                "start_time": "2026-05-01 08:00:00",
+                "end_time": "2026-05-03 23:59:00",
+                "status": "Not Submitted",
+            }
+        ],
+    )
+
+    assert stats == {"inserted": 1, "updated": 0, "deleted": 0}
+    rows = _get_active_assignments_by_title(manager, "Timed Homework")
+    assert len(rows) == 1
+    persisted = rows[0]
+    assert persisted.start_time == datetime(2026, 5, 1, 8, 0, 0)
+    assert persisted.end_time == datetime(2026, 5, 3, 23, 59, 0)
+
+
 def test_database_manager_adds_missing_html_columns_for_legacy_blackboard_db(tmp_path: Path) -> None:
     db_path = _db_path(tmp_path, "test_legacy_blackboard_schema_upgrade")
 
@@ -576,6 +614,8 @@ def test_database_manager_adds_missing_html_columns_for_legacy_blackboard_db(tmp
     manager = DatabaseManager(db_path, reset_schema=False)
 
     assert "description_html" in _table_columns(manager.db_path, "assignments")
+    assert "start_time" in _table_columns(manager.db_path, "assignments")
+    assert "end_time" in _table_columns(manager.db_path, "assignments")
     assert "content_html" in _table_columns(manager.db_path, "announcements")
     assert "relation_type" in _table_columns(manager.db_path, "announcements")
     assert "relation_confidence" in _table_columns(manager.db_path, "announcements")

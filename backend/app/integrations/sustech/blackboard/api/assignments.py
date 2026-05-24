@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
+import re
 from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup
@@ -10,6 +12,8 @@ from bs4.element import Tag
 
 from .context import BlackboardAPIContext
 from .dto import AssignmentAttachmentDTO, AssignmentDTO
+from app.integrations.sustech.blackboard.shared import parse_loose_datetime
+
 from .scrape_support import (
     extract_date_text_safe,
     extract_status_text,
@@ -37,6 +41,49 @@ def _first_non_empty_text(*values: str | None) -> str | None:
 
 def _normalize_compact_text(value: str | None) -> str:
     return " ".join(str(value or "").split()).strip().lower()
+
+
+_ASSIGNMENT_START_PATTERNS = (
+    r"(?:Available\s+from|Display\s+After|Starts?|Opens?|Release(?:d)?(?:\s+date)?|开放(?:时间|日期)?|开始(?:时间|日期)?|发布(?:时间|日期)?)\s*[:：]?\s*([^\n\r;；]+)",
+)
+_ASSIGNMENT_END_PATTERNS = (
+    r"(?:Available\s+until|Display\s+Until|Ends?|Closes?|Due(?:\s+Date)?|截止(?:时间|日期)?|结束(?:时间|日期)?)\s*[:：]?\s*([^\n\r;；]+)",
+)
+
+
+def _extract_assignment_datetime_by_patterns(
+    text: str,
+    patterns: tuple[str, ...],
+) -> datetime | None:
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        candidate = str(match.group(1) or "").strip()
+        parsed = parse_loose_datetime(candidate) or parse_loose_datetime(
+            extract_date_text_safe(candidate)
+        )
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _extract_assignment_time_range(*texts: str | None) -> tuple[datetime | None, datetime | None]:
+    joined_text = " ".join(
+        str(text or "").strip() for text in texts if str(text or "").strip()
+    )
+    if not joined_text:
+        return None, None
+
+    start_time = _extract_assignment_datetime_by_patterns(
+        joined_text,
+        _ASSIGNMENT_START_PATTERNS,
+    )
+    end_time = _extract_assignment_datetime_by_patterns(
+        joined_text,
+        _ASSIGNMENT_END_PATTERNS,
+    )
+    return start_time, end_time
 
 
 def _strip_html_tags(value: str | None) -> str | None:
@@ -95,6 +142,19 @@ class BlackboardAssignmentAPI:
         "quiz",
         "project",
         "due",
+    )
+
+    _ANNOUNCEMENT_FALLBACK_MARKERS = (
+        "posted on",
+        "posted by",
+        "posted to",
+        "发布于",
+        "发布时间",
+    )
+    _STRONG_ASSIGNMENT_URL_MARKERS = (
+        "/webapps/assignment/",
+        "/bb-assignment-",
+        "/bb-mygrades-",
     )
 
     _IGNORED_ASSIGNMENT_TITLES = ("item", "course grade", "total", "weighted total")
@@ -307,6 +367,14 @@ class BlackboardAssignmentAPI:
             )
         )
         summary = row.get_text(" ", strip=True)[:240]
+        start_time, end_time = _extract_assignment_time_range(
+            row.get_text(" ", strip=True),
+            detail.description if detail is not None else None,
+            detail.description_html if detail is not None else None,
+        )
+        if detail is not None:
+            start_time = start_time or detail.start_time
+            end_time = end_time or detail.end_time
         return self._build_assignment_dto(
             course_id=course_id,
             assignment_id=assignment_id,
@@ -320,6 +388,8 @@ class BlackboardAssignmentAPI:
             description_html=detail.description_html if detail is not None else None,
             attachments=attachments,
             seen_keys=seen_keys,
+            start_time=start_time,
+            end_time=end_time,
         )
 
     def _collect_fallback_assignments(
@@ -403,6 +473,12 @@ class BlackboardAssignmentAPI:
         detail_url = self._resolve_assignment_container_detail_url(page_url, container)
         if not detail_url:
             return None
+        if self._looks_like_announcement_fallback_container(
+            container=container,
+            text=text,
+            detail_url=detail_url,
+        ):
+            return None
 
         assignment_id = self._extract_assignment_id(detail_url)
         (
@@ -426,6 +502,16 @@ class BlackboardAssignmentAPI:
             inline_attachments,
             detail.attachments if detail is not None else [],
         )
+        start_time, end_time = _extract_assignment_time_range(
+            text,
+            inline_description,
+            inline_description_html,
+            detail.description if detail is not None else None,
+            detail.description_html if detail is not None else None,
+        )
+        if detail is not None:
+            start_time = start_time or detail.start_time
+            end_time = end_time or detail.end_time
         return self._build_assignment_dto(
             course_id=course_id,
             assignment_id=assignment_id,
@@ -439,6 +525,8 @@ class BlackboardAssignmentAPI:
             description_html=description_html,
             attachments=attachments,
             seen_keys=seen_keys,
+            start_time=start_time,
+            end_time=end_time,
         )
 
     def _extract_assignment_container_inline_details(
@@ -506,6 +594,40 @@ class BlackboardAssignmentAPI:
         container_id = str(container.get("id") or "").strip()
         return f"{page_url}#{container_id}" if container_id else page_url
 
+    def _looks_like_announcement_fallback_container(
+        self,
+        *,
+        container: Tag,
+        text: str,
+        detail_url: str,
+    ) -> bool:
+        if self._has_strong_assignment_detail_url(detail_url):
+            return False
+
+        if container.select_one(".announcementInfo") is not None:
+            return True
+
+        block_hint = " ".join(
+            str(value or "")
+            for value in (
+                container.get("id"),
+                " ".join(str(item) for item in container.get("class", [])),
+                container.parent.get("id") if isinstance(container.parent, Tag) else "",
+                " ".join(str(item) for item in container.parent.get("class", []))
+                if isinstance(container.parent, Tag)
+                else "",
+            )
+        ).lower()
+        if "announcement" in block_hint:
+            return True
+
+        lower_text = text.lower()
+        return any(marker in lower_text for marker in self._ANNOUNCEMENT_FALLBACK_MARKERS)
+
+    def _has_strong_assignment_detail_url(self, detail_url: str) -> bool:
+        lower_url = detail_url.lower()
+        return any(marker in lower_url for marker in self._STRONG_ASSIGNMENT_URL_MARKERS)
+
     def _build_assignment_dto(
         self,
         *,
@@ -521,6 +643,8 @@ class BlackboardAssignmentAPI:
         description_html: str | None,
         attachments: list[AssignmentAttachmentDTO],
         seen_keys: set[str],
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> AssignmentDTO | None:
         candidate_assignment = {
             "assignment_id": assignment_id,
@@ -551,6 +675,8 @@ class BlackboardAssignmentAPI:
             assignment_id=assignment_id,
             course_id=course_id,
             title=title,
+            start_time=start_time,
+            end_time=end_time,
             due_date=due_date,
             due_date_parsed=parse_datetime_safe(due_date),
             status=status,
@@ -651,11 +777,19 @@ class BlackboardAssignmentAPI:
             )
         )
         attachments = self._extract_detail_scope_attachments(base_url, scope)
+        full_text = soup.get_text(" ", strip=True)
 
+        start_time, end_time = _extract_assignment_time_range(
+            full_text,
+            description,
+            description_html,
+        )
         details = AssignmentDTO(
             assignment_id=self._extract_assignment_id(assignment_url),
             course_id=self.context.extract_course_id(assignment_url) or None,
             title=title,
+            start_time=start_time,
+            end_time=end_time,
             description=description,
             description_html=description_html or None,
             due_date=due_date,
@@ -683,6 +817,8 @@ class BlackboardAssignmentAPI:
             assignment_id=self._extract_assignment_id(assignment_url),
             course_id=self.context.extract_course_id(assignment_url) or None,
             title="",
+            start_time=None,
+            end_time=None,
             description="",
             description_html=None,
             due_date="",

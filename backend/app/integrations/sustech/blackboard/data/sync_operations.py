@@ -31,6 +31,23 @@ from .sync_support import (
 )
 
 AssignmentAttachmentBatch = tuple[str | None, list[dict[str, Any]]]
+_ASSIGNMENT_START_FIELD_CANDIDATES = (
+    "start_time",
+    "start_at",
+    "available_from",
+    "open_at",
+    "release_at",
+    "release_date",
+)
+_ASSIGNMENT_END_FIELD_CANDIDATES = (
+    "end_time",
+    "end_at",
+    "due_at",
+    "due_date_parsed",
+    "due_date",
+    "close_at",
+    "available_until",
+)
 
 
 def _text(value: Any) -> str:
@@ -65,7 +82,7 @@ def _has_meaningful_value(value: Any) -> bool:
 
 def _assignment_record_score(
     row: dict[str, Any],
-) -> tuple[int, int, int, int, int, int, int, int, str]:
+) -> tuple[int, int, int, int, int, int, int, int, int, int, str]:
     assignment_id = _text(row.get("assignment_id"))
     url = _text(row.get("url")).lower()
     source_page = _text(row.get("source_page")).lower()
@@ -76,6 +93,8 @@ def _assignment_record_score(
         1 if _has_meaningful_value(row.get("submission_status")) else 0,
         1 if _has_meaningful_value(row.get("status")) else 0,
         1 if _has_meaningful_value(row.get("due_date")) else 0,
+        1 if _has_meaningful_value(row.get("start_time")) else 0,
+        1 if _has_meaningful_value(row.get("end_time")) else 0,
         1 if "/webapps/assignment/" in url else 0,
         1 if "content_id=" in url or "content_id=" in source_page else 0,
         assignment_id,
@@ -162,6 +181,8 @@ def _merge_assignment_records_by_assignment_id(
                 "source_page",
                 "due_date",
                 "due_date_parsed",
+                "start_time",
+                "end_time",
                 "posted_date",
                 "status",
                 "submission_status",
@@ -262,6 +283,17 @@ def _normalize_assignment_record(
     )
     source_page = _text(item.get("source_page")) or None
 
+    start_time = _first_assignment_datetime(
+        item,
+        _ASSIGNMENT_START_FIELD_CANDIDATES,
+        parse_datetime=parse_datetime,
+    )
+    end_time = _first_assignment_datetime(
+        item,
+        _ASSIGNMENT_END_FIELD_CANDIDATES,
+        parse_datetime=parse_datetime,
+    )
+
     normalized_record = {
         "course_id": course_id,
         "assignment_id": assignment_id,
@@ -274,6 +306,8 @@ def _normalize_assignment_record(
         "attachments_json": attachments_json,
         "due_date": due_date or None,
         "due_date_parsed": parse_datetime(due_date),
+        "start_time": start_time,
+        "end_time": end_time,
         "posted_date": item.get("posted_date"),
         "status": item.get("status"),
         "submission_status": item.get("submission_status") or item.get("status"),
@@ -283,6 +317,36 @@ def _normalize_assignment_record(
     if not parsed_attachments:
         return normalized_record, None
     return normalized_record, (source_page, parsed_attachments)
+
+
+
+def _first_assignment_datetime(
+    item: dict[str, Any],
+    field_names: tuple[str, ...],
+    *,
+    parse_datetime: Callable[[Any], datetime | None],
+) -> datetime | None:
+    for field_name in field_names:
+        parsed = _parse_assignment_datetime(item.get(field_name), parse_datetime=parse_datetime)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+
+def _parse_assignment_datetime(
+    value: Any,
+    *,
+    parse_datetime: Callable[[Any], datetime | None],
+) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if value is None:
+        return None
+    parsed = parse_datetime(value)
+    if parsed is None or parsed == datetime.min:
+        return None
+    return parsed
 
 
 def _upsert_assignment_attachment_resources(
