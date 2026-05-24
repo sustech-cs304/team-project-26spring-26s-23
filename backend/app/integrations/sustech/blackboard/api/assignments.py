@@ -611,9 +611,9 @@ class BlackboardAssignmentAPI:
             str(value or "")
             for value in (
                 container.get("id"),
-                " ".join(str(item) for item in container.get("class", [])),
+                " ".join(str(item) for item in (container.get("class") or [])),
                 container.parent.get("id") if isinstance(container.parent, Tag) else "",
-                " ".join(str(item) for item in container.parent.get("class", []))
+                " ".join(str(item) for item in (container.parent.get("class") or []))
                 if isinstance(container.parent, Tag)
                 else "",
             )
