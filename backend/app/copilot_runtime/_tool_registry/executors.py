@@ -638,6 +638,7 @@ async def execute_shell_session_close_tool(
         try:
             proc.terminate()
         except ProcessLookupError:
+            # Process already exited between the returncode check and terminate call.
             pass
         try:
             await asyncio.wait_for(proc.wait(), timeout=2)
