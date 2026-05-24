@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MutableRefObject, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MutableRefObject } from 'react'
 import Gantt, { type GanttOptions, type GanttTask } from 'frappe-gantt'
-import { Check, ChevronDown, Pencil, RefreshCw, Settings, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, RefreshCw, Settings } from 'lucide-react'
 
 import type { CalendarEventPatch, UnifiedCalendarEvent } from '../calendar-types'
 import {
@@ -9,26 +9,23 @@ import {
   getCalendarEventIdFromGanttTaskId,
   mapCalendarEventsToGanttTasks,
 } from '../calendar-gantt-model'
+import {
+  CalendarEventContextMenu,
+  CalendarEventEditDialog,
+  buildCalendarEventEditPatch,
+  buildCalendarStatusPatch,
+  createCalendarEventEditDraft,
+  validateCalendarEventEditDraft,
+  type CalendarEventContextMenuState,
+  type CalendarEventCustomStatus,
+  type CalendarEventEditDraft,
+} from './CalendarEventContextMenu'
 
 interface CalendarGanttViewProps {
   events?: UnifiedCalendarEvent[]
   onEventChange: (eventId: string | number, patch: CalendarEventPatch) => void | Promise<void>
   onEventDelete?: (eventId: string | number) => void | Promise<void>
   onRefresh?: () => void
-}
-
-interface CalendarGanttContextMenuState {
-  event: UnifiedCalendarEvent
-  x: number
-  y: number
-}
-
-interface CalendarGanttEventEditDraft {
-  title: string
-  description: string
-  location: string
-  startDateTime: string
-  endDateTime: string
 }
 
 export function CalendarGanttView({ events = [], onEventChange, onEventDelete, onRefresh }: CalendarGanttViewProps) {
@@ -45,9 +42,9 @@ export function CalendarGanttView({ events = [], onEventChange, onEventDelete, o
   const [viewModeMenuOpen, setViewModeMenuOpen] = useState(false)
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
   const [showWakeupCourses, setShowWakeupCourses] = useState(true)
-  const [contextMenu, setContextMenu] = useState<CalendarGanttContextMenuState | null>(null)
+  const [contextMenu, setContextMenu] = useState<CalendarEventContextMenuState | null>(null)
   const [editingEvent, setEditingEvent] = useState<UnifiedCalendarEvent | null>(null)
-  const [editDraft, setEditDraft] = useState<CalendarGanttEventEditDraft | null>(null)
+  const [editDraft, setEditDraft] = useState<CalendarEventEditDraft | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
   const [eventActionError, setEventActionError] = useState<string | null>(null)
   const [mutatingEventId, setMutatingEventId] = useState<string | number | null>(null)
@@ -234,7 +231,7 @@ export function CalendarGanttView({ events = [], onEventChange, onEventDelete, o
     setContextMenu(null)
     setEventActionError(null)
     setEditingEvent(event)
-    setEditDraft(createCalendarGanttEventEditDraft(event))
+    setEditDraft(createCalendarEventEditDraft(event))
     setEditError(null)
   }, [])
 
@@ -250,7 +247,7 @@ export function CalendarGanttView({ events = [], onEventChange, onEventDelete, o
     }
   }, [])
 
-  const handleStatusChange = useCallback((event: UnifiedCalendarEvent, status: CalendarGanttCustomStatus) => {
+  const handleStatusChange = useCallback((event: UnifiedCalendarEvent, status: CalendarEventCustomStatus) => {
     setContextMenu(null)
     void applyEventPatch(event.id, buildCalendarStatusPatch(status))
   }, [applyEventPatch])
@@ -273,7 +270,7 @@ export function CalendarGanttView({ events = [], onEventChange, onEventDelete, o
     }
   }, [onEventDelete])
 
-  const handleEditDraftChange = useCallback((patch: Partial<CalendarGanttEventEditDraft>) => {
+  const handleEditDraftChange = useCallback((patch: Partial<CalendarEventEditDraft>) => {
     setEditDraft((currentDraft) => currentDraft === null ? currentDraft : { ...currentDraft, ...patch })
     setEditError(null)
   }, [])
@@ -284,13 +281,13 @@ export function CalendarGanttView({ events = [], onEventChange, onEventDelete, o
       return
     }
 
-    const validationError = validateCalendarGanttEventEditDraft(editDraft)
+    const validationError = validateCalendarEventEditDraft(editDraft)
     if (validationError !== null) {
       setEditError(validationError)
       return
     }
 
-    const patch = buildCalendarGanttEventEditPatch(editDraft)
+    const patch = buildCalendarEventEditPatch(editDraft)
     setMutatingEventId(editingEvent.id)
     setEventActionError(null)
     try {
@@ -497,7 +494,7 @@ export function CalendarGanttView({ events = [], onEventChange, onEventDelete, o
       </div>
 
       {contextMenu !== null ? (
-        <CalendarGanttContextMenu
+        <CalendarEventContextMenu
           refElement={contextMenuRef}
           state={contextMenu}
           mutatingEventId={mutatingEventId}
@@ -508,7 +505,7 @@ export function CalendarGanttView({ events = [], onEventChange, onEventDelete, o
       ) : null}
 
       {editingEvent !== null && editDraft !== null ? (
-        <CalendarGanttEventEditDialog
+        <CalendarEventEditDialog
           event={editingEvent}
           draft={editDraft}
           error={editError}
@@ -552,335 +549,10 @@ const GANTT_POPUP_POINTER_OFFSET = 10
 const GANTT_POPUP_GAP = 10
 const GANTT_LABEL_OUTSIDE_GAP = 6
 
-type CalendarGanttCustomStatus = 'not_started' | 'in_progress' | 'completed'
-
-interface CalendarGanttStatusOption {
-  value: CalendarGanttCustomStatus
-  label: string
-  progress: number
-}
-
-const CALENDAR_GANTT_CUSTOM_STATUS_OPTIONS: CalendarGanttStatusOption[] = [
-  { value: 'not_started', label: '未开始', progress: 0 },
-  { value: 'in_progress', label: '进行中', progress: 50 },
-  { value: 'completed', label: '已完成', progress: 100 },
-]
-
-const CALENDAR_GANTT_CONTEXT_MENU_WIDTH = 226
-const CALENDAR_GANTT_CONTEXT_MENU_VIEWPORT_MARGIN = 10
 const WAKEUP_SOURCE_KEYS = new Set(['wakeup', 'wake-up', 'wake_up'])
-
-function CalendarGanttContextMenu({
-  refElement,
-  state,
-  mutatingEventId,
-  onEdit,
-  onDelete,
-  onStatusChange,
-}: {
-  refElement: RefObject<HTMLDivElement>
-  state: CalendarGanttContextMenuState
-  mutatingEventId: string | number | null
-  onEdit: (event: UnifiedCalendarEvent) => void
-  onDelete: (event: UnifiedCalendarEvent) => void
-  onStatusChange: (event: UnifiedCalendarEvent, status: CalendarGanttCustomStatus) => void
-}) {
-  const isMutating = mutatingEventId !== null
-  const eventIsMutating = mutatingEventId !== null && String(mutatingEventId) === String(state.event.id)
-  const isCustomEvent = isCustomCalendarEvent(state.event)
-  const style = buildCalendarGanttContextMenuStyle(state.x, state.y)
-
-  return (
-    <div
-      ref={refElement}
-      className="calendar-gantt-context-menu"
-      style={style}
-      aria-label={`${state.event.title} 事件操作菜单`}
-      data-testid="calendar-gantt-context-menu"
-    >
-      <div className="calendar-gantt-context-menu__summary">
-        <span className="calendar-gantt-context-menu__title">{state.event.title}</span>
-        <span className="calendar-gantt-context-menu__meta">{state.event.source.toUpperCase()} · {formatCalendarEventRange(state.event)}</span>
-      </div>
-
-      <div className="calendar-gantt-context-menu__group" aria-label="事件操作">
-        <button
-          type="button"
-          className="calendar-gantt-context-menu__item"
-          disabled={isMutating}
-          data-testid="calendar-gantt-context-menu-edit"
-          onClick={() => onEdit(state.event)}
-        >
-          <Pencil size={15} aria-hidden="true" />
-          <span>修改事件信息</span>
-        </button>
-        <button
-          type="button"
-          className="calendar-gantt-context-menu__item calendar-gantt-context-menu__item--danger"
-          disabled={isMutating}
-          data-testid="calendar-gantt-context-menu-delete"
-          onClick={() => onDelete(state.event)}
-        >
-          <Trash2 size={15} aria-hidden="true" />
-          <span>{eventIsMutating ? '删除中…' : '删除事件'}</span>
-        </button>
-      </div>
-
-      {isCustomEvent ? (
-        <div className="calendar-gantt-context-menu__group calendar-gantt-context-menu__status-group" aria-label="自定义事件状态">
-          <span className="calendar-gantt-context-menu__section-label">设置状态</span>
-          {CALENDAR_GANTT_CUSTOM_STATUS_OPTIONS.map((option) => {
-            const active = state.event.status === option.value
-
-            return (
-              <button
-                key={option.value}
-                type="button"
-                className={`calendar-gantt-context-menu__item calendar-gantt-context-menu__status calendar-gantt-context-menu__status--${option.value.replace('_', '-')}${active ? ' calendar-gantt-context-menu__status--active' : ''}`}
-                disabled={isMutating || active}
-                data-testid={`calendar-gantt-context-menu-status-${option.value}`}
-                onClick={() => onStatusChange(state.event, option.value)}
-              >
-                <span className={`calendar-gantt-context-menu__status-dot calendar-gantt-context-menu__status-dot--${option.value.replace('_', '-')}`} aria-hidden="true" />
-                <span>{option.label}</span>
-                {active ? <Check size={14} className="calendar-gantt-context-menu__check" aria-hidden="true" /> : null}
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function CalendarGanttEventEditDialog({
-  event,
-  draft,
-  error,
-  submitting,
-  onDraftChange,
-  onClose,
-  onSubmit,
-}: {
-  event: UnifiedCalendarEvent
-  draft: CalendarGanttEventEditDraft
-  error: string | null
-  submitting: boolean
-  onDraftChange: (patch: Partial<CalendarGanttEventEditDraft>) => void
-  onClose: () => void
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void
-}) {
-  useEffect(() => {
-    const handleKeyDown = (keyboardEvent: KeyboardEvent) => {
-      if (keyboardEvent.key === 'Escape') {
-        onClose()
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
-
-  return (
-    <div
-      className="calendar-gantt-edit-dialog"
-      role="presentation"
-      data-testid="calendar-gantt-edit-dialog"
-      onPointerDown={(pointerEvent) => {
-        if (pointerEvent.target === pointerEvent.currentTarget) {
-          onClose()
-        }
-      }}
-    >
-      <form className="calendar-gantt-edit-dialog__panel" role="dialog" aria-modal="true" aria-label="修改事件信息" onSubmit={onSubmit}>
-        <header className="calendar-gantt-edit-dialog__header">
-          <div>
-            <p className="calendar-gantt-edit-dialog__eyebrow">Edit Event</p>
-            <h3 className="calendar-gantt-edit-dialog__title">修改事件信息</h3>
-          </div>
-          <span className="calendar-gantt-edit-dialog__source">{event.source.toUpperCase()}</span>
-        </header>
-
-        <label className="calendar-gantt-edit-dialog__field">
-          <span>标题</span>
-          <input
-            className="calendar-gantt-edit-dialog__input"
-            data-testid="calendar-gantt-edit-title"
-            value={draft.title}
-            disabled={submitting}
-            autoFocus
-            onChange={(changeEvent) => onDraftChange({ title: changeEvent.currentTarget.value })}
-          />
-        </label>
-
-        <label className="calendar-gantt-edit-dialog__field">
-          <span>描述</span>
-          <textarea
-            className="calendar-gantt-edit-dialog__textarea"
-            data-testid="calendar-gantt-edit-description"
-            rows={3}
-            value={draft.description}
-            disabled={submitting}
-            placeholder="可选"
-            onChange={(changeEvent) => onDraftChange({ description: changeEvent.currentTarget.value })}
-          />
-        </label>
-
-        <label className="calendar-gantt-edit-dialog__field">
-          <span>地点</span>
-          <input
-            className="calendar-gantt-edit-dialog__input"
-            data-testid="calendar-gantt-edit-location"
-            value={draft.location}
-            disabled={submitting}
-            placeholder="可选"
-            onChange={(changeEvent) => onDraftChange({ location: changeEvent.currentTarget.value })}
-          />
-        </label>
-
-        <div className="calendar-gantt-edit-dialog__grid">
-          <label className="calendar-gantt-edit-dialog__field">
-            <span>开始时间</span>
-            <input
-              className="calendar-gantt-edit-dialog__input"
-              data-testid="calendar-gantt-edit-start"
-              type="datetime-local"
-              step="60"
-              value={draft.startDateTime}
-              disabled={submitting}
-              onChange={(changeEvent) => onDraftChange({ startDateTime: changeEvent.currentTarget.value })}
-            />
-          </label>
-          <label className="calendar-gantt-edit-dialog__field">
-            <span>结束时间</span>
-            <input
-              className="calendar-gantt-edit-dialog__input"
-              data-testid="calendar-gantt-edit-end"
-              type="datetime-local"
-              step="60"
-              min={draft.startDateTime}
-              value={draft.endDateTime}
-              disabled={submitting}
-              onChange={(changeEvent) => onDraftChange({ endDateTime: changeEvent.currentTarget.value })}
-            />
-          </label>
-        </div>
-
-        {error !== null ? (
-          <p className="calendar-gantt-edit-dialog__error" role="alert">{error}</p>
-        ) : null}
-
-        <footer className="calendar-gantt-edit-dialog__actions">
-          <button type="button" className="calendar-gantt-edit-dialog__secondary" disabled={submitting} onClick={onClose}>
-            取消
-          </button>
-          <button type="submit" className="calendar-gantt-edit-dialog__primary" disabled={submitting} data-testid="calendar-gantt-edit-submit">
-            {submitting ? '保存中…' : '保存修改'}
-          </button>
-        </footer>
-      </form>
-    </div>
-  )
-}
 
 function isWakeupCalendarEvent(event: UnifiedCalendarEvent): boolean {
   return containsWakeupMarker(event.source) || containsWakeupMarker(event.source_id) || containsWakeupMetadataMarker(event.metadata_payload)
-}
-
-function isCustomCalendarEvent(event: UnifiedCalendarEvent): boolean {
-  return normalizeCalendarMarker(event.source) === 'custom'
-}
-
-function resolveCalendarEventFromContextMenuTarget(target: EventTarget | null, events: readonly UnifiedCalendarEvent[]): UnifiedCalendarEvent | null {
-  if (!(target instanceof Element)) {
-    return null
-  }
-
-  const barWrapper = target.closest<SVGGElement>('.bar-wrapper[data-id]')
-  const taskId = barWrapper?.getAttribute('data-id')
-  if (taskId === null || taskId === undefined) {
-    return null
-  }
-
-  const eventId = getCalendarEventIdFromGanttTaskId(taskId)
-  return events.find((event) => String(event.id) === String(eventId)) ?? null
-}
-
-function shouldSuppressCalendarGanttPopupMouseEvent(event: { button: number; target: EventTarget | null }): boolean {
-  if (event.button !== 2) {
-    return false
-  }
-
-  if (!(event.target instanceof Element)) {
-    return false
-  }
-
-  return event.target.closest('.bar-wrapper, .handle') !== null
-}
-
-function buildCalendarStatusPatch(status: CalendarGanttCustomStatus): CalendarEventPatch {
-  const option = CALENDAR_GANTT_CUSTOM_STATUS_OPTIONS.find((item) => item.value === status)
-
-  return {
-    status,
-    progress: option?.progress ?? 0,
-  }
-}
-
-function createCalendarGanttEventEditDraft(event: UnifiedCalendarEvent): CalendarGanttEventEditDraft {
-  return {
-    title: event.title,
-    description: event.description ?? '',
-    location: event.location ?? '',
-    startDateTime: formatDateTimeInputValue(new Date(event.start_time)),
-    endDateTime: formatDateTimeInputValue(event.end_time === null ? new Date(Number.NaN) : new Date(event.end_time)),
-  }
-}
-
-function validateCalendarGanttEventEditDraft(draft: CalendarGanttEventEditDraft): string | null {
-  if (draft.title.trim().length === 0) {
-    return '请输入事件标题。'
-  }
-
-  if (!isDateTimeInputValue(draft.startDateTime) || !isDateTimeInputValue(draft.endDateTime)) {
-    return '请选择有效的开始和结束时间。'
-  }
-
-  if (Date.parse(draft.endDateTime) <= Date.parse(draft.startDateTime)) {
-    return '结束时间必须晚于开始时间。'
-  }
-
-  return null
-}
-
-function buildCalendarGanttEventEditPatch(draft: CalendarGanttEventEditDraft): CalendarEventPatch {
-  return {
-    title: draft.title.trim(),
-    description: normalizeOptionalText(draft.description),
-    location: normalizeOptionalText(draft.location),
-    start_time: new Date(draft.startDateTime).toISOString(),
-    end_time: new Date(draft.endDateTime).toISOString(),
-  }
-}
-
-function buildCalendarGanttContextMenuStyle(x: number, y: number): CSSProperties {
-  const maxLeft = Math.max(
-    CALENDAR_GANTT_CONTEXT_MENU_VIEWPORT_MARGIN,
-    window.innerWidth - CALENDAR_GANTT_CONTEXT_MENU_WIDTH - CALENDAR_GANTT_CONTEXT_MENU_VIEWPORT_MARGIN,
-  )
-
-  return {
-    left: `${clampNumber(x, CALENDAR_GANTT_CONTEXT_MENU_VIEWPORT_MARGIN, maxLeft)}px`,
-    top: `${Math.max(CALENDAR_GANTT_CONTEXT_MENU_VIEWPORT_MARGIN, y)}px`,
-    width: `${CALENDAR_GANTT_CONTEXT_MENU_WIDTH}px`,
-  }
-}
-
-function formatCalendarEventRange(event: UnifiedCalendarEvent): string {
-  const start = new Date(event.start_time)
-  const end = event.end_time === null ? null : new Date(event.end_time)
-
-  return end === null ? formatDate(start) : `${formatDate(start)} - ${formatDate(end)}`
 }
 
 function containsWakeupMetadataMarker(payload: UnifiedCalendarEvent['metadata_payload']): boolean {
@@ -913,27 +585,31 @@ function normalizeCalendarMarker(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
 }
 
-function normalizeOptionalText(value: string): string | null {
-  const trimmedValue = value.trim()
-  return trimmedValue.length === 0 ? null : trimmedValue
-}
-
-function isDateTimeInputValue(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
-}
-
-function formatDateTimeInputValue(date: Date): string {
-  if (Number.isNaN(date.getTime())) {
-    return ''
+function resolveCalendarEventFromContextMenuTarget(target: EventTarget | null, events: readonly UnifiedCalendarEvent[]): UnifiedCalendarEvent | null {
+  if (!(target instanceof Element)) {
+    return null
   }
 
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const barWrapper = target.closest<SVGGElement>('.bar-wrapper[data-id]')
+  const taskId = barWrapper?.getAttribute('data-id')
+  if (taskId === null || taskId === undefined) {
+    return null
+  }
 
-  return `${year}-${month}-${day}T${hours}:${minutes}`
+  const eventId = getCalendarEventIdFromGanttTaskId(taskId)
+  return events.find((event) => String(event.id) === String(eventId)) ?? null
+}
+
+function shouldSuppressCalendarGanttPopupMouseEvent(event: { button: number; target: EventTarget | null }): boolean {
+  if (event.button !== 2) {
+    return false
+  }
+
+  if (!(event.target instanceof Element)) {
+    return false
+  }
+
+  return event.target.closest('.bar-wrapper, .handle') !== null
 }
 
 interface GanttWheelInteractionState {

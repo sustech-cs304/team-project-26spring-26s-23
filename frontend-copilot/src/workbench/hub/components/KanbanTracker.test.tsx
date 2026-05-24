@@ -147,6 +147,30 @@ describe('KanbanTracker', () => {
 
     rendered.unmount()
   })
+
+  it('opens the event context menu through a viewport-positioned portal', () => {
+    const rendered = renderWithRoot(<KanbanTracker events={[createCalendarEvent({ source: 'custom' })]} />)
+    const card = rendered.container.querySelector('.kanban-card')
+    if (!(card instanceof HTMLElement)) {
+      throw new Error('Missing kanban card')
+    }
+
+    act(() => {
+      card.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 148,
+        clientY: 96,
+      }))
+    })
+
+    const contextMenu = rendered.getByTestId('calendar-event-context-menu')
+    expect(contextMenu.parentElement).toBe(document.body)
+    expect(contextMenu.style.left).toBe('148px')
+    expect(contextMenu.style.top).toBe('96px')
+
+    rendered.unmount()
+  })
 })
 
 function createCalendarEvent(overrides: Partial<UnifiedCalendarEvent> = {}): UnifiedCalendarEvent {
@@ -184,7 +208,7 @@ function renderWithRoot(element: ReactElement) {
   return {
     container,
     getByTestId(testId: string) {
-      const target = container.querySelector(`[data-testid="${testId}"]`)
+      const target = container.querySelector(`[data-testid="${testId}"]`) ?? document.body.querySelector(`[data-testid="${testId}"]`)
       if (!(target instanceof HTMLElement)) {
         throw new Error(`Missing element for data-testid=${testId}`)
       }

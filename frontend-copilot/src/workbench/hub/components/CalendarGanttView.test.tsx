@@ -198,7 +198,7 @@ describe('CalendarGanttView', () => {
     rendered.unmount()
   })
 
-  it('opens a right-click event menu and updates custom event status', () => {
+  it('opens a right-click event menu through a viewport-positioned portal and updates custom event status', () => {
     const onEventChange = vi.fn()
     const rendered = renderWithRoot(
       <CalendarGanttView events={[createCalendarEvent({ source: 'custom', status: 'not_started' })]} onEventChange={onEventChange} />,
@@ -206,10 +206,14 @@ describe('CalendarGanttView', () => {
 
     dispatchGanttContextMenu(rendered.getByTestId('calendar-gantt-container'), 'calendar-event-1')
 
-    expect(rendered.getByTestId('calendar-gantt-context-menu').textContent).toContain('设置状态')
+    const contextMenu = rendered.getByTestId('calendar-event-context-menu')
+    expect(contextMenu.textContent).toContain('设置状态')
+    expect(contextMenu.parentElement).toBe(document.body)
+    expect(contextMenu.style.left).toBe('120px')
+    expect(contextMenu.style.top).toBe('160px')
 
     act(() => {
-      rendered.getByTestId('calendar-gantt-context-menu-status-completed').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rendered.getByTestId('calendar-event-context-menu-status-completed').dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(onEventChange).toHaveBeenCalledWith(1, { status: 'completed', progress: 100 })
@@ -225,15 +229,15 @@ describe('CalendarGanttView', () => {
 
     dispatchGanttContextMenu(rendered.getByTestId('calendar-gantt-container'), 'calendar-event-1')
     act(() => {
-      rendered.getByTestId('calendar-gantt-context-menu-edit').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rendered.getByTestId('calendar-event-context-menu-edit').dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    changeInputValue(rendered.getByTestId('calendar-gantt-edit-title') as HTMLInputElement, 'Updated task')
-    changeInputValue(rendered.getByTestId('calendar-gantt-edit-start') as HTMLInputElement, '2026-05-06T09:30')
-    changeInputValue(rendered.getByTestId('calendar-gantt-edit-end') as HTMLInputElement, '2026-05-06T11:00')
+    changeInputValue(rendered.getByTestId('calendar-event-edit-title') as HTMLInputElement, 'Updated task')
+    changeInputValue(rendered.getByTestId('calendar-event-edit-start') as HTMLInputElement, '2026-05-06T09:30')
+    changeInputValue(rendered.getByTestId('calendar-event-edit-end') as HTMLInputElement, '2026-05-06T11:00')
 
     await act(async () => {
-      rendered.getByTestId('calendar-gantt-edit-submit').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rendered.getByTestId('calendar-event-edit-submit').dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
@@ -255,7 +259,7 @@ describe('CalendarGanttView', () => {
 
     dispatchGanttContextMenu(rendered.getByTestId('calendar-gantt-container'), 'calendar-event-1')
     await act(async () => {
-      rendered.getByTestId('calendar-gantt-context-menu-delete').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rendered.getByTestId('calendar-event-context-menu-delete').dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
@@ -306,7 +310,7 @@ describe('CalendarGanttView', () => {
     expect(popupAttempt).not.toHaveBeenCalled()
     expect(gantt.popup).toBeUndefined()
     expect(gantt.$popup_wrapper.classList.contains('hide')).toBe(true)
-    expect(rendered.getByTestId('calendar-gantt-context-menu').textContent).toContain('删除事件')
+    expect(rendered.getByTestId('calendar-event-context-menu').textContent).toContain('删除事件')
 
     rendered.unmount()
   })
@@ -388,7 +392,7 @@ function renderWithRoot(element: ReactElement) {
   return {
     container,
     getByTestId(testId: string) {
-      const target = container.querySelector(`[data-testid="${testId}"]`)
+      const target = container.querySelector(`[data-testid="${testId}"]`) ?? document.body.querySelector(`[data-testid="${testId}"]`)
       if (!(target instanceof HTMLElement)) {
         throw new Error(`Missing element for data-testid=${testId}`)
       }
@@ -396,7 +400,7 @@ function renderWithRoot(element: ReactElement) {
       return target
     },
     queryByTestId(testId: string) {
-      return container.querySelector(`[data-testid="${testId}"]`)
+      return container.querySelector(`[data-testid="${testId}"]`) ?? document.body.querySelector(`[data-testid="${testId}"]`)
     },
     unmount() {
       act(() => {

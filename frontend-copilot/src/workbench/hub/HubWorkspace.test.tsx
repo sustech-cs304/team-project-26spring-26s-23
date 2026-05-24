@@ -15,6 +15,8 @@ type MockKanbanCreateInput = {
 interface MockKanbanTrackerProps {
   events?: unknown[]
   onCreateEvent?: (input: MockKanbanCreateInput) => Promise<void> | void
+  onEventChange?: (eventId: string | number, patch: Partial<UnifiedCalendarEvent>) => Promise<void> | void
+  onEventDelete?: (eventId: string | number) => Promise<void> | void
 }
 
 interface MockCalendarGanttViewProps {

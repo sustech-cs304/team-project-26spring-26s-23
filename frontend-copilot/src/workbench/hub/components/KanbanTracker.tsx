@@ -1,6 +1,20 @@
-import { useCallback, useState, type CSSProperties, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 
-import type { UnifiedCalendarEvent } from '../calendar-types'
+import type { CalendarEventPatch, UnifiedCalendarEvent } from '../calendar-types'
+
+import {
+  CalendarEventContextMenu,
+  CalendarEventEditDialog,
+  buildCalendarEventEditPatch,
+  buildCalendarStatusPatch,
+  createCalendarEventEditDraft,
+  validateCalendarEventEditDraft,
+  formatDateTimeInputValue,
+  isDateTimeInputValue,
+  type CalendarEventContextMenuState,
+  type CalendarEventCustomStatus,
+  type CalendarEventEditDraft,
+} from './CalendarEventContextMenu'
 
 export interface KanbanNewEventInput {
   title: string
@@ -12,6 +26,8 @@ export interface KanbanNewEventInput {
 interface KanbanTrackerProps {
   events?: UnifiedCalendarEvent[]
   onCreateEvent?: (input: KanbanNewEventInput) => Promise<void> | void
+  onEventChange?: (eventId: string | number, patch: CalendarEventPatch) => void | Promise<void>
+  onEventDelete?: (eventId: string | number) => void | Promise<void>
 }
 
 export type KanbanCreateStatus = 'not_started' | 'in_progress'
@@ -35,11 +51,18 @@ const KANBAN_CARD_GAP = 6
 
 const KANBAN_EXCLUDED_SOURCES = new Set<string>(['wakeup'])
 
-export function KanbanTracker({ events = [], onCreateEvent }: KanbanTrackerProps) {
+export function KanbanTracker({ events = [], onCreateEvent, onEventChange, onEventDelete }: KanbanTrackerProps) {
   const [activeCreateStatus, setActiveCreateStatus] = useState<KanbanCreateStatus | null>(null)
   const [draft, setDraft] = useState<KanbanEventDraft>(() => createDefaultKanbanEventDraft())
   const [createError, setCreateError] = useState<string | null>(null)
   const [savingCreateStatus, setSavingCreateStatus] = useState<KanbanCreateStatus | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+  const [contextMenu, setContextMenu] = useState<CalendarEventContextMenuState | null>(null)
+  const [editingEvent, setEditingEvent] = useState<UnifiedCalendarEvent | null>(null)
+  const [editDraft, setEditDraft] = useState<CalendarEventEditDraft | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [eventActionError, setEventActionError] = useState<string | null>(null)
+  const [mutatingEventId, setMutatingEventId] = useState<string | number | null>(null)
 
   const visibleEvents = events.filter((e) => !KANBAN_EXCLUDED_SOURCES.has(e.source))
   const notStarted = visibleEvents.filter((e) => e.status === 'not_started')
@@ -103,6 +126,131 @@ export function KanbanTracker({ events = [], onCreateEvent }: KanbanTrackerProps
     }
   }, [activeCreateStatus, draft, onCreateEvent])
 
+  const openEventContextMenu = useCallback((event: UnifiedCalendarEvent, x: number, y: number) => {
+    setContextMenu({ event, x, y })
+    setEventActionError(null)
+  }, [])
+
+  const closeEditDialog = useCallback(() => {
+    if (mutatingEventId !== null) {
+      return
+    }
+
+    setEditingEvent(null)
+    setEditDraft(null)
+    setEditError(null)
+  }, [mutatingEventId])
+
+  const openEditDialog = useCallback((event: UnifiedCalendarEvent) => {
+    setContextMenu(null)
+    setEventActionError(null)
+    setEditingEvent(event)
+    setEditDraft(createCalendarEventEditDraft(event))
+    setEditError(null)
+  }, [])
+
+  const applyEventPatch = useCallback(async (eventId: string | number, patch: CalendarEventPatch) => {
+    if (onEventChange === undefined) {
+      setEventActionError('无法修改事件：日历数据库桥接不可用。')
+      return
+    }
+
+    setMutatingEventId(eventId)
+    setEventActionError(null)
+    try {
+      await onEventChange(eventId, patch)
+    } catch (error) {
+      setEventActionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setMutatingEventId(null)
+    }
+  }, [onEventChange])
+
+  const handleStatusChange = useCallback((event: UnifiedCalendarEvent, status: CalendarEventCustomStatus) => {
+    setContextMenu(null)
+    void applyEventPatch(event.id, buildCalendarStatusPatch(status))
+  }, [applyEventPatch])
+
+  const handleDeleteEvent = useCallback(async (event: UnifiedCalendarEvent) => {
+    setContextMenu(null)
+    if (onEventDelete === undefined) {
+      setEventActionError('无法删除事件：日历数据库桥接不可用。')
+      return
+    }
+
+    setMutatingEventId(event.id)
+    setEventActionError(null)
+    try {
+      await onEventDelete(event.id)
+    } catch (error) {
+      setEventActionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setMutatingEventId(null)
+    }
+  }, [onEventDelete])
+
+  const handleEditDraftChange = useCallback((patch: Partial<CalendarEventEditDraft>) => {
+    setEditDraft((currentDraft) => currentDraft === null ? currentDraft : { ...currentDraft, ...patch })
+    setEditError(null)
+  }, [])
+
+  const handleEditSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (editingEvent === null || editDraft === null) {
+      return
+    }
+
+    const validationError = validateCalendarEventEditDraft(editDraft)
+    if (validationError !== null) {
+      setEditError(validationError)
+      return
+    }
+
+    const patch = buildCalendarEventEditPatch(editDraft)
+    if (onEventChange === undefined) {
+      setEditError('无法修改事件：日历数据库桥接不可用。')
+      return
+    }
+
+    setMutatingEventId(editingEvent.id)
+    setEventActionError(null)
+    try {
+      await onEventChange(editingEvent.id, patch)
+      setEditingEvent(null)
+      setEditDraft(null)
+      setEditError(null)
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setMutatingEventId(null)
+    }
+  }, [editDraft, editingEvent, onEventChange])
+
+  useEffect(() => {
+    if (contextMenu === null) {
+      return undefined
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (contextMenuRef.current !== null && !contextMenuRef.current.contains(event.target as Node)) {
+        setContextMenu(null)
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setContextMenu(null)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown, { passive: true })
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [contextMenu])
+
   return (
     <section className="kanban-tracker">
       <header className="kanban-tracker__head">
@@ -125,6 +273,7 @@ export function KanbanTracker({ events = [], onCreateEvent }: KanbanTrackerProps
           onDraftChange={updateDraft}
           onCancelCreate={cancelCreate}
           onSubmitCreate={submitCreate}
+          onContextMenu={openEventContextMenu}
         />
         <KanbanColumn
           label="进行中"
@@ -140,9 +289,39 @@ export function KanbanTracker({ events = [], onCreateEvent }: KanbanTrackerProps
           onDraftChange={updateDraft}
           onCancelCreate={cancelCreate}
           onSubmitCreate={submitCreate}
+          onContextMenu={openEventContextMenu}
         />
-        <KanbanColumn label="已完成" tone="done" events={completed} />
+        <KanbanColumn label="已完成" tone="done" events={completed} onContextMenu={openEventContextMenu} />
       </div>
+
+      {eventActionError !== null ? (
+        <p className="calendar-gantt-card__notice calendar-gantt-card__notice--danger" role="alert" style={{ marginTop: '0.75rem' }}>
+          {eventActionError}
+        </p>
+      ) : null}
+
+      {contextMenu !== null ? (
+        <CalendarEventContextMenu
+          refElement={contextMenuRef}
+          state={contextMenu}
+          mutatingEventId={mutatingEventId}
+          onEdit={openEditDialog}
+          onDelete={handleDeleteEvent}
+          onStatusChange={handleStatusChange}
+        />
+      ) : null}
+
+      {editingEvent !== null && editDraft !== null ? (
+        <CalendarEventEditDialog
+          event={editingEvent}
+          draft={editDraft}
+          error={editError}
+          submitting={mutatingEventId !== null}
+          onDraftChange={handleEditDraftChange}
+          onClose={closeEditDialog}
+          onSubmit={handleEditSubmit}
+        />
+      ) : null}
     </section>
   )
 }
@@ -161,6 +340,7 @@ function KanbanColumn({
   onDraftChange,
   onCancelCreate,
   onSubmitCreate,
+  onContextMenu,
 }: {
   label: string
   tone: KanbanColumnTone
@@ -175,6 +355,7 @@ function KanbanColumn({
   onDraftChange?: (patch: Partial<KanbanEventDraft>) => void
   onCancelCreate?: () => void
   onSubmitCreate?: (event: FormEvent<HTMLFormElement>) => void
+  onContextMenu?: (event: UnifiedCalendarEvent, x: number, y: number) => void
 }) {
   const bodyStyle = {
     '--kanban-visible-event-list-height': `${getKanbanVisibleEventListHeight(events.length)}px`,
@@ -196,7 +377,7 @@ function KanbanColumn({
         aria-label={`${label}事件列表，最多显示${KANBAN_MAX_VISIBLE_EVENTS}个事件，可滚动查看更多`}
       >
         {events.map((evt) => (
-          <KanbanCard key={evt.id} event={evt} tone={tone} />
+          <KanbanCard key={evt.id} event={evt} tone={tone} onContextMenu={onContextMenu} />
         ))}
         {events.length === 0 && (
           <p className="kanban-column__empty">—</p>
@@ -356,26 +537,22 @@ function validateKanbanEventDraft(draft: KanbanEventDraft): string | null {
   return null
 }
 
-function isDateTimeInputValue(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
-}
-
-function formatDateTimeInputValue(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-
-  return `${year}-${month}-${day}T${hours}:${minutes}`
-}
-
-function KanbanCard({ event, tone }: { event: UnifiedCalendarEvent; tone: string }) {
+function KanbanCard({ event, tone, onContextMenu }: { event: UnifiedCalendarEvent; tone: string; onContextMenu?: (event: UnifiedCalendarEvent, x: number, y: number) => void }) {
   const done = tone === 'done'
   const sourceClass = SOURCE_LABEL_CLASS[event.source] ?? ''
 
   return (
-    <article className={`kanban-card${done ? ' kanban-card--done' : ''}`}>
+    <article
+      className={`kanban-card${done ? ' kanban-card--done' : ''}`}
+      onContextMenu={(mouseEvent) => {
+        if (onContextMenu === undefined) {
+          return
+        }
+
+        mouseEvent.preventDefault()
+        onContextMenu(event, mouseEvent.clientX, mouseEvent.clientY)
+      }}
+    >
       <div className="kanban-card__body">
         <span className={`kanban-card__source-dot${sourceClass ? ` ${sourceClass}` : ''}`} />
         <span className={done ? 'kanban-card__title--done' : 'kanban-card__title'}>
