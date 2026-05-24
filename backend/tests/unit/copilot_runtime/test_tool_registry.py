@@ -717,17 +717,22 @@ def test_shell_run_tool_executes_echo_ok() -> None:
     assert "ok" in result["stdout"].lower()
 
 
-def test_shell_session_tools_execute_echo_ok_and_persist_state() -> None:
+def test_shell_session_tools_execute_echo_ok_and_persist_state(tmp_path: Path) -> None:
     registry = build_default_tool_registry()
     start_tool = registry.resolve_tool(SHELL_SESSION_START_TOOL_ID)
     exec_tool = registry.resolve_tool(SHELL_SESSION_EXEC_TOOL_ID)
     close_tool = registry.resolve_tool(SHELL_SESSION_CLOSE_TOOL_ID)
 
     async def run_scenario() -> None:
-        started = await start_tool.execute({"shell": "auto", "recycleTimeoutSeconds": 30})
+        started = await start_tool.execute(
+            {"shell": "auto", "cwd": str(tmp_path), "recycleTimeoutSeconds": 30}
+        )
         session_id = cast(str, started["sessionId"])
         assert started["recycleTimeoutSeconds"] == 30
         assert isinstance(started["recycleAt"], str)
+        assert Path(cast(str, started["cwd"])).resolve(
+            strict=False
+        ) == tmp_path.resolve(strict=False)
         try:
             first = await exec_tool.execute(
                 {"sessionId": session_id, "input": "echo ok"}

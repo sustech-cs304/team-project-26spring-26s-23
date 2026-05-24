@@ -24,14 +24,6 @@ export interface CopilotThreadRuntimeControllerState {
   pendingHistorySyncRunId: string | null
   lastSettledRunId: string | null
   pendingHistorySyncLogKey: string | null
-  shellPassthroughEnabled: boolean
-  shellPassthroughSessionId: string | null
-  shellPassthroughShell: string | null
-  shellPassthroughCwd: string | null
-  shellPassthroughRecycleTimeoutSeconds: number | null
-  shellPassthroughRecycleAt: string | null
-  shellPassthroughSequence: number
-  shellPassthroughInFlight: boolean
   lastAccessedAt: number
 }
 
@@ -52,14 +44,6 @@ export function createCopilotThreadRuntimeControllerState(
     pendingHistorySyncRunId: null,
     lastSettledRunId: null,
     pendingHistorySyncLogKey: null,
-    shellPassthroughEnabled: false,
-    shellPassthroughSessionId: null,
-    shellPassthroughShell: null,
-    shellPassthroughCwd: null,
-    shellPassthroughRecycleTimeoutSeconds: null,
-    shellPassthroughRecycleAt: null,
-    shellPassthroughSequence: 1,
-    shellPassthroughInFlight: false,
     lastAccessedAt: createdAt,
   }
 }

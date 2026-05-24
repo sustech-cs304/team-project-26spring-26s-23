@@ -339,41 +339,6 @@ export interface RuntimeRunCancelResponse {
   cancelAccepted: boolean
 }
 
-export interface RuntimeShellSessionStartResponse {
-  ok: true
-  sessionId: string
-  shell: string
-  cwd: string | null
-  recycleTimeoutSeconds: number
-  recycleAt: string
-  started: boolean
-  stdout: string
-  stderr: string
-  truncated: boolean
-}
-
-export interface RuntimeShellSessionExecResponse {
-  ok: true
-  sessionId: string
-  shell: string
-  closed: boolean
-  exitCode: number | null
-  stdout: string
-  stderr: string
-  truncated: boolean
-  recycleTimeoutSeconds: number
-  recycleAt: string
-  maxOutputChars: number
-}
-
-export interface RuntimeShellSessionCloseResponse {
-  ok: true
-  sessionId: string
-  closed: boolean
-  alreadyClosed: boolean
-  exitCode?: number | null
-}
-
 export interface RuntimeRunEventBase<TType extends string, TPayload extends object> {
   type: TType
   runId: string
@@ -487,9 +452,6 @@ export interface RuntimeMethodRequest {
     | 'run/cancel'
     | 'capabilities/get'
     | 'thinking/capability/get'
-    | 'shell-session/start'
-    | 'shell-session/exec'
-    | 'shell-session/close'
   body?: Record<string, unknown>
 }
 

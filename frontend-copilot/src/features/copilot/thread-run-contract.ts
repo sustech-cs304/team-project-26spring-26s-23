@@ -12,9 +12,6 @@ import type {
   RuntimeRunCancelResponse,
   RuntimeRunEvent,
   RuntimeRunStartResponse,
-  RuntimeShellSessionCloseResponse,
-  RuntimeShellSessionExecResponse,
-  RuntimeShellSessionStartResponse,
   RuntimeThinkingCapability,
   RuntimeThinkingCapabilityGetResponse,
   RuntimeThinkingControlSpec,
@@ -56,9 +53,6 @@ export type {
   RuntimeRunTerminalEvent,
   RuntimeRunThinkingMetadata,
   RuntimeRunView,
-  RuntimeShellSessionCloseResponse,
-  RuntimeShellSessionExecResponse,
-  RuntimeShellSessionStartResponse,
   RuntimeTextDeltaEvent,
   RuntimeThinkingBudgetValue,
   RuntimeThinkingCapability,
@@ -269,64 +263,6 @@ export async function cancelRuntimeRun(input: {
   })
 }
 
-export async function startRuntimeShellSession(input: {
-  runtimeUrl: string
-  shell?: 'auto' | 'pwsh' | 'cmd' | 'bash' | 'sh'
-  cwd?: string | null
-  recycleTimeoutSeconds: number
-  fetchFn?: FetchLike
-  signal?: AbortSignal
-}): Promise<RuntimeShellSessionStartResponse> {
-  return postRuntimeMethod<RuntimeShellSessionStartResponse>({
-    runtimeUrl: input.runtimeUrl,
-    method: 'shell-session/start',
-    body: {
-      recycleTimeoutSeconds: input.recycleTimeoutSeconds,
-      ...(input.shell === undefined ? {} : { shell: input.shell }),
-      ...(input.cwd === undefined || input.cwd === null ? {} : { cwd: input.cwd }),
-    },
-    fetchFn: input.fetchFn,
-    signal: input.signal,
-  })
-}
-
-export async function execRuntimeShellSession(input: {
-  runtimeUrl: string
-  sessionId: string
-  input: string
-  maxOutputChars?: number
-  fetchFn?: FetchLike
-  signal?: AbortSignal
-}): Promise<RuntimeShellSessionExecResponse> {
-  return postRuntimeMethod<RuntimeShellSessionExecResponse>({
-    runtimeUrl: input.runtimeUrl,
-    method: 'shell-session/exec',
-    body: {
-      sessionId: input.sessionId,
-      input: input.input,
-      ...(input.maxOutputChars === undefined ? {} : { maxOutputChars: input.maxOutputChars }),
-    },
-    fetchFn: input.fetchFn,
-    signal: input.signal,
-  })
-}
-
-export async function closeRuntimeShellSession(input: {
-  runtimeUrl: string
-  sessionId: string
-  fetchFn?: FetchLike
-  signal?: AbortSignal
-}): Promise<RuntimeShellSessionCloseResponse> {
-  return postRuntimeMethod<RuntimeShellSessionCloseResponse>({
-    runtimeUrl: input.runtimeUrl,
-    method: 'shell-session/close',
-    body: {
-      sessionId: input.sessionId,
-    },
-    fetchFn: input.fetchFn,
-    signal: input.signal,
-  })
-}
 
 export async function* streamRuntimeRun(input: {
   runtimeUrl: string

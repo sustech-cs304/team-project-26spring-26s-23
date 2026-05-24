@@ -454,14 +454,7 @@ async def execute_shell_session_start_tool(
     cwd = raw_cwd.strip() if isinstance(raw_cwd, str) and raw_cwd.strip() != "" else None
     resolved_cwd: str | None = None
     if cwd is not None:
-        cwd_path = Path(cwd)
-        if cwd_path.is_absolute():
-            raise ValueError("cwd must be a relative path")
-        base_dir = Path.cwd().resolve(strict=False)
-        resolved_path = (base_dir / cwd_path).resolve(strict=False)
-        if base_dir != resolved_path and base_dir not in resolved_path.parents:
-            raise ValueError("cwd must be within the backend working directory")
-        resolved_cwd = str(resolved_path)
+        resolved_cwd = str(Path(cwd).resolve(strict=False))
 
     recycle_timeout_seconds = payload.get("recycleTimeoutSeconds")
     if isinstance(recycle_timeout_seconds, bool) or not isinstance(

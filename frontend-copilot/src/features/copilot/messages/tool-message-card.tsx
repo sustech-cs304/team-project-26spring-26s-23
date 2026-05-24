@@ -12,21 +12,6 @@ interface ToolMessageCardProps {
   turn: CopilotToolMessageItem
   index: number
   runtimeUrl: string | null
-  shellPassthrough?: {
-    enabled: boolean
-    sessionId: string | null
-    shell: string | null
-    cwd: string | null
-    recycleTimeoutSeconds: number | null
-    recycleAt: string | null
-  } | null
-  onActivateShellPassthrough?: ((input: {
-    sessionId: string
-    shell: string
-    cwd: string | null
-    recycleTimeoutSeconds: number | null
-    recycleAt: string | null
-  }) => void) | null
   onResolveToolApproval?: ((input: {
     runId: string
     toolCallId: string
@@ -40,8 +25,6 @@ export function ToolMessageCard({
   turn,
   index,
   runtimeUrl,
-  shellPassthrough = null,
-  onActivateShellPassthrough = null,
   onResolveToolApproval,
   onOpenErrorDetail,
   language,
@@ -104,37 +87,6 @@ export function ToolMessageCard({
   const timeoutSecondsLabel = approval === null ? null : formatToolApprovalTimeoutSecondsLabel(approval, countdownNow)
   const showApprovalActions = turn.toolPhase === 'waiting_approval'
   const approvalControlsEnabled = runtimeUrl !== null && typeof onResolveToolApproval === 'function' && approvalPendingDecision === null
-  const shellPassthroughStartInfo = useMemo(() => {
-    if (turn.toolId !== 'tool.shell-session.start' || turn.toolPhase !== 'completed') {
-      return null
-    }
-    const raw = turn.resultSummary
-    if (typeof raw !== 'string' || raw.trim() === '') {
-      return null
-    }
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>
-      const sessionId = typeof parsed.sessionId === 'string' ? parsed.sessionId : null
-      const shell = typeof parsed.shell === 'string' ? parsed.shell : null
-      const cwd = typeof parsed.cwd === 'string' ? parsed.cwd : null
-      const recycleTimeoutSeconds = typeof parsed.recycleTimeoutSeconds === 'number'
-        ? parsed.recycleTimeoutSeconds
-        : null
-      const recycleAt = typeof parsed.recycleAt === 'string' ? parsed.recycleAt : null
-      if (sessionId === null || shell === null) {
-        return null
-      }
-      return { sessionId, shell, cwd, recycleTimeoutSeconds, recycleAt }
-    } catch {
-      return null
-    }
-  }, [turn.resultSummary, turn.toolId, turn.toolPhase])
-  const shellPassthroughActionEnabled = shellPassthroughStartInfo !== null
-    && typeof onActivateShellPassthrough === 'function'
-    && runtimeUrl !== null
-  const shellPassthroughAlreadyActive = shellPassthroughStartInfo !== null
-    && shellPassthrough?.enabled === true
-    && shellPassthrough.sessionId === shellPassthroughStartInfo.sessionId
 
   useEffect(() => {
     if (turn.toolPhase !== 'waiting_approval' || approval?.timeoutAt === null || approval?.timeoutAt === undefined) {
@@ -194,21 +146,6 @@ export function ToolMessageCard({
             }
           }}
         />
-        {shellPassthroughStartInfo !== null && (
-          <button
-            type="button"
-            className="secondary-button secondary-button--subtle"
-            disabled={!shellPassthroughActionEnabled || shellPassthroughAlreadyActive}
-            onClick={() => {
-              if (!shellPassthroughActionEnabled || shellPassthroughStartInfo === null) {
-                return
-              }
-              onActivateShellPassthrough?.(shellPassthroughStartInfo)
-            }}
-          >
-            {shellPassthroughAlreadyActive ? '已直连' : '启用直连'}
-          </button>
-        )}
         {renderToolErrorDetailButton({ turn, index, errorDetail, onOpenErrorDetail, copy })}
       </div>
       {showApprovalActions && renderToolApprovalBar({

@@ -107,22 +107,6 @@ export interface CopilotPanelShellProps {
   hasTransientConversation?: boolean
   conversation: CopilotMessageListItem[]
   assistantPlaceholder: CopilotAssistantPlaceholderState
-  shellPassthrough?: {
-    enabled: boolean
-    sessionId: string | null
-    shell: string | null
-    cwd: string | null
-    recycleTimeoutSeconds: number | null
-    recycleAt: string | null
-  } | null
-  onActivateShellPassthrough?: ((input: {
-    sessionId: string
-    shell: string
-    cwd: string | null
-    recycleTimeoutSeconds: number | null
-    recycleAt: string | null
-  }) => void) | null
-  onDeactivateShellPassthrough?: (() => void) | null
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
   onComposerResizeStart: (event: ReactMouseEvent<HTMLDivElement>) => void
@@ -339,8 +323,6 @@ function renderActiveSessionShell(
                     models={props.modelGroups.flatMap((group) => group.models)}
                     transientError={props.sendError ?? createTransientSessionError(props.sessionError)}
                     runtimeUrl={props.runtimeUrl}
-                    shellPassthrough={props.shellPassthrough ?? null}
-                    onActivateShellPassthrough={props.onActivateShellPassthrough ?? null}
                     onSubmitInlineForm={props.onSubmitInlineForm}
                     onResolveToolApproval={props.onResolveToolApproval}
                     onOpenErrorDetail={props.onOpenErrorDetail}
@@ -353,33 +335,6 @@ function renderActiveSessionShell(
                   />
                 )}
         </CrossFade>
-        {props.shellPassthrough?.enabled === true && props.shellPassthrough.sessionId !== null && (
-          <div className="copilot-panel__card copilot-panel__card--notice" style={{ marginInline: 'var(--copilot-chat-side-gutter)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-              <div style={{ minWidth: 0 }}>
-                <p className="copilot-chat__message-label" style={{ margin: 0 }}>
-                  终端直连已启用（{props.shellPassthrough.shell ?? 'auto'}）
-                </p>
-                <p className="copilot-panel__description" style={{ margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  会话ID：{props.shellPassthrough.sessionId}
-                </p>
-                {props.shellPassthrough.recycleAt !== null && (
-                  <p className="copilot-panel__description" style={{ margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    回收时间：{props.shellPassthrough.recycleAt}
-                    {props.shellPassthrough.recycleTimeoutSeconds === null ? '' : `（${props.shellPassthrough.recycleTimeoutSeconds}s）`}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                className="secondary-button secondary-button--subtle"
-                onClick={() => props.onDeactivateShellPassthrough?.()}
-              >
-                退出直连
-              </button>
-            </div>
-          </div>
-        )}
         <CopilotComposerShell
           language={props.language}
           capabilities={props.sessionShell?.capabilities ?? EMPTY_ASSISTANT_SESSION_CAPABILITIES}

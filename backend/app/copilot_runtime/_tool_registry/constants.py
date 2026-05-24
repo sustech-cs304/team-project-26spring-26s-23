@@ -529,7 +529,7 @@ SHELL_SESSION_START_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
         },
         "cwd": {
             "type": "string",
-            "description": "Optional initial working directory (relative path) for the session on the backend host.",
+            "description": "Optional initial working directory for the session on the backend host. Relative and absolute paths are allowed.",
         },
         "recycleTimeoutSeconds": {
             "type": "integer",
