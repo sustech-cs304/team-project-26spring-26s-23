@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import time
 from collections.abc import Awaitable
 from pathlib import Path
 from typing import TypeVar, cast
@@ -739,6 +740,8 @@ def test_shell_session_tools_execute_echo_ok_and_persist_state(tmp_path: Path) -
             )
             assert first["closed"] is False
             assert first["exitCode"] is None
+            assert first["timedOut"] is False
+            assert first["timeoutSeconds"] == 300
             assert first["recycleTimeoutSeconds"] == 30
             assert isinstance(first["recycleAt"], str)
             assert "ok" in cast(str, first["stdout"]).lower()
@@ -749,6 +752,45 @@ def test_shell_session_tools_execute_echo_ok_and_persist_state(tmp_path: Path) -
             assert second["closed"] is False
             assert second["exitCode"] is None
             assert "ok2" in cast(str, second["stdout"]).lower()
+        finally:
+            await close_tool.execute({"sessionId": session_id})
+
+    asyncio.run(run_scenario())
+
+
+def test_shell_session_exec_timeout_interrupts_and_releases_session() -> None:
+    registry = build_default_tool_registry()
+    start_tool = registry.resolve_tool(SHELL_SESSION_START_TOOL_ID)
+    exec_tool = registry.resolve_tool(SHELL_SESSION_EXEC_TOOL_ID)
+    close_tool = registry.resolve_tool(SHELL_SESSION_CLOSE_TOOL_ID)
+
+    async def run_scenario() -> None:
+        started = await start_tool.execute({"shell": "auto", "recycleTimeoutSeconds": 30})
+        session_id = cast(str, started["sessionId"])
+        shell = cast(str, started["shell"])
+        if shell == "pwsh":
+            long_running_command = "Read-Host"
+        elif shell == "cmd":
+            long_running_command = "set /p value="
+        else:
+            long_running_command = "cat"
+        try:
+            started_at = time.monotonic()
+            result = await exec_tool.execute(
+                {
+                    "sessionId": session_id,
+                    "input": long_running_command,
+                    "timeoutSeconds": 1,
+                    "maxOutputChars": 2000,
+                }
+            )
+            assert time.monotonic() - started_at < 10
+            assert result["timedOut"] is True
+            assert result["timeoutSeconds"] == 1
+            assert result["closed"] is True
+            assert result["maxOutputChars"] == 2000
+            with pytest.raises(LookupError, match="shell session not found"):
+                await exec_tool.execute({"sessionId": session_id, "input": "echo after"})
         finally:
             await close_tool.execute({"sessionId": session_id})
 

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import locale
+import os
 import random
 import shutil
+import signal
+import subprocess
 import sys
 import uuid
 from collections.abc import Mapping
@@ -188,6 +191,11 @@ class _ShellSession:
     recycle_at: datetime
     recycle_timeout_seconds: int
     lock: asyncio.Lock
+    stdout_buffer: bytearray
+    stderr_buffer: bytearray
+    output_event: asyncio.Event
+    stdout_task: asyncio.Task[None] | None
+    stderr_task: asyncio.Task[None] | None
 
 
 _SHELL_SESSIONS: dict[str, _ShellSession] = {}
@@ -206,10 +214,149 @@ def _cleanup_shell_sessions(now: datetime) -> None:
         session = _SHELL_SESSIONS.pop(session_id, None)
         if session is None:
             continue
+        _request_shell_session_termination(session.proc)
+        _cancel_shell_session_output_tasks(session)
+
+
+async def _pump_shell_session_output(
+    stream: asyncio.StreamReader | None,
+    buffer: bytearray,
+    output_event: asyncio.Event,
+) -> None:
+    if stream is None:
+        output_event.set()
+        return
+    try:
+        while True:
+            chunk = await stream.read(4096)
+            if not chunk:
+                break
+            buffer.extend(chunk)
+            output_event.set()
+    finally:
+        output_event.set()
+
+
+def _cancel_shell_session_output_tasks(session: _ShellSession) -> None:
+    for task in (session.stdout_task, session.stderr_task):
+        if task is not None and not task.done():
+            task.cancel()
+
+
+async def _finish_shell_session_output_tasks(session: _ShellSession) -> None:
+    tasks = [
+        task
+        for task in (session.stdout_task, session.stderr_task)
+        if task is not None and not task.done()
+    ]
+    if not tasks:
+        return
+    try:
+        await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=1)
+    except asyncio.TimeoutError:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def _drain_shell_session_output(session: _ShellSession) -> tuple[bytes, bytes]:
+    stdout = bytes(session.stdout_buffer)
+    stderr = bytes(session.stderr_buffer)
+    session.stdout_buffer.clear()
+    session.stderr_buffer.clear()
+    if not session.stdout_buffer and not session.stderr_buffer:
+        session.output_event.clear()
+    return stdout, stderr
+
+
+def _append_limited_output(target: bytearray, chunk: bytes, *, limit_bytes: int) -> bool:
+    remaining = limit_bytes - len(target)
+    if remaining > 0:
+        target.extend(chunk[:remaining])
+        return len(chunk) > remaining
+    return bool(chunk)
+
+
+def _build_shell_session_subprocess_kwargs() -> dict[str, Any]:
+    if sys.platform.startswith("win"):
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def _send_shell_session_signal(proc: asyncio.subprocess.Process, sig: int) -> None:
+    if proc.returncode is not None:
+        return
+    try:
+        if sys.platform.startswith("win"):
+            proc.send_signal(sig)
+            return
+        killpg = getattr(os, "killpg", None)
+        if callable(killpg) and proc.pid is not None:
+            killpg(proc.pid, sig)
+    except (ProcessLookupError, ValueError, OSError):
+        pass
+
+
+def _request_shell_session_interrupt(proc: asyncio.subprocess.Process) -> None:
+    if sys.platform.startswith("win"):
+        break_signal = getattr(signal, "CTRL_BREAK_EVENT", None)
+        if isinstance(break_signal, int):
+            _send_shell_session_signal(proc, break_signal)
+            return
+    _send_shell_session_signal(proc, signal.SIGINT)
+
+
+def _request_shell_session_termination(proc: asyncio.subprocess.Process) -> None:
+    if sys.platform.startswith("win"):
         try:
-            session.proc.terminate()
+            proc.terminate()
         except ProcessLookupError:
             pass
+        return
+    _send_shell_session_signal(proc, signal.SIGTERM)
+
+
+async def _terminate_shell_session_process(
+    proc: asyncio.subprocess.Process,
+    *,
+    interrupt_first: bool,
+) -> None:
+    if proc.returncode is not None:
+        return
+    if interrupt_first:
+        _request_shell_session_interrupt(proc)
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=1)
+        except asyncio.TimeoutError:
+            pass
+    if proc.returncode is not None:
+        return
+    _request_shell_session_termination(proc)
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=2)
+    except asyncio.TimeoutError:
+        if sys.platform.startswith("win"):
+            proc.kill()
+        else:
+            kill_signal = cast(int, getattr(signal, "SIGKILL", signal.SIGTERM))
+            _send_shell_session_signal(proc, kill_signal)
+        await proc.wait()
+
+
+async def _terminate_shell_session(
+    session_id: str,
+    session: _ShellSession,
+    *,
+    interrupt_first: bool,
+) -> None:
+    if _SHELL_SESSIONS.get(session_id) is session:
+        _SHELL_SESSIONS.pop(session_id, None)
+    await _terminate_shell_session_process(
+        session.proc,
+        interrupt_first=interrupt_first,
+    )
+    await _finish_shell_session_output_tasks(session)
 
 
 def _resolve_shell_for_session(shell: str) -> str:
@@ -234,77 +381,120 @@ def _build_session_argv(resolved_shell: str) -> list[str]:
     return [program]
 
 
-async def _read_available_output(
-    stream: asyncio.StreamReader | None,
-    *,
-    limit_bytes: int,
-    max_wait_seconds: float,
-) -> tuple[bytes, bool]:
-    if stream is None:
-        return b"", False
-    buffer = bytearray()
-    truncated = False
-    deadline = asyncio.get_running_loop().time() + max_wait_seconds
-    while True:
-        remaining_wait = deadline - asyncio.get_running_loop().time()
-        if remaining_wait <= 0:
-            break
-        try:
-            chunk = await asyncio.wait_for(stream.read(4096), timeout=min(0.2, remaining_wait))
-        except asyncio.TimeoutError:
-            break
-        if not chunk:
-            break
-        remaining = limit_bytes - len(buffer)
-        if remaining > 0:
-            buffer.extend(chunk[:remaining])
-            if len(chunk) > remaining:
-                truncated = True
-        else:
-            truncated = True
-    return bytes(buffer), truncated
 
-
-async def _read_until_marker(
-    stream: asyncio.StreamReader | None,
+async def _read_shell_session_output_until_marker(
+    session: _ShellSession,
     *,
     marker: bytes,
     limit_bytes: int,
     timeout_seconds: float,
-) -> tuple[bytes, bool, bool]:
-    if stream is None:
-        return b"", False, False
-    buffer = bytearray()
-    truncated = False
-    deadline = asyncio.get_running_loop().time() + timeout_seconds
-    found = False
+) -> tuple[bytes, bytes, bool, bool, bool, bool]:
+    stdout_buffer = bytearray()
+    stderr_buffer = bytearray()
+    pending_stdout = bytearray()
+    stdout_truncated = False
+    stderr_truncated = False
+    marker_found = False
+    timed_out = False
+    marker_keep_bytes = max(0, len(marker) - 1)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
+
     while True:
-        if marker and marker in buffer:
-            found = True
+        stdout_chunk, stderr_chunk = _drain_shell_session_output(session)
+        if stdout_chunk:
+            if marker:
+                pending_stdout.extend(stdout_chunk)
+                marker_index = pending_stdout.find(marker)
+                if marker_index >= 0:
+                    stdout_truncated = _append_limited_output(
+                        stdout_buffer,
+                        bytes(pending_stdout[:marker_index]),
+                        limit_bytes=limit_bytes,
+                    ) or stdout_truncated
+                    pending_stdout.clear()
+                    marker_found = True
+                else:
+                    commit_length = max(0, len(pending_stdout) - marker_keep_bytes)
+                    if commit_length > 0:
+                        stdout_truncated = _append_limited_output(
+                            stdout_buffer,
+                            bytes(pending_stdout[:commit_length]),
+                            limit_bytes=limit_bytes,
+                        ) or stdout_truncated
+                        del pending_stdout[:commit_length]
+            else:
+                stdout_truncated = _append_limited_output(
+                    stdout_buffer,
+                    stdout_chunk,
+                    limit_bytes=limit_bytes,
+                ) or stdout_truncated
+        if stderr_chunk:
+            stderr_truncated = _append_limited_output(
+                stderr_buffer,
+                stderr_chunk,
+                limit_bytes=limit_bytes,
+            ) or stderr_truncated
+
+        if marker_found:
             break
-        if asyncio.get_running_loop().time() >= deadline:
+        if marker == b"" and session.proc.returncode is not None:
+            stdout_tail, stderr_tail = _drain_shell_session_output(session)
+            if stdout_tail:
+                stdout_truncated = _append_limited_output(
+                    stdout_buffer,
+                    stdout_tail,
+                    limit_bytes=limit_bytes,
+                ) or stdout_truncated
+            if stderr_tail:
+                stderr_truncated = _append_limited_output(
+                    stderr_buffer,
+                    stderr_tail,
+                    limit_bytes=limit_bytes,
+                ) or stderr_truncated
             break
-        remaining_wait = deadline - asyncio.get_running_loop().time()
+
+        remaining_wait = deadline - loop.time()
+        if remaining_wait <= 0:
+            timed_out = True
+            break
         try:
-            chunk = await asyncio.wait_for(
-                stream.read(4096),
+            await asyncio.wait_for(
+                session.output_event.wait(),
                 timeout=min(0.2, remaining_wait),
             )
         except asyncio.TimeoutError:
-            continue
-        if not chunk:
-            break
-        remaining = limit_bytes - len(buffer)
-        if remaining > 0:
-            buffer.extend(chunk[:remaining])
-            if len(chunk) > remaining:
-                truncated = True
-        else:
-            truncated = True
-        if marker and marker in buffer:
-            found = True
-            break
-    return bytes(buffer), truncated, found
+            if loop.time() >= deadline:
+                timed_out = True
+                break
+
+    if not marker_found and pending_stdout:
+        stdout_truncated = _append_limited_output(
+            stdout_buffer,
+            bytes(pending_stdout),
+            limit_bytes=limit_bytes,
+        ) or stdout_truncated
+
+    return (
+        bytes(stdout_buffer),
+        bytes(stderr_buffer),
+        stdout_truncated,
+        stderr_truncated,
+        marker_found,
+        timed_out,
+    )
+
+
+def _build_shell_session_marker_command(shell: str, marker_text: str) -> str:
+    midpoint = max(1, len(marker_text) // 2)
+    prefix = marker_text[:midpoint]
+    suffix = marker_text[midpoint:]
+    if shell == "pwsh":
+        return f"Write-Output ('{prefix}' + '{suffix}')"
+    if shell == "cmd":
+        gap_variable = f"__TRAE_MARKER_GAP_{uuid.uuid4().hex}__"
+        return f"echo {prefix}%{gap_variable}%{suffix}"
+    return f"printf '%s%s\\n' '{prefix}' '{suffix}'"
 
 
 def _decode_output(data: bytes) -> str:
@@ -478,9 +668,11 @@ async def execute_shell_session_start_tool(
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        **_build_shell_session_subprocess_kwargs(),
     )
     session_id = str(uuid.uuid4())
     recycle_at = now + timedelta(seconds=resolved_recycle_timeout_seconds)
+    output_event = asyncio.Event()
     session = _ShellSession(
         session_id=session_id,
         shell=resolved_shell,
@@ -489,18 +681,38 @@ async def execute_shell_session_start_tool(
         recycle_at=recycle_at,
         recycle_timeout_seconds=resolved_recycle_timeout_seconds,
         lock=asyncio.Lock(),
+        stdout_buffer=bytearray(),
+        stderr_buffer=bytearray(),
+        output_event=output_event,
+        stdout_task=None,
+        stderr_task=None,
+    )
+    session.stdout_task = asyncio.create_task(
+        _pump_shell_session_output(proc.stdout, session.stdout_buffer, output_event)
+    )
+    session.stderr_task = asyncio.create_task(
+        _pump_shell_session_output(proc.stderr, session.stderr_buffer, output_event)
     )
     _SHELL_SESSIONS[session_id] = session
-    stdout_bytes, stdout_truncated = await _read_available_output(
-        proc.stdout,
+    try:
+        await asyncio.wait_for(output_event.wait(), timeout=0.2)
+    except asyncio.TimeoutError:
+        pass
+    raw_stdout_bytes, raw_stderr_bytes = _drain_shell_session_output(session)
+    stdout_buffer = bytearray()
+    stderr_buffer = bytearray()
+    stdout_truncated = _append_limited_output(
+        stdout_buffer,
+        raw_stdout_bytes,
         limit_bytes=4000,
-        max_wait_seconds=0.2,
     )
-    stderr_bytes, stderr_truncated = await _read_available_output(
-        proc.stderr,
+    stderr_truncated = _append_limited_output(
+        stderr_buffer,
+        raw_stderr_bytes,
         limit_bytes=4000,
-        max_wait_seconds=0.2,
     )
+    stdout_bytes = bytes(stdout_buffer)
+    stderr_bytes = bytes(stderr_buffer)
     return {
         "sessionId": session_id,
         "shell": resolved_shell,
@@ -547,6 +759,18 @@ async def execute_shell_session_exec_tool(
     if resolved_max_output_chars > 200000:
         resolved_max_output_chars = 200000
 
+    timeout_seconds = payload.get("timeoutSeconds")
+    if timeout_seconds is None:
+        resolved_timeout_seconds = 300
+    elif isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
+        raise ValueError("timeoutSeconds must be a positive integer")
+    else:
+        resolved_timeout_seconds = int(timeout_seconds)
+    if resolved_timeout_seconds <= 0:
+        raise ValueError("timeoutSeconds must be a positive integer")
+    if resolved_timeout_seconds > 300:
+        resolved_timeout_seconds = 300
+
     max_output_bytes = resolved_max_output_chars * 4
     now = datetime.now(UTC)
     _cleanup_shell_sessions(now)
@@ -569,6 +793,8 @@ async def execute_shell_session_exec_tool(
                 "stdout": "",
                 "stderr": "",
                 "truncated": False,
+                "timedOut": False,
+                "timeoutSeconds": resolved_timeout_seconds,
                 "recycleTimeoutSeconds": session.recycle_timeout_seconds,
                 "recycleAt": session.recycle_at.isoformat(),
                 "maxOutputChars": resolved_max_output_chars,
@@ -583,30 +809,37 @@ async def execute_shell_session_exec_tool(
             payload_line = raw_line
             marker_bytes = b""
         else:
+            marker_command = _build_shell_session_marker_command(session.shell, marker_text)
             if session.shell == "cmd":
-                payload_line = f"{raw_line} & echo {marker_text}"
+                payload_line = f"{raw_line} & {marker_command}"
             else:
-                payload_line = f"{raw_line}; echo {marker_text}"
+                payload_line = f"{raw_line}; {marker_command}"
 
+        _drain_shell_session_output(session)
         line_ending = "\r\n" if session.shell == "cmd" else "\n"
         proc.stdin.write((payload_line + line_ending).encode("utf-8", errors="replace"))
         await proc.stdin.drain()
 
-        stdout_bytes, stdout_truncated, marker_found = await _read_until_marker(
-            proc.stdout,
+        (
+            stdout_bytes,
+            stderr_bytes,
+            stdout_truncated,
+            stderr_truncated,
+            marker_found,
+            read_timed_out,
+        ) = await _read_shell_session_output_until_marker(
+            session,
             marker=marker_bytes,
             limit_bytes=max_output_bytes,
-            timeout_seconds=remaining_recycle_seconds,
+            timeout_seconds=min(float(resolved_timeout_seconds), remaining_recycle_seconds),
         )
-        if marker_bytes and marker_found:
-            marker_index = stdout_bytes.find(marker_bytes)
-            if marker_index >= 0:
-                stdout_bytes = stdout_bytes[:marker_index]
-        stderr_bytes, stderr_truncated = await _read_available_output(
-            proc.stderr,
-            limit_bytes=max_output_bytes,
-            max_wait_seconds=0.2,
-        )
+        timed_out = read_timed_out and not marker_found and proc.returncode is None
+        if timed_out:
+            await _terminate_shell_session(
+                session_id,
+                session,
+                interrupt_first=True,
+            )
         closed = proc.returncode is not None
         return {
             "sessionId": session_id,
@@ -616,6 +849,8 @@ async def execute_shell_session_exec_tool(
             "stdout": _decode_output(stdout_bytes),
             "stderr": _decode_output(stderr_bytes),
             "truncated": bool(stdout_truncated or stderr_truncated),
+            "timedOut": timed_out,
+            "timeoutSeconds": resolved_timeout_seconds,
             "recycleTimeoutSeconds": session.recycle_timeout_seconds,
             "recycleAt": session.recycle_at.isoformat(),
             "maxOutputChars": resolved_max_output_chars,
@@ -634,16 +869,8 @@ async def execute_shell_session_close_tool(
     if session is None:
         return {"sessionId": session_id, "closed": True, "alreadyClosed": True}
     proc = session.proc
-    if proc.returncode is None:
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            pass
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=2)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
+    await _terminate_shell_session_process(proc, interrupt_first=False)
+    await _finish_shell_session_output_tasks(session)
     return {
         "sessionId": session_id,
         "closed": True,

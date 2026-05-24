@@ -554,6 +554,12 @@ SHELL_SESSION_EXEC_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
             "minLength": 1,
             "description": "Input text to send to the shell session (a command line).",
         },
+        "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 300,
+            "description": "Maximum seconds to wait for this session input to finish before interrupting and closing the shell session.",
+        },
         "maxOutputChars": {
             "type": "integer",
             "minimum": 1,
