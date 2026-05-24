@@ -12,8 +12,6 @@ from .constants import (
     MAX_TOOL_ARGUMENT_SUMMARY_LENGTH,
     MAX_TOOL_ARGUMENT_VALUE_LENGTH,
     MAX_TOOL_RESULT_SUMMARY_LENGTH,
-    REDACTED_TOOL_ARGUMENT_VALUE,
-    SENSITIVE_TOOL_ARGUMENT_KEYWORDS,
 )
 
 
@@ -39,7 +37,7 @@ def resolve_builtin_tool_locale(tool_id: str, language: str | None) -> dict[str,
     return dict(localized_fields)
 
 
-def summarize_tool_arguments(arguments: Mapping[str, Any] | None) -> str | None:
+def summarize_tool_arguments(arguments: Mapping[Any, Any] | None) -> str | None:
     if arguments is None:
         return None
     normalized = {str(key): value for key, value in arguments.items()}
@@ -69,14 +67,10 @@ def summarize_tool_result(result: Any) -> str | None:
 
 def _sanitize_tool_argument_value(value: Any) -> Any:
     if isinstance(value, Mapping):
-        sanitized: dict[str, Any] = {}
-        for key, nested_value in value.items():
-            normalized_key = str(key)
-            if _is_sensitive_tool_argument_key(normalized_key):
-                sanitized[normalized_key] = REDACTED_TOOL_ARGUMENT_VALUE
-            else:
-                sanitized[normalized_key] = _sanitize_tool_argument_value(nested_value)
-        return sanitized
+        return {
+            str(key): _sanitize_tool_argument_value(nested_value)
+            for key, nested_value in value.items()
+        }
     if isinstance(value, list):
         return [_sanitize_tool_argument_value(item) for item in value]
     if isinstance(value, tuple):
@@ -92,6 +86,3 @@ def _truncate_tool_argument_text(value: str, *, limit: int) -> str:
     return f"{value[: max(0, limit - 1)]}…"
 
 
-def _is_sensitive_tool_argument_key(key: str) -> bool:
-    normalized = key.strip().lower().replace("_", "").replace("-", "")
-    return any(keyword in normalized for keyword in SENSITIVE_TOOL_ARGUMENT_KEYWORDS)

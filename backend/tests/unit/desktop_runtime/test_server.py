@@ -284,7 +284,6 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(
         "tool.fs.notebook_edit",
         "tool.fs.switch_root",
         "tool.weather-current",
-        "tool.command-run",
         "tool.shell-run",
         "tool.shell-session.start",
         "tool.shell-session.exec",

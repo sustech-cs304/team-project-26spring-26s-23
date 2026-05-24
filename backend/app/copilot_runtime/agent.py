@@ -999,53 +999,8 @@ class PydanticAIAgentExecutor:
             for key, value in dict(arguments or {}).items()
             if value is not None
         }
-        if tool_id == "tool.command-run":
-            raw_args = normalized_arguments.get("args")
-            args_count = len(raw_args) if isinstance(raw_args, list) else 0
-            input_summary = summarize_tool_arguments(
-                {
-                    "program": normalized_arguments.get("program"),
-                    "argsCount": args_count,
-                    "cwd": normalized_arguments.get("cwd"),
-                    "timeoutSeconds": normalized_arguments.get("timeoutSeconds"),
-                    "maxOutputChars": normalized_arguments.get("maxOutputChars"),
-                }
-            )
-            approval_input_summary = (
-                summarize_tool_arguments(normalized_arguments) or input_summary or "{}"
-            )
-        elif tool_id == "tool.shell-run":
-            raw_command = normalized_arguments.get("command")
-            command_length = len(raw_command) if isinstance(raw_command, str) else 0
-            input_summary = summarize_tool_arguments(
-                {
-                    "shell": normalized_arguments.get("shell"),
-                    "commandLength": command_length,
-                    "cwd": normalized_arguments.get("cwd"),
-                    "timeoutSeconds": normalized_arguments.get("timeoutSeconds"),
-                    "maxOutputChars": normalized_arguments.get("maxOutputChars"),
-                }
-            )
-            approval_input_summary = (
-                summarize_tool_arguments(normalized_arguments) or input_summary or "{}"
-            )
-        elif tool_id == "tool.shell-session.exec":
-            raw_input = normalized_arguments.get("input")
-            input_length = len(raw_input) if isinstance(raw_input, str) else 0
-            input_summary = summarize_tool_arguments(
-                {
-                    "sessionId": normalized_arguments.get("sessionId"),
-                    "inputLength": input_length,
-                    "timeoutSeconds": normalized_arguments.get("timeoutSeconds"),
-                    "maxOutputChars": normalized_arguments.get("maxOutputChars"),
-                }
-            )
-            approval_input_summary = (
-                summarize_tool_arguments(normalized_arguments) or input_summary or "{}"
-            )
-        else:
-            input_summary = summarize_tool_arguments(normalized_arguments)
-            approval_input_summary = input_summary or "{}"
+        input_summary = summarize_tool_arguments(normalized_arguments)
+        approval_input_summary = input_summary or "{}"
         log_runtime_chain_debug(
             "tool.execute_enter",
             enabled=ctx.deps.debug_enabled,
@@ -1534,18 +1489,6 @@ class PydanticAIAgentExecutor:
         input_summary: str,
     ) -> dict[str, Any] | None:
         mode = ctx.deps.tool_permission_resolver.resolve_mode(tool_id)
-        if (
-            tool_id
-            in {
-                "tool.command-run",
-                "tool.shell-run",
-                "tool.shell-session.start",
-                "tool.shell-session.exec",
-                "tool.shell-session.close",
-            }
-            and mode == "allow"
-        ):
-            mode = "ask"
         if mode == "allow":
             return None
         timeout_seconds = ctx.deps.tool_permission_resolver.resolve_timeout_seconds(

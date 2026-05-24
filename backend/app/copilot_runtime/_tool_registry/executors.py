@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, cast
 
 from .constants import DEFAULT_WEATHER_LOCATION, WEATHER_SAMPLE_RESULTS
 
@@ -76,139 +76,6 @@ async def execute_request_user_form_tool(
     }
 
 
-async def execute_command_run_tool(
-    arguments: Mapping[str, Any] | None,
-) -> dict[str, Any]:
-    payload = dict(arguments or {})
-    raw_program = payload.get("program")
-    if not isinstance(raw_program, str) or raw_program.strip() == "":
-        raise ValueError("program must be a non-empty string")
-    program = raw_program.strip()
-
-    raw_args = payload.get("args", [])
-    if raw_args is None:
-        raw_args = []
-    if not isinstance(raw_args, list):
-        raise ValueError("args must be an array of strings")
-    args: list[str] = []
-    for value in raw_args:
-        if not isinstance(value, str):
-            raise ValueError("args must be an array of strings")
-        args.append(value)
-
-    raw_cwd = payload.get("cwd")
-    cwd = raw_cwd.strip() if isinstance(raw_cwd, str) and raw_cwd.strip() != "" else None
-    resolved_cwd: str | None = None
-    if cwd is not None:
-        cwd_path = Path(cwd)
-        if cwd_path.is_absolute():
-            raise ValueError("cwd must be a relative path")
-        base_dir = Path.cwd().resolve(strict=False)
-        resolved_path = (base_dir / cwd_path).resolve(strict=False)
-        if base_dir != resolved_path and base_dir not in resolved_path.parents:
-            raise ValueError("cwd must be within the backend working directory")
-        resolved_cwd = str(resolved_path)
-
-    timeout_seconds = payload.get("timeoutSeconds")
-    if timeout_seconds is None:
-        resolved_timeout_seconds = 30
-    elif isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
-        raise ValueError("timeoutSeconds must be a positive integer")
-    else:
-        resolved_timeout_seconds = int(timeout_seconds)
-    if resolved_timeout_seconds <= 0:
-        raise ValueError("timeoutSeconds must be a positive integer")
-    if resolved_timeout_seconds > 300:
-        resolved_timeout_seconds = 300
-
-    max_output_chars = payload.get("maxOutputChars")
-    if max_output_chars is None:
-        resolved_max_output_chars = 20000
-    elif isinstance(max_output_chars, bool) or not isinstance(max_output_chars, (int, float)):
-        raise ValueError("maxOutputChars must be a positive integer")
-    else:
-        resolved_max_output_chars = int(max_output_chars)
-    if resolved_max_output_chars <= 0:
-        raise ValueError("maxOutputChars must be a positive integer")
-    if resolved_max_output_chars > 200000:
-        resolved_max_output_chars = 200000
-
-    max_output_bytes = resolved_max_output_chars * 4
-    proc = await asyncio.create_subprocess_exec(
-        program,
-        *args,
-        cwd=resolved_cwd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
-    async def read_stream_limited(
-        stream: asyncio.StreamReader | None,
-        *,
-        limit_bytes: int,
-    ) -> tuple[bytes, bool]:
-        if stream is None:
-            return b"", False
-        buffer = bytearray()
-        truncated = False
-        while True:
-            chunk = await stream.read(4096)
-            if not chunk:
-                break
-            remaining = limit_bytes - len(buffer)
-            if remaining > 0:
-                buffer.extend(chunk[:remaining])
-                if len(chunk) > remaining:
-                    truncated = True
-            else:
-                truncated = True
-        return bytes(buffer), truncated
-
-    stdout_task = asyncio.create_task(
-        read_stream_limited(proc.stdout, limit_bytes=max_output_bytes)
-    )
-    stderr_task = asyncio.create_task(
-        read_stream_limited(proc.stderr, limit_bytes=max_output_bytes)
-    )
-
-    timed_out = False
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=resolved_timeout_seconds)
-    except asyncio.TimeoutError:
-        timed_out = True
-        proc.terminate()
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=2)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-
-    stdout_bytes, stdout_truncated = await stdout_task
-    stderr_bytes, stderr_truncated = await stderr_task
-
-    def decode_output(data: bytes) -> str:
-        if not data:
-            return ""
-        try:
-            return data.decode("utf-8", errors="replace")
-        except Exception:
-            encoding = locale.getpreferredencoding(False) or "utf-8"
-            return data.decode(encoding, errors="replace")
-
-    return {
-        "program": program,
-        "args": args,
-        "cwd": resolved_cwd,
-        "timeoutSeconds": resolved_timeout_seconds,
-        "timedOut": timed_out,
-        "exitCode": proc.returncode,
-        "stdout": decode_output(stdout_bytes),
-        "stderr": decode_output(stderr_bytes),
-        "truncated": bool(stdout_truncated or stderr_truncated),
-        "maxOutputChars": resolved_max_output_chars,
-    }
-
-
 async def execute_shell_run_tool(
     arguments: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
@@ -240,7 +107,7 @@ async def execute_shell_run_tool(
 
     timeout_seconds = payload.get("timeoutSeconds")
     if timeout_seconds is None:
-        resolved_timeout_seconds = 30
+        resolved_timeout_seconds = 300
     elif isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
         raise ValueError("timeoutSeconds must be a positive integer")
     else:
@@ -290,58 +157,13 @@ async def execute_shell_run_tool(
         stderr=asyncio.subprocess.PIPE,
     )
 
-    async def read_stream_limited(
-        stream: asyncio.StreamReader | None,
-        *,
-        limit_bytes: int,
-    ) -> tuple[bytes, bool]:
-        if stream is None:
-            return b"", False
-        buffer = bytearray()
-        truncated = False
-        while True:
-            chunk = await stream.read(4096)
-            if not chunk:
-                break
-            remaining = limit_bytes - len(buffer)
-            if remaining > 0:
-                buffer.extend(chunk[:remaining])
-                if len(chunk) > remaining:
-                    truncated = True
-            else:
-                truncated = True
-        return bytes(buffer), truncated
-
-    stdout_task = asyncio.create_task(
-        read_stream_limited(proc.stdout, limit_bytes=max_output_bytes)
+    stdout_bytes, stderr_bytes, timed_out, stdout_truncated, stderr_truncated = (
+        await _collect_process_output_until_exit_or_inactivity(
+            proc,
+            inactivity_timeout_seconds=float(resolved_timeout_seconds),
+            limit_bytes=max_output_bytes,
+        )
     )
-    stderr_task = asyncio.create_task(
-        read_stream_limited(proc.stderr, limit_bytes=max_output_bytes)
-    )
-
-    timed_out = False
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=resolved_timeout_seconds)
-    except asyncio.TimeoutError:
-        timed_out = True
-        proc.terminate()
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=2)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-
-    stdout_bytes, stdout_truncated = await stdout_task
-    stderr_bytes, stderr_truncated = await stderr_task
-
-    def decode_output(data: bytes) -> str:
-        if not data:
-            return ""
-        try:
-            return data.decode("utf-8", errors="replace")
-        except Exception:
-            encoding = locale.getpreferredencoding(False) or "utf-8"
-            return data.decode(encoding, errors="replace")
 
     return {
         "shell": resolved_shell,
@@ -350,8 +172,8 @@ async def execute_shell_run_tool(
         "timeoutSeconds": resolved_timeout_seconds,
         "timedOut": timed_out,
         "exitCode": proc.returncode,
-        "stdout": decode_output(stdout_bytes),
-        "stderr": decode_output(stderr_bytes),
+        "stdout": _decode_output(stdout_bytes),
+        "stderr": _decode_output(stderr_bytes),
         "truncated": bool(stdout_truncated or stderr_truncated),
         "maxOutputChars": resolved_max_output_chars,
     }
@@ -363,13 +185,13 @@ class _ShellSession:
     shell: str
     proc: asyncio.subprocess.Process
     created_at: datetime
-    last_used_at: datetime
+    recycle_at: datetime
+    recycle_timeout_seconds: int
     lock: asyncio.Lock
 
 
 _SHELL_SESSIONS: dict[str, _ShellSession] = {}
 _SHELL_SESSIONS_MAX_COUNT = 16
-_SHELL_SESSIONS_IDLE_TIMEOUT = timedelta(minutes=10)
 
 
 def _cleanup_shell_sessions(now: datetime) -> None:
@@ -378,7 +200,7 @@ def _cleanup_shell_sessions(now: datetime) -> None:
         if session.proc.returncode is not None:
             expired.append(session_id)
             continue
-        if now - session.last_used_at > _SHELL_SESSIONS_IDLE_TIMEOUT:
+        if now >= session.recycle_at:
             expired.append(session_id)
     for session_id in expired:
         session = _SHELL_SESSIONS.pop(session_id, None)
@@ -495,6 +317,128 @@ def _decode_output(data: bytes) -> str:
         return data.decode(encoding, errors="replace")
 
 
+async def _collect_process_output_until_exit_or_inactivity(
+    proc: asyncio.subprocess.Process,
+    *,
+    inactivity_timeout_seconds: float,
+    limit_bytes: int,
+) -> tuple[bytes, bytes, bool, bool, bool]:
+    stdout_buffer = bytearray()
+    stderr_buffer = bytearray()
+    stdout_truncated = False
+    stderr_truncated = False
+    timed_out = False
+    loop = asyncio.get_running_loop()
+    stdout_stream = proc.stdout
+    stderr_stream = proc.stderr
+    stdout_task: asyncio.Task[bytes] | None = (
+        asyncio.create_task(stdout_stream.read(4096))
+        if stdout_stream is not None
+        else None
+    )
+    stderr_task: asyncio.Task[bytes] | None = (
+        asyncio.create_task(stderr_stream.read(4096))
+        if stderr_stream is not None
+        else None
+    )
+    wait_task: asyncio.Task[int] | None = asyncio.create_task(proc.wait())
+    proc_exited = False
+    terminating = False
+    terminate_deadline: float | None = None
+    last_activity = loop.time()
+
+    try:
+        while True:
+            active_tasks: set[asyncio.Future[Any]] = {
+                cast(asyncio.Future[Any], task)
+                for task in (stdout_task, stderr_task, wait_task)
+                if task is not None
+            }
+            if not active_tasks:
+                break
+            if proc_exited:
+                timeout: float | None = None
+            elif terminating:
+                if terminate_deadline is None:
+                    terminate_deadline = loop.time() + 2
+                timeout = max(0.0, min(0.2, terminate_deadline - loop.time()))
+            else:
+                timeout = max(
+                    0.0,
+                    inactivity_timeout_seconds - (loop.time() - last_activity),
+                )
+            done, _ = await asyncio.wait(
+                active_tasks,
+                timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                if proc_exited:
+                    continue
+                if not terminating:
+                    timed_out = True
+                    terminating = True
+                    proc.terminate()
+                    terminate_deadline = loop.time() + 2
+                    continue
+                if proc.returncode is None:
+                    proc.kill()
+                    terminate_deadline = loop.time() + 2
+                continue
+
+            for task in done:
+                if task is wait_task:
+                    proc_exited = True
+                    wait_task = None
+                    continue
+                if task is stdout_task:
+                    chunk = task.result()
+                    if chunk:
+                        remaining = limit_bytes - len(stdout_buffer)
+                        if remaining > 0:
+                            stdout_buffer.extend(chunk[:remaining])
+                            if len(chunk) > remaining:
+                                stdout_truncated = True
+                        else:
+                            stdout_truncated = True
+                        last_activity = loop.time()
+                        if stdout_stream is not None:
+                            stdout_task = asyncio.create_task(stdout_stream.read(4096))
+                    else:
+                        stdout_task = None
+                    continue
+                if task is stderr_task:
+                    chunk = task.result()
+                    if chunk:
+                        remaining = limit_bytes - len(stderr_buffer)
+                        if remaining > 0:
+                            stderr_buffer.extend(chunk[:remaining])
+                            if len(chunk) > remaining:
+                                stderr_truncated = True
+                        else:
+                            stderr_truncated = True
+                        last_activity = loop.time()
+                        if stderr_stream is not None:
+                            stderr_task = asyncio.create_task(stderr_stream.read(4096))
+                    else:
+                        stderr_task = None
+                    continue
+
+            if proc.returncode is not None:
+                proc_exited = True
+
+        return bytes(stdout_buffer), bytes(stderr_buffer), timed_out, stdout_truncated, stderr_truncated
+    finally:
+        pending_tasks: list[asyncio.Future[Any]] = []
+        for task in (stdout_task, stderr_task, wait_task):
+            if task is not None and not task.done():
+                pending_tasks.append(cast(asyncio.Future[Any], task))
+        for task in pending_tasks:
+            task.cancel()
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+
 async def execute_shell_session_start_tool(
     arguments: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
@@ -519,6 +463,15 @@ async def execute_shell_session_start_tool(
             raise ValueError("cwd must be within the backend working directory")
         resolved_cwd = str(resolved_path)
 
+    recycle_timeout_seconds = payload.get("recycleTimeoutSeconds")
+    if isinstance(recycle_timeout_seconds, bool) or not isinstance(
+        recycle_timeout_seconds, (int, float)
+    ):
+        raise ValueError("recycleTimeoutSeconds must be a positive integer")
+    resolved_recycle_timeout_seconds = int(recycle_timeout_seconds)
+    if resolved_recycle_timeout_seconds <= 0:
+        raise ValueError("recycleTimeoutSeconds must be a positive integer")
+
     now = datetime.now(UTC)
     _cleanup_shell_sessions(now)
     if len(_SHELL_SESSIONS) >= _SHELL_SESSIONS_MAX_COUNT:
@@ -534,25 +487,33 @@ async def execute_shell_session_start_tool(
         stderr=asyncio.subprocess.PIPE,
     )
     session_id = str(uuid.uuid4())
+    recycle_at = now + timedelta(seconds=resolved_recycle_timeout_seconds)
     session = _ShellSession(
         session_id=session_id,
         shell=resolved_shell,
         proc=proc,
         created_at=now,
-        last_used_at=now,
+        recycle_at=recycle_at,
+        recycle_timeout_seconds=resolved_recycle_timeout_seconds,
         lock=asyncio.Lock(),
     )
     _SHELL_SESSIONS[session_id] = session
     stdout_bytes, stdout_truncated = await _read_available_output(
-        proc.stdout, limit_bytes=4000, max_wait_seconds=0.2
+        proc.stdout,
+        limit_bytes=4000,
+        max_wait_seconds=0.2,
     )
     stderr_bytes, stderr_truncated = await _read_available_output(
-        proc.stderr, limit_bytes=4000, max_wait_seconds=0.2
+        proc.stderr,
+        limit_bytes=4000,
+        max_wait_seconds=0.2,
     )
     return {
         "sessionId": session_id,
         "shell": resolved_shell,
         "cwd": resolved_cwd,
+        "recycleTimeoutSeconds": resolved_recycle_timeout_seconds,
+        "recycleAt": recycle_at.isoformat(),
         "started": True,
         "stdout": _decode_output(stdout_bytes),
         "stderr": _decode_output(stderr_bytes),
@@ -581,18 +542,6 @@ async def execute_shell_session_exec_tool(
     if not input_text.endswith("\n"):
         input_text += "\n"
 
-    timeout_seconds = payload.get("timeoutSeconds")
-    if timeout_seconds is None:
-        resolved_timeout_seconds = 5
-    elif isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
-        raise ValueError("timeoutSeconds must be a positive integer")
-    else:
-        resolved_timeout_seconds = int(timeout_seconds)
-    if resolved_timeout_seconds <= 0:
-        raise ValueError("timeoutSeconds must be a positive integer")
-    if resolved_timeout_seconds > 60:
-        resolved_timeout_seconds = 60
-
     max_output_chars = payload.get("maxOutputChars")
     if max_output_chars is None:
         resolved_max_output_chars = 20000
@@ -608,7 +557,13 @@ async def execute_shell_session_exec_tool(
     max_output_bytes = resolved_max_output_chars * 4
     now = datetime.now(UTC)
     _cleanup_shell_sessions(now)
-    session.last_used_at = now
+    session = _SHELL_SESSIONS.get(session_id)
+    if session is None:
+        raise LookupError("shell session not found")
+    remaining_recycle_seconds = max(0.0, (session.recycle_at - now).total_seconds())
+    if remaining_recycle_seconds <= 0:
+        _cleanup_shell_sessions(now)
+        raise LookupError("shell session not found")
 
     async with session.lock:
         proc = session.proc
@@ -621,6 +576,9 @@ async def execute_shell_session_exec_tool(
                 "stdout": "",
                 "stderr": "",
                 "truncated": False,
+                "recycleTimeoutSeconds": session.recycle_timeout_seconds,
+                "recycleAt": session.recycle_at.isoformat(),
+                "maxOutputChars": resolved_max_output_chars,
             }
         if proc.stdin is None:
             raise RuntimeError("shell session stdin is not available")
@@ -645,7 +603,7 @@ async def execute_shell_session_exec_tool(
             proc.stdout,
             marker=marker_bytes,
             limit_bytes=max_output_bytes,
-            timeout_seconds=float(resolved_timeout_seconds),
+            timeout_seconds=remaining_recycle_seconds,
         )
         if marker_bytes and marker_found:
             marker_index = stdout_bytes.find(marker_bytes)
@@ -665,7 +623,8 @@ async def execute_shell_session_exec_tool(
             "stdout": _decode_output(stdout_bytes),
             "stderr": _decode_output(stderr_bytes),
             "truncated": bool(stdout_truncated or stderr_truncated),
-            "timeoutSeconds": resolved_timeout_seconds,
+            "recycleTimeoutSeconds": session.recycle_timeout_seconds,
+            "recycleAt": session.recycle_at.isoformat(),
             "maxOutputChars": resolved_max_output_chars,
         }
 

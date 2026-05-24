@@ -157,8 +157,16 @@ export interface CopilotChatPanelState {
     sessionId: string | null
     shell: string | null
     cwd: string | null
+    recycleTimeoutSeconds: number | null
+    recycleAt: string | null
   }
-  onActivateShellPassthrough: (input: { sessionId: string; shell: string; cwd: string | null }) => void
+  onActivateShellPassthrough: (input: {
+    sessionId: string
+    shell: string
+    cwd: string | null
+    recycleTimeoutSeconds: number | null
+    recycleAt: string | null
+  }) => void
   onDeactivateShellPassthrough: () => void
   runtimeUrl: string | null
   composerInputRef: RefObject<HTMLTextAreaElement>
@@ -217,6 +225,8 @@ export function useCopilotChatPanelState({
   const shellPassthroughSessionId = activeTransientState.shellPassthroughSessionId
   const shellPassthroughShell = activeTransientState.shellPassthroughShell
   const shellPassthroughCwd = activeTransientState.shellPassthroughCwd
+  const shellPassthroughRecycleTimeoutSeconds = activeTransientState.shellPassthroughRecycleTimeoutSeconds
+  const shellPassthroughRecycleAt = activeTransientState.shellPassthroughRecycleAt
   const shellPassthroughSequence = activeTransientState.shellPassthroughSequence
   const shellPassthroughInFlight = activeTransientState.shellPassthroughInFlight
 
@@ -1192,6 +1202,8 @@ export function useCopilotChatPanelState({
         }))
         updateSessionTransientStateById(boundSessionId, (sessionState) => ({
           ...sessionState,
+          shellPassthroughRecycleTimeoutSeconds: response.recycleTimeoutSeconds,
+          shellPassthroughRecycleAt: response.recycleAt,
           shellPassthroughSequence: sessionState.shellPassthroughSequence + 1,
           shellPassthroughInFlight: false,
           activeAbortController: null,
@@ -1373,13 +1385,21 @@ export function useCopilotChatPanelState({
   }
 
   const handleActivateShellPassthrough = useCallback(
-    (input: { sessionId: string; shell: string; cwd: string | null }) => {
+    (input: {
+      sessionId: string
+      shell: string
+      cwd: string | null
+      recycleTimeoutSeconds: number | null
+      recycleAt: string | null
+    }) => {
       setActiveSessionTransientState((sessionState) => ({
         ...sessionState,
         shellPassthroughEnabled: true,
         shellPassthroughSessionId: input.sessionId,
         shellPassthroughShell: input.shell,
         shellPassthroughCwd: input.cwd,
+        shellPassthroughRecycleTimeoutSeconds: input.recycleTimeoutSeconds,
+        shellPassthroughRecycleAt: input.recycleAt,
       }))
     },
     [setActiveSessionTransientState],
@@ -1392,6 +1412,8 @@ export function useCopilotChatPanelState({
       shellPassthroughSessionId: null,
       shellPassthroughShell: null,
       shellPassthroughCwd: null,
+      shellPassthroughRecycleTimeoutSeconds: null,
+      shellPassthroughRecycleAt: null,
     }))
   }, [setActiveSessionTransientState])
 
@@ -1427,6 +1449,8 @@ export function useCopilotChatPanelState({
       sessionId: shellPassthroughSessionId,
       shell: shellPassthroughShell,
       cwd: shellPassthroughCwd,
+      recycleTimeoutSeconds: shellPassthroughRecycleTimeoutSeconds,
+      recycleAt: shellPassthroughRecycleAt,
     },
     onActivateShellPassthrough: handleActivateShellPassthrough,
     onDeactivateShellPassthrough: handleDeactivateShellPassthrough,

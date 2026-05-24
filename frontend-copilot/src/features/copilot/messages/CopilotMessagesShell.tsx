@@ -42,8 +42,16 @@ export interface CopilotMessagesShellProps {
     sessionId: string | null
     shell: string | null
     cwd: string | null
+    recycleTimeoutSeconds: number | null
+    recycleAt: string | null
   } | null
-  onActivateShellPassthrough?: ((input: { sessionId: string; shell: string; cwd: string | null }) => void) | null
+  onActivateShellPassthrough?: ((input: {
+    sessionId: string
+    shell: string
+    cwd: string | null
+    recycleTimeoutSeconds: number | null
+    recycleAt: string | null
+  }) => void) | null
   onSubmitInlineForm?: ((input: {
     toolCallId: string
     formId: string

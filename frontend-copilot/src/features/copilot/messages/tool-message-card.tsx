@@ -17,8 +17,16 @@ interface ToolMessageCardProps {
     sessionId: string | null
     shell: string | null
     cwd: string | null
+    recycleTimeoutSeconds: number | null
+    recycleAt: string | null
   } | null
-  onActivateShellPassthrough?: ((input: { sessionId: string; shell: string; cwd: string | null }) => void) | null
+  onActivateShellPassthrough?: ((input: {
+    sessionId: string
+    shell: string
+    cwd: string | null
+    recycleTimeoutSeconds: number | null
+    recycleAt: string | null
+  }) => void) | null
   onResolveToolApproval?: ((input: {
     runId: string
     toolCallId: string
@@ -109,10 +117,14 @@ export function ToolMessageCard({
       const sessionId = typeof parsed.sessionId === 'string' ? parsed.sessionId : null
       const shell = typeof parsed.shell === 'string' ? parsed.shell : null
       const cwd = typeof parsed.cwd === 'string' ? parsed.cwd : null
+      const recycleTimeoutSeconds = typeof parsed.recycleTimeoutSeconds === 'number'
+        ? parsed.recycleTimeoutSeconds
+        : null
+      const recycleAt = typeof parsed.recycleAt === 'string' ? parsed.recycleAt : null
       if (sessionId === null || shell === null) {
         return null
       }
-      return { sessionId, shell, cwd }
+      return { sessionId, shell, cwd, recycleTimeoutSeconds, recycleAt }
     } catch {
       return null
     }

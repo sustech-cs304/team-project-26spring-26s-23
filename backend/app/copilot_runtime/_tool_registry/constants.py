@@ -33,17 +33,6 @@ WEATHER_CURRENT_TOOL_PROMPT = (
     "Use this tool to retrieve a simple current weather summary for a location."
 )
 
-COMMAND_RUN_TOOL_ID = "tool.command-run"
-COMMAND_RUN_TOOL_DISPLAY_NAME = "Command Run"
-COMMAND_RUN_TOOL_DESCRIPTION = (
-    "Run a command on the backend host and return stdout/stderr plus exit code."
-)
-COMMAND_RUN_TOOL_PROMPT = (
-    "Use this tool to run a single command on the backend host. "
-    "Pass a program and an args array; do not embed shell operators like |, >, or && inside args. "
-    "Prefer safe, read-only commands when possible, and request user approval before executing potentially destructive actions."
-)
-
 SHELL_RUN_TOOL_ID = "tool.shell-run"
 SHELL_RUN_TOOL_DISPLAY_NAME = "Shell Run"
 SHELL_RUN_TOOL_DESCRIPTION = (
@@ -241,11 +230,6 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "返回指定地点的占位当前天气结果。",
             "prompt": "使用此工具获取某个地点的简要当前天气摘要。",
         },
-        COMMAND_RUN_TOOL_ID: {
-            "displayName": "命令执行",
-            "description": "在后端运行一条命令并返回 stdout/stderr 以及退出码。",
-            "prompt": "使用此工具在后端运行一条命令。请提供 program 和 args 数组；不要把 |、>、&& 等 shell 操作符塞进 args。尽量优先使用只读/查询类命令；涉及删除、覆盖、安装、网络访问等高风险操作必须先征求用户明确批准。",
-        },
         SHELL_RUN_TOOL_ID: {
             "displayName": "Shell 命令执行",
             "description": "在后端使用 shell 执行一条命令（支持管道、重定向等 shell 特性）。",
@@ -363,11 +347,6 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
             "prompt": WEATHER_CURRENT_TOOL_PROMPT,
         },
-        COMMAND_RUN_TOOL_ID: {
-            "displayName": COMMAND_RUN_TOOL_DISPLAY_NAME,
-            "description": COMMAND_RUN_TOOL_DESCRIPTION,
-            "prompt": COMMAND_RUN_TOOL_PROMPT,
-        },
         SHELL_RUN_TOOL_ID: {
             "displayName": SHELL_RUN_TOOL_DISPLAY_NAME,
             "description": SHELL_RUN_TOOL_DESCRIPTION,
@@ -468,22 +447,9 @@ WEATHER_SAMPLE_RESULTS: tuple[dict[str, Any], ...] = (
     },
 )
 
-REDACTED_TOOL_ARGUMENT_VALUE = "***"
 MAX_TOOL_ARGUMENT_VALUE_LENGTH = 120
 MAX_TOOL_ARGUMENT_SUMMARY_LENGTH = 512
 MAX_TOOL_RESULT_SUMMARY_LENGTH = 320
-SENSITIVE_TOOL_ARGUMENT_KEYWORDS = frozenset(
-    {
-        "apikey",
-        "authorization",
-        "cookie",
-        "credential",
-        "password",
-        "secret",
-        "session",
-        "token",
-    }
-)
 
 SKILL_ACTIVATE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -516,41 +482,6 @@ SKILL_READ_RESOURCE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
     "required": ["skill_id", "path"],
 }
 
-COMMAND_RUN_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "program": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Executable name or absolute/relative path available on the backend host.",
-        },
-        "args": {
-            "type": "array",
-            "description": "Command arguments passed as a string array. Do not include shell operators like |, >, or &&.",
-            "items": {"type": "string"},
-            "default": [],
-        },
-        "cwd": {
-            "type": "string",
-            "description": "Optional working directory for the command on the backend host.",
-        },
-        "timeoutSeconds": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 30,
-            "description": "Maximum time in seconds to wait for the command before terminating it.",
-        },
-        "maxOutputChars": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 20000,
-            "description": "Maximum stdout/stderr characters to retain before truncation.",
-        },
-    },
-    "required": ["program"],
-}
-
 SHELL_RUN_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -573,8 +504,8 @@ SHELL_RUN_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
         "timeoutSeconds": {
             "type": "integer",
             "minimum": 1,
-            "default": 30,
-            "description": "Maximum time in seconds to wait for the command before terminating it.",
+            "default": 300,
+            "description": "Maximum seconds to wait with no stdout/stderr output before terminating the shell command.",
         },
         "maxOutputChars": {
             "type": "integer",
@@ -600,7 +531,13 @@ SHELL_SESSION_START_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
             "type": "string",
             "description": "Optional initial working directory (relative path) for the session on the backend host.",
         },
+        "recycleTimeoutSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Required explicit session lifetime in seconds before the runtime may recycle the shell session.",
+        },
     },
+    "required": ["recycleTimeoutSeconds"],
 }
 
 SHELL_SESSION_EXEC_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
@@ -616,12 +553,6 @@ SHELL_SESSION_EXEC_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
             "type": "string",
             "minLength": 1,
             "description": "Input text to send to the shell session (a command line).",
-        },
-        "timeoutSeconds": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 5,
-            "description": "Maximum time in seconds to wait for output after sending input.",
         },
         "maxOutputChars": {
             "type": "integer",

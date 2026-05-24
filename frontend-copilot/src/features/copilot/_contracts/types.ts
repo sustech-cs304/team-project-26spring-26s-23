@@ -344,6 +344,8 @@ export interface RuntimeShellSessionStartResponse {
   sessionId: string
   shell: string
   cwd: string | null
+  recycleTimeoutSeconds: number
+  recycleAt: string
   started: boolean
   stdout: string
   stderr: string
@@ -359,7 +361,8 @@ export interface RuntimeShellSessionExecResponse {
   stdout: string
   stderr: string
   truncated: boolean
-  timeoutSeconds: number
+  recycleTimeoutSeconds: number
+  recycleAt: string
   maxOutputChars: number
 }
 

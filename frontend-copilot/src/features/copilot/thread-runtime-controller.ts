@@ -28,6 +28,8 @@ export interface CopilotThreadRuntimeControllerState {
   shellPassthroughSessionId: string | null
   shellPassthroughShell: string | null
   shellPassthroughCwd: string | null
+  shellPassthroughRecycleTimeoutSeconds: number | null
+  shellPassthroughRecycleAt: string | null
   shellPassthroughSequence: number
   shellPassthroughInFlight: boolean
   lastAccessedAt: number
@@ -54,6 +56,8 @@ export function createCopilotThreadRuntimeControllerState(
     shellPassthroughSessionId: null,
     shellPassthroughShell: null,
     shellPassthroughCwd: null,
+    shellPassthroughRecycleTimeoutSeconds: null,
+    shellPassthroughRecycleAt: null,
     shellPassthroughSequence: 1,
     shellPassthroughInFlight: false,
     lastAccessedAt: createdAt,

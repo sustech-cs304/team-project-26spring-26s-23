@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import random
-from collections.abc import Awaitable
+from collections.abc import Coroutine
 from typing import Any, TypeVar
 
 import pytest
@@ -18,13 +18,10 @@ from app.copilot_runtime._tool_registry.constants import (
     MAX_TOOL_ARGUMENT_SUMMARY_LENGTH,
     MAX_TOOL_ARGUMENT_VALUE_LENGTH,
     MAX_TOOL_RESULT_SUMMARY_LENGTH,
-    REDACTED_TOOL_ARGUMENT_VALUE,
     REQUEST_USER_FORM_TOOL_ID,
-    SENSITIVE_TOOL_ARGUMENT_KEYWORDS,
     SKILL_ACTIVATE_TOOL_ID,
     SKILL_READ_RESOURCE_TOOL_ID,
     WEATHER_CURRENT_TOOL_ID,
-    COMMAND_RUN_TOOL_ID,
     SHELL_RUN_TOOL_ID,
     SHELL_SESSION_START_TOOL_ID,
     SHELL_SESSION_EXEC_TOOL_ID,
@@ -40,7 +37,6 @@ from app.copilot_runtime._tool_registry.executors import (
     execute_weather_current_tool,
 )
 from app.copilot_runtime._tool_registry.helpers import (
-    _is_sensitive_tool_argument_key,
     _sanitize_tool_argument_value,
     _truncate_tool_argument_text,
     normalize_tool_catalog_language,
@@ -75,7 +71,6 @@ ALL_BUILTIN_TOOL_IDS = (
     FILE_TOOL_NOTEBOOK_EDIT_ID,
     FILE_TOOL_SWITCH_ROOT_ID,
     WEATHER_CURRENT_TOOL_ID,
-    COMMAND_RUN_TOOL_ID,
     SHELL_RUN_TOOL_ID,
     SHELL_SESSION_START_TOOL_ID,
     SHELL_SESSION_EXEC_TOOL_ID,
@@ -86,7 +81,7 @@ ALL_BUILTIN_TOOL_IDS = (
 )
 
 
-def _run(awaitable: Awaitable[_T]) -> _T:
+def _run(awaitable: Coroutine[Any, Any, _T]) -> _T:
     return asyncio.run(awaitable)
 
 
@@ -682,7 +677,7 @@ class TestSummarizeToolArguments:
         assert "path" in summary
         assert "file.txt" in summary
 
-    def test_redacts_sensitive_keys(self) -> None:
+    def test_preserves_sensitive_keys(self) -> None:
         summary = summarize_tool_arguments({
             "apiKey": "secret-12345",
             "password": "my-password",
@@ -690,21 +685,21 @@ class TestSummarizeToolArguments:
             "name": "public-name",
         })
         assert summary is not None
-        assert "secret-12345" not in summary
-        assert "my-password" not in summary
-        assert "tok-abc" not in summary
-        assert REDACTED_TOOL_ARGUMENT_VALUE in summary
+        assert "secret-12345" in summary
+        assert "my-password" in summary
+        assert "tok-abc" in summary
+        assert "***" not in summary
         assert "public-name" in summary
 
-    def test_redacts_nested_sensitive_keys(self) -> None:
+    def test_preserves_nested_sensitive_keys(self) -> None:
         summary = summarize_tool_arguments({
             "config": {"api_key": "hidden-key", "timeout": 30},
             "public": "visible",
         })
         assert summary is not None
-        assert "hidden-key" not in summary
-        assert REDACTED_TOOL_ARGUMENT_VALUE in summary
+        assert "hidden-key" in summary
         assert "visible" in summary
+        assert "***" not in summary
 
     def test_truncates_long_string_values(self) -> None:
         long_value = "x" * (MAX_TOOL_ARGUMENT_VALUE_LENGTH + 50)
@@ -740,57 +735,6 @@ class TestSummarizeToolResult:
         assert isinstance(summary, str)
 
 
-class TestIsSensitiveToolArgumentKey:
-    def test_direct_keyword_matches(self) -> None:
-        for keyword in SENSITIVE_TOOL_ARGUMENT_KEYWORDS:
-            assert _is_sensitive_tool_argument_key(keyword) is True, f"keyword: {keyword}"
-
-    def test_apikey_variants(self) -> None:
-        assert _is_sensitive_tool_argument_key("apikey") is True
-        assert _is_sensitive_tool_argument_key("apiKey") is True
-        assert _is_sensitive_tool_argument_key("api_key") is True
-        assert _is_sensitive_tool_argument_key("API-KEY") is True
-        assert _is_sensitive_tool_argument_key("  api_key  ") is True
-
-    def test_password_variants(self) -> None:
-        assert _is_sensitive_tool_argument_key("password") is True
-        assert _is_sensitive_tool_argument_key("my_password") is True
-        assert _is_sensitive_tool_argument_key("userPassword") is True
-
-    def test_token_variants(self) -> None:
-        assert _is_sensitive_tool_argument_key("token") is True
-        assert _is_sensitive_tool_argument_key("access_token") is True
-        assert _is_sensitive_tool_argument_key("session-token") is True
-
-    def test_secret_variants(self) -> None:
-        assert _is_sensitive_tool_argument_key("secret") is True
-        assert _is_sensitive_tool_argument_key("clientSecret") is True
-
-    def test_non_sensitive_keys(self) -> None:
-        assert _is_sensitive_tool_argument_key("path") is False
-        assert _is_sensitive_tool_argument_key("name") is False
-        assert _is_sensitive_tool_argument_key("file") is False
-        assert _is_sensitive_tool_argument_key("description") is False
-        assert _is_sensitive_tool_argument_key("username") is False
-        assert _is_sensitive_tool_argument_key("limit") is False
-
-    def test_authorization_variants(self) -> None:
-        assert _is_sensitive_tool_argument_key("authorization") is True
-        assert _is_sensitive_tool_argument_key("Authorization") is True
-
-    def test_cookie_variants(self) -> None:
-        assert _is_sensitive_tool_argument_key("cookie") is True
-        assert _is_sensitive_tool_argument_key("session_cookie") is True
-
-    def test_credential_variants(self) -> None:
-        assert _is_sensitive_tool_argument_key("credential") is True
-        assert _is_sensitive_tool_argument_key("credentials") is True
-
-    def test_session_variants(self) -> None:
-        assert _is_sensitive_tool_argument_key("session") is True
-        assert _is_sensitive_tool_argument_key("sessionId") is True
-
-
 class TestTruncateToolArgumentText:
     def test_within_limit_returns_unchanged(self) -> None:
         assert _truncate_tool_argument_text("hello", limit=10) == "hello"
@@ -823,17 +767,17 @@ class TestSanitizeToolArgumentValue:
         assert isinstance(result, str)
         assert len(result) <= MAX_TOOL_ARGUMENT_VALUE_LENGTH
 
-    def test_dict_redacts_sensitive_keys(self) -> None:
+    def test_dict_preserves_values(self) -> None:
         result = _sanitize_tool_argument_value({
             "name": "public",
             "password": "secret123",
         })
         assert result == {
             "name": "public",
-            "password": REDACTED_TOOL_ARGUMENT_VALUE,
+            "password": "secret123",
         }
 
-    def test_nested_dict_redacts_recursively(self) -> None:
+    def test_nested_dict_preserves_recursively(self) -> None:
         result = _sanitize_tool_argument_value({
             "config": {
                 "host": "localhost",
@@ -841,25 +785,25 @@ class TestSanitizeToolArgumentValue:
             },
         })
         assert result["config"]["host"] == "localhost"
-        assert result["config"]["apiKey"] == REDACTED_TOOL_ARGUMENT_VALUE
+        assert result["config"]["apiKey"] == "top-secret"
 
-    def test_list_redacts_items(self) -> None:
+    def test_list_preserves_items(self) -> None:
         result = _sanitize_tool_argument_value([
             {"name": "a", "token": "t1"},
             {"name": "b", "token": "t2"},
         ])
-        assert result[0]["token"] == REDACTED_TOOL_ARGUMENT_VALUE
-        assert result[1]["token"] == REDACTED_TOOL_ARGUMENT_VALUE
+        assert result[0]["token"] == "t1"
+        assert result[1]["token"] == "t2"
         assert result[0]["name"] == "a"
 
-    def test_tuple_redacts_items(self) -> None:
+    def test_tuple_preserves_items(self) -> None:
         result = _sanitize_tool_argument_value((
             {"password": "p1"},
             {"password": "p2"},
         ))
         assert isinstance(result, tuple)
-        assert result[0]["password"] == REDACTED_TOOL_ARGUMENT_VALUE
-        assert result[1]["password"] == REDACTED_TOOL_ARGUMENT_VALUE
+        assert result[0]["password"] == "p1"
+        assert result[1]["password"] == "p2"
 
     def test_non_string_non_dict_passthrough(self) -> None:
         assert _sanitize_tool_argument_value(42) == 42

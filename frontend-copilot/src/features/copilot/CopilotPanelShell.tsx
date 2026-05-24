@@ -112,8 +112,16 @@ export interface CopilotPanelShellProps {
     sessionId: string | null
     shell: string | null
     cwd: string | null
+    recycleTimeoutSeconds: number | null
+    recycleAt: string | null
   } | null
-  onActivateShellPassthrough?: ((input: { sessionId: string; shell: string; cwd: string | null }) => void) | null
+  onActivateShellPassthrough?: ((input: {
+    sessionId: string
+    shell: string
+    cwd: string | null
+    recycleTimeoutSeconds: number | null
+    recycleAt: string | null
+  }) => void) | null
   onDeactivateShellPassthrough?: (() => void) | null
   composerInputRef: RefObject<HTMLTextAreaElement>
   composerHeight: number
@@ -355,6 +363,12 @@ function renderActiveSessionShell(
                 <p className="copilot-panel__description" style={{ margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   会话ID：{props.shellPassthrough.sessionId}
                 </p>
+                {props.shellPassthrough.recycleAt !== null && (
+                  <p className="copilot-panel__description" style={{ margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    回收时间：{props.shellPassthrough.recycleAt}
+                    {props.shellPassthrough.recycleTimeoutSeconds === null ? '' : `（${props.shellPassthrough.recycleTimeoutSeconds}s）`}
+                  </p>
+                )}
               </div>
               <button
                 type="button"

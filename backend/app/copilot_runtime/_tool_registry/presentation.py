@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from .constants import (
-    COMMAND_RUN_TOOL_DESCRIPTION,
-    COMMAND_RUN_TOOL_DISPLAY_NAME,
-    COMMAND_RUN_TOOL_ID,
     SHELL_SESSION_CLOSE_TOOL_DESCRIPTION,
     SHELL_SESSION_CLOSE_TOOL_DISPLAY_NAME,
     SHELL_SESSION_CLOSE_TOOL_ID,
@@ -123,7 +120,6 @@ TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_TOOL_NOTEBOOK_EDIT_ID: BUILTIN_TOOL_GROUP,
     FILE_TOOL_SWITCH_ROOT_ID: BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: BUILTIN_TOOL_GROUP,
-    COMMAND_RUN_TOOL_ID: BUILTIN_TOOL_GROUP,
     SHELL_RUN_TOOL_ID: BUILTIN_TOOL_GROUP,
     SHELL_SESSION_START_TOOL_ID: BUILTIN_TOOL_GROUP,
     SHELL_SESSION_EXEC_TOOL_ID: BUILTIN_TOOL_GROUP,
@@ -198,12 +194,6 @@ TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
         "description_zh": "返回指定地点的占位当前天气结果。",
         "description_en": WEATHER_CURRENT_TOOL_DESCRIPTION,
-    },
-    COMMAND_RUN_TOOL_ID: {
-        "display_name_zh": "命令执行",
-        "display_name_en": COMMAND_RUN_TOOL_DISPLAY_NAME,
-        "description_zh": "在后端运行一条命令并返回 stdout/stderr 以及退出码。",
-        "description_en": COMMAND_RUN_TOOL_DESCRIPTION,
     },
     SHELL_RUN_TOOL_ID: {
         "display_name_zh": "Shell 命令执行",

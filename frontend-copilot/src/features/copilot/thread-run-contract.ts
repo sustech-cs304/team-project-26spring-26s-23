@@ -273,6 +273,7 @@ export async function startRuntimeShellSession(input: {
   runtimeUrl: string
   shell?: 'auto' | 'pwsh' | 'cmd' | 'bash' | 'sh'
   cwd?: string | null
+  recycleTimeoutSeconds: number
   fetchFn?: FetchLike
   signal?: AbortSignal
 }): Promise<RuntimeShellSessionStartResponse> {
@@ -280,6 +281,7 @@ export async function startRuntimeShellSession(input: {
     runtimeUrl: input.runtimeUrl,
     method: 'shell-session/start',
     body: {
+      recycleTimeoutSeconds: input.recycleTimeoutSeconds,
       ...(input.shell === undefined ? {} : { shell: input.shell }),
       ...(input.cwd === undefined || input.cwd === null ? {} : { cwd: input.cwd }),
     },
@@ -292,7 +294,6 @@ export async function execRuntimeShellSession(input: {
   runtimeUrl: string
   sessionId: string
   input: string
-  timeoutSeconds?: number
   maxOutputChars?: number
   fetchFn?: FetchLike
   signal?: AbortSignal
@@ -303,7 +304,6 @@ export async function execRuntimeShellSession(input: {
     body: {
       sessionId: input.sessionId,
       input: input.input,
-      ...(input.timeoutSeconds === undefined ? {} : { timeoutSeconds: input.timeoutSeconds }),
       ...(input.maxOutputChars === undefined ? {} : { maxOutputChars: input.maxOutputChars }),
     },
     fetchFn: input.fetchFn,

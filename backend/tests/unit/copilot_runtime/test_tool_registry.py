@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import random
-import sys
 from collections.abc import Awaitable
 from pathlib import Path
 from typing import TypeVar, cast
@@ -15,9 +14,6 @@ from app.copilot_runtime import (
     build_default_tool_registry,
 )
 from app.copilot_runtime.tool_registry import (
-    COMMAND_RUN_TOOL_DESCRIPTION,
-    COMMAND_RUN_TOOL_DISPLAY_NAME,
-    COMMAND_RUN_TOOL_ID,
     SHELL_RUN_TOOL_DESCRIPTION,
     SHELL_RUN_TOOL_DISPLAY_NAME,
     SHELL_RUN_TOOL_ID,
@@ -122,7 +118,6 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "tool.fs.notebook_edit",
         FILE_TOOL_SWITCH_ROOT_ID,
         WEATHER_CURRENT_TOOL_ID,
-        COMMAND_RUN_TOOL_ID,
         SHELL_RUN_TOOL_ID,
         SHELL_SESSION_START_TOOL_ID,
         SHELL_SESSION_EXEC_TOOL_ID,
@@ -253,26 +248,6 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "displayNameEn": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
         "descriptionZh": "返回指定地点的占位当前天气结果。",
         "descriptionEn": WEATHER_CURRENT_TOOL_DESCRIPTION,
-        "group": {
-            "id": "builtin-core",
-            "label": "内置基础工具",
-            "labelZh": "内置基础工具",
-            "labelEn": "Built-in Core Tools",
-            "order": 0,
-            "sourceKind": "builtin",
-        },
-    }
-    assert catalog_by_id[COMMAND_RUN_TOOL_ID] == {
-        "toolId": COMMAND_RUN_TOOL_ID,
-        "kind": "builtin",
-        "availability": "available",
-        "displayName": "命令执行",
-        "description": "在后端运行一条命令并返回 stdout/stderr 以及退出码。",
-        "prompt": "使用此工具在后端运行一条命令。请提供 program 和 args 数组；不要把 |、>、&& 等 shell 操作符塞进 args。尽量优先使用只读/查询类命令；涉及删除、覆盖、安装、网络访问等高风险操作必须先征求用户明确批准。",
-        "displayNameZh": "命令执行",
-        "displayNameEn": COMMAND_RUN_TOOL_DISPLAY_NAME,
-        "descriptionZh": "在后端运行一条命令并返回 stdout/stderr 以及退出码。",
-        "descriptionEn": COMMAND_RUN_TOOL_DESCRIPTION,
         "group": {
             "id": "builtin-core",
             "label": "内置基础工具",
@@ -720,28 +695,6 @@ def test_weather_tool_execution_uses_default_location_and_random_sample() -> Non
     assert result["summary"] != ""
 
 
-def test_command_run_tool_executes_python_inline() -> None:
-    registry = build_default_tool_registry()
-    resolved_tool = registry.resolve_tool(COMMAND_RUN_TOOL_ID)
-    result = _run_awaitable(
-        resolved_tool.execute(
-            {
-                "program": sys.executable,
-                "args": ["-c", "print('ok')"],
-                "timeoutSeconds": 10,
-                "maxOutputChars": 2000,
-            }
-        )
-    )
-
-    assert resolved_tool.descriptor.kind == "builtin"
-    assert resolved_tool.function_name == "command_run"
-    assert resolved_tool.parameters_json_schema is not None
-    assert result["timedOut"] is False
-    assert result["exitCode"] == 0
-    assert "ok" in result["stdout"]
-
-
 def test_shell_run_tool_executes_echo_ok() -> None:
     registry = build_default_tool_registry()
     resolved_tool = registry.resolve_tool(SHELL_RUN_TOOL_ID)
@@ -771,14 +724,18 @@ def test_shell_session_tools_execute_echo_ok_and_persist_state() -> None:
     close_tool = registry.resolve_tool(SHELL_SESSION_CLOSE_TOOL_ID)
 
     async def run_scenario() -> None:
-        started = await start_tool.execute({"shell": "auto"})
+        started = await start_tool.execute({"shell": "auto", "recycleTimeoutSeconds": 30})
         session_id = cast(str, started["sessionId"])
+        assert started["recycleTimeoutSeconds"] == 30
+        assert isinstance(started["recycleAt"], str)
         try:
             first = await exec_tool.execute(
                 {"sessionId": session_id, "input": "echo ok"}
             )
             assert first["closed"] is False
             assert first["exitCode"] is None
+            assert first["recycleTimeoutSeconds"] == 30
+            assert isinstance(first["recycleAt"], str)
             assert "ok" in cast(str, first["stdout"]).lower()
 
             second = await exec_tool.execute(
@@ -827,7 +784,7 @@ def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
         )
 
 
-def test_summarize_tool_arguments_redacts_sensitive_keys_and_truncates_values() -> None:
+def test_summarize_tool_arguments_outputs_values_and_truncates_long_strings() -> None:
     summary = summarize_tool_arguments(
         {
             "path": "docs/spec.md",
@@ -837,10 +794,11 @@ def test_summarize_tool_arguments_redacts_sensitive_keys_and_truncates_values() 
     )
 
     assert summary is not None
-    assert "top-secret-token" not in summary
-    assert "abc123" not in summary
-    assert "***" in summary
+    assert "top-secret-token" in summary
+    assert "abc123" in summary
+    assert "***" not in summary
     assert '"path": "docs/spec.md"' in summary
+    assert "…" in summary
 
 
 def test_summarize_tool_result_returns_json_string() -> None:
