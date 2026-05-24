@@ -10,6 +10,7 @@ from app.tooling import ToolHostCapabilities, ToolInvocationContext
 from app.tooling.calendar_tools import CalendarSQLQueryTool, get_calendar_tool_contracts
 from app.tooling.calendar_tools.sql_query import (
     _first_keyword,
+    _split_sql_statements,
     _validate_sql,
 )
 from app.tooling.runtime_adapter.copilot_runtime import (
@@ -37,8 +38,14 @@ def _setup_db(db_path: Path) -> Path:
         ("Custom", "2026-03-10T09:00", "2026-03-10T12:00", "custom", "cu_001", "in_progress"),
         ("WakeUp", "2026-03-10T09:00", "2026-03-10T10:30", "wakeup", "wk_001", "not_started"),
     ]:
-        c.execute("INSERT INTO timeline_events (title,start_time,end_time,source,source_id,status) VALUES (?,?,?,?,?,?)", r)
-    c.commit(); c.close()
+        c.execute(
+            "INSERT INTO timeline_events "
+            "(title,start_time,end_time,source,source_id,status) "
+            "VALUES (?,?,?,?,?,?)",
+            r,
+        )
+    c.commit()
+    c.close()
     return db_path
 
 
@@ -47,7 +54,8 @@ def _patch(db_path: Path):
     _sql_query_mod.resolve_timeline_db_path = lambda *a, **kw: db_path  # type: ignore[assignment]
     return orig
 
-def _restore(orig): _sql_query_mod.resolve_timeline_db_path = orig  # type: ignore[assignment]
+def _restore(orig):
+    _sql_query_mod.resolve_timeline_db_path = orig  # type: ignore[assignment]
 
 
 class TestFirstKeyword:
@@ -57,12 +65,34 @@ class TestFirstKeyword:
     def test_empty(self): assert _first_keyword("") == "UNKNOWN"
 
 
+class TestSplitSqlStatements:
+    def test_preserves_semicolon_in_string_literal(self):
+        assert _split_sql_statements(
+            "INSERT INTO timeline_events (title,start_time,source) "
+            "VALUES ('A;B','2026-01-01T00:00','custom'); "
+            "SELECT title FROM timeline_events"
+        ) == [
+            "INSERT INTO timeline_events (title,start_time,source) "
+            "VALUES ('A;B','2026-01-01T00:00','custom');",
+            "SELECT title FROM timeline_events",
+        ]
+
+    def test_ignores_trailing_comment_only_fragment(self):
+        assert _split_sql_statements(
+            "SELECT 1; -- note; still comment\n/* trailing block; comment */"
+        ) == ["SELECT 1;"]
+
+
 class TestValidateSql:
     def test_allows_select(self): assert _validate_sql("SELECT * FROM t") is None
     def test_allows_insert(self): assert _validate_sql("INSERT INTO t VALUES(1)") is None
     def test_allows_update(self): assert _validate_sql("UPDATE t SET x=1") is None
     def test_allows_delete(self): assert _validate_sql("DELETE FROM t") is None
     def test_allows_multi(self): assert _validate_sql("SELECT 1; UPDATE t SET x=2; INSERT INTO t VALUES(3)") is None
+    def test_allows_semicolon_in_string_literal(self):
+        assert _validate_sql(
+            "INSERT INTO t VALUES('A;B'); UPDATE t SET x='C;D'"
+        ) is None
     def test_blocks_ddl(self):
         assert _validate_sql("CREATE TABLE x") is not None
         assert _validate_sql("DROP TABLE t") is not None
@@ -80,64 +110,136 @@ class TestMetadata:
 class TestInvoke:
     @pytest.mark.asyncio
     async def test_select(self, tmp_path: Path):
-        db = _setup_db(tmp_path / "t.db"); orig = _patch(db)
+        db = _setup_db(tmp_path / "t.db")
+        orig = _patch(db)
         try:
             r = await CalendarSQLQueryTool().invoke(
                 arguments={"sql": "SELECT * FROM timeline_events ORDER BY id"},
-                context=_make_context(), host=ToolHostCapabilities())
+                context=_make_context(),
+                host=ToolHostCapabilities(),
+            )
             assert r.status == "success"
             assert r.output["rowCount"] == 3
-        finally: _restore(orig)
+        finally:
+            _restore(orig)
 
     @pytest.mark.asyncio
     async def test_multi_statement(self, tmp_path: Path):
-        db = _setup_db(tmp_path / "t2.db"); orig = _patch(db)
+        db = _setup_db(tmp_path / "t2.db")
+        orig = _patch(db)
         try:
             r = await CalendarSQLQueryTool().invoke(
-                arguments={"sql": "UPDATE timeline_events SET status='done' WHERE source_id='bb_001'; SELECT status FROM timeline_events WHERE source_id='bb_001'"},
-                context=_make_context(), host=ToolHostCapabilities())
+                arguments={
+                    "sql": "UPDATE timeline_events SET status='done' WHERE source_id='bb_001'; SELECT status FROM timeline_events WHERE source_id='bb_001'"
+                },
+                context=_make_context(),
+                host=ToolHostCapabilities(),
+            )
             assert r.status == "success"
             assert r.output["rowsPreview"][0]["status"] == "done"
-        finally: _restore(orig)
+        finally:
+            _restore(orig)
 
     @pytest.mark.asyncio
     async def test_update(self, tmp_path: Path):
-        db = _setup_db(tmp_path / "t3.db"); orig = _patch(db)
+        db = _setup_db(tmp_path / "t3.db")
+        orig = _patch(db)
         try:
             t = CalendarSQLQueryTool()
-            await t.invoke(arguments={"sql": "UPDATE timeline_events SET status='completed' WHERE source_id='bb_001'"}, context=_make_context(), host=ToolHostCapabilities())
-            r = await t.invoke(arguments={"sql": "SELECT status FROM timeline_events WHERE source_id='bb_001'"}, context=_make_context(), host=ToolHostCapabilities())
+            await t.invoke(
+                arguments={
+                    "sql": "UPDATE timeline_events SET status='completed' WHERE source_id='bb_001'"
+                },
+                context=_make_context(),
+                host=ToolHostCapabilities(),
+            )
+            r = await t.invoke(
+                arguments={
+                    "sql": "SELECT status FROM timeline_events WHERE source_id='bb_001'"
+                },
+                context=_make_context(),
+                host=ToolHostCapabilities(),
+            )
             assert r.output["rowsPreview"][0]["status"] == "completed"
-        finally: _restore(orig)
+        finally:
+            _restore(orig)
 
     @pytest.mark.asyncio
     async def test_delete(self, tmp_path: Path):
-        db = _setup_db(tmp_path / "t4.db"); orig = _patch(db)
+        db = _setup_db(tmp_path / "t4.db")
+        orig = _patch(db)
         try:
             t = CalendarSQLQueryTool()
-            await t.invoke(arguments={"sql": "DELETE FROM timeline_events WHERE source_id='wk_001'"}, context=_make_context(), host=ToolHostCapabilities())
-            r = await t.invoke(arguments={"sql": "SELECT COUNT(*) as c FROM timeline_events"}, context=_make_context(), host=ToolHostCapabilities())
+            await t.invoke(
+                arguments={"sql": "DELETE FROM timeline_events WHERE source_id='wk_001'"},
+                context=_make_context(),
+                host=ToolHostCapabilities(),
+            )
+            r = await t.invoke(
+                arguments={"sql": "SELECT COUNT(*) as c FROM timeline_events"},
+                context=_make_context(),
+                host=ToolHostCapabilities(),
+            )
             assert r.output["rowsPreview"][0]["c"] == 2
-        finally: _restore(orig)
+        finally:
+            _restore(orig)
 
     @pytest.mark.asyncio
     async def test_insert_any_source_allowed(self, tmp_path: Path):
-        db = _setup_db(tmp_path / "t5.db"); orig = _patch(db)
+        db = _setup_db(tmp_path / "t5.db")
+        orig = _patch(db)
         try:
             r = await CalendarSQLQueryTool().invoke(
-                arguments={"sql": "INSERT INTO timeline_events (title,start_time,source,source_id) VALUES ('X','2026-01-01T00:00','bb','bb_x')"},
-                context=_make_context(), host=ToolHostCapabilities())
+                arguments={
+                    "sql": "INSERT INTO timeline_events (title,start_time,source,source_id) VALUES ('X','2026-01-01T00:00','bb','bb_x')"
+                },
+                context=_make_context(),
+                host=ToolHostCapabilities(),
+            )
             assert r.status == "success"
-        finally: _restore(orig)
+        finally:
+            _restore(orig)
+
+    @pytest.mark.asyncio
+    async def test_insert_preserves_semicolon_inside_text_fields(self, tmp_path: Path):
+        db = _setup_db(tmp_path / "t_semicolon.db")
+        orig = _patch(db)
+        try:
+            t = CalendarSQLQueryTool()
+            r = await t.invoke(
+                arguments={
+                    "sql": (
+                        "INSERT INTO timeline_events "
+                        "(title,description,start_time,source,source_id) "
+                        "VALUES "
+                        "('A;B','description before; after','2026-01-01T00:00','custom','semi_001'); "
+                        "SELECT title, description FROM timeline_events WHERE source_id='semi_001'"
+                    )
+                },
+                context=_make_context(),
+                host=ToolHostCapabilities(),
+            )
+            assert r.status == "success"
+            assert r.output["executionSummary"]["statementCount"] == 2
+            assert r.output["rowsPreview"] == [
+                {"title": "A;B", "description": "description before; after"}
+            ]
+        finally:
+            _restore(orig)
 
     @pytest.mark.asyncio
     async def test_ddl_blocked(self, tmp_path: Path):
-        db = _setup_db(tmp_path / "t6.db"); orig = _patch(db)
+        db = _setup_db(tmp_path / "t6.db")
+        orig = _patch(db)
         try:
             r = await CalendarSQLQueryTool().invoke(
-                arguments={"sql": "DROP TABLE timeline_events"}, context=_make_context(), host=ToolHostCapabilities())
+                arguments={"sql": "DROP TABLE timeline_events"},
+                context=_make_context(),
+                host=ToolHostCapabilities(),
+            )
             assert r.status == "error"
-        finally: _restore(orig)
+        finally:
+            _restore(orig)
 
     @pytest.mark.asyncio
     async def test_resolves_timeline_db_from_runtime_context_user_data_dir(

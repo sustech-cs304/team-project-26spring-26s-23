@@ -58,19 +58,70 @@ def _sql_row_to_mapping(columns: Sequence[str], row: Sequence[Any]) -> dict[str,
     return {column: _normalize_sql_value(value) for column, value in zip(columns, row)}
 
 
+def _split_sql_statements(sql: str) -> list[str]:
+    """Split SQL statements using SQLite's parser-aware boundary check."""
+    statements: list[str] = []
+    statement_start = 0
+
+    for index, character in enumerate(sql):
+        if character != ";":
+            continue
+
+        candidate = sql[statement_start : index + 1]
+        if not sqlite3.complete_statement(candidate):
+            continue
+
+        statement = candidate.strip()
+        if statement:
+            statements.append(statement)
+        statement_start = index + 1
+
+    trailing_statement = sql[statement_start:].strip()
+    if trailing_statement and _strip_sqlite_leading_comments_and_whitespace(trailing_statement):
+        statements.append(trailing_statement)
+
+    return statements
+
+
+def _strip_sqlite_leading_comments_and_whitespace(sql: str) -> str:
+    """Remove leading whitespace and SQLite comments from a SQL fragment."""
+    index = 0
+    length = len(sql)
+
+    while index < length:
+        while index < length and sql[index].isspace():
+            index += 1
+
+        if sql.startswith("--", index):
+            newline_index = sql.find("\n", index + 2)
+            if newline_index == -1:
+                return ""
+            index = newline_index + 1
+            continue
+
+        if sql.startswith("/*", index):
+            end_index = sql.find("*/", index + 2)
+            if end_index == -1:
+                return ""
+            index = end_index + 2
+            continue
+
+        break
+
+    return sql[index:]
+
+
 def _execute_multi_sql(
     *, sql: str, db_path: Path, result_limit: int
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    """Execute one or more SQL statements separated by `;`.
+    """Execute one or more SQL statements separated by SQLite statement boundaries.
 
     Returns (summary_output, full_result_or_None) where full_result is only
     filled when there is a single SELECT statement returning rows.
     """
     ensure_timeline_schema(db_path)
 
-    statements = [s.strip() for s in sql.split(";") if s.strip()]
-    if not statements:
-        statements = [sql.strip()] if sql.strip() else []
+    statements = _split_sql_statements(sql)
 
     all_columns: list[str] = []
     all_rows: list[dict[str, Any]] = []
@@ -145,7 +196,7 @@ def _execute_multi_sql(
 
 def _validate_sql(sql: str) -> str | None:
     """Reject only DDL / PRAGMA statements. Everything else is allowed."""
-    statements = [s.strip() for s in sql.split(";") if s.strip()]
+    statements = _split_sql_statements(sql)
     blocked_keywords = {"CREATE", "DROP", "ALTER", "PRAGMA"}
     for stmt in statements:
         kw = _first_keyword(stmt)
