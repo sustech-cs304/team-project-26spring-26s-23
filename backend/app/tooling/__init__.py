@@ -12,6 +12,7 @@ from .browser_tools import (
     BrowserSwitchTabTool,
     get_browser_tool_contracts,
 )
+from .calendar_tools import CalendarSQLQueryTool, get_calendar_tool_contracts
 from .contract import (
     HOST_CAPABILITY_NAMES,
     NORMALIZED_TOOL_ERROR_CODES,
@@ -105,5 +106,7 @@ __all__ = [
     "assess_default_contract_mcp_readiness",
     "assess_mcp_tool_readiness",
     "build_mcp_tool_descriptor",
+    "CalendarSQLQueryTool",
     "get_browser_tool_contracts",
+    "get_calendar_tool_contracts",
 ]

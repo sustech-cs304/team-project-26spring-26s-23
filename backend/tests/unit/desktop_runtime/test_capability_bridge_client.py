@@ -863,6 +863,72 @@ def test_desktop_capability_bridge_client_preserves_explicit_mcp_timeout_overrid
     assert post_call["timeout"] == max(client._timeout, 20.0)
 
 
+def test_desktop_capability_bridge_client_get_browser_cookies_round_trips_payload_and_result() -> None:
+    captured_payloads: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8"))
+        captured_payloads.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "requestId": payload["requestId"],
+                "ok": True,
+                "result": {
+                    "tabId": payload["payload"]["tabId"],
+                    "currentUrl": payload["payload"]["url"],
+                    "cookies": [
+                        {
+                            "name": "JSESSIONID",
+                            "value": "session-value",
+                            "domain": ".bb.sustech.edu.cn",
+                            "path": "/",
+                            "secure": True,
+                            "httpOnly": True,
+                            "sameSite": "no_restriction",
+                        }
+                    ],
+                },
+            },
+            request=request,
+        )
+
+    client = DesktopCapabilityBridgeClient(
+        bridge_url="http://127.0.0.1:45678/host/private/capability-bridge",
+        bridge_token="bridge-token-123",
+        transport=httpx.MockTransport(handler),
+    )
+
+    cookies = asyncio.run(
+        client.get_browser_cookies(
+            context=_build_invocation_context(),
+            tab_id="browser-tab-1",
+            url="https://bb.sustech.edu.cn/",
+        )
+    )
+
+    assert cookies == [
+        {
+            "name": "JSESSIONID",
+            "value": "session-value",
+            "domain": ".bb.sustech.edu.cn",
+            "path": "/",
+            "sameSite": "no_restriction",
+            "secure": True,
+            "httpOnly": True,
+            "expirationDate": None,
+        }
+    ]
+    assert [(item["capability"], item["operation"]) for item in captured_payloads] == [
+        ("browser", "cookies")
+    ]
+    assert captured_payloads[0]["payload"] == {
+        "tabId": "browser-tab-1",
+        "url": "https://bb.sustech.edu.cn/",
+    }
+
+
+
 def test_desktop_capability_bridge_client_reports_missing_bootstrap_as_unavailable() -> (
     None
 ):

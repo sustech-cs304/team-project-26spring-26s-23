@@ -278,6 +278,19 @@ class _BridgeBackedBrowserController(BrowserController):
             tab_id=tab_id,
         )
 
+    async def get_cookies(
+        self,
+        *,
+        tab_id: str | None = None,
+        url: str | None = None,
+    ) -> list[dict[str, Any]]:
+        bridge_client = cast(Any, self._bridge_client)
+        return await bridge_client.get_browser_cookies(
+            context=self._invocation_context,
+            tab_id=tab_id,
+            url=url,
+        )
+
     async def reset(self) -> dict[str, Any]:
         bridge_client = cast(Any, self._bridge_client)
         return await bridge_client.reset_browser(

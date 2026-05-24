@@ -91,6 +91,13 @@ TIS_TOOL_GROUP = ToolPresentationGroup(
     order=20,
     source_kind="sustech-tis",
 )
+CALENDAR_TOOL_GROUP = ToolPresentationGroup(
+    group_id="calendar",
+    label_zh="日历工具",
+    label_en="Calendar Tools",
+    order=12,
+    source_kind="calendar",
+)
 SKILL_TOOL_GROUP = ToolPresentationGroup(
     group_id="runtime-skill",
     label_zh="Skill 工具",
@@ -119,11 +126,9 @@ TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     BROWSER_SNAPSHOT_TOOL_ID: BROWSER_TOOL_GROUP,
     SKILL_ACTIVATE_TOOL_ID: SKILL_TOOL_GROUP,
     SKILL_READ_RESOURCE_TOOL_ID: SKILL_TOOL_GROUP,
+    "calendar.sql.query": CALENDAR_TOOL_GROUP,
     "blackboard.sql.query": BLACKBOARD_TOOL_GROUP,
-    "blackboard.course_catalog.search": BLACKBOARD_TOOL_GROUP,
-    "blackboard.calendar.refresh": BLACKBOARD_TOOL_GROUP,
     "blackboard.snapshot.sync": BLACKBOARD_TOOL_GROUP,
-    "blackboard.course_resources.sync": BLACKBOARD_TOOL_GROUP,
     "tis.sql.query": TIS_TOOL_GROUP,
     "tis.personal_grades.fetch": TIS_TOOL_GROUP,
     "tis.credit_gpa.fetch": TIS_TOOL_GROUP,
@@ -245,35 +250,29 @@ TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "description_zh": "读取已启用 Skill 资源索引中的 UTF-8 文本资源，不要求先激活。",
         "description_en": SKILL_READ_RESOURCE_TOOL_DESCRIPTION,
     },
+    "calendar.sql.query": {
+        "display_name_zh": "日历 SQL 查询",
+        "display_name_en": "Calendar SQL Query",
+        "description_zh": (
+            "对统一日历数据库执行 SQL 查询和修改。可查看/修改/删除所有来源的事件，"
+            "但仅允许添加 source='custom' 的事件。"
+        ),
+        "description_en": (
+            "Execute SQL queries and mutations against the unified calendar database. "
+            "View/modify/delete all events; only INSERT source='custom' events."
+        ),
+    },
     "blackboard.sql.query": {
         "display_name_zh": "Blackboard 数据查询",
         "display_name_en": "Blackboard SQL Query",
         "description_zh": "查询 Blackboard 本地数据。",
         "description_en": "Query Blackboard local data.",
     },
-    "blackboard.course_catalog.search": {
-        "display_name_zh": "课程目录搜索",
-        "display_name_en": "Course Catalog Search",
-        "description_zh": "搜索 Blackboard 课程目录。",
-        "description_en": "Search Blackboard course catalog.",
-    },
-    "blackboard.calendar.refresh": {
-        "display_name_zh": "日历刷新",
-        "display_name_en": "Calendar Refresh",
-        "description_zh": "刷新 Blackboard 课程日历。",
-        "description_en": "Refresh Blackboard course calendar.",
-    },
     "blackboard.snapshot.sync": {
         "display_name_zh": "快照同步",
         "display_name_en": "Snapshot Sync",
         "description_zh": "同步 Blackboard 基础快照。",
         "description_en": "Sync Blackboard base snapshots.",
-    },
-    "blackboard.course_resources.sync": {
-        "display_name_zh": "课程资源同步",
-        "display_name_en": "Course Resources Sync",
-        "description_zh": "同步指定课程资源。",
-        "description_en": "Sync resources for a selected Blackboard course.",
     },
     "tis.sql.query": {
         "display_name_zh": "TIS 数据查询",

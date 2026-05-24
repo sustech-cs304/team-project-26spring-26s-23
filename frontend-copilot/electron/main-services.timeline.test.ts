@@ -6,6 +6,8 @@ const LOCAL_TOKEN = 'calendar-token'
 const hoisted = vi.hoisted(() => ({
   getCalendarEvents: vi.fn(),
   addCalendarEvent: vi.fn(),
+  updateCalendarEvent: vi.fn(),
+  deleteCalendarEvent: vi.fn(),
   createElectronAttachmentService: vi.fn(() => ({
     readClipboardData: vi.fn(),
     writeTempFile: vi.fn(),
@@ -36,6 +38,8 @@ const hoisted = vi.hoisted(() => ({
 vi.mock('./timeline-database/service', () => ({
   getCalendarEvents: hoisted.getCalendarEvents,
   addCalendarEvent: hoisted.addCalendarEvent,
+  updateCalendarEvent: hoisted.updateCalendarEvent,
+  deleteCalendarEvent: hoisted.deleteCalendarEvent,
 }))
 
 vi.mock('./attachment-service/service', () => ({
@@ -54,6 +58,8 @@ describe('createMainProcessServices timeline database bridge', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     hoisted.getCalendarEvents.mockReturnValue([])
+    hoisted.updateCalendarEvent.mockReturnValue(createCalendarEvent({ id: 12, status: 'completed', progress: 100 }))
+    hoisted.deleteCalendarEvent.mockReturnValue(true)
   })
 
   it('loads remote calendar events through the main process with the hosted local token header', async () => {
@@ -172,6 +178,28 @@ describe('createMainProcessServices timeline database bridge', () => {
       expect.stringContaining('Invalid renderer runtime URL'),
       expect.objectContaining({ runtimeUrl: 'http://[invalid-runtime' }),
     )
+  })
+
+  it('delegates local timeline event mutations to the database service', async () => {
+    const updatedEvent = createCalendarEvent({ id: 12, title: 'Updated task', status: 'completed', progress: 100 })
+    hoisted.updateCalendarEvent.mockReturnValue(updatedEvent)
+    hoisted.deleteCalendarEvent.mockReturnValue(true)
+
+    const hostedBackendService = {
+      getLocalToken: vi.fn(() => LOCAL_TOKEN),
+      getRuntimeBaseUrl: vi.fn(() => REMOTE_RUNTIME_URL),
+      start: vi.fn(async () => undefined),
+    } as unknown as HostedBackendService
+    const services = createServices(hostedBackendService)
+
+    await expect(services.updateTimelineEvent({ id: 12, patch: { status: 'completed', progress: 100 } })).resolves.toEqual({
+      updated: true,
+      item: updatedEvent,
+    })
+    await expect(services.deleteTimelineEvent({ id: 12 })).resolves.toEqual({ deleted: true })
+
+    expect(hoisted.updateCalendarEvent).toHaveBeenCalledWith(12, { status: 'completed', progress: 100 })
+    expect(hoisted.deleteCalendarEvent).toHaveBeenCalledWith(12)
   })
 
   it('throws the calendar load failure when both local cache and remote API are unavailable', async () => {

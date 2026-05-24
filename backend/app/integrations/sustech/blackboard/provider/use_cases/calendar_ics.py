@@ -19,7 +19,6 @@ from app.integrations.sustech.blackboard.shared import (
     create_log_session,
 )
 from app.event_manager.sync_bridge import sync_blackboard_to_unified
-from app.event_manager.data.db_manager import DatabaseManager as EventDatabaseManager
 
 
 _ics_parser = BlackboardCalendarICSParser()
@@ -233,32 +232,21 @@ def refresh_calendar_ics_subscription_from_text(
         logger=logger.child("provider.use_cases.calendar_ics.data.calendar_events"),
     )
 
-    # 同步到统一日历
+    # 同步到 timeline.db (单一日历数据源)
     unified_stats: dict[str, int] | None = None
     unified_error: str | None = None
-    event_db: EventDatabaseManager | None = None
     try:
-        event_db = EventDatabaseManager()
-        unified_stats = sync_blackboard_to_unified(db_manager, event_db)
+        unified_stats = sync_blackboard_to_unified(db_manager)
         logger.info(
-            "✅ 已同步至统一日历",
+            "✅ 已同步至 timeline.db",
             payload={"unified_stats": unified_stats},
         )
     except Exception as sync_ex:
         unified_error = str(sync_ex)
         logger.warning(
-            "⚠ 同步至统一日历失败",
+            "⚠ 同步至 timeline.db 失败",
             payload={"error": unified_error},
         )
-    finally:
-        if event_db is not None:
-            try:
-                event_db.engine.dispose()
-            except Exception as dispose_ex:
-                logger.warning(
-                    "⚠ 统一日历数据库引擎释放失败",
-                    payload={"error": str(dispose_ex)},
-                )
 
     now = utc_now_naive()
     db_manager.upsert_calendar_subscription(

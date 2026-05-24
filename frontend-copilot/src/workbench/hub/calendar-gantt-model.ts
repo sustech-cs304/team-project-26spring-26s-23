@@ -61,6 +61,8 @@ export function mapCalendarEventToGanttTask(event: UnifiedCalendarEvent): Calend
     color_progress: colorTokens.progress,
     source: event.source,
     originalEventId: event.id,
+    _originalStartIso: event.start_time,
+    _originalEndIso: event.end_time,
   }
 }
 

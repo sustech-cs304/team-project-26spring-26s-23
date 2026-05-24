@@ -20,6 +20,7 @@ from app.integrations.sustech.blackboard.api.dto import (
     GradeDTO,
 )
 from app.integrations.sustech.blackboard.facade import tools as facade_tools
+from app.desktop_runtime.routes import blackboard_ui
 from app.integrations.sustech.blackboard.facade.tools import (
     BlackboardCalendarRefreshTool,
     BlackboardCourseCatalogSearchTool,
@@ -197,24 +198,15 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
     tool_ids = [tool.metadata.tool_id for tool in get_blackboard_tool_contracts()]
 
     assert tool_ids == [
-        "blackboard.course_catalog.search",
-        "blackboard.calendar.refresh",
         "blackboard.snapshot.sync",
-        "blackboard.course_resources.sync",
         "blackboard.sql.query",
     ]
 
-    course_catalog_tool = BlackboardCourseCatalogSearchTool()
-    calendar_tool = BlackboardCalendarRefreshTool()
     snapshot_tool = BlackboardSnapshotSyncTool()
-    resource_tool = BlackboardCourseResourcesSyncTool()
     requirements = {
         requirement.capability: requirement for requirement in snapshot_tool.metadata.capability_requirements
     }
-    course_catalog_input_schema = course_catalog_tool.metadata.input_schema.schema
-    calendar_input_schema = calendar_tool.metadata.input_schema.schema
     snapshot_input_schema = snapshot_tool.metadata.input_schema.schema
-    resource_input_schema = resource_tool.metadata.input_schema.schema
 
     assert requirements["secret_provider"].required is False
     assert requirements["database_resolver"].required is False
@@ -222,22 +214,8 @@ def test_get_blackboard_tool_contracts_exposes_stable_tools_and_requirements() -
     assert requirements["artifact_store"].required is False
     assert requirements["event_sink"].required is False
     assert snapshot_tool.metadata.idempotent is False
-    assert course_catalog_input_schema["properties"]["fetchMode"]["enum"] == ["quick", "full"]
-    assert course_catalog_input_schema["properties"]["fetchMode"]["default"] == "full"
-    assert course_catalog_input_schema["properties"]["maxPages"]["minimum"] == 1
-    assert course_catalog_input_schema["properties"]["maxPages"]["default"] == 30
-    assert calendar_input_schema["properties"]["refreshMode"]["enum"] == ["auto", "force"]
-    assert calendar_input_schema["properties"]["refreshMode"]["default"] == "auto"
     assert "resourceCourseLimit" not in snapshot_input_schema["properties"]
     assert "resourceCourseLimit" not in snapshot_input_schema.get("required", [])
-    assert resource_input_schema["required"] == ["courseIds"]
-    assert resource_input_schema["properties"]["courseIds"]["type"] == "array"
-    assert resource_input_schema["properties"]["courseIds"]["items"] == {
-        "type": "string",
-        "minLength": 1,
-    }
-    assert resource_input_schema["properties"]["courseIds"]["minItems"] == 1
-    assert resource_input_schema["properties"]["courseIds"]["uniqueItems"] is True
 
 
 def test_blackboard_tool_input_schemas_describe_each_parameter() -> None:
@@ -549,9 +527,12 @@ def test_calendar_refresh_tool_maps_missing_database_capability() -> None:
     assert "traceback" in result.error.details
 
 
-def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkeypatch: Any) -> None:
+def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     captured: dict[str, Any] = {}
-    database = StubDatabaseResolver(Path("database-root"))
+    database_root = tmp_path / "database-root"
+    database = StubDatabaseResolver(database_root)
     artifact_store = StubArtifactStore()
     state_store = StubStateStore()
     event_sink = StubEventSink()
@@ -563,11 +544,12 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        current_term_only: bool = False,
         parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
-        _ = enable_console_logging
+        _ = (enable_console_logging, current_term_only)
         captured.update(
             {
                 "username": username,
@@ -617,7 +599,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
             announcements_payload=[{"announcement_id": "ann_1"}],
         )
         return BlackboardSnapshotSyncReport(
-            db_path=Path(db_path or "database-root/blackboard/sustech.db"),
+            db_path=Path(str(db_path) if db_path else str(database_root / "blackboard/sustech.db")),
             snapshot=snapshot,
             payloads=payloads,
             first_sync_stats={
@@ -652,7 +634,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
             logs=[_build_log_event("test.snapshot.sync")],
         )
 
-    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _fake_sync)
 
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),
@@ -677,7 +659,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert captured == {
         "username": "alice",
         "password": "secret",
-        "db_path": Path("database-root/blackboard/snapshot.db"),
+        "db_path": database_root / "blackboard/snapshot.db",
         "reset_schema": False,
         "verify_second_sync": False,
         "parallel_workers": 4,
@@ -697,7 +679,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "persistence",
     }
     assert "resourceCourseLimit" not in result.output
-    assert result.output["dbPath"] == "database-root/blackboard/snapshot.db"
+    assert result.output["dbPath"] == str(database_root / "blackboard/snapshot.db").replace("\\", "/")
     assert result.output["scrapedCounts"] == {
         "courses": 1,
         "assignments": 1,
@@ -757,8 +739,9 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert "courses" not in result.output
     assert "payloads" not in result.output
     assert database.requests == ["blackboard/snapshot.db"]
-    persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
     persisted_state_output = state_store.values[("blackboard.snapshot_sync", "snapshot-latest")]["output"]
+    assert result.output["dbPath"] == str(database_root / "blackboard/snapshot.db").replace("\\", "/")
+    persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
     latest_status = state_store.values[
         (
             facade_tools._STATE_NAMESPACE_SNAPSHOT_SYNC,
@@ -781,7 +764,12 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "progressMessages",
     }
     assert "resourceCourseLimit" not in persisted_artifact_output
-    assert persisted_artifact_output["progressMessages"] == ["fetching courses", "syncing sqlite"]
+    assert persisted_artifact_output["progressMessages"] == [
+        "开始同步...",
+        "fetching courses",
+        "syncing sqlite",
+        "Blackboard 作业已同步到统一日历：新增 0，重复 0，跳过 0，过期 0。",
+    ]
     assert persisted_artifact_output["scrapedCounts"]["resources"] == 0
     assert persisted_artifact_output["tableCounts"]["resources"] == {"total": 0, "active": 0}
     assert "resourcePayloadsByCourse" not in persisted_artifact_output
@@ -791,7 +779,12 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert latest_status["lastSyncError"] is None
     assert latest_status["progressMessage"] is None
     assert latest_status["progressStage"] is None
-    assert latest_status["progressLogs"] == ["fetching courses", "syncing sqlite"]
+    assert latest_status["progressLogs"] == [
+        "开始同步...",
+        "fetching courses",
+        "syncing sqlite",
+        "Blackboard 作业已同步到统一日历：新增 0，重复 0，跳过 0，过期 0。",
+    ]
     assert [event.event_type for event in event_sink.events] == [
         "blackboard.snapshot.sync.started",
         "blackboard.snapshot.sync.completed",
@@ -804,7 +797,7 @@ def test_snapshot_sync_tool_persists_failed_latest_status(monkeypatch: Any) -> N
     def _boom_sync(*_args: Any, **_kwargs: Any) -> BlackboardSnapshotSyncReport:
         raise RuntimeError("snapshot boom")
 
-    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _boom_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _boom_sync)
 
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),
@@ -829,7 +822,7 @@ def test_snapshot_sync_tool_persists_failed_latest_status(monkeypatch: Any) -> N
     assert latest_status["lastSyncError"] == "snapshot boom"
     assert latest_status["progressMessage"] == "snapshot boom"
     assert latest_status["progressStage"] is None
-    assert latest_status["progressLogs"] == ["snapshot boom"]
+    assert latest_status["progressLogs"] == ["开始同步...", "snapshot boom"]
 
 
 def test_course_resources_sync_tool_requires_course_ids_and_persists_artifact_and_state(
@@ -1040,11 +1033,12 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        current_term_only: bool = False,
         parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
     ) -> BlackboardSnapshotSyncReport:
-        _ = (progress, enable_console_logging)
+        _ = (progress, enable_console_logging, current_term_only)
         captured.update(
             {
                 "username": username,
@@ -1098,7 +1092,7 @@ def test_snapshot_sync_tool_defaults_to_sustech_secret_names_when_secret_names_o
             logs=[_build_log_event("test.snapshot.sync.default-secrets")],
         )
 
-    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _fake_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _fake_sync)
 
     database = StubDatabaseResolver(tmp_path / "database-root")
 
@@ -1230,6 +1224,7 @@ def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        current_term_only: bool = False,
         parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
@@ -1240,13 +1235,14 @@ def test_snapshot_sync_tool_maps_runtime_errors(monkeypatch: Any) -> None:
             db_path,
             reset_schema,
             verify_second_sync,
+            current_term_only,
             parallel_workers,
             progress,
             enable_console_logging,
         )
         raise httpx.ConnectTimeout("timed out")
 
-    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _timeout_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _timeout_sync)
 
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),
@@ -1278,6 +1274,7 @@ def test_snapshot_sync_tool_maps_explicit_invalid_credentials_message(monkeypatc
         db_path: Path | None = None,
         reset_schema: bool = False,
         verify_second_sync: bool = True,
+        current_term_only: bool = False,
         parallel_workers: int = 1,
         progress: Any = None,
         enable_console_logging: bool = False,
@@ -1288,13 +1285,14 @@ def test_snapshot_sync_tool_maps_explicit_invalid_credentials_message(monkeypatc
             db_path,
             reset_schema,
             verify_second_sync,
+            current_term_only,
             parallel_workers,
             progress,
             enable_console_logging,
         )
         raise RuntimeError("CAS 登录失败：用户名或密码错误，请更新设置中的 CAS 密码。")
 
-    monkeypatch.setattr(facade_tools, "run_blackboard_snapshot_sync", _invalid_credentials_sync)
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", _invalid_credentials_sync)
 
     result = _invoke_tool(
         BlackboardSnapshotSyncTool(),

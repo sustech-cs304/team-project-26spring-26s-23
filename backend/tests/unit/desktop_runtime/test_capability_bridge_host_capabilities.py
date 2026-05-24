@@ -4,9 +4,11 @@ import asyncio
 from collections.abc import Awaitable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, TypeVar, cast
 
 import app.integrations.sustech.blackboard.facade.tools as blackboard_facade_tools
+from app.desktop_runtime.routes import blackboard_ui
 from pydantic_ai.models.test import TestModel
 
 from app.integrations.sustech.blackboard.api.dto import CourseCatalogResultDTO
@@ -64,6 +66,7 @@ class _RecordingBridgeClient:
         self.events: list[dict[str, Any]] = []
         self.browser_open_requests: list[tuple[str, str, bool, bool, str | None, str | None]] = []
         self.browser_screenshot_requests: list[tuple[str, str, str | None]] = []
+        self.browser_cookie_requests: list[tuple[str, str | None, str | None]] = []
 
     async def get_secret(
         self,
@@ -274,6 +277,24 @@ class _RecordingBridgeClient:
         )
         return HostBrowserScreenshot(page=page, artifact=artifact)
 
+    async def get_browser_cookies(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str | None = None,
+        url: str | None = None,
+    ) -> list[dict[str, Any]]:
+        self.browser_cookie_requests.append((context.invocation_id, tab_id, url))
+        return [
+            {
+                "name": "JSESSIONID",
+                "value": "session-value",
+                "domain": ".bb.sustech.edu.cn",
+                "path": "/",
+                "httpOnly": True,
+            }
+        ]
+
     async def aclose(self) -> None:
         return None
 
@@ -394,6 +415,12 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
             data={"artifactCount": 1},
         )
     )
+    browser_cookies = _run_awaitable(
+        host.browser_controller.get_cookies(
+            tab_id="manual-login-tab",
+            url="https://bb.sustech.edu.cn/",
+        )
+    )
 
     assert secret_value == "bridge-secret"
     assert has_secret is True
@@ -404,6 +431,22 @@ def test_bridge_host_capabilities_factory_assembles_invocation_scoped_handles() 
     assert described_artifact.metadata["described"] is True
     assert tool_state == {"ok": True}
     assert run_state == {"done": False}
+    assert browser_cookies == [
+        {
+            "name": "JSESSIONID",
+            "value": "session-value",
+            "domain": ".bb.sustech.edu.cn",
+            "path": "/",
+            "httpOnly": True,
+        }
+    ]
+    assert bridge_client.browser_cookie_requests == [
+        (
+            invocation_context.invocation_id,
+            "manual-login-tab",
+            "https://bb.sustech.edu.cn/",
+        )
+    ]
     assert bridge_client.secret_requests == [
         (
             invocation_context.invocation_id,
@@ -470,58 +513,38 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
         host_capabilities_factory=factory,
     )
 
-    captured_search: dict[str, Any] = {}
+    captured: dict[str, Any] = {}
 
-    def fake_search(
-        username: str,
-        password: str,
-        *,
-        keyword: str,
-        field: str,
-        operator: str,
-        limit: int | None,
-        fetch_mode: str = "full",
-        max_pages: int = 30,
-    ) -> CourseCatalogSearchResult:
-        captured_search.update(
-            {
-                "username": username,
-                "password": password,
-                "keyword": keyword,
-                "field": field,
-                "operator": operator,
-                "limit": limit,
-                "fetch_mode": fetch_mode,
-                "max_pages": max_pages,
-            }
-        )
-        return CourseCatalogSearchResult(
-            keyword=keyword,
-            field=field,
-            operator=operator,
-            limit=limit,
-            fetch_mode=fetch_mode,
-            max_pages=max_pages,
-            results=[
-                CourseCatalogResultDTO(
-                    course_id="_course_1",
-                    course_identifier="CS305",
-                    course_name="数据库系统",
-                    instructor="张老师",
-                )
-            ],
+    from pathlib import Path
+    def fake_sync(
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        captured.update({"args": args, "kwargs": kwargs})
+        return SimpleNamespace(
+            db_path=Path("mock/path.db"),
+            log_summary={"total": 1},
             logs=[],
+            integrity_ok=True,
+            first_sync_stats={},
+            second_sync_stats=None,
+            table_counts={},
+            expected_active_counts={},
+            snapshot=SimpleNamespace(scraped_counts=lambda: {}, logs=[]),
+            payloads=SimpleNamespace(),
+            second_sync_has_no_new_records=lambda: False,
+            second_sync_has_no_deleted_records=lambda: False,
         )
 
     monkeypatch.setattr(
-        blackboard_facade_tools,
-        "search_course_catalog_with_credentials",
-        fake_search,
+        blackboard_ui,
+        "run_blackboard_snapshot_sync",
+        fake_sync,
     )
 
-    tool = dependencies.tool_registry.resolve_tool("blackboard.course_catalog.search")
+    tool = dependencies.tool_registry.resolve_tool("blackboard.snapshot.sync")
     runtime_context = RuntimeToolExecutionContext(
-        tool_call_id="blackboard.course_catalog.search:call-1",
+        tool_call_id="blackboard.snapshot.sync:call-1",
         run_id="run-1",
         actor="agent",
         requested_at=datetime(2026, 4, 14, 3, 10, tzinfo=UTC),
@@ -532,7 +555,6 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
         result = _run_awaitable(
             tool.execute(
                 {
-                    "keyword": "数据库",
                     "usernameSecretName": "bb.username",
                     "passwordSecretName": "bb.password",
                 }
@@ -540,62 +562,28 @@ def test_build_default_runtime_dependencies_executes_contract_tool_with_bridge_b
         )
 
     assert dependencies.host_capabilities_factory is factory
-    assert captured_search == {
-        "username": "alice",
-        "password": "secret",
-        "keyword": "数据库",
-        "field": "CourseName",
-        "operator": "Contains",
-        "limit": None,
-        "fetch_mode": "full",
-        "max_pages": 30,
-    }
     assert result["status"] == "success"
-    assert result["output"] == {
-        "keyword": "数据库",
-        "field": "CourseName",
-        "operator": "Contains",
-        "fetchMode": "full",
-        "maxPages": 30,
-        "limit": None,
-        "total": 1,
-        "results": [
-            {
-                "course_id": "_course_1",
-                "course_identifier": "CS305",
-                "course_name": "数据库系统",
-                "instructor": "张老师",
-                "term": None,
-                "url": None,
-                "description": None,
-            }
-        ],
-        "logSummary": {"total": 0, "by_level": {}, "by_layer": {}, "by_source": {}},
-        "logs": [],
-    }
-    assert result["metadata"] == {
-        "toolId": "blackboard.course_catalog.search",
-        "credentialSource": "host_secrets",
-    }
+    assert result["metadata"]["toolId"] == "blackboard.snapshot.sync"
+    assert result["metadata"]["credentialSource"] == "host_secrets"
     assert bridge_client.secret_requests == [
         (
-            "blackboard.course_catalog.search:call-1",
-            "blackboard.course_catalog.search",
+            "blackboard.snapshot.sync:call-1",
+            "blackboard.snapshot.sync",
             "run-1",
             "bb.username",
         ),
         (
-            "blackboard.course_catalog.search:call-1",
-            "blackboard.course_catalog.search",
+            "blackboard.snapshot.sync:call-1",
+            "blackboard.snapshot.sync",
             "run-1",
             "bb.password",
         ),
     ]
     assert [event["eventType"] for event in bridge_client.events] == [
-        "blackboard.course_catalog.search.started",
-        "blackboard.course_catalog.search.completed",
+        "blackboard.snapshot.sync.started",
+        "blackboard.snapshot.sync.completed",
     ]
     assert all(
-        event["invocationId"] == "blackboard.course_catalog.search:call-1"
+        event["invocationId"] == "blackboard.snapshot.sync:call-1"
         for event in bridge_client.events
     )

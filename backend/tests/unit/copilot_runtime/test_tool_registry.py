@@ -54,6 +54,7 @@ from app.tooling.file_tools import (
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 from app.tooling.browser_tools import get_browser_tool_contracts
+from app.tooling.calendar_tools import get_calendar_tool_contracts
 
 CONTRACT_TOOL_IDS = tuple(
     contract.metadata.tool_id
@@ -61,6 +62,7 @@ CONTRACT_TOOL_IDS = tuple(
         *get_blackboard_tool_contracts(),
         *get_tis_tool_contracts(),
         *get_browser_tool_contracts(),
+        *get_calendar_tool_contracts(),
     )
 )
 
@@ -357,65 +359,14 @@ def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metada
 def test_default_tool_registry_exposes_contract_tool_runtime_binding_metadata() -> None:
     registry = build_default_tool_registry()
 
-    resolved_tool = registry.resolve_tool("blackboard.course_catalog.search")
+    resolved_tool = registry.resolve_tool("blackboard.snapshot.sync")
 
     assert resolved_tool.descriptor.kind == "contract"
-    assert resolved_tool.function_name == "blackboard_course_catalog_search"
-    assert resolved_tool.parameters_json_schema == {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "keyword": {
-                "type": "string",
-                "minLength": 1,
-                "description": "Search keyword sent to the Blackboard course catalog.",
-            },
-            "field": {
-                "type": "string",
-                "description": "Catalog field to search against. Defaults to `CourseName`.",
-            },
-            "operator": {
-                "type": "string",
-                "description": "Catalog comparison operator. Defaults to `Contains`.",
-            },
-            "fetchMode": {
-                "type": "string",
-                "enum": ["quick", "full"],
-                "default": "full",
-                "description": (
-                    "quick searches only the initial result pages without following show-all; "
-                    "full also follows show-all pagination for more complete results."
-                ),
-            },
-            "maxPages": {
-                "type": "integer",
-                "minimum": 1,
-                "default": 30,
-                "description": "Maximum number of result pages to continue fetching before stopping.",
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Optional cap on the number of catalog results returned after fetching.",
-            },
-            "username": {
-                "type": "string",
-                "description": "Blackboard/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
-            },
-            "password": {
-                "type": "string",
-                "description": "Blackboard/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
-            },
-            "usernameSecretName": {
-                "type": "string",
-                "description": "Host secret name that stores the Blackboard/CAS username. Usually omit it to use the default secret `sustech.username`.",
-            },
-            "passwordSecretName": {
-                "type": "string",
-                "description": "Host secret name that stores the Blackboard/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
-            },
-        },
-        "required": ["keyword"],
-    }
+    assert resolved_tool.function_name == "blackboard_snapshot_sync"
+    assert resolved_tool.parameters_json_schema is not None
+    assert resolved_tool.parameters_json_schema["type"] == "object"
+    assert resolved_tool.parameters_json_schema["additionalProperties"] is False
+    assert "properties" in resolved_tool.parameters_json_schema
 
 
 def test_request_user_form_tool_metadata_encourages_user_friendly_structured_collection() -> None:

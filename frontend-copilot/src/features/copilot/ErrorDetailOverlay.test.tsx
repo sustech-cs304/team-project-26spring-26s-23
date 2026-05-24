@@ -140,7 +140,7 @@ describe('ErrorDetailOverlay', () => {
     const rendered = renderWithRoot(
       <ErrorDetailOverlay
         viewModel={createViewModel({
-          toolId: 'blackboard.course_catalog.search',
+          toolId: 'blackboard.snapshot.sync',
           toolCallId: 'tool-call-1',
           exceptionType: 'RuntimeError',
           exceptionMessage: 'blackboard search exploded',

@@ -160,7 +160,7 @@ describe('error detail overlay view model', () => {
       stage: 'streaming',
       requestedMethod: LABEL_RUN_STREAM,
       details: {
-        toolId: 'blackboard.course_catalog.search',
+        toolId: 'blackboard.snapshot.sync',
         toolCallId: LABEL_TOOL_CALL,
         exceptionType: 'RuntimeError',
         exceptionMessage: 'blackboard search exploded',
@@ -169,7 +169,7 @@ describe('error detail overlay view model', () => {
           integration: 'blackboard',
         },
       },
-      resolvedToolIds: ['blackboard.course_catalog.search'],
+      resolvedToolIds: ['blackboard.snapshot.sync'],
     }))
     const rawDetailsItem = viewModel.groups
       .find((group) => group.key === LABEL_RAW_DETAILS)
@@ -180,7 +180,7 @@ describe('error detail overlay view model', () => {
       label: DESC_CN_008,
       presentation: 'json',
       structuredValue: {
-        toolId: 'blackboard.course_catalog.search',
+        toolId: 'blackboard.snapshot.sync',
         toolCallId: LABEL_TOOL_CALL,
         exceptionType: 'RuntimeError',
         exceptionMessage: 'blackboard search exploded',

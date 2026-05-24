@@ -20,6 +20,7 @@ export const DESKTOP_CAPABILITY_OPERATIONS = [
   'close_tab',
   'switch_tab',
   'execute',
+  'cookies',
   'reset',
   'snapshot',
 ] as const
@@ -53,7 +54,7 @@ export const DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: Record<
   state: ['get_value', 'put_value', 'delete_value'],
   event: ['emit_event'],
   mcp: ['call_tool'],
-  browser: ['open', 'screenshot', 'list_tabs', 'close_tab', 'switch_tab', 'execute', 'reset', 'snapshot'],
+  browser: ['open', 'screenshot', 'list_tabs', 'close_tab', 'switch_tab', 'execute', 'cookies', 'reset', 'snapshot'],
 }
 
 export interface DesktopCapabilityBridgeRequest {
@@ -245,6 +246,17 @@ function normalizeDesktopCapabilityOperationPayload(
       }
       if (payload.tabId !== undefined) {
         normalized.tabId = requireNonEmptyString(payload.tabId, 'tabId')
+      }
+      return normalized
+    }
+    case 'cookies': {
+      assertNoUnexpectedKeys(payload, ['tabId', 'url'], 'browser payload')
+      const normalized: Record<string, unknown> = {}
+      if (payload.tabId !== undefined) {
+        normalized.tabId = requireNonEmptyString(payload.tabId, 'tabId')
+      }
+      if (payload.url !== undefined) {
+        normalized.url = requireNonEmptyString(payload.url, 'url')
       }
       return normalized
     }

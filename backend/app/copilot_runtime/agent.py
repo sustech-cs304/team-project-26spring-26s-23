@@ -163,6 +163,7 @@ class _PydanticAIAgentRunDeps:
     default_root: str
     tool_permission_resolver: RuntimeToolPermissionResolver
     approval_coordinator: RuntimeToolApprovalCoordinator
+    user_data_dir: str | None = None
     resolved_model_route: dict[str, Any] | None = None
     run_id: str | None = None
     debug_enabled: bool = False
@@ -563,6 +564,7 @@ class PydanticAIAgentExecutor:
         tool_registry: ToolRegistry | None = None,
         workspace_root: str | Path | None = None,
         default_root: str | Path | None = None,
+        user_data_dir: str | Path | None = None,
         provider_adapter_registry: RuntimeProviderAdapterRegistry | None = None,
         approval_coordinator: RuntimeToolApprovalCoordinator | None = None,
     ) -> None:
@@ -584,6 +586,11 @@ class PydanticAIAgentExecutor:
             else self._workspace_root
         )
         self._default_root = resolved_default_root
+        self._user_data_dir = (
+            Path(user_data_dir).resolve(strict=False).as_posix()
+            if user_data_dir is not None
+            else None
+        )
         self.provider_adapter_registry = (
             provider_adapter_registry or build_default_provider_adapter_registry()
         )
@@ -753,6 +760,7 @@ class PydanticAIAgentExecutor:
             tool_permission_resolver=tool_permission_resolver
             or RuntimeToolPermissionResolver(),
             approval_coordinator=self._approval_coordinator,
+            user_data_dir=self._user_data_dir,
             resolved_model_route=(
                 None
                 if resolved_model_route is None
@@ -1177,6 +1185,9 @@ class PydanticAIAgentExecutor:
             "fileSystemState": self._build_bound_tool_file_system_state(ctx),
             "skillRuntime": self._build_bound_tool_skill_runtime_state(ctx, tool_id),
         }
+        runtime_paths = self._build_bound_tool_runtime_paths_state(ctx)
+        if runtime_paths:
+            metadata["runtimePaths"] = runtime_paths
         resolved_model_route = getattr(ctx.deps, "resolved_model_route", None)
         if isinstance(resolved_model_route, Mapping):
             metadata["resolvedModelRoute"] = dict(resolved_model_route)
@@ -1201,6 +1212,16 @@ class PydanticAIAgentExecutor:
         if isinstance(default_root, str) and default_root.strip() != "":
             file_system_state["defaultRoot"] = default_root
         return file_system_state
+
+    def _build_bound_tool_runtime_paths_state(
+        self,
+        ctx: RunContext[_PydanticAIAgentRunDeps],
+    ) -> dict[str, Any]:
+        user_data_dir = getattr(ctx.deps, "user_data_dir", None)
+        runtime_paths: dict[str, Any] = {}
+        if isinstance(user_data_dir, str) and user_data_dir.strip() != "":
+            runtime_paths["userDataDir"] = user_data_dir
+        return runtime_paths
 
     def _build_bound_tool_skill_runtime_state(
         self,

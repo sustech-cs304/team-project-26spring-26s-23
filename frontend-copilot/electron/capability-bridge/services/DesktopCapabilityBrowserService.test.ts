@@ -4,10 +4,27 @@ import type { CreateDesktopCapabilityBridgeServiceOptions } from '../types'
 import { createDesktopCapabilityBrowserService } from '../services/DesktopCapabilityBrowserService'
 
 vi.mock('electron', () => {
+  const mockCookiesGet = vi.fn(async (_filter?: Record<string, unknown>) => [
+    {
+      name: 'JSESSIONID',
+      value: 'session-value',
+      domain: '.bb.sustech.edu.cn',
+      path: '/',
+      secure: true,
+      httpOnly: true,
+      expirationDate: 1799999999,
+      sameSite: 'no_restriction',
+    },
+  ])
   const mockWebContents = {
     getURL: vi.fn(() => 'https://example.com'),
     getTitle: vi.fn(() => 'Example Domain'),
     isDestroyed: vi.fn(() => false),
+    session: {
+      cookies: {
+        get: mockCookiesGet,
+      },
+    },
     executeJavaScript: vi.fn(async (script: string) => {
       if (script.includes('throw')) {
         throw new Error('Script execution failed')
@@ -108,6 +125,11 @@ function createBlockingBrowserWindow(): Record<string, unknown> {
     executeJavaScript: vi.fn(async (_script: string) => 'executed-result' as unknown),
     capturePage: vi.fn(async () => ({ toPNG: vi.fn(() => Buffer.from('fake')) })),
     loadURL: vi.fn(async (_url: string) => undefined as void),
+    session: {
+      cookies: {
+        get: vi.fn(async () => []),
+      },
+    },
   }
   const win: Record<string, unknown> = {
     webContents: wc,
@@ -416,6 +438,59 @@ describe('DesktopCapabilityBrowserService', () => {
 
       await expect(
         service.handle(createRequest('execute', { script: 'document.title', tabId: 'nonexistent' }))
+      ).rejects.toThrow()
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // browser.cookies
+  // -----------------------------------------------------------------------
+  describe('cookies', () => {
+    it('reads cookies from the active tab session', async () => {
+      const tab = await service.handle(createRequest('open', { url: 'https://example.com' }))
+
+      const result = await service.handle(createRequest('cookies', {}))
+
+      expect(result.tabId).toBe(tab.tabId)
+      expect(result.currentUrl).toBe('https://example.com')
+      expect(result.cookies).toEqual([
+        {
+          name: 'JSESSIONID',
+          value: 'session-value',
+          domain: '.bb.sustech.edu.cn',
+          path: '/',
+          secure: true,
+          httpOnly: true,
+          expirationDate: 1799999999,
+          sameSite: 'no_restriction',
+        },
+      ])
+    })
+
+    it('uses explicit tab and url filters when provided', async () => {
+      const tab = await service.handle(createRequest('open', { url: 'https://example.com', newTab: true }))
+
+      const result = await service.handle(createRequest('cookies', {
+        tabId: tab.tabId,
+        url: 'https://bb.sustech.edu.cn/',
+      }))
+
+      expect(result.tabId).toBe(tab.tabId)
+      expect(result.currentUrl).toBe('https://bb.sustech.edu.cn/')
+      expect((result.cookies as unknown[]).length).toBe(1)
+    })
+
+    it('throws error when no tab is open', async () => {
+      await expect(
+        service.handle(createRequest('cookies', {}))
+      ).rejects.toThrow()
+    })
+
+    it('throws error for invalid explicit tabId even when active tab exists', async () => {
+      await service.handle(createRequest('open', { url: 'https://example.com' }))
+
+      await expect(
+        service.handle(createRequest('cookies', { tabId: 'nonexistent' }))
       ).rejects.toThrow()
     })
   })

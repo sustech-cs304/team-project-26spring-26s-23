@@ -9,7 +9,7 @@ import type { ElectronAttachmentService } from '../attachment-service/service'
 import type { ManagedRuntimeActionReason } from '../managed-runtime/types'
 import { createElectronFileManagerService } from '../file-manager/service'
 import type { ElectronFileManagerService } from '../file-manager/service'
-import { getCalendarEvents, addCalendarEvent } from '../timeline-database/service'
+import { getCalendarEvents, addCalendarEvent, deleteCalendarEvent, updateCalendarEvent } from '../timeline-database/service'
 import type {
   DesktopRuntimeCalendarEventsLoadResult,
   DesktopRuntimeWakeupIcsImportResult,
@@ -290,6 +290,13 @@ function buildTimelineDatabaseApi(options: CreateMainProcessServicesOptions) {
     async addTimelineEvent(request: Parameters<MainProcessServices['addTimelineEvent']>[0]) {
       const id = addCalendarEvent(request.event)
       return { id }
+    },
+    async updateTimelineEvent(request: Parameters<MainProcessServices['updateTimelineEvent']>[0]) {
+      const item = updateCalendarEvent(request.id, request.patch)
+      return { updated: item !== null, item }
+    },
+    async deleteTimelineEvent(request: Parameters<MainProcessServices['deleteTimelineEvent']>[0]) {
+      return { deleted: deleteCalendarEvent(request.id) }
     },
   }
 }
