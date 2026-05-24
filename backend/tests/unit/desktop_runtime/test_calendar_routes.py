@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.desktop_runtime.config import LOCAL_TOKEN_HEADER_NAME, DesktopRuntimeConfig, DesktopRuntimePaths
@@ -10,16 +10,16 @@ from app.desktop_runtime.server import create_app
 from app.timeline_db import ensure_timeline_schema, insert_timeline_event
 
 
-def _set_user_data_env(tmp_path: Path) -> Path:
+def _set_user_data_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Set COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR and return the timeline.db path."""
     user_data = tmp_path / "user-data"
     user_data.mkdir(parents=True, exist_ok=True)
-    os.environ["COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR"] = str(user_data)
+    monkeypatch.setenv("COPILOT_DESKTOP_RUNTIME_USER_DATA_DIR", str(user_data))
     return user_data / "timeline.db"
 
 
-def test_calendar_events_route_empty(tmp_path: Path) -> None:
-    db_path = _set_user_data_env(tmp_path)
+def test_calendar_events_route_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    db_path = _set_user_data_env(tmp_path, monkeypatch)
     config = _build_config(tmp_path, local_token="calendar-token")
     app = create_app(config)
 
@@ -29,8 +29,8 @@ def test_calendar_events_route_empty(tmp_path: Path) -> None:
         assert resp.json()["items"] == []
 
 
-def test_calendar_events_route_persisted(tmp_path: Path) -> None:
-    db_path = _set_user_data_env(tmp_path)
+def test_calendar_events_route_persisted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    db_path = _set_user_data_env(tmp_path, monkeypatch)
     ensure_timeline_schema(db_path)
     insert_timeline_event(
         db_path,

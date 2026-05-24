@@ -191,8 +191,9 @@ class TestAssignmentRecordScore:
         _assert_equal(score[0], 0, "description_html=0")
         _assert_equal(score[1], 0, "description=0")
         _assert_equal(score[2], 0, "attachments_json=0")
-        _assert_equal(score[6], 0, "assignment url=0")
-        _assert_equal(score[8], "", "assignment_id empty")
+        _assert_equal(score[6], 0, "start_time=0")
+        _assert_equal(score[8], 0, "url has /webapps/assignment/")
+        _assert_equal(score[10], "", "assignment_id empty")
 
     def test_rich_record_scores_high(self) -> None:
         score = _assignment_record_score({
@@ -212,9 +213,11 @@ class TestAssignmentRecordScore:
         _assert_equal(score[3], 1, "submission_status=1")
         _assert_equal(score[4], 1, "status=1")
         _assert_equal(score[5], 1, "due_date=1")
-        _assert_equal(score[6], 1, "url has /webapps/assignment/")
-        _assert_equal(score[7], 1, "url has content_id=")
-        _assert_equal(score[8], "asg_123", "assignment_id correct")
+        _assert_equal(score[6], 0, "start_time=0")
+        _assert_equal(score[7], 0, "end_time=0")
+        _assert_equal(score[8], 1, "url has /webapps/assignment/")
+        _assert_equal(score[9], 1, "url has content_id=")
+        _assert_equal(score[10], "asg_123", "assignment_id correct")
 
 
 # ── _deserialize_assignment_attachments_json ────────────────────────────────

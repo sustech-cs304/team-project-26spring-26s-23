@@ -527,9 +527,12 @@ def test_calendar_refresh_tool_maps_missing_database_capability() -> None:
     assert "traceback" in result.error.details
 
 
-def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkeypatch: Any) -> None:
+def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     captured: dict[str, Any] = {}
-    database = StubDatabaseResolver(Path("database-root"))
+    database_root = tmp_path / "database-root"
+    database = StubDatabaseResolver(database_root)
     artifact_store = StubArtifactStore()
     state_store = StubStateStore()
     event_sink = StubEventSink()
@@ -596,7 +599,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
             announcements_payload=[{"announcement_id": "ann_1"}],
         )
         return BlackboardSnapshotSyncReport(
-            db_path=Path(db_path or "database-root/blackboard/sustech.db"),
+            db_path=Path(str(db_path) if db_path else str(database_root / "blackboard/sustech.db")),
             snapshot=snapshot,
             payloads=payloads,
             first_sync_stats={
@@ -656,7 +659,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert captured == {
         "username": "alice",
         "password": "secret",
-        "db_path": Path("database-root/blackboard/snapshot.db"),
+        "db_path": database_root / "blackboard/snapshot.db",
         "reset_schema": False,
         "verify_second_sync": False,
         "parallel_workers": 4,
@@ -676,7 +679,7 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "persistence",
     }
     assert "resourceCourseLimit" not in result.output
-    assert result.output["dbPath"] == "database-root/blackboard/snapshot.db"
+    assert result.output["dbPath"] == str(database_root / "blackboard/snapshot.db").replace("\\", "/")
     assert result.output["scrapedCounts"] == {
         "courses": 1,
         "assignments": 1,
@@ -736,8 +739,9 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert "courses" not in result.output
     assert "payloads" not in result.output
     assert database.requests == ["blackboard/snapshot.db"]
-    persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
     persisted_state_output = state_store.values[("blackboard.snapshot_sync", "snapshot-latest")]["output"]
+    assert result.output["dbPath"] == str(database_root / "blackboard/snapshot.db").replace("\\", "/")
+    persisted_artifact_output = json.loads(artifact_store.saved_texts[0]["text"])
     latest_status = state_store.values[
         (
             facade_tools._STATE_NAMESPACE_SNAPSHOT_SYNC,
@@ -760,7 +764,12 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
         "progressMessages",
     }
     assert "resourceCourseLimit" not in persisted_artifact_output
-    assert persisted_artifact_output["progressMessages"] == ["开始同步...", "fetching courses", "syncing sqlite"]
+    assert persisted_artifact_output["progressMessages"] == [
+        "开始同步...",
+        "fetching courses",
+        "syncing sqlite",
+        "Blackboard 作业已同步到统一日历：新增 0，重复 0，跳过 0，过期 0。",
+    ]
     assert persisted_artifact_output["scrapedCounts"]["resources"] == 0
     assert persisted_artifact_output["tableCounts"]["resources"] == {"total": 0, "active": 0}
     assert "resourcePayloadsByCourse" not in persisted_artifact_output
@@ -770,7 +779,12 @@ def test_snapshot_sync_tool_shapes_output_and_persists_artifact_and_state(monkey
     assert latest_status["lastSyncError"] is None
     assert latest_status["progressMessage"] is None
     assert latest_status["progressStage"] is None
-    assert latest_status["progressLogs"] == ["开始同步...", "fetching courses", "syncing sqlite"]
+    assert latest_status["progressLogs"] == [
+        "开始同步...",
+        "fetching courses",
+        "syncing sqlite",
+        "Blackboard 作业已同步到统一日历：新增 0，重复 0，跳过 0，过期 0。",
+    ]
     assert [event.event_type for event in event_sink.events] == [
         "blackboard.snapshot.sync.started",
         "blackboard.snapshot.sync.completed",

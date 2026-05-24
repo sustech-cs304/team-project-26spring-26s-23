@@ -67,11 +67,13 @@ from app.tooling.host_capabilities.interfaces import ToolHostCapabilities
 
 def _create_noop_host_capabilities() -> ToolHostCapabilities:
     """Create a host capabilities instance with all capabilities as no-ops."""
+    from pathlib import Path
     from unittest.mock import MagicMock
     noop = MagicMock()
     noop.resolve_path.return_value = "/mock"
     noop.save.return_value = "mock-artifact-id"
     noop.get.return_value = "mock-value"
+    noop.resolve_database_path.return_value = Path("/mock/noop-db.sqlite")
     return ToolHostCapabilities(
         workspace_resolver=noop,
         database_resolver=noop,

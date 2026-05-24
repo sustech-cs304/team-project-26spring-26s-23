@@ -163,23 +163,27 @@ describe('HubWorkspace calendar loading', () => {
     await waitForCondition(() => MockKanbanTracker.mock.calls.length > 0)
 
     const createHandler = getLatestKanbanCreateHandler()
+    const startInput = '2026-05-10T09:30'
+    const endInput = '2026-05-10T11:45'
     await act(async () => {
       await createHandler({
         title: 'New custom task',
         status: 'not_started',
-        startDateTime: '2026-05-10T09:30',
-        endDateTime: '2026-05-10T11:45',
+        startDateTime: startInput,
+        endDateTime: endInput,
       })
     })
 
+    const expectedStart = new Date(startInput).toISOString()
+    const expectedEnd = new Date(endInput).toISOString()
     expect(window.timelineDatabase.addEvent).toHaveBeenCalledWith({
       event: {
         source: 'custom',
         source_id: null,
         title: 'New custom task',
         description: null,
-        start_time: '2026-05-10T01:30:00.000Z',
-        end_time: '2026-05-10T03:45:00.000Z',
+        start_time: expectedStart,
+        end_time: expectedEnd,
         is_all_day: false,
         location: null,
         status: 'not_started',
