@@ -11,6 +11,12 @@ import {
 const mockBootstrapController = {
   retrying: false,
   retry: vi.fn(),
+  state: { status: 'loading' },
+} as any
+
+const mockConnectableBootstrapController = {
+  retrying: false,
+  retry: vi.fn(),
   state: {
     status: 'ready',
     bootstrapFields: {
@@ -202,6 +208,13 @@ function setupDefaultMocks() {
   })
 }
 
+async function flushHookEffects() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+
 describe('COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY', () => {
   it('is 10', () => {
     expect(COPILOT_THREAD_RUNTIME_CONTROLLER_LRU_CAPACITY).toBe(10)
@@ -216,7 +229,8 @@ describe('useAssistantWorkspaceState - basic rendering', () => {
     useAssistantWorkspaceState = mod.useAssistantWorkspaceState
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await flushHookEffects()
     vi.clearAllMocks()
   })
 
@@ -294,7 +308,8 @@ describe('useAssistantWorkspaceState - session list management', () => {
     useAssistantWorkspaceState = mod.useAssistantWorkspaceState
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await flushHookEffects()
     vi.clearAllMocks()
   })
 
@@ -490,7 +505,8 @@ describe('useAssistantWorkspaceState - session shell propagation', () => {
     useAssistantWorkspaceState = mod.useAssistantWorkspaceState
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await flushHookEffects()
     vi.clearAllMocks()
   })
 
@@ -670,7 +686,8 @@ describe('useAssistantWorkspaceState - history restore wiring', () => {
     useAssistantWorkspaceState = mod.useAssistantWorkspaceState
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await flushHookEffects()
     vi.clearAllMocks()
   })
 
@@ -694,7 +711,7 @@ describe('useAssistantWorkspaceState - history restore wiring', () => {
 
     renderHook(() =>
       useAssistantWorkspaceState({
-        bootstrap: mockBootstrapController,
+        bootstrap: mockConnectableBootstrapController,
         listHistoryThreads: listThreads,
         loadShellState: mockLoadShellState,
         persistShellState: mockPersistShellState,
@@ -726,7 +743,7 @@ describe('useAssistantWorkspaceState - history restore wiring', () => {
 
     const { result } = renderHook(() =>
       useAssistantWorkspaceState({
-        bootstrap: mockBootstrapController,
+        bootstrap: mockConnectableBootstrapController,
         listHistoryThreads: listThreads,
         loadShellState: mockLoadShellState,
         persistShellState: mockPersistShellState,
@@ -762,7 +779,7 @@ describe('useAssistantWorkspaceState - history restore wiring', () => {
 
     const { result } = renderHook(() =>
       useAssistantWorkspaceState({
-        bootstrap: mockBootstrapController,
+        bootstrap: mockConnectableBootstrapController,
         listHistoryThreads: listThreads,
         loadShellState: mockLoadShellState,
         persistShellState: mockPersistShellState,
@@ -824,7 +841,7 @@ describe('useAssistantWorkspaceState - history restore wiring', () => {
 
     renderHook(() =>
       useAssistantWorkspaceState({
-        bootstrap: mockBootstrapController,
+        bootstrap: mockConnectableBootstrapController,
         listHistoryThreads: listThreads,
         loadShellState: mockLoadShellState,
         persistShellState: mockPersistShellState,
@@ -845,7 +862,8 @@ describe('useAssistantWorkspaceState - directory state wiring', () => {
     useAssistantWorkspaceState = mod.useAssistantWorkspaceState
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await flushHookEffects()
     vi.clearAllMocks()
   })
 
@@ -927,7 +945,8 @@ describe('useAssistantWorkspaceState - history callbacks', () => {
     useAssistantWorkspaceState = mod.useAssistantWorkspaceState
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await flushHookEffects()
     vi.clearAllMocks()
   })
 
@@ -1034,7 +1053,8 @@ describe('useAssistantWorkspaceState - interaction state wiring', () => {
     useAssistantWorkspaceState = mod.useAssistantWorkspaceState
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await flushHookEffects()
     vi.clearAllMocks()
   })
 
@@ -1120,7 +1140,8 @@ describe('useAssistantWorkspaceState - runtime controller state', () => {
     useAssistantWorkspaceState = mod.useAssistantWorkspaceState
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await flushHookEffects()
     vi.clearAllMocks()
   })
 

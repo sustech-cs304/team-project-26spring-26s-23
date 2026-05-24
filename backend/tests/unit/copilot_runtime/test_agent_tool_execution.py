@@ -65,15 +65,17 @@ from app.tooling.runtime_adapter.copilot_runtime import CONTRACT_RUNTIME_TOOL_KI
 from app.tooling.host_capabilities.interfaces import ToolHostCapabilities
 
 
-def _create_noop_host_capabilities() -> ToolHostCapabilities:
+def _create_noop_host_capabilities(
+    database_path: Path | None = None,
+) -> ToolHostCapabilities:
     """Create a host capabilities instance with all capabilities as no-ops."""
-    from pathlib import Path
     from unittest.mock import MagicMock
+
     noop = MagicMock()
     noop.resolve_path.return_value = "/mock"
     noop.save.return_value = "mock-artifact-id"
     noop.get.return_value = "mock-value"
-    noop.resolve_database_path.return_value = Path("/mock/noop-db.sqlite")
+    noop.resolve_database_path.return_value = database_path or Path("noop-db.sqlite")
     return ToolHostCapabilities(
         workspace_resolver=noop,
         database_resolver=noop,
@@ -85,9 +87,9 @@ def _create_noop_host_capabilities() -> ToolHostCapabilities:
     )
 
 
-def _make_noop_host_capabilities_factory() -> Any:
+def _make_noop_host_capabilities_factory(database_path: Path | None = None) -> Any:
     """Create a host capabilities factory for build_default_tool_registry."""
-    return lambda _contract, _invoke_ctx, _runtime_ctx: _create_noop_host_capabilities()
+    return lambda _contract, _invoke_ctx, _runtime_ctx: _create_noop_host_capabilities(database_path)
 
 
 class CollectedEventStreamResult(TypedDict):
@@ -533,6 +535,7 @@ def test_execute_bound_tool_delay_mode_manual_resolution_wins_before_timeout() -
 
 def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     from pathlib import Path
     captured: dict[str, object] = {}
@@ -559,7 +562,9 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
 
     monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", fake_sync)
 
-    registry = build_default_tool_registry(host_capabilities_factory=_make_noop_host_capabilities_factory())
+    database_path = tmp_path / "noop-db.sqlite"
+    host_capabilities_factory = _make_noop_host_capabilities_factory(database_path)
+    registry = build_default_tool_registry(host_capabilities_factory=host_capabilities_factory)
     executor = PydanticAIAgentExecutor(model="test-model", tool_registry=registry)
     emitted_tool_events: list[RuntimeToolLifecycleEvent] = []
     ctx = _build_tool_run_context(
@@ -571,7 +576,7 @@ def test_execute_bound_tool_executes_contract_tool_via_runtime_registry(
             run_id="run-contract-tool",
             tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
             debug_enabled=False,
-            host_capabilities_factory=_make_noop_host_capabilities_factory(),
+            host_capabilities_factory=host_capabilities_factory,
         ),
     )
 
