@@ -448,6 +448,36 @@ def _build_gemini_budget(
     return None
 
 
+_GEMINI_UNIFIED_4_LEVEL_BUDGET_TOKENS: dict[str, int] = {
+    "low": _THINKING_BUDGET_FIXED_ANCHOR_TOKENS[1],
+    "medium": _THINKING_BUDGET_FIXED_ANCHOR_TOKENS[2],
+    "high": _THINKING_BUDGET_FIXED_ANCHOR_TOKENS[3],
+}
+
+
+def _build_gemini_unified_4_level(
+    value: RuntimeThinkingValue,
+) -> tuple[dict[str, Any], str] | None:
+    if value.valueType != "code" or value.code is None:
+        return None
+    if value.code == "none":
+        return ({"extra_body": {"thinking": {"type": "off"}}}, "gemini_unified_4_level_none")
+    budget_tokens = _GEMINI_UNIFIED_4_LEVEL_BUDGET_TOKENS.get(value.code)
+    if budget_tokens is None:
+        return None
+    return (
+        {
+            "extra_body": {
+                "thinking": {
+                    "type": "budget_tokens",
+                    "budget_tokens": budget_tokens,
+                }
+            }
+        },
+        f"gemini_unified_4_level_{value.code}",
+    )
+
+
 def _build_anthropic_budget(
     value: RuntimeThinkingValue,
 ) -> tuple[dict[str, Any], str] | None:
@@ -498,6 +528,7 @@ def _build_fixed_reasoning(
 _PROVIDER_BUILDERS: dict[str, ProviderBuilder] = {
     "openai_reasoning_effort_v1": _build_openai_reasoning_effort,
     "gemini_budget_v1": _build_gemini_budget,
+    "gemini_unified_4_level_v1": _build_gemini_unified_4_level,
     "anthropic_budget_v1": _build_anthropic_budget,
     "anthropic_adaptive_reasoning_v1": _build_anthropic_adaptive_reasoning,
     "qwen_switch_v1": _build_qwen_switch,
@@ -516,6 +547,8 @@ def _resolve_provider_builder_key(
             return "openai_reasoning_effort_v1"
         if provider == "anthropic":
             return "anthropic_adaptive_reasoning_v1"
+        if provider in {"gemini", "google"}:
+            return "gemini_unified_4_level_v1"
         return None
     return series_spec.provider_builder_key
 

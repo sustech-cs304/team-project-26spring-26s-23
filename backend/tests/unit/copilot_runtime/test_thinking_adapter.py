@@ -344,13 +344,69 @@ def test_adapt_thinking_selection_uses_override_budget_builder() -> None:
     assert result.diagnostics["details"] == {"owner": "unit-test"}
 
 
+
+def test_resolve_override_unified_4_level_for_gemini_route_exposes_provider_builder() -> None:
+    capability = resolve_canonical_thinking_capability(
+        model_route=_route(
+            provider="gemini",
+            endpoint_type="gemini-native",
+            model_id="gemini-3-flash-preview",
+        ),
+        thinking_capability_override={
+            "supported": True,
+            "series": "unified-4-level-v1",
+        },
+    )
+
+    assert capability.series == "unified-4-level-v1"
+    assert capability.provider_builder_key == "gemini_unified_4_level_v1"
+
+
+
+def test_adapt_thinking_selection_maps_unified_4_level_for_gemini_route() -> None:
+    result = adapt_thinking_selection(
+        selection=RuntimeThinkingSelection(
+            series="unified-4-level-v1",
+            value=RuntimeThinkingValue(valueType="code", code="medium", labelZh="中"),
+        ),
+        model_route=_route(
+            provider="gemini",
+            endpoint_type="gemini-native",
+            model_id="gemini-3-flash-preview",
+        ),
+        thinking_capability_override={
+            "supported": True,
+            "series": "unified-4-level-v1",
+        },
+    )
+
+    assert result.applied is True
+    assert result.reason == "override_series_builder_applied"
+    assert result.error_code is None
+    assert result.provider_builder_key == "gemini_unified_4_level_v1"
+    assert result.mapping_reason_code == "gemini_unified_4_level_medium"
+    assert result.model_settings == {
+        "extra_body": {
+            "thinking": {
+                "type": "budget_tokens",
+                "budget_tokens": 32768,
+            }
+        }
+    }
+
+
+
 def _route(
-    *, model_id: str, base_url: str = "https://example.com/v1"
+    *,
+    model_id: str,
+    provider: str = "openai",
+    endpoint_type: str = "openai-compatible",
+    base_url: str = "https://example.com/v1",
 ) -> ResolvedRuntimeModelRoute:
     return ResolvedRuntimeModelRoute(
         provider_profile_id="provider-1",
-        provider="openai",
-        endpoint_type="openai-compatible",
+        provider=provider,
+        endpoint_type=endpoint_type,
         base_url=base_url,
         model_id=model_id,
         api_key="test-api-key",
