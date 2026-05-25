@@ -1,0 +1,348 @@
+name: desktop-windows-release
+
+on:
+  push:
+    branches:
+      - stable
+    paths:
+      - .github/workflows/desktop-windows-release.yml
+      - .github/scripts/**
+      - frontend-copilot/**
+      - provider-catalog/**
+      - backend/app/**
+      - backend/alembic/**
+      - backend/alembic.ini
+      - backend/pyproject.toml
+      - backend/uv.lock
+      - backend/.python-version
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    name: Build and publish Windows release
+    if: github.ref == 'refs/heads/stable'
+    runs-on: windows-2022
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      TARGET_ID: windows-x64
+      PLATFORM: windows
+      ARCH: x64
+      ELECTRON_ARCH: x64
+      PYTHON_VERSION: 3.12.10
+      PYTHON_DOWNLOAD_URL: https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.zip
+      PYTHON_ARCHIVE_KIND: zip
+      INSTALLER_PATTERN: CanDue-Windows-*-Setup.exe
+
+    steps:
+      - name: Checkout stable branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-copilot/package-lock.json
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install frontend dependencies
+        working-directory: frontend-copilot
+        run: npm ci
+
+      - name: Read frontend package version
+        id: package_version
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $version = node -p "JSON.parse(require('node:fs').readFileSync('./package.json', 'utf8')).version"
+          if (-not ($version -match '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$')) {
+            throw "frontend-copilot/package.json contains an invalid SemVer version: $version"
+          }
+
+          $tag = "v$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "tag=$tag"
+
+      - name: Ensure release version is new
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.package_version.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release $env:RELEASE_TAG already exists. Bump frontend-copilot/package.json before publishing a new stable release."
+          }
+
+          git ls-remote --exit-code --tags origin "refs/tags/$env:RELEASE_TAG" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Tag $env:RELEASE_TAG already exists without a release. Delete it or bump frontend-copilot/package.json before publishing."
+          }
+
+          exit 0
+
+      - name: Clean previous packaging outputs
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          foreach ($path in @('.bundled-runtime', 'release')) {
+            if (Test-Path $path) {
+              Remove-Item -LiteralPath $path -Recurse -Force
+            }
+          }
+
+      - name: Prepare diagnostics directory
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.bundled-runtime/diagnostics' | Out-Null
+
+      - name: Download official distributable Python
+        id: download_python_windows
+        shell: pwsh
+        run: |
+          $output = & ./.github/scripts/download-distributable-python.ps1 `
+            -DownloadUrl "$env:PYTHON_DOWNLOAD_URL" `
+            -ArchiveKind "$env:PYTHON_ARCHIVE_KIND" `
+            -InstallRoot "${{ github.workspace }}\.github\python-runtime\$env:TARGET_ID" `
+            -PythonVersion "$env:PYTHON_VERSION" `
+            -ExpectedArch "$env:ARCH" `
+            -PythonVersionFile "${{ github.workspace }}\backend\.python-version" `
+            -PyprojectFile "${{ github.workspace }}\backend\pyproject.toml" 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath 'frontend-copilot/.bundled-runtime/diagnostics/download-python.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Export bundled runtime environment variables
+        shell: pwsh
+        run: |
+          @(
+            "CANDUE_BUNDLED_PYTHON_DIR=${{ steps.download_python_windows.outputs.python_dir }}"
+            "CANDUE_BUNDLED_PYTHON_EXECUTABLE_RELATIVE=${{ steps.download_python_windows.outputs.python_executable_relative }}"
+            "CANDUE_BUNDLED_PYTHON_VERSION=${{ steps.download_python_windows.outputs.python_version }}"
+            "CANDUE_BUNDLED_PYTHON_ARCH=${{ steps.download_python_windows.outputs.python_arch }}"
+            "CANDUE_BUNDLED_PYTHON_SOURCE_LABEL=${{ steps.download_python_windows.outputs.python_source_label }}"
+          ) | ForEach-Object { Add-Content -Path $env:GITHUB_ENV -Value $_ }
+
+      - name: Record toolchain diagnostics
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.bundled-runtime/diagnostics' | Out-Null
+          @(
+            "target_id=$env:TARGET_ID"
+            "runner=windows-2022"
+            "platform=$env:PLATFORM"
+            "arch=$env:ARCH"
+            "node=$(node --version)"
+            "uv=$(uv --version)"
+            "python_dir=$env:CANDUE_BUNDLED_PYTHON_DIR"
+            "python_executable_relative=$env:CANDUE_BUNDLED_PYTHON_EXECUTABLE_RELATIVE"
+            "python_version=$env:CANDUE_BUNDLED_PYTHON_VERSION"
+            "python_arch=$env:CANDUE_BUNDLED_PYTHON_ARCH"
+            "python_source_label=$env:CANDUE_BUNDLED_PYTHON_SOURCE_LABEL"
+          ) | Set-Content '.bundled-runtime/diagnostics/toolchain.txt'
+
+      - name: Stage bundled runtime
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $output = & npm run stage:bundled-runtime 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath '.bundled-runtime/diagnostics/stage-bundled-runtime.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Capture staging tree summary
+        if: always()
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.bundled-runtime/diagnostics' | Out-Null
+          if (Test-Path '.bundled-runtime/staging') {
+            Get-ChildItem '.bundled-runtime/staging' -Recurse -Force |
+              Select-Object -ExpandProperty FullName |
+              Set-Content '.bundled-runtime/diagnostics/staging-tree.txt'
+          }
+
+      - name: Verify staged bundled runtime layout
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $output = & node ./scripts/verify-bundled-runtime-layout.mjs --mode staging 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath '.bundled-runtime/diagnostics/verify-staging.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Run desktop packaging smoke
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $output = & npm run package:desktop:smoke -- --$env:ELECTRON_ARCH 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath '.bundled-runtime/diagnostics/package-desktop-smoke.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Capture unpacked release tree summary
+        if: always()
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.bundled-runtime/diagnostics' | Out-Null
+          $releaseRoot = Join-Path 'release' '${{ steps.package_version.outputs.version }}'
+          if (Test-Path $releaseRoot) {
+            Get-ChildItem $releaseRoot -Recurse -Force |
+              Select-Object -ExpandProperty FullName |
+              Set-Content '.bundled-runtime/diagnostics/release-tree-smoke.txt'
+          }
+
+      - name: Verify unpacked bundled runtime layout
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $output = & node ./scripts/verify-bundled-runtime-layout.mjs --mode unpacked --search-root "./release/${{ steps.package_version.outputs.version }}" 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath '.bundled-runtime/diagnostics/verify-unpacked.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Export full Windows installer
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $output = & npm run package:desktop -- --publish never --$env:ELECTRON_ARCH 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath '.bundled-runtime/diagnostics/package-desktop.log'
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Collect release assets
+        id: release_assets
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseRoot = Join-Path 'release' '${{ steps.package_version.outputs.version }}'
+          if (-not (Test-Path $releaseRoot)) {
+            throw "Release output directory is missing: $releaseRoot"
+          }
+
+          $installerMatches = Get-ChildItem $releaseRoot -Recurse -File | Where-Object { $_.Name -like $env:INSTALLER_PATTERN }
+          if (-not $installerMatches) {
+            throw "Cannot find installer artifact matching pattern '$env:INSTALLER_PATTERN' under $releaseRoot."
+          }
+
+          $assetPatterns = @(
+            $env:INSTALLER_PATTERN,
+            '*.blockmap',
+            'latest*.yml'
+          )
+
+          $assets = Get-ChildItem $releaseRoot -Recurse -File |
+            Where-Object {
+              $name = $_.Name
+              $assetPatterns | Where-Object { $name -like $_ }
+            } |
+            Sort-Object FullName
+
+          if (-not $assets) {
+            throw "No release assets were collected from $releaseRoot."
+          }
+
+          $assetListFile = Join-Path $PWD '.bundled-runtime/diagnostics/release-assets.txt'
+          $assets.FullName | Set-Content $assetListFile
+
+          $relativeAssets = $assets | ForEach-Object { [System.IO.Path]::GetRelativePath($PWD, $_.FullName) -replace '\\', '/' }
+          $relativeAssets | Set-Content '.bundled-runtime/diagnostics/release-assets-relative.txt'
+
+          $delimiter = "EOF_$([guid]::NewGuid().ToString('N'))"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "asset_paths<<$delimiter"
+          $relativeAssets | ForEach-Object { Add-Content -Path $env:GITHUB_OUTPUT -Value $_ }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $delimiter
+
+      - name: Capture final release tree summary
+        if: always()
+        working-directory: frontend-copilot
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.bundled-runtime/diagnostics' | Out-Null
+          $releaseRoot = Join-Path 'release' '${{ steps.package_version.outputs.version }}'
+          if (Test-Path $releaseRoot) {
+            Get-ChildItem $releaseRoot -Recurse -Force |
+              Select-Object -ExpandProperty FullName |
+              Set-Content '.bundled-runtime/diagnostics/release-tree-final.txt'
+          }
+
+      - name: Upload bundled runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-release-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            frontend-copilot/.bundled-runtime/diagnostics
+            frontend-copilot/.bundled-runtime/staging/backend-runtime-manifest.json
+            frontend-copilot/.bundled-runtime/staging/metadata/backend-requirements.txt
+
+      - name: Upload Windows release assets as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-release-assets-${{ steps.package_version.outputs.version }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/CanDue-Windows-*-Setup.exe
+            frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/*.blockmap
+            frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/latest*.yml
+            !frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/*-unpacked/**
+            !frontend-copilot/release/${{ steps.package_version.outputs.version }}/**/*unpacked*/**
+
+      - name: Publish GitHub Release
+        working-directory: frontend-copilot
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.package_version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.package_version.outputs.version }}
+          ASSET_PATHS: ${{ steps.release_assets.outputs.asset_paths }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $assets = $env:ASSET_PATHS -split "`n" | Where-Object { $_.Trim().Length -gt 0 }
+          if (-not $assets) {
+            throw 'No release asset paths were provided.'
+          }
+
+          $notes = @"
+          CanDue Windows release $env:RELEASE_VERSION.
+
+          Source branch: stable
+          Source commit: $env:GITHUB_SHA
+          "@
+
+          gh release create $env:RELEASE_TAG @assets `
+            --target $env:GITHUB_SHA `
+            --title "CanDue $env:RELEASE_TAG" `
+            --notes $notes `
+            --latest
