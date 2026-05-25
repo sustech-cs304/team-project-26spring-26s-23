@@ -96,7 +96,7 @@ describe('createElectronSkillRegistryService', () => {
         registryRevision: 1,
         skills: expect.arrayContaining([
           expect.objectContaining({
-            skillId: 'builtin-placeholder-skill',
+            skillId: 'course-materials-qa',
             source: 'builtin',
             enabled: true,
           }),

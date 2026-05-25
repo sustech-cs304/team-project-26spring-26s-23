@@ -13,7 +13,7 @@ import type { SkillCapabilitySnapshot } from './types'
 const SKILL_ID = 'writing-clear-docs'
 const SKILL_DESCRIPTION = '帮助模型编写结构清晰、面向开发者的技术文档。'
 const DEFAULT_BODY = '# 清晰文档写作\n\n用于编写结构清晰的开发者文档。\n\n- 参考资源：`resources/checklist.md`\n'
-const BUILTIN_SKILL_ID = 'builtin-placeholder-skill'
+const BUILTIN_SKILL_ID = 'course-materials-qa'
 const VALIDATION_FAILED = 'validation_failed'
 const IMPORT_OK_MSG = 'Expected importResult.ok=true'
 const NOW_ISO = '2026-04-24T12:00:00.000Z'
@@ -263,7 +263,7 @@ describe('createSkillRegistryService', () => {
   describe('builtin skills', () => {
     it('loads builtin skills from source directories and prevents deleting them', async () => {
       const fixture = await createRegistryServiceFixture('builtin-skill', {
-        builtinSkillSources: [{ skillId: BUILTIN_SKILL_ID, sourceDirectory: path.resolve('builtin-skills/builtin-placeholder-skill'), enabledByDefault: true }],
+        builtinSkillSources: [{ skillId: BUILTIN_SKILL_ID, sourceDirectory: path.resolve('builtin-skills/course-materials-qa'), enabledByDefault: true }],
       })
 
       const loaded = await fixture.service.loadRegistry({ includeDisabled: true })
@@ -271,14 +271,14 @@ describe('createSkillRegistryService', () => {
 
       expect(loaded).toMatchObject({
         ok: true,
-        skills: [expect.objectContaining({ skillId: BUILTIN_SKILL_ID, source: 'builtin', sourceDirectory: path.resolve('builtin-skills/builtin-placeholder-skill'), enabled: true, managedDirectoryName: BUILTIN_SKILL_ID })],
+        skills: [expect.objectContaining({ skillId: BUILTIN_SKILL_ID, source: 'builtin', sourceDirectory: path.resolve('builtin-skills/course-materials-qa'), enabled: true, managedDirectoryName: BUILTIN_SKILL_ID })],
       })
       expect(deleteResult).toMatchObject({ ok: false, code: 'invalid_request', error: `Builtin Skill "${BUILTIN_SKILL_ID}" cannot be deleted.` })
     })
 
     it('refreshes builtin skills from their source directories instead of the managed runtime directory', async () => {
       const fixture = await createRegistryServiceFixture('builtin-refresh', {
-        builtinSkillSources: [{ skillId: BUILTIN_SKILL_ID, sourceDirectory: path.resolve('builtin-skills/builtin-placeholder-skill'), enabledByDefault: true }],
+        builtinSkillSources: [{ skillId: BUILTIN_SKILL_ID, sourceDirectory: path.resolve('builtin-skills/course-materials-qa'), enabledByDefault: true }],
       })
       await fixture.service.loadRegistry({ includeDisabled: true })
       const result = await fixture.service.refreshSkills({ skillId: BUILTIN_SKILL_ID })
@@ -287,7 +287,7 @@ describe('createSkillRegistryService', () => {
 
     it('keeps builtin skill timestamps stable when the source package has not changed', async () => {
       const fixture = await createRegistryServiceFixture('builtin-stable-timestamps', {
-        builtinSkillSources: [{ skillId: BUILTIN_SKILL_ID, sourceDirectory: path.resolve('builtin-skills/builtin-placeholder-skill'), enabledByDefault: true }],
+        builtinSkillSources: [{ skillId: BUILTIN_SKILL_ID, sourceDirectory: path.resolve('builtin-skills/course-materials-qa'), enabledByDefault: true }],
       })
 
       const firstLoad = await fixture.service.loadRegistry({ includeDisabled: true })
