@@ -123,33 +123,6 @@ SKILL_READ_RESOURCE_TOOL_PROMPT = (
     "Pass the skill id or display name plus the listed resource path."
 )
 
-CAMPUS_DOCS_ENSURE_READY_TOOL_ID = "tool.campus-docs.ensure-ready"
-CAMPUS_DOCS_ENSURE_READY_TOOL_DISPLAY_NAME = "校园文档同步"
-CAMPUS_DOCS_ENSURE_READY_TOOL_DESCRIPTION = (
-    "检查并同步校园官方文档缓存，生成可供引用的 chunks/sections/manifest/index 产物；默认静默执行，首次下载或大量更新会要求确认。"
-)
-CAMPUS_DOCS_ENSURE_READY_TOOL_PROMPT = (
-    "Use this tool before answering campus official information questions. It keeps the local campus_docs cache up to date and prepares citation-friendly artifacts. "
-    "If it returns needsConfirmation, ask the user for permission and call again with confirm=true."
-)
-
-CAMPUS_DOCS_SEARCH_TOOL_ID = "tool.campus-docs.search"
-CAMPUS_DOCS_SEARCH_TOOL_DISPLAY_NAME = "校园文档检索"
-CAMPUS_DOCS_SEARCH_TOOL_DESCRIPTION = (
-    "在本地 campus_docs/index.sqlite 的 FTS 索引中检索最相关的片段，返回可用于引用的命中结果。"
-)
-CAMPUS_DOCS_SEARCH_TOOL_PROMPT = (
-    "Use this tool to search the local campus_docs SQLite index for evidence. "
-    "Call campus_docs_ensure_ready first if the index might be missing or outdated."
-)
-
-INTERNAL_TOOL_IDS: frozenset[str] = frozenset(
-    {
-        CAMPUS_DOCS_ENSURE_READY_TOOL_ID,
-        CAMPUS_DOCS_SEARCH_TOOL_ID,
-    }
-)
-
 FILE_TOOL_READ_DISPLAY_NAME = "File Read"
 FILE_TOOL_READ_DESCRIPTION = (
     "Read UTF-8 text files from the workspace with line-based pagination."
@@ -281,16 +254,6 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "读取已启用 Skill 资源索引中的 UTF-8 文本资源，不要求先激活。",
             "prompt": "需要 Skill 资源摘要中列出的相对路径时，用此工具传入 skill id 或显示名称以及该资源路径。",
         },
-        CAMPUS_DOCS_ENSURE_READY_TOOL_ID: {
-            "displayName": CAMPUS_DOCS_ENSURE_READY_TOOL_DISPLAY_NAME,
-            "description": CAMPUS_DOCS_ENSURE_READY_TOOL_DESCRIPTION,
-            "prompt": "在回答校园官方信息问题前使用此工具同步/更新本地文档缓存并生成可引用的产物；如返回 needsConfirmation，应先征求用户同意并以 confirm=true 重新调用。",
-        },
-        CAMPUS_DOCS_SEARCH_TOOL_ID: {
-            "displayName": CAMPUS_DOCS_SEARCH_TOOL_DISPLAY_NAME,
-            "description": CAMPUS_DOCS_SEARCH_TOOL_DESCRIPTION,
-            "prompt": "在本地 campus_docs 的 SQLite 索引中检索证据片段；通常应先调用 campus_docs_ensure_ready 确保索引存在且最新。",
-        },
     },
     "en-US": {
         FILE_TOOL_READ_ID: {
@@ -388,16 +351,6 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": SKILL_READ_RESOURCE_TOOL_DESCRIPTION,
             "prompt": SKILL_READ_RESOURCE_TOOL_PROMPT,
         },
-        CAMPUS_DOCS_ENSURE_READY_TOOL_ID: {
-            "displayName": CAMPUS_DOCS_ENSURE_READY_TOOL_DISPLAY_NAME,
-            "description": CAMPUS_DOCS_ENSURE_READY_TOOL_DESCRIPTION,
-            "prompt": CAMPUS_DOCS_ENSURE_READY_TOOL_PROMPT,
-        },
-        CAMPUS_DOCS_SEARCH_TOOL_ID: {
-            "displayName": CAMPUS_DOCS_SEARCH_TOOL_DISPLAY_NAME,
-            "description": CAMPUS_DOCS_SEARCH_TOOL_DESCRIPTION,
-            "prompt": CAMPUS_DOCS_SEARCH_TOOL_PROMPT,
-        },
     },
 }
 
@@ -469,99 +422,6 @@ SKILL_READ_RESOURCE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["skill_id", "path"],
-}
-
-CAMPUS_DOCS_ENSURE_READY_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "confirm": {
-            "type": "boolean",
-            "description": "Set true to confirm first-time download or large updates when needsConfirmation was returned.",
-        },
-        "timeoutS": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 120,
-            "description": "Network timeout in seconds for downloading documents.",
-        },
-        "forceDownload": {
-            "type": "boolean",
-            "description": "Force re-download even if ETag/Last-Modified indicate no change.",
-        },
-        "maxDocs": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 200,
-            "description": "Limit how many discovered documents to process; 0 means no limit.",
-        },
-        "chunkSize": {
-            "type": "integer",
-            "minimum": 50,
-            "maximum": 5000,
-            "description": "Maximum characters per chunk.",
-        },
-        "overlap": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 1000,
-            "description": "Overlap characters between adjacent chunks.",
-        },
-        "writeSections": {
-            "type": "boolean",
-            "description": "Generate section tree JSON per document.",
-        },
-        "buildSqliteIndex": {
-            "type": "boolean",
-            "description": "Build or refresh the SQLite FTS index after generating chunks.",
-        },
-        "largeUpdateThreshold": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50,
-            "description": "Ask for confirmation when missingCount is at least this number.",
-        },
-    },
-    "required": [],
-}
-
-CAMPUS_DOCS_SEARCH_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "query": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Search query text (keywords or short phrase).",
-        },
-        "topK": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50,
-            "description": "Number of hits to return.",
-        },
-        "contextChars": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 500,
-            "description": "Characters of context to include around the matched needle for snippet.",
-        },
-        "fullContent": {
-            "type": "boolean",
-            "description": "Include full chunk content in results (may be large).",
-        },
-        "maxPerDoc": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 20,
-            "description": "Maximum hits per document; 0 means no limit.",
-        },
-        "mergeAdjacent": {
-            "type": "boolean",
-            "description": "Merge adjacent chunks from the same document into a single hit.",
-        },
-    },
-    "required": ["query"],
 }
 
 REQUEST_USER_FORM_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {

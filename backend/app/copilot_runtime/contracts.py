@@ -712,12 +712,11 @@ class RuntimeScaffold(RuntimeContract):
                 raise LookupError(f"Unknown tool '{tool_id}'.")
             normalized_requested.append(tool_id)
 
-        resolved = tuple(
+        return tuple(
             tool_id
             for tool_id in normalized_requested
             if tools_by_id[tool_id].availability == "available"
         )
-        return resolved
 
     def diagnostics_summary(self) -> dict[str, Any]:
         summary = {

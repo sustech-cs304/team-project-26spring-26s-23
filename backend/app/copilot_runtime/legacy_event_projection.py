@@ -151,10 +151,6 @@ class RuntimeRunEventProjector:
                 "resolvedToolIds": list(self.resolved_tool_ids),
                 "requestOptions": dict(self.request_options),
             }
-            answer_obj = event.payload.get("answer")
-            payload["answer"] = answer_obj if isinstance(answer_obj, str) else payload["assistantText"]
-            citations_obj = event.payload.get("citations")
-            payload["citations"] = citations_obj if isinstance(citations_obj, list) else []
             if self.resolved_model_route is not None:
                 payload["resolvedModelId"] = self.resolved_model_route.model_id
                 payload["resolvedModelRoute"] = (

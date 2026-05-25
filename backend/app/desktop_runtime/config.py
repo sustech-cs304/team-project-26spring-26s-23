@@ -203,15 +203,7 @@ class DesktopRuntimeConfig:
         return f"http://{host_for_url}:{self.port}"
 
     def ensure_directories(self) -> list[Path]:
-        directories = self.paths.ensure_directories()
-        from .skill_bootstrap import ensure_builtin_skills
-
-        ensure_builtin_skills(
-            state_dir=self.state_dir,
-            config_dir=self.config_dir,
-            runtime_root_dir=self.runtime_root_dir,
-        )
-        return directories
+        return self.paths.ensure_directories()
 
     def sanitized_summary(self) -> dict[str, object]:
         return {

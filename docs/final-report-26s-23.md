@@ -60,7 +60,7 @@ python scripts/metrics.py
 
 我们的项目使用 **GitHub Actions** 作为 CI/CD 平台。管道由 **6 个工作流** 组成，涵盖静态分析、测试、文档部署、桌面打包以及 AI 辅助代码审查。
 
-所有工作流配置文件均位于 [`.github/workflows/`](https://github.com/sustech-cs304/team-project-26spring-26s-23/tree/main/.github/workflows) 目录下。
+所有工作流配置文件均位于 [`.github/workflows/`](../.github/workflows/) 目录下。
 
 ### 2.1 管道总览
 
@@ -140,7 +140,7 @@ python scripts/metrics.py
 | **业务域 pytest** | [pytest](https://pytest.org/) + [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) | Blackboard 和教务系统业务逻辑的单元测试（API、数据、Provider、共享层），排除 `live` 和 `e2e` 标记 |
 | **运行时与冒烟 pytest** | [pytest](https://pytest.org/) + [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) | Copilot 运行时和桌面运行时模块的单元测试，以及 CI 安全的集成冒烟测试 |
 
-**环境配置**：Python 版本来自 [`.python-version`](https://github.com/sustech-cs304/team-project-26spring-26s-23/blob/main/backend/.python-version)，依赖通过 `uv sync --frozen` 安装，由 [astral-sh/setup-uv](https://github.com/astral-sh/setup-uv) 管理。
+**环境配置**：Python 版本来自 [`.python-version`](../backend/.python-version)，依赖通过 `uv sync --frozen` 安装，由 [astral-sh/setup-uv](https://github.com/astral-sh/setup-uv) 管理。
 
 #### 2.2.2 前端验证（`frontend-validation`）
 
