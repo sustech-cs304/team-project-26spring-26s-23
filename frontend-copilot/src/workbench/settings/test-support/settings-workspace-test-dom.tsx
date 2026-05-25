@@ -41,10 +41,12 @@ export function renderWithRoot(element: ReactElement): RenderedSettingsWorkspace
     root.render(element)
   })
 
+  const queryRoot = document.body
+
   return {
     container,
     getByTestId(testId: string) {
-      const target = container.querySelector(`[data-testid="${testId}"]`)
+      const target = queryRoot.querySelector(`[data-testid="${testId}"]`)
       if (target === null) {
         throw new Error(`Missing element for data-testid=${testId}`)
       }
@@ -52,10 +54,10 @@ export function renderWithRoot(element: ReactElement): RenderedSettingsWorkspace
       return target as HTMLElement
     },
     queryByTestId(testId: string) {
-      return container.querySelector(`[data-testid="${testId}"]`)
+      return queryRoot.querySelector(`[data-testid="${testId}"]`)
     },
     getByText(text: string) {
-      const target = Array.from(container.querySelectorAll<HTMLElement>('*')).find((element) => {
+      const target = Array.from(queryRoot.querySelectorAll<HTMLElement>('*')).find((element) => {
         return element.textContent?.trim() === text
       })
 
@@ -66,7 +68,7 @@ export function renderWithRoot(element: ReactElement): RenderedSettingsWorkspace
       return target
     },
     getByTextContaining(text: string) {
-      const target = Array.from(container.querySelectorAll<HTMLElement>('*')).find((element) => {
+      const target = Array.from(queryRoot.querySelectorAll<HTMLElement>('*')).find((element) => {
         if (!element.textContent?.includes(text)) {
           return false
         }
@@ -83,12 +85,12 @@ export function renderWithRoot(element: ReactElement): RenderedSettingsWorkspace
       return target
     },
     queryByText(text: string) {
-      return Array.from(container.querySelectorAll<HTMLElement>('*')).find((element) => {
+      return Array.from(queryRoot.querySelectorAll<HTMLElement>('*')).find((element) => {
         return element.textContent?.trim() === text
       }) ?? null
     },
     getByPlaceholder(placeholder: string) {
-      const target = container.querySelector(`[placeholder="${placeholder}"]`)
+      const target = queryRoot.querySelector(`[placeholder="${placeholder}"]`)
       if (target === null) {
         throw new Error(`Missing element for placeholder=${placeholder}`)
       }
