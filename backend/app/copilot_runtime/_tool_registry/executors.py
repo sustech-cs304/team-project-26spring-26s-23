@@ -280,7 +280,9 @@ def _append_limited_output(target: bytearray, chunk: bytes, *, limit_bytes: int)
 
 def _build_shell_session_subprocess_kwargs() -> dict[str, Any]:
     if sys.platform.startswith("win"):
-        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        return {
+            "creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        }
     return {"start_new_session": True}
 
 
