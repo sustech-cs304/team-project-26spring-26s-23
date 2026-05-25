@@ -166,12 +166,10 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(deniedOption.getAttribute('aria-disabled')).toBe('true')
     expect(deniedOption.title).toContain('总是关闭')
     expect(allowedOption.disabled).toBe(false)
+    expect(allowedOption.getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
 
     await clickElement(deniedOption)
     expect(deniedOption.getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
-
-    await clickElement(allowedOption)
-    expect(allowedOption.getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
 
     const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
     await setFormControlValue(messageInput, '请在清洗 deny 后发送')

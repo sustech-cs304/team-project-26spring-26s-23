@@ -27,7 +27,7 @@ function getSelectedAgent() {
 }
 
 describe('assistant-workspace-controller', () => {
-  it('creates session capabilities from the backend capability object without turning recommendation into a hard limit', () => {
+  it('creates session capabilities from the backend capability object and defaults every tool on', () => {
     const capabilities = createAssistantSessionCapabilities(createCapabilitiesResponse())
 
     expect(capabilities).toEqual({
@@ -49,7 +49,7 @@ describe('assistant-workspace-controller', () => {
         },
       ],
       recommendedToolsForAgent: [TOOL_ID_FS_READ],
-      defaultEnabledTools: [TOOL_ID_FS_READ],
+      defaultEnabledTools: [TOOL_ID_FS_READ, 'tool.remote-search'],
       toolSelectionMode: 'recommendation-only',
     })
     expect(capabilities.allAvailableTools.map((tool) => tool.toolId)).toContain('tool.remote-search')
@@ -90,7 +90,7 @@ describe('assistant-workspace-controller', () => {
           },
         ],
         recommendedToolsForAgent: [TOOL_ID_FS_READ],
-        defaultEnabledTools: [TOOL_ID_FS_READ],
+        defaultEnabledTools: [TOOL_ID_FS_READ, 'tool.remote-search'],
         toolSelectionMode: 'recommendation-only',
       },
     })

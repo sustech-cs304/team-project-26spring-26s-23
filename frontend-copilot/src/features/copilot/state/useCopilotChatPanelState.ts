@@ -47,6 +47,7 @@ import {
   type CopilotChatComposerDraft,
   type CopilotTransientErrorState,
 } from '../copilot-chat-helpers'
+import { sanitizeEnabledToolIds } from '../tool-picker'
 import {
   resolvePersistedHistoryDrift,
   type PersistedHistoryDriftSummary,
@@ -511,6 +512,7 @@ export function useCopilotChatPanelState({
       current,
       sessionShell.sessionId,
       (sessionState) => sessionState,
+      { capabilities: sessionShell.capabilities },
     ))
   }, [sessionIdentity, sessionShell, setTransientStateBySessionId])
 
@@ -708,6 +710,27 @@ export function useCopilotChatPanelState({
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (!workspaceStateLoaded || sessionShell === null) {
+      return
+    }
+
+    setComposerDraft((current) => {
+      const enabledTools = sanitizeEnabledToolIds({
+        selectedToolIds: current.enabledTools,
+        tools: sessionShell.capabilities.allAvailableTools,
+        policy: workspaceToolPermissionPolicy,
+      })
+
+      return haveSameOrderedStrings(current.enabledTools, enabledTools)
+        ? current
+        : {
+            ...current,
+            enabledTools,
+          }
+    })
+  }, [sessionShell, setComposerDraft, workspaceStateLoaded, workspaceToolPermissionPolicy])
 
   useEffect(() => {
     if (!workspaceStateLoaded) {
@@ -1277,6 +1300,10 @@ export function useCopilotChatPanelState({
 
 export function hasPendingInlineFormSegment(runState: CopilotRunState): boolean {
   return runState.segments.some((segment) => segment.kind === 'inline-form' && segment.formState === 'pending')
+}
+
+function haveSameOrderedStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 export function hasSufficientPersistedConversationForRun(input: {

@@ -83,7 +83,7 @@ describe('copilot chat helpers', () => {
         capabilitiesVersion: 'cap-v12',
         allAvailableTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
         recommendedTools: [LABEL_TOOL_READ],
-        defaultEnabledTools: [LABEL_TOOL_READ],
+        defaultEnabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
         defaultEnabledSource: {
           boundAgent: 'general',
           toolSelectionMode: 'recommendation-only',
@@ -112,7 +112,7 @@ describe('copilot chat helpers', () => {
         selectedModelRoute: null,
         thinkingSelection: null,
         thinkingSelectionByModelKey: {},
-        enabledTools: [],
+        enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
         requestOptionsText: '{}',
       })
     })

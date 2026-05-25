@@ -51,9 +51,25 @@ export function createAssistantSessionCapabilitiesFromRuntime(
     capabilitiesVersion: response.capabilitiesVersion,
     allAvailableTools: response.tools.map((tool) => ({ ...tool })),
     recommendedToolsForAgent: [...response.recommendedTools],
-    defaultEnabledTools: [...response.recommendedTools],
+    defaultEnabledTools: createAllAvailableToolIds(response.tools),
     toolSelectionMode: response.toolSelectionMode,
   }
+}
+
+function createAllAvailableToolIds(
+  tools: RuntimeCapabilitiesGetResponse['tools'],
+): string[] {
+  const seenToolIds = new Set<string>()
+
+  return tools.flatMap((tool) => {
+    const toolId = tool.toolId.trim()
+    if (toolId === '' || seenToolIds.has(toolId)) {
+      return []
+    }
+
+    seenToolIds.add(toolId)
+    return [toolId]
+  })
 }
 
 export function createAssistantSessionShellFromHistorySummary(input: {

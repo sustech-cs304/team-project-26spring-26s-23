@@ -16,6 +16,13 @@ import {
 function createSessionShell(overrides?: Partial<AssistantSessionShell>): AssistantSessionShell {
   return {
     sessionId: 'session-1',
+    capabilities: {
+      capabilitiesVersion: 'cap-v12',
+      allAvailableTools: [],
+      recommendedToolsForAgent: [],
+      defaultEnabledTools: [],
+      toolSelectionMode: 'recommendation-only',
+    },
     ...overrides,
   } as AssistantSessionShell
 }
@@ -40,10 +47,19 @@ describe('createCopilotThreadRuntimeControllerState', () => {
     expect(state.composerDraft).toBeDefined()
   })
 
-  it('derives sessionId from sessionShell', () => {
-    const state = createCopilotThreadRuntimeControllerState(createSessionShell())
+  it('derives sessionId and default enabled tools from sessionShell', () => {
+    const state = createCopilotThreadRuntimeControllerState(createSessionShell({
+      capabilities: {
+        capabilitiesVersion: 'cap-v12',
+        allAvailableTools: [],
+        recommendedToolsForAgent: ['tool.fs.read'],
+        defaultEnabledTools: ['tool.fs.read', 'tool.remote-search'],
+        toolSelectionMode: 'recommendation-only',
+      },
+    }))
 
     expect(state.sessionId).toBe('session-1')
+    expect(state.composerDraft.enabledTools).toEqual(['tool.fs.read', 'tool.remote-search'])
   })
 
   it('uses empty sessionId when sessionShell is null', () => {
@@ -333,6 +349,26 @@ describe('updateCopilotThreadRuntimeControllerStateRecord', () => {
 
     expect(updated['new-session'].sessionId).toBe('new-session')
     expect(updated['new-session'].historyRebindAcknowledged).toBe(true)
+  })
+
+  it('uses provided capabilities when creating state for missing session', () => {
+    const record: Record<string, CopilotThreadRuntimeControllerState> = {}
+
+    const updated = updateCopilotThreadRuntimeControllerStateRecord(
+      record, 'new-session',
+      (state) => state,
+      {
+        capabilities: {
+          capabilitiesVersion: 'cap-v12',
+          allAvailableTools: [],
+          recommendedToolsForAgent: ['tool.fs.read'],
+          defaultEnabledTools: ['tool.fs.read', 'tool.remote-search'],
+          toolSelectionMode: 'recommendation-only',
+        },
+      },
+    )
+
+    expect(updated['new-session'].composerDraft.enabledTools).toEqual(['tool.fs.read', 'tool.remote-search'])
   })
 
   it('ignores empty sessionId', () => {
