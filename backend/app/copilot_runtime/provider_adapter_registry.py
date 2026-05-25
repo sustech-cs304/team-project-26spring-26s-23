@@ -553,9 +553,18 @@ def _build_gemini_model(
     provider = GoogleProvider(
         api_key=_normalize_optional_text(model_route.api_key),
         vertexai=False,
-        base_url=model_route.base_url,
+        base_url=_normalize_gemini_provider_base_url(model_route.base_url),
     )
     return GoogleModel(model_route.model_id, provider=provider)
+
+
+def _normalize_gemini_provider_base_url(base_url: str) -> str:
+    normalized_base_url = base_url.strip().rstrip("/")
+    for api_version in ("v1beta", "v1alpha", "v1"):
+        version_suffix = f"/{api_version}"
+        if normalized_base_url.endswith(version_suffix):
+            return normalized_base_url[: -len(version_suffix)]
+    return normalized_base_url
 
 
 def _build_ollama_model(
