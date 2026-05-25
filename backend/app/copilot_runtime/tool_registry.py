@@ -81,6 +81,7 @@ from ._tool_registry.constants import (
 from ._tool_registry.executors import execute_weather_current_tool
 from ._tool_registry.helpers import (
     normalize_tool_catalog_language,
+    sanitize_tool_result_for_summary,
     summarize_tool_arguments,
     summarize_tool_result,
 )
@@ -179,6 +180,7 @@ __all__ = [
     "build_default_tool_registry",
     "execute_weather_current_tool",
     "normalize_tool_catalog_language",
+    "sanitize_tool_result_for_summary",
     "summarize_tool_arguments",
     "summarize_tool_result",
 ]

@@ -21,6 +21,7 @@ from .skill_snapshot_provider import (
 )
 from .tool_registry import (
     REQUEST_USER_FORM_TOOL_ID,
+    sanitize_tool_result_for_summary,
 )
 
 ToolLifecyclePhase = Literal["started", "waiting_approval", "completed", "failed"]
@@ -98,7 +99,8 @@ def _sanitize_tool_result_for_display(tool_id: str, result: dict[str, Any]) -> s
         return _serialize_tool_result_for_display(result)
 
     if tool_id not in {SKILL_ACTIVATE_TOOL_ID, SKILL_READ_RESOURCE_TOOL_ID}:
-        return _serialize_tool_result_for_display(result)
+        sanitized_result = sanitize_tool_result_for_summary(result, tool_id=tool_id)
+        return _serialize_tool_result_for_display(sanitized_result)
 
     sanitized: dict[str, Any] = {
         "ok": result.get("ok"),

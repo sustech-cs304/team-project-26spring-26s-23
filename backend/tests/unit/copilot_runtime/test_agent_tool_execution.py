@@ -10,8 +10,10 @@ from typing import Any, TypedDict, cast
 
 import httpx
 import pytest
+from pydantic_ai import capture_run_messages
 from pydantic_ai._run_context import RunContext
 from pydantic_ai.messages import (
+    BinaryImage,
     ModelRequest,
     PartDeltaEvent,
     PartStartEvent,
@@ -21,6 +23,8 @@ from pydantic_ai.messages import (
     TextPart,
     ToolCallPart,
     ToolCallPartDelta,
+    ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -934,6 +938,106 @@ def test_execute_bound_tool_read_image_requires_vision_context(tmp_path: Path) -
     assert vision_result["status"] == "success"
     assert vision_result["output"]["data"]["kind"] == "image"
 
+
+
+def test_open_event_stream_attaches_read_image_as_multimodal_content(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    image_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jk2QAAAAASUVORK5CYII="
+    )
+    (workspace_root / "pixel.png").write_bytes(image_bytes)
+    registry = build_default_tool_registry(workspace_root=workspace_root)
+    read_tool = registry.resolve_tool("tool.fs.read")
+    assert read_tool.function_name is not None
+
+    class _ReadImageToolCallingTestModel(TestModel):
+        def gen_tool_args(self, tool_def) -> Any:
+            if tool_def.name == read_tool.function_name:
+                return {"path": "pixel.png"}
+            return super().gen_tool_args(tool_def)
+
+    executor = PydanticAIAgentExecutor(
+        model=_ReadImageToolCallingTestModel(
+            call_tools=[read_tool.function_name],
+            custom_output_text="Image inspected.",
+            seed=0,
+        ),
+        tool_registry=registry,
+        workspace_root=workspace_root,
+        default_root=workspace_root,
+    )
+
+    with capture_run_messages() as messages:
+        collected = asyncio.run(
+            _collect_event_stream(
+                executor.open_event_stream(
+                    run_id="run-read-image-attachment",
+                    agent_name="default",
+                    user_prompt="Read the screenshot.",
+                    message_history=(),
+                    model_route=_build_resolved_route(model_id="gpt-4.1"),
+                    enabled_tools=("tool.fs.read",),
+                    tool_permission_resolver=RuntimeToolPermissionResolver(default_mode="allow"),
+                )
+            )
+        )
+
+    assert collected["error"] is None
+    assert collected["output"] == "Image inspected."
+    completed_tool_payloads = [
+        event.payload
+        for event in collected["events"]
+        if event.type == "tool_completed" and event.payload.get("toolId") == "tool.fs.read"
+    ]
+    assert completed_tool_payloads
+    completed_tool_payload = completed_tool_payloads[-1]
+    completed_payload_text = json.dumps(completed_tool_payload, ensure_ascii=False)
+    assert "dataBase64" not in completed_payload_text
+    assert "inlineDataOmitted" in completed_payload_text
+
+    tool_return_parts = [
+        part
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    assert tool_return_parts
+    tool_return = tool_return_parts[-1]
+    assert tool_return.tool_name == read_tool.function_name
+    assert isinstance(tool_return.content, dict)
+    assert tool_return.content["output"]["data"]["kind"] == "image"
+    assert "dataBase64" not in json.dumps(tool_return.content, ensure_ascii=False)
+    assert tool_return.content["output"]["data"]["content"]["image"] == {
+        "mediaType": "image/png",
+        "source": "pydantic-ai-binary-image",
+        "attachedToModel": True,
+        "identifier": tool_return.content["output"]["data"]["metadata"]["modelAttachment"]["identifier"],
+        "byteLength": len(image_bytes),
+    }
+
+    user_prompt_parts = [
+        part
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+    ]
+    assert user_prompt_parts
+    attached_content = user_prompt_parts[-1].content
+    assert not isinstance(attached_content, str)
+    assert isinstance(attached_content[0], str)
+    assert "tool.fs.read attached image" in attached_content[0]
+    assert isinstance(attached_content[1], BinaryImage)
+    assert attached_content[1].data == image_bytes
+    assert attached_content[1].media_type == "image/png"
+    assert (
+        attached_content[1].identifier
+        == tool_return.content["output"]["data"]["metadata"]["modelAttachment"]["identifier"]
+    )
 
 
 @pytest.mark.parametrize(
