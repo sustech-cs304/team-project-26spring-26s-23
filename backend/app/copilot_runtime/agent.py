@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 from collections.abc import AsyncIterable, AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -13,6 +16,7 @@ from datetime import UTC, datetime
 from pydantic_ai import Agent, Tool
 from pydantic_ai._run_context import RunContext
 from pydantic_ai.messages import (
+    BinaryImage,
     BuiltinToolCallEvent,
     BuiltinToolResultEvent,
     FinalResultEvent,
@@ -28,6 +32,7 @@ from pydantic_ai.messages import (
     ThinkingPartDelta,
     ToolCallPart,
     ToolCallPartDelta,
+    ToolReturn,
 )
 from pydantic_ai.result import StreamedRunResult
 from pydantic_ai.settings import ModelSettings
@@ -828,11 +833,15 @@ class PydanticAIAgentExecutor:
         async def runtime_contract_tool(
             ctx: RunContext[_PydanticAIAgentRunDeps],
             **arguments: Any,
-        ) -> dict[str, Any]:
-            return await self._execute_bound_tool(
+        ) -> Any:
+            result = await self._execute_bound_tool(
                 ctx,
                 tool_id=tool_id,
                 arguments=arguments,
+            )
+            return self._build_model_visible_tool_result(
+                tool_id=tool_id,
+                result=result,
             )
 
         tool = Tool.from_schema(
@@ -844,6 +853,126 @@ class PydanticAIAgentExecutor:
         )
         tool.max_retries = 0
         return tool
+
+    def _build_model_visible_tool_result(
+        self,
+        *,
+        tool_id: str,
+        result: dict[str, Any],
+    ) -> Any:
+        if tool_id != "tool.fs.read":
+            return result
+        image = self._extract_read_image_binary(result)
+        if image is None:
+            return result
+        sanitized_result = self._build_read_image_model_return_value(
+            result=result,
+            image=image,
+        )
+        image_label = self._build_read_image_model_label(
+            result=sanitized_result,
+            image=image,
+        )
+        return ToolReturn(
+            return_value=sanitized_result,
+            content=[image_label, image],
+            metadata={
+                "toolId": tool_id,
+                "imageIdentifier": image.identifier,
+                "mediaType": image.media_type,
+                "byteLength": len(image.data),
+            },
+        )
+
+    def _extract_read_image_binary(self, result: Mapping[str, Any]) -> BinaryImage | None:
+        if result.get("status") != "success":
+            return None
+        output = result.get("output")
+        if not isinstance(output, Mapping):
+            return None
+        data = output.get("data")
+        if not isinstance(data, Mapping) or data.get("kind") != "image":
+            return None
+        content = data.get("content")
+        if not isinstance(content, Mapping):
+            return None
+        image_payload = content.get("image")
+        if not isinstance(image_payload, Mapping):
+            return None
+        data_base64 = image_payload.get("dataBase64")
+        if not isinstance(data_base64, str) or data_base64.strip() == "":
+            return None
+        media_type = image_payload.get("mediaType") or content.get("mimeType")
+        if not isinstance(media_type, str) or media_type.strip() == "":
+            return None
+        try:
+            raw = base64.b64decode(data_base64, validate=True)
+            return BinaryImage(data=raw, media_type=media_type.strip())
+        except (ValueError, binascii.Error):
+            return None
+
+    def _build_read_image_model_return_value(
+        self,
+        *,
+        result: Mapping[str, Any],
+        image: BinaryImage,
+    ) -> dict[str, Any]:
+        sanitized = deepcopy(dict(result))
+        self._remove_inline_image_base64_fields(sanitized)
+        data = sanitized.get("output", {}).get("data")
+        if isinstance(data, dict):
+            content = data.get("content")
+            if isinstance(content, dict):
+                image_payload = content.get("image")
+                if isinstance(image_payload, dict):
+                    image_payload.update(
+                        {
+                            "source": "pydantic-ai-binary-image",
+                            "attachedToModel": True,
+                            "identifier": image.identifier,
+                            "byteLength": len(image.data),
+                        }
+                    )
+            metadata = data.get("metadata")
+            if isinstance(metadata, dict):
+                metadata["source"] = "pydantic-ai-binary-image"
+                metadata["modelAttachment"] = {
+                    "identifier": image.identifier,
+                    "mediaType": image.media_type,
+                    "byteLength": len(image.data),
+                }
+        return sanitized
+
+    def _remove_inline_image_base64_fields(self, value: Any) -> None:
+        if isinstance(value, dict):
+            for key in list(value.keys()):
+                if key == "dataBase64":
+                    value.pop(key, None)
+                    continue
+                self._remove_inline_image_base64_fields(value[key])
+        elif isinstance(value, list):
+            for item in value:
+                self._remove_inline_image_base64_fields(item)
+
+    def _build_read_image_model_label(
+        self,
+        *,
+        result: Mapping[str, Any],
+        image: BinaryImage,
+    ) -> str:
+        output = result.get("output")
+        data = output.get("data") if isinstance(output, Mapping) else None
+        path_payload = data.get("path") if isinstance(data, Mapping) else None
+        path = None
+        if isinstance(path_payload, Mapping):
+            path = path_payload.get("path") or path_payload.get("resolvedPath")
+        path_text = str(path).strip() if path is not None else ""
+        source = f" from {path_text}" if path_text else ""
+        return (
+            f"tool.fs.read attached image{source} "
+            f"({image.media_type}, {len(image.data)} bytes). "
+            "Use the attached image content directly for visual understanding."
+        )
 
     def _compose_system_prompt(self, skill_system_prompt: str | None) -> str:
         context = PromptContext(
@@ -1359,7 +1488,7 @@ class PydanticAIAgentExecutor:
         result_summary = (
             "表单请求已发送，等待用户提交。"
             if tool_id == REQUEST_USER_FORM_TOOL_ID
-            else summarize_tool_result(result)
+            else summarize_tool_result(result, tool_id=tool_id)
         )
         result_payload = _sanitize_tool_result_for_display(tool_id, result)
         form_request = (

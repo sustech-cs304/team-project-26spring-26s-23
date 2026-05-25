@@ -144,6 +144,29 @@ def test_default_provider_adapter_registry_allows_ollama_without_api_key() -> No
     assert provider.name == "ollama"
 
 
+@pytest.mark.parametrize("configured_base_url", ["https://api.ikuncode.cc/v1beta", "https://api.ikuncode.cc/v1beta/"])
+def test_default_provider_adapter_registry_strips_gemini_api_version_from_provider_base_url(
+    configured_base_url: str,
+) -> None:
+    registry = build_default_provider_adapter_registry()
+
+    model = registry.build_stream_model(
+        model_route=_build_resolved_route(
+            provider_id="gemini",
+            endpoint_type="gemini-native",
+            adapter_id="gemini",
+            base_url=configured_base_url,
+            api_key="test-gemini-key",
+            model_id="gemini-3-flash-preview",
+        )
+    )
+
+    assert isinstance(model, GoogleModel)
+    provider = getattr(model, "_provider")
+    assert isinstance(provider, GoogleProvider)
+    assert provider.base_url == "https://api.ikuncode.cc"
+
+
 @pytest.mark.parametrize(
     ("provider_id", "endpoint_type", "adapter_id", "runtime_status", "expected_code"),
     [

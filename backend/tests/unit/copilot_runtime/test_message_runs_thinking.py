@@ -342,6 +342,11 @@ def _build_resolved_route_from_runtime_model_route(
         endpoint_type = "openai-response"
         adapter_id = provider_id
         runtime_status = "legacy-unsupported"
+    elif model_route.provider_profile_id == "gemini":
+        provider_id = "gemini"
+        endpoint_type = "gemini-native"
+        base_url = "https://generativelanguage.googleapis.com"
+        adapter_id = provider_id
     elif model_id == "openrouter/auto":
         provider_id = "openrouter"
         adapter_id = provider_id
@@ -666,6 +671,56 @@ def test_stream_events_unknown_with_override_applies_when_mapping_exists() -> No
         }
     }
 
+
+
+def test_stream_events_applies_gemini_native_thinking_config_for_unified_selection() -> None:
+    store = InMemorySessionStore()
+    store.create_thread(bound_agent_id="default", thread_id="session-1")
+    executor = _StreamingExecutor(deltas=["Hello"], output="Hello")
+    registry = build_default_agent_registry(executor_factory=_build_test_executor_factory(executor))
+    orchestrator = RuntimeMessageRunOrchestrator(
+        session_store=store,
+        agent_registry=registry,
+        scaffold=build_runtime_scaffold(
+            session_store_type=store.storage_type,
+            model_configured=True,
+            agent_registry=registry,
+            tool_registry=build_default_tool_registry(),
+        ),
+        model_route_resolver=_ResolvedRouteResolver(),
+    )
+    thinking_selection = RuntimeThinkingSelection(
+        series="unified-4-level-v1",
+        value=RuntimeThinkingValue(valueType="code", code="medium", labelZh="中"),
+    )
+
+    events = asyncio.run(
+        _collect_events(
+            orchestrator,
+            _build_request(
+                thread_id="session-1",
+                route_profile_id="gemini",
+                route_model_id="gemini-3-flash-preview",
+                thinking_selection=thinking_selection,
+                thinking_capability_override={
+                    "supported": True,
+                    "series": "unified-4-level-v1",
+                },
+            ),
+        )
+    )
+
+    assert [event.type for event in events] == ["run_started", "run_metadata", "text_delta", "run_completed"]
+    metadata = events[1].payload
+    assert metadata["appliedThinkingSelection"] == thinking_selection.to_dict()
+    assert metadata["thinkingSeriesDecision"]["providerBuilderKey"] == "gemini_unified_4_level_v1"
+    assert metadata["thinkingSeriesDecision"]["mappingReasonCode"] == "gemini_unified_4_level_medium"
+    assert executor.calls[0]["model_settings"] == {
+        "google_thinking_config": {
+            "include_thoughts": True,
+            "thinking_level": "medium",
+        }
+    }
 
 
 def test_stream_events_unknown_with_override_fails_fast_when_mapping_missing() -> None:

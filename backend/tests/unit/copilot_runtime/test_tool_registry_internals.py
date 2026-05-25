@@ -41,6 +41,7 @@ from app.copilot_runtime._tool_registry.helpers import (
     _truncate_tool_argument_text,
     normalize_tool_catalog_language,
     resolve_builtin_tool_locale,
+    sanitize_tool_result_for_summary,
     summarize_tool_arguments,
     summarize_tool_result,
 )
@@ -733,6 +734,37 @@ class TestSummarizeToolResult:
         summary = summarize_tool_result(object())
         assert summary is not None
         assert isinstance(summary, str)
+
+    def test_read_image_result_omits_inline_base64(self) -> None:
+        result = {
+            "status": "success",
+            "output": {
+                "data": {
+                    "kind": "image",
+                    "content": {
+                        "mimeType": "image/png",
+                        "image": {
+                            "mediaType": "image/png",
+                            "dataBase64": "AAAA",
+                        },
+                    },
+                    "metadata": {"source": "inline-base64"},
+                }
+            },
+        }
+
+        sanitized = sanitize_tool_result_for_summary(result, tool_id=FILE_TOOL_READ_ID)
+        summary = summarize_tool_result(result, tool_id=FILE_TOOL_READ_ID)
+
+        assert isinstance(sanitized, dict)
+        assert sanitized is not result
+        assert sanitized["output"]["data"]["content"]["image"] == {
+            "mediaType": "image/png",
+            "inlineDataOmitted": True,
+        }
+        assert summary is not None
+        assert "dataBase64" not in summary
+        assert "inlineDataOmitted" in summary
 
 
 class TestTruncateToolArgumentText:

@@ -408,11 +408,14 @@ _SERIES_REGISTRY: dict[str, _SeriesSpec] = {
 }
 
 
-ProviderBuilder = Callable[[RuntimeThinkingValue], tuple[dict[str, Any], str] | None]
+ProviderBuilder = Callable[
+    [RuntimeThinkingValue, ResolvedRuntimeModelRoute], tuple[dict[str, Any], str] | None
+]
 
 
 def _build_openai_reasoning_effort(
     value: RuntimeThinkingValue,
+    _model_route: ResolvedRuntimeModelRoute,
 ) -> tuple[dict[str, Any], str] | None:
     if value.valueType != "code" or value.code is None:
         return None
@@ -423,24 +426,26 @@ def _build_openai_reasoning_effort(
 
 def _build_gemini_budget(
     value: RuntimeThinkingValue,
+    _model_route: ResolvedRuntimeModelRoute,
 ) -> tuple[dict[str, Any], str] | None:
     if value.valueType != "budget" or value.mode is None:
         return None
     if value.mode == "off":
-        return ({"extra_body": {"thinking": {"type": "off"}}}, "gemini_budget_off")
+        return (
+            {"google_thinking_config": {"include_thoughts": False, "thinking_budget": 0}},
+            "gemini_budget_off",
+        )
     if value.mode == "dynamic":
         return (
-            {"extra_body": {"thinking": {"type": "dynamic"}}},
+            {"google_thinking_config": {"include_thoughts": True, "thinking_budget": -1}},
             "gemini_budget_dynamic",
         )
     if value.mode == "budget" and value.budgetTokens is not None:
         return (
             {
-                "extra_body": {
-                    "thinking": {
-                        "type": "budget_tokens",
-                        "budget_tokens": value.budgetTokens,
-                    }
+                "google_thinking_config": {
+                    "include_thoughts": True,
+                    "thinking_budget": value.budgetTokens,
                 }
             },
             "gemini_budget_tokens",
@@ -448,8 +453,64 @@ def _build_gemini_budget(
     return None
 
 
+_GEMINI_UNIFIED_4_LEVEL_BUDGET_TOKENS: dict[str, int] = {
+    "low": _THINKING_BUDGET_FIXED_ANCHOR_TOKENS[1],
+    "medium": _THINKING_BUDGET_FIXED_ANCHOR_TOKENS[2],
+    "high": _THINKING_BUDGET_FIXED_ANCHOR_TOKENS[3],
+}
+_GEMINI_3_UNIFIED_4_LEVEL_THINKING_LEVELS: dict[str, str] = {
+    "none": "minimal",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+}
+
+
+def _is_gemini_3_model(model_route: ResolvedRuntimeModelRoute) -> bool:
+    return _normalize_identifier(model_route.model_id).startswith("gemini-3")
+
+
+def _build_gemini_unified_4_level(
+    value: RuntimeThinkingValue,
+    model_route: ResolvedRuntimeModelRoute,
+) -> tuple[dict[str, Any], str] | None:
+    if value.valueType != "code" or value.code is None:
+        return None
+    if _is_gemini_3_model(model_route):
+        thinking_level = _GEMINI_3_UNIFIED_4_LEVEL_THINKING_LEVELS.get(value.code)
+        if thinking_level is None:
+            return None
+        return (
+            {
+                "google_thinking_config": {
+                    "include_thoughts": value.code != "none",
+                    "thinking_level": thinking_level,
+                }
+            },
+            f"gemini_unified_4_level_{value.code}",
+        )
+    if value.code == "none":
+        return (
+            {"google_thinking_config": {"include_thoughts": False, "thinking_budget": 0}},
+            "gemini_unified_4_level_none",
+        )
+    budget_tokens = _GEMINI_UNIFIED_4_LEVEL_BUDGET_TOKENS.get(value.code)
+    if budget_tokens is None:
+        return None
+    return (
+        {
+            "google_thinking_config": {
+                "include_thoughts": True,
+                "thinking_budget": budget_tokens,
+            }
+        },
+        f"gemini_unified_4_level_{value.code}",
+    )
+
+
 def _build_anthropic_budget(
     value: RuntimeThinkingValue,
+    _model_route: ResolvedRuntimeModelRoute,
 ) -> tuple[dict[str, Any], str] | None:
     if value.valueType != "budget" or value.mode is None:
         return None
@@ -465,6 +526,7 @@ def _build_anthropic_budget(
 
 def _build_anthropic_adaptive_reasoning(
     value: RuntimeThinkingValue,
+    _model_route: ResolvedRuntimeModelRoute,
 ) -> tuple[dict[str, Any], str] | None:
     if value.valueType != "code" or value.code is None:
         return None
@@ -480,6 +542,7 @@ def _build_anthropic_adaptive_reasoning(
 
 def _build_qwen_switch(
     value: RuntimeThinkingValue,
+    _model_route: ResolvedRuntimeModelRoute,
 ) -> tuple[dict[str, Any], str] | None:
     if value.valueType != "code" or value.code not in {"true", "false"}:
         return None
@@ -491,6 +554,7 @@ def _build_qwen_switch(
 
 def _build_fixed_reasoning(
     _value: RuntimeThinkingValue,
+    _model_route: ResolvedRuntimeModelRoute,
 ) -> tuple[dict[str, Any], str] | None:
     return ({}, "fixed_reasoning_locked")
 
@@ -498,6 +562,7 @@ def _build_fixed_reasoning(
 _PROVIDER_BUILDERS: dict[str, ProviderBuilder] = {
     "openai_reasoning_effort_v1": _build_openai_reasoning_effort,
     "gemini_budget_v1": _build_gemini_budget,
+    "gemini_unified_4_level_v1": _build_gemini_unified_4_level,
     "anthropic_budget_v1": _build_anthropic_budget,
     "anthropic_adaptive_reasoning_v1": _build_anthropic_adaptive_reasoning,
     "qwen_switch_v1": _build_qwen_switch,
@@ -516,6 +581,8 @@ def _resolve_provider_builder_key(
             return "openai_reasoning_effort_v1"
         if provider == "anthropic":
             return "anthropic_adaptive_reasoning_v1"
+        if provider in {"gemini", "google"}:
+            return "gemini_unified_4_level_v1"
         return None
     return series_spec.provider_builder_key
 
@@ -779,7 +846,7 @@ def adapt_thinking_selection(
             mapping_reason_code="provider_builder_missing",
         )
 
-    built = builder(normalized_requested_selection.value)
+    built = builder(normalized_requested_selection.value, model_route)
     if built is None:
         return _build_adaptation_result(
             requested_selection=normalized_requested_selection,
