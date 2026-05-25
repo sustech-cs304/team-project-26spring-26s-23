@@ -273,13 +273,8 @@ jobs:
           $assetListFile = Join-Path $PWD '.bundled-runtime/diagnostics/release-assets.txt'
           $assets.FullName | Set-Content $assetListFile
 
-          $relativeAssets = $assets | ForEach-Object { [System.IO.Path]::GetRelativePath($PWD, $_.FullName) -replace '\\', '/' }
+          $relativeAssets = $assets | ForEach-Object { ([System.IO.Path]::GetRelativePath($PWD, $_.FullName) -replace '\\', '/').Trim() }
           $relativeAssets | Set-Content '.bundled-runtime/diagnostics/release-assets-relative.txt'
-
-          $delimiter = "EOF_$([guid]::NewGuid().ToString('N'))"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "asset_paths<<$delimiter"
-          $relativeAssets | ForEach-Object { Add-Content -Path $env:GITHUB_OUTPUT -Value $_ }
-          Add-Content -Path $env:GITHUB_OUTPUT -Value $delimiter
 
       - name: Capture final release tree summary
         if: always()
@@ -326,12 +321,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.package_version.outputs.tag }}
           RELEASE_VERSION: ${{ steps.package_version.outputs.version }}
-          ASSET_PATHS: ${{ steps.release_assets.outputs.asset_paths }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $assets = $env:ASSET_PATHS -split "`n" | Where-Object { $_.Trim().Length -gt 0 }
+          $assetListPath = '.bundled-runtime/diagnostics/release-assets-relative.txt'
+          if (-not (Test-Path $assetListPath)) {
+            throw "Release asset list is missing: $assetListPath"
+          }
+
+          $assets = Get-Content $assetListPath |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_.Length -gt 0 }
+
           if (-not $assets) {
             throw 'No release asset paths were provided.'
+          }
+
+          foreach ($asset in $assets) {
+            if (-not (Test-Path $asset)) {
+              throw "Release asset is missing before upload: $asset"
+            }
           }
 
           $notes = @"
