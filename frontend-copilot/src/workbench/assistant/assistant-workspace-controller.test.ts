@@ -27,7 +27,7 @@ function getSelectedAgent() {
 }
 
 describe('assistant-workspace-controller', () => {
-  it('creates session capabilities from the backend capability object without turning recommendation into a hard limit', () => {
+  it('creates session capabilities from the backend capability object and defaults only selectable tools on', () => {
     const capabilities = createAssistantSessionCapabilities(createCapabilitiesResponse())
 
     expect(capabilities).toEqual({

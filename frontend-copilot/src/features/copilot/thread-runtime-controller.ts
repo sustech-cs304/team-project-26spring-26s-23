@@ -1,4 +1,4 @@
-import type { AssistantSessionShell } from '../../workbench/types'
+import type { AssistantSessionCapabilities, AssistantSessionShell } from '../../workbench/types'
 import { createEmptyComposerAttachmentsState } from './attachments/state'
 import type { CopilotComposerAttachmentsState } from './attachments/types'
 import {
@@ -28,7 +28,7 @@ export interface CopilotThreadRuntimeControllerState {
 }
 
 export function createCopilotThreadRuntimeControllerState(
-  sessionShell?: Pick<AssistantSessionShell, 'sessionId'> | null,
+  sessionShell?: (Pick<AssistantSessionShell, 'sessionId'> & Partial<Pick<AssistantSessionShell, 'capabilities'>>) | null,
   createdAt = Date.now(),
 ): CopilotThreadRuntimeControllerState {
   return {
@@ -109,6 +109,7 @@ export function updateCopilotThreadRuntimeControllerStateRecord(
   options: {
     touch?: boolean
     touchedAt?: number
+    capabilities?: AssistantSessionCapabilities
   } = {},
 ): Record<string, CopilotThreadRuntimeControllerState> {
   const normalizedSessionId = sessionId.trim()
@@ -119,6 +120,7 @@ export function updateCopilotThreadRuntimeControllerStateRecord(
   const existingState = stateBySessionId[normalizedSessionId]
   const currentState = existingState ?? createCopilotThreadRuntimeControllerState({
     sessionId: normalizedSessionId,
+    ...(options.capabilities === undefined ? {} : { capabilities: options.capabilities }),
   }, options.touchedAt)
   let nextState = updater(currentState)
   if (options.touch !== false) {

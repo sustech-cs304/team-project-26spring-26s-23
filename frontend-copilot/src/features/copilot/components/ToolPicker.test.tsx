@@ -76,8 +76,8 @@ describe('ToolPicker', () => {
     expect(panel.textContent).not.toContain('available')
     expect(panel.textContent).not.toContain('disabled-by-global-setting')
     expect(panel.textContent).not.toContain('unavailable')
-    expect(panel.textContent).not.toContain('可用')
-    expect(panel.textContent).not.toContain('禁用')
+    expect(gradesOption.textContent).toContain('已禁用')
+    expect(gradesOption.textContent).toContain('当前工具不可用')
 
     const fileName = fileOption.querySelector('.copilot-model-picker__option-body .copilot-tool-picker__option-name')
     const fileDescription = fileOption.querySelector('.copilot-tool-picker__option-description')
@@ -172,11 +172,11 @@ describe('ToolPicker', () => {
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-tool-picker-select-all'))
     expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(
-      'tool.fs.read|blackboard.snapshot.sync|tis.personal_grades.fetch',
+      'tool.fs.read|blackboard.snapshot.sync',
     )
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_2) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
-    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
 
     await clickElement(rendered.getByTestId('chat-tool-picker-invert'))
     expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe('')
@@ -194,17 +194,17 @@ describe('ToolPicker', () => {
 
     await clickElement(rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3))
     expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(
-      'tool.fs.read|blackboard.snapshot.sync|tis.personal_grades.fetch',
+      'tool.fs.read|blackboard.snapshot.sync',
     )
-    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
-    expect(trigger.textContent).toContain('启用 3 项工具')
-    expect(trigger.getAttribute('aria-label')).toBe('工具：启用 3 项工具')
-    expect(trigger.title).toBe('工具：启用 3 项工具')
+    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
+    expect(trigger.textContent).toContain('启用 2 项工具')
+    expect(trigger.getAttribute('aria-label')).toBe('工具：启用 2 项工具')
+    expect(trigger.title).toBe('工具：启用 2 项工具')
 
     rendered.unmount()
   })
 
-  it('keeps denied tools focusable, blocks fresh selection, and still allows deselection', async () => {
+  it('keeps unavailable selected tools focusable, blocks fresh selection, and still allows deselection', async () => {
     const rendered = renderWithRoot(
       <ToolPickerHarness
         initialSelectedToolIds={[LABEL_TOOL_READ, 'tis.personal_grades.fetch']}
@@ -228,7 +228,7 @@ describe('ToolPicker', () => {
     expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
     expect(deniedOption.getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
     expect(deniedOption.textContent).toContain('已禁用')
-    expect(deniedOption.textContent).toContain('当前策略：总是关闭')
+    expect(deniedOption.textContent).toContain('当前工具不可用')
     expect(normalOption.disabled).toBe(false)
 
     await clickElement(deniedOption)

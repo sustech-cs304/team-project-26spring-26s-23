@@ -26,7 +26,7 @@ function getSelectedAgent() {
 }
 
 describe('assistant-workspace-session-controller', () => {
-  it('loads capabilities immediately after session creation and seeds default enabled tools from the recommended subset', async () => {
+  it('loads capabilities immediately after session creation and seeds only selectable tools as enabled by default', async () => {
     const selectedAgent = getSelectedAgent()
     const createSession = async () => createSessionResponse()
     const getCapabilities = async () => createCapabilitiesResponse()

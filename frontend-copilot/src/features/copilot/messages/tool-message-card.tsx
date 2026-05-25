@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
-import { AlertTriangle, CircleSlash, Wrench } from 'lucide-react'
+import { AlertTriangle, CircleSlash, Wrench, type LucideProps } from 'lucide-react'
 
 import { gsap, useGSAP } from '../../../workbench/animation-utils'
 import { getCopilotChatCopy } from '../../../workbench/locale'
@@ -7,6 +7,8 @@ import { CONTROLLED_INLINE_FORM_TOOL_ID } from '../inline-form'
 import type { CopilotErrorDetailSource } from '../error-detail-overlay-view-model'
 import { resolveCopilotToolDisplayNameFromToolId } from '../tool-presentation'
 import type { CopilotToolMessageItem } from '../run-segment-view-model'
+
+import { resolveToolCardSpecialization } from './tool-card-specializations'
 
 interface ToolMessageCardProps {
   turn: CopilotToolMessageItem
@@ -32,12 +34,15 @@ export function ToolMessageCard({
   const [expanded, setExpanded] = useState(false)
   const [renderPanel, setRenderPanel] = useState(false)
   const [inputExpanded, setInputExpanded] = useState(false)
+  const [rawOutputExpanded, setRawOutputExpanded] = useState(false)
   const [approvalPendingDecision, setApprovalPendingDecision] = useState<'approved' | 'rejected' | null>(null)
   const [approvalError, setApprovalError] = useState<string | null>(null)
   const [countdownNow, setCountdownNow] = useState(() => Date.now())
+  const specialization = useMemo(() => resolveToolCardSpecialization(turn, index), [index, turn])
   const contentSections = buildToolContentSections(turn)
   const inputSummary = hasNonEmptyValue(turn.inputSummary) ? turn.inputSummary : null
   const panelId = `chat-message-tool-panel-${turn.id}`
+  const rawOutputPanelId = `chat-message-tool-raw-output-panel-${turn.id}`
   const panelRef = useRef<HTMLDivElement>(null)
 
   useGSAP(() => {
@@ -137,6 +142,9 @@ export function ToolMessageCard({
           index={index}
           expanded={expanded}
           panelId={panelId}
+          title={specialization?.title ?? null}
+          icon={specialization?.icon ?? null}
+          iconClassName={specialization?.iconClassName ?? null}
           onToggle={() => {
             if (expanded) {
               setExpanded(false)
@@ -164,17 +172,30 @@ export function ToolMessageCard({
       })}
       {renderPanel && (
         <div ref={panelRef} className="copilot-chat__tool-panel" id={panelId} data-testid={`chat-message-tool-panel-${index}`}>
-          {contentSections.map((section, sectionIndex) => (
-            <ToolContentSection
-              key={`${turn.id}:${section.label}:${sectionIndex}`}
-              label={section.label}
-              value={section.value}
-              kind={section.kind}
-              testIdPrefix={sectionIndex === 0
-                ? `chat-message-tool-output-${index}`
-                : `chat-message-tool-extra-${index}-${sectionIndex}`}
-            />
-          ))}
+          {specialization === null
+            ? contentSections.map((section, sectionIndex) => (
+                <ToolContentSection
+                  key={`${turn.id}:${section.label}:${sectionIndex}`}
+                  label={section.label}
+                  value={section.value}
+                  kind={section.kind}
+                  testIdPrefix={sectionIndex === 0
+                    ? `chat-message-tool-output-${index}`
+                    : `chat-message-tool-extra-${index}-${sectionIndex}`}
+                />
+              ))
+            : (
+                <>
+                  {specialization.panel}
+                  <ToolRawOutputSection
+                    index={index}
+                    sections={contentSections}
+                    rawOutputExpanded={rawOutputExpanded}
+                    rawOutputPanelId={rawOutputPanelId}
+                    onToggleRawOutput={() => setRawOutputExpanded((current) => !current)}
+                  />
+                </>
+              )}
           {inputSummary !== null && (
             <ToolInputSection
               index={index}
@@ -195,12 +216,18 @@ function ToolToggleButton({
   index,
   expanded,
   panelId,
+  title,
+  icon,
+  iconClassName,
   onToggle,
 }: {
   turn: CopilotToolMessageItem
   index: number
   expanded: boolean
   panelId: string
+  title: string | null
+  icon: ComponentType<LucideProps> | null
+  iconClassName: string | null
   onToggle: () => void
 }) {
   return (
@@ -214,9 +241,9 @@ function ToolToggleButton({
       onClick={onToggle}
     >
       <span className="copilot-chat__tool-toggle-main">
-        {renderToolStepIcon(turn)}
+        {renderToolStepIcon(turn, icon, iconClassName)}
         <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-        <span className="copilot-chat__message-label">{resolveToolCardTitle(turn)}</span>
+        <span className="copilot-chat__message-label">{title ?? resolveToolCardTitle(turn)}</span>
       </span>
       {turn.status === 'streaming' && (
         <span
@@ -275,15 +302,75 @@ function ToolInputSection({
   )
 }
 
-function renderToolStepIcon(turn: CopilotToolMessageItem) {
+function ToolRawOutputSection({
+  index,
+  sections,
+  rawOutputExpanded,
+  rawOutputPanelId,
+  onToggleRawOutput,
+}: {
+  index: number
+  sections: Array<{
+    label: string | null
+    value: string
+    kind: 'result' | 'error'
+  }>
+  rawOutputExpanded: boolean
+  rawOutputPanelId: string
+  onToggleRawOutput: () => void
+}) {
+  return (
+    <div className="copilot-chat__tool-nested">
+      <button
+        type="button"
+        className="copilot-chat__tool-nested-toggle"
+        aria-controls={rawOutputPanelId}
+        aria-expanded={rawOutputExpanded}
+        data-expanded={rawOutputExpanded}
+        data-testid={`chat-message-tool-raw-toggle-${index}`}
+        onClick={onToggleRawOutput}
+      >
+        <span className="copilot-chat__tool-toggle-main copilot-chat__tool-toggle-main--nested">
+          <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">{rawOutputExpanded ? '▾' : '▸'}</span>
+          <span className="copilot-chat__tool-section-label">原始输出</span>
+        </span>
+      </button>
+      {rawOutputExpanded && (
+        <div
+          className="copilot-chat__tool-nested-panel"
+          id={rawOutputPanelId}
+          data-testid={`chat-message-tool-raw-panel-${index}`}
+        >
+          {sections.map((section, sectionIndex) => (
+            <ToolContentSection
+              key={`${rawOutputPanelId}:${section.label}:${sectionIndex}`}
+              label={section.label}
+              value={section.value}
+              kind={section.kind}
+              testIdPrefix={sectionIndex === 0
+                ? `chat-message-tool-output-${index}`
+                : `chat-message-tool-extra-${index}-${sectionIndex}`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function renderToolStepIcon(
+  turn: CopilotToolMessageItem,
+  specializedIcon: ComponentType<LucideProps> | null = null,
+  specializedIconClassName: string | null = null,
+) {
   const failed = turn.status === 'failed' || turn.toolPhase === 'failed'
   const cancelled = turn.status === 'cancelled' || turn.toolPhase === 'cancelled'
-  const Icon = failed ? AlertTriangle : cancelled ? CircleSlash : Wrench
+  const Icon = failed ? AlertTriangle : cancelled ? CircleSlash : specializedIcon ?? Wrench
   const iconClassName = failed
     ? 'copilot-chat__step-icon--error'
     : cancelled
       ? 'copilot-chat__step-icon--cancelled'
-      : 'copilot-chat__step-icon--tool'
+      : specializedIconClassName ?? 'copilot-chat__step-icon--tool'
 
   return (
     <span

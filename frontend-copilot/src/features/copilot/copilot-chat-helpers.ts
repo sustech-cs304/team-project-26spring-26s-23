@@ -113,16 +113,19 @@ export function createEmptyComposerDraft(): CopilotChatComposerDraft {
 }
 
 export function createComposerDraftFromSession(
-  sessionShell?: Pick<AssistantSessionShell, 'sessionId'> | null,
+  sessionShell?: (Pick<AssistantSessionShell, 'sessionId'> & Partial<Pick<AssistantSessionShell, 'capabilities'>>) | null,
 ): CopilotChatComposerDraft {
-  void sessionShell
+  const defaultEnabledTools = sessionShell?.capabilities?.defaultEnabledTools
+
   return {
     messageText: '',
     selectedModelId: '',
     selectedModelRoute: null,
     thinkingSelection: null,
     thinkingSelectionByModelKey: {},
-    enabledTools: [],
+    enabledTools: defaultEnabledTools === undefined
+      ? []
+      : dedupeToolIds([...defaultEnabledTools]),
     requestOptionsText: '{}',
   }
 }

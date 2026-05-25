@@ -11,9 +11,12 @@ export interface CopilotToolGroup {
   tools: RuntimeToolDirectoryEntry[]
 }
 
+export type CopilotToolDisabledReason = 'policy' | 'availability'
+
 export interface CopilotToolViewModel {
   tool: RuntimeToolDirectoryEntry
   disabled: boolean
+  disabledReason: CopilotToolDisabledReason | null
 }
 
 export function filterCopilotTools(input: {
@@ -105,10 +108,14 @@ export function buildCopilotToolViewModels(input: {
   tools: RuntimeToolDirectoryEntry[]
   policy: SettingsWorkspaceToolPermissionPolicyState | null
 }): CopilotToolViewModel[] {
-  return input.tools.map((tool) => ({
-    tool,
-    disabled: isCopilotToolDenied(tool.toolId, input.policy),
-  }))
+  return input.tools.map((tool) => {
+    const disabledReason = resolveCopilotToolDisabledReason(tool, input.policy)
+    return {
+      tool,
+      disabled: disabledReason !== null,
+      disabledReason,
+    }
+  })
 }
 
 export function sanitizeEnabledToolIds(input: {
@@ -116,10 +123,11 @@ export function sanitizeEnabledToolIds(input: {
   tools: readonly RuntimeToolDirectoryEntry[]
   policy: SettingsWorkspaceToolPermissionPolicyState | null
 }): string[] {
-  const knownToolIdSet = new Set(input.tools.map((tool) => tool.toolId))
+  const knownToolById = new Map(input.tools.map((tool) => [tool.toolId, tool] as const))
 
   return dedupeToolIds(input.selectedToolIds).filter((toolId) => {
-    return knownToolIdSet.has(toolId) && !isCopilotToolDenied(toolId, input.policy)
+    const tool = knownToolById.get(toolId)
+    return tool !== undefined && isCopilotToolSelectable(tool, input.policy)
   })
 }
 
@@ -146,8 +154,8 @@ export function invertToolSelection(input: {
   }))
 
   return input.tools
+    .filter((tool) => !selectedToolIdSet.has(tool.toolId) && isCopilotToolSelectable(tool, input.policy))
     .map((tool) => tool.toolId)
-    .filter((toolId) => !selectedToolIdSet.has(toolId) && !isCopilotToolDenied(toolId, input.policy))
 }
 
 export function pickRecommendedToolIds(input: {
@@ -168,20 +176,20 @@ export function pickRecommendedToolIds(input: {
 
 export function toggleToolIdInSelection(input: {
   selectedToolIds: string[]
-  toolId: string
+  tool: RuntimeToolDirectoryEntry
   policy: SettingsWorkspaceToolPermissionPolicyState | null
 }): string[] {
-  if (input.selectedToolIds.includes(input.toolId)) {
+  if (input.selectedToolIds.includes(input.tool.toolId)) {
     return sanitizeSelectedToolIds(
-      input.selectedToolIds.filter((currentToolId) => currentToolId !== input.toolId),
+      input.selectedToolIds.filter((currentToolId) => currentToolId !== input.tool.toolId),
     )
   }
 
-  if (isCopilotToolDenied(input.toolId, input.policy)) {
+  if (!isCopilotToolSelectable(input.tool, input.policy)) {
     return sanitizeSelectedToolIds(input.selectedToolIds)
   }
 
-  return [...sanitizeSelectedToolIds(input.selectedToolIds), input.toolId]
+  return [...sanitizeSelectedToolIds(input.selectedToolIds), input.tool.toolId]
 }
 
 function compareGroupedTools(
@@ -223,6 +231,28 @@ function resolveAvailabilityOrder(availability: string): number {
 
 function resolveRecommendationOrder(toolId: string, recommendedToolIdSet: Set<string>): number {
   return recommendedToolIdSet.has(toolId) ? 0 : 1
+}
+
+function isCopilotToolSelectable(
+  tool: RuntimeToolDirectoryEntry,
+  policy: SettingsWorkspaceToolPermissionPolicyState | null,
+): boolean {
+  return resolveCopilotToolDisabledReason(tool, policy) === null
+}
+
+function resolveCopilotToolDisabledReason(
+  tool: RuntimeToolDirectoryEntry,
+  policy: SettingsWorkspaceToolPermissionPolicyState | null,
+): CopilotToolDisabledReason | null {
+  if (!isCopilotToolSelectableByAvailability(tool)) {
+    return 'availability'
+  }
+
+  return isCopilotToolDenied(tool.toolId, policy) ? 'policy' : null
+}
+
+function isCopilotToolSelectableByAvailability(tool: RuntimeToolDirectoryEntry): boolean {
+  return tool.availability.trim().toLowerCase() === 'available'
 }
 
 function isCopilotToolDenied(toolId: string, policy: SettingsWorkspaceToolPermissionPolicyState | null): boolean {

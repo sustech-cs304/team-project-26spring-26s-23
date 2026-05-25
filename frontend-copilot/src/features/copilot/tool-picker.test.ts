@@ -209,8 +209,8 @@ describe('buildCopilotToolViewModels', () => {
 
     const viewModels = buildCopilotToolViewModels({ tools, policy })
     expect(viewModels).toHaveLength(2)
-    expect(viewModels[0]).toEqual({ tool: tools[0], disabled: false })
-    expect(viewModels[1]).toEqual({ tool: tools[1], disabled: true })
+    expect(viewModels[0]).toEqual({ tool: tools[0], disabled: false, disabledReason: null })
+    expect(viewModels[1]).toEqual({ tool: tools[1], disabled: true, disabledReason: 'policy' })
   })
 
   it('uses defaultMode deny to disable all tools', () => {
@@ -218,13 +218,19 @@ describe('buildCopilotToolViewModels', () => {
     const policy = createPolicy({ defaultMode: 'deny' })
 
     const viewModels = buildCopilotToolViewModels({ tools, policy })
-    expect(viewModels[0]?.disabled).toBe(true)
+    expect(viewModels[0]).toEqual({ tool: tools[0], disabled: true, disabledReason: 'policy' })
   })
 
-  it('marks all tools enabled with null policy', () => {
+  it('marks all available tools enabled with null policy', () => {
     const tools = [createTool({ toolId: TOOL_READ })]
     const viewModels = buildCopilotToolViewModels({ tools, policy: null })
-    expect(viewModels[0]?.disabled).toBe(false)
+    expect(viewModels[0]).toEqual({ tool: tools[0], disabled: false, disabledReason: null })
+  })
+
+  it('marks unavailable tools disabled by availability even with null policy', () => {
+    const tools = [createTool({ toolId: TOOL_SEARCH, availability: 'disabled-by-global-setting' })]
+    const viewModels = buildCopilotToolViewModels({ tools, policy: null })
+    expect(viewModels[0]).toEqual({ tool: tools[0], disabled: true, disabledReason: 'availability' })
   })
 
   it('returns empty array for empty tools', () => {
@@ -239,7 +245,7 @@ describe('buildCopilotToolViewModels', () => {
     })
 
     const viewModels = buildCopilotToolViewModels({ tools, policy })
-    expect(viewModels[0]?.disabled).toBe(true)
+    expect(viewModels[0]).toEqual({ tool: tools[0], disabled: true, disabledReason: 'policy' })
   })
 })
 
@@ -326,6 +332,20 @@ describe('sanitizeEnabledToolIds', () => {
     })
     expect(result).toEqual([])
   })
+
+  it('removes unavailable tool ids even without a permission policy', () => {
+    const unavailableTools = [
+      createTool({ toolId: TOOL_READ }),
+      createTool({ toolId: TOOL_SEARCH, availability: 'disabled-by-global-setting' }),
+      createTool({ toolId: TOOL_WRITE, availability: 'unavailable' }),
+    ]
+    const result = sanitizeEnabledToolIds({
+      selectedToolIds: [TOOL_READ, TOOL_SEARCH, TOOL_WRITE],
+      tools: unavailableTools,
+      policy: null,
+    })
+    expect(result).toEqual([TOOL_READ])
+  })
 })
 
 describe('selectAllToolIds', () => {
@@ -344,6 +364,16 @@ describe('selectAllToolIds', () => {
       toolPermissions: { [TOOL_SEARCH]: { mode: 'deny' } },
     })
     const result = selectAllToolIds({ tools, policy })
+    expect(result).toEqual([TOOL_READ])
+  })
+
+  it('excludes unavailable tools', () => {
+    const tools = [
+      createTool({ toolId: TOOL_READ }),
+      createTool({ toolId: TOOL_SEARCH, availability: 'disabled-by-global-setting' }),
+      createTool({ toolId: TOOL_WRITE, availability: 'unavailable' }),
+    ]
+    const result = selectAllToolIds({ tools, policy: null })
     expect(result).toEqual([TOOL_READ])
   })
 
@@ -397,6 +427,20 @@ describe('invertToolSelection', () => {
     })
     expect(result).toEqual([])
   })
+
+  it('excludes unavailable tools from inversion', () => {
+    const unavailableTools = [
+      createTool({ toolId: TOOL_READ }),
+      createTool({ toolId: TOOL_SEARCH, availability: 'disabled-by-global-setting' }),
+      createTool({ toolId: TOOL_WRITE }),
+    ]
+    const result = invertToolSelection({
+      tools: unavailableTools,
+      selectedToolIds: [TOOL_READ],
+      policy: null,
+    })
+    expect(result).toEqual([TOOL_WRITE])
+  })
 })
 
 describe('pickRecommendedToolIds', () => {
@@ -427,6 +471,20 @@ describe('pickRecommendedToolIds', () => {
     expect(result).toEqual([TOOL_READ])
   })
 
+  it('excludes unavailable recommended tools', () => {
+    const unavailableTools = [
+      createTool({ toolId: TOOL_READ }),
+      createTool({ toolId: TOOL_SEARCH, availability: 'disabled-by-global-setting' }),
+      createTool({ toolId: TOOL_WRITE }),
+    ]
+    const result = pickRecommendedToolIds({
+      tools: unavailableTools,
+      recommendedToolIds: [TOOL_READ, TOOL_SEARCH, TOOL_WRITE],
+      policy: null,
+    })
+    expect(result).toEqual([TOOL_READ, TOOL_WRITE])
+  })
+
   it('returns empty array when no recommended tools match', () => {
     const result = pickRecommendedToolIds({
       tools,
@@ -454,7 +512,7 @@ describe('toggleToolIdInSelection', () => {
   it('adds a tool id when not in selection', () => {
     const result = toggleToolIdInSelection({
       selectedToolIds: [TOOL_READ],
-      toolId: TOOL_WRITE,
+      tool: createTool({ toolId: TOOL_WRITE }),
       policy: null,
     })
     expect(result.sort()).toEqual([TOOL_READ, TOOL_WRITE].sort())
@@ -463,7 +521,7 @@ describe('toggleToolIdInSelection', () => {
   it('removes a tool id when already in selection', () => {
     const result = toggleToolIdInSelection({
       selectedToolIds: [TOOL_READ, TOOL_SEARCH],
-      toolId: TOOL_SEARCH,
+      tool: createTool({ toolId: TOOL_SEARCH }),
       policy: null,
     })
     expect(result).toEqual([TOOL_READ])
@@ -472,7 +530,7 @@ describe('toggleToolIdInSelection', () => {
   it('does not add a denied tool id', () => {
     const result = toggleToolIdInSelection({
       selectedToolIds: [TOOL_READ],
-      toolId: TOOL_SEARCH,
+      tool: createTool({ toolId: TOOL_SEARCH }),
       policy,
     })
     expect(result).toEqual([TOOL_READ])
@@ -481,7 +539,7 @@ describe('toggleToolIdInSelection', () => {
   it('sanitizes selected tool ids when toggling a denied tool', () => {
     const result = toggleToolIdInSelection({
       selectedToolIds: [TOOL_READ, TOOL_READ, TOOL_SEARCH],
-      toolId: TOOL_SEARCH,
+      tool: createTool({ toolId: TOOL_SEARCH }),
       policy,
     })
     expect(result).toEqual([TOOL_READ])
@@ -490,7 +548,25 @@ describe('toggleToolIdInSelection', () => {
   it('removes a denied tool from selection on toggle-off', () => {
     const result = toggleToolIdInSelection({
       selectedToolIds: [TOOL_READ, TOOL_SEARCH],
-      toolId: TOOL_SEARCH,
+      tool: createTool({ toolId: TOOL_SEARCH }),
+      policy,
+    })
+    expect(result).toEqual([TOOL_READ])
+  })
+
+  it('does not add an unavailable tool id', () => {
+    const result = toggleToolIdInSelection({
+      selectedToolIds: [TOOL_READ],
+      tool: createTool({ toolId: TOOL_SEARCH, availability: 'disabled-by-global-setting' }),
+      policy: null,
+    })
+    expect(result).toEqual([TOOL_READ])
+  })
+
+  it('removes an unavailable selected tool from selection on toggle-off', () => {
+    const result = toggleToolIdInSelection({
+      selectedToolIds: [TOOL_READ, TOOL_SEARCH],
+      tool: createTool({ toolId: TOOL_SEARCH, availability: 'disabled-by-global-setting' }),
       policy: null,
     })
     expect(result).toEqual([TOOL_READ])
@@ -499,7 +575,7 @@ describe('toggleToolIdInSelection', () => {
   it('sanitizes tool ids on add', () => {
     const result = toggleToolIdInSelection({
       selectedToolIds: [TOOL_READ, TOOL_READ],
-      toolId: TOOL_WRITE,
+      tool: createTool({ toolId: TOOL_WRITE }),
       policy: null,
     })
     expect(result).toEqual([TOOL_READ, TOOL_WRITE])
@@ -508,7 +584,7 @@ describe('toggleToolIdInSelection', () => {
   it('handles empty initial selection', () => {
     const result = toggleToolIdInSelection({
       selectedToolIds: [],
-      toolId: TOOL_READ,
+      tool: createTool({ toolId: TOOL_READ }),
       policy: null,
     })
     expect(result).toEqual([TOOL_READ])

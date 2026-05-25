@@ -7,6 +7,7 @@ import type {
   CopilotHistoryThreadSummary,
 } from '../../../electron/copilot-history'
 import type { RuntimeCapabilitiesGetResponse } from '../../features/copilot/chat-contract'
+import { sanitizeEnabledToolIds } from '../../features/copilot/tool-picker'
 import type {
   AgentType,
   AssistantSessionCapabilities,
@@ -51,9 +52,19 @@ export function createAssistantSessionCapabilitiesFromRuntime(
     capabilitiesVersion: response.capabilitiesVersion,
     allAvailableTools: response.tools.map((tool) => ({ ...tool })),
     recommendedToolsForAgent: [...response.recommendedTools],
-    defaultEnabledTools: [...response.recommendedTools],
+    defaultEnabledTools: createDefaultEnabledToolIds(response.tools),
     toolSelectionMode: response.toolSelectionMode,
   }
+}
+
+function createDefaultEnabledToolIds(
+  tools: RuntimeCapabilitiesGetResponse['tools'],
+): string[] {
+  return sanitizeEnabledToolIds({
+    selectedToolIds: tools.map((tool) => tool.toolId),
+    tools,
+    policy: null,
+  })
 }
 
 export function createAssistantSessionShellFromHistorySummary(input: {

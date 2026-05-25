@@ -12,6 +12,7 @@ import {
   pickRecommendedToolIds,
   selectAllToolIds,
   toggleToolIdInSelection,
+  type CopilotToolDisabledReason,
 } from '../tool-picker'
 
 interface ToolPickerProps {
@@ -212,7 +213,7 @@ function ToolPickerPanel({
   isSearching: boolean
   collapsedGroupKeys: string[]
   selectedToolSet: Set<string>
-  toolViewModelById: Map<string, { tool: RuntimeToolDirectoryEntry; disabled: boolean }>
+  toolViewModelById: Map<string, { tool: RuntimeToolDirectoryEntry; disabled: boolean; disabledReason: CopilotToolDisabledReason | null }>
   tools: RuntimeToolDirectoryEntry[]
   selectedToolIds: string[]
   recommendedToolIds: string[]
@@ -321,7 +322,7 @@ function ToolPickerGroup({
   group: ReturnType<typeof groupCopilotTools>[number]
   isExpanded: boolean
   selectedToolSet: Set<string>
-  toolViewModelById: Map<string, { tool: RuntimeToolDirectoryEntry; disabled: boolean }>
+  toolViewModelById: Map<string, { tool: RuntimeToolDirectoryEntry; disabled: boolean; disabledReason: CopilotToolDisabledReason | null }>
   selectedToolIds: string[]
   toolPermissionPolicy: ToolPickerProps['toolPermissionPolicy']
   language: string
@@ -344,7 +345,7 @@ function ToolPickerGroup({
               key={tool.toolId}
               tool={tool}
               isSelected={selectedToolSet.has(tool.toolId)}
-              disabledByPolicy={toolViewModelById.get(tool.toolId)?.disabled ?? false}
+              disabledReason={toolViewModelById.get(tool.toolId)?.disabledReason ?? null}
               selectedToolIds={selectedToolIds}
               toolPermissionPolicy={toolPermissionPolicy}
               language={language}
@@ -393,7 +394,7 @@ function ToolPickerGroupToggle({
 function ToolPickerOption({
   tool,
   isSelected,
-  disabledByPolicy,
+  disabledReason,
   selectedToolIds,
   toolPermissionPolicy,
   language,
@@ -401,7 +402,7 @@ function ToolPickerOption({
 }: {
   tool: RuntimeToolDirectoryEntry
   isSelected: boolean
-  disabledByPolicy: boolean
+  disabledReason: CopilotToolDisabledReason | null
   selectedToolIds: string[]
   toolPermissionPolicy: ToolPickerProps['toolPermissionPolicy']
   language: string
@@ -409,20 +410,21 @@ function ToolPickerOption({
 }) {
   const copy = getCopilotChatCopy(language)
   const presentation = resolveCopilotToolPresentation(tool)
-  const blockedByPolicy = disabledByPolicy && !isSelected
-  const optionTitle = blockedByPolicy ? '该工具已被设置为总是关闭，需在能力中心重新开启。' : undefined
+  const disabled = disabledReason !== null
+  const blocked = disabled && !isSelected
+  const optionTitle = resolveToolOptionDisabledTitle(disabledReason)
 
   return (
     <button
       type="button"
-      className={`copilot-model-picker__option copilot-tool-picker__option${isSelected ? ' copilot-model-picker__option--selected copilot-tool-picker__option--selected' : ''}${disabledByPolicy ? ' copilot-tool-picker__option--disabled' : ''}`}
+      className={`copilot-model-picker__option copilot-tool-picker__option${isSelected ? ' copilot-model-picker__option--selected copilot-tool-picker__option--selected' : ''}${disabled ? ' copilot-tool-picker__option--disabled' : ''}`}
       aria-pressed={isSelected}
-      aria-disabled={blockedByPolicy ? 'true' : undefined}
+      aria-disabled={blocked ? 'true' : undefined}
       title={optionTitle}
       onClick={() => {
         onChangeToolIds(toggleToolIdInSelection({
           selectedToolIds,
-          toolId: tool.toolId,
+          tool,
           policy: toolPermissionPolicy ?? null,
         }))
       }}
@@ -434,13 +436,38 @@ function ToolPickerOption({
       <span className="copilot-model-picker__option-body">
         <span className="copilot-tool-picker__option-name-row">
           <span className="copilot-model-picker__option-name copilot-tool-picker__option-name">{presentation.name}</span>
-          {disabledByPolicy ? <span className="copilot-tool-picker__option-status copilot-tool-picker__option-status--disabled">{copy.toolPicker.disabledBadge}</span> : null}
+          {disabled ? <span className="copilot-tool-picker__option-status copilot-tool-picker__option-status--disabled">{copy.toolPicker.disabledBadge}</span> : null}
         </span>
         <span className="copilot-tool-picker__option-description">{presentation.description}</span>
-        {disabledByPolicy ? <span className="copilot-tool-picker__option-policy-hint">{copy.toolPicker.disabledHint}</span> : null}
+        {disabled ? <span className="copilot-tool-picker__option-policy-hint">{resolveToolOptionDisabledHint(disabledReason, copy)}</span> : null}
       </span>
     </button>
   )
+}
+
+function resolveToolOptionDisabledTitle(disabledReason: CopilotToolDisabledReason | null): string | undefined {
+  switch (disabledReason) {
+    case 'policy':
+      return '该工具已被设置为总是关闭，需在能力中心重新开启。'
+    case 'availability':
+      return '该工具当前不可用，不能启用。'
+    case null:
+      return undefined
+  }
+}
+
+function resolveToolOptionDisabledHint(
+  disabledReason: CopilotToolDisabledReason | null,
+  copy: ReturnType<typeof getCopilotChatCopy>,
+): string {
+  switch (disabledReason) {
+    case 'policy':
+      return copy.toolPicker.disabledHint
+    case 'availability':
+      return '当前工具不可用'
+    case null:
+      return ''
+  }
 }
 
 function buildSelectedToolSummary(tools: RuntimeToolDirectoryEntry[], selectedToolIds: string[], language: string): string {
