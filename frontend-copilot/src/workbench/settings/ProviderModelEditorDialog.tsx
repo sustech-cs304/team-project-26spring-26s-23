@@ -1,4 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 
 import {
   getModelCapabilityOptions,
@@ -269,7 +270,7 @@ export function ProviderModelEditorDialog(props: ProviderModelEditorDialogProps)
     supportsBudgetDefaultModes: computed.supportsBudgetDefaultModes, presetBudgetValues: computed.presetBudgetValues,
     modelEditorThinkingCapability: modelEditorState.thinkingCapability, updateThinkingCapability,
   })
-  return <ModelEditorDialogContent
+  const dialog = <ModelEditorDialogContent
     dialogRef={dialogRef} initialFocusRef={initialFocusRef} modelEditorState={modelEditorState}
     modelEditorError={modelEditorError} copy={copy}
     computed={computed} currentValueOptions={currentValueOptions} budgetModeOptions={budgetModeOptions}
@@ -277,6 +278,8 @@ export function ProviderModelEditorDialog(props: ProviderModelEditorDialogProps)
     onClose={onClose} onSave={onSave} onStateChange={onStateChange}
     onToggleCapability={onToggleCapability} handleKeyDown={handleKeyDown}
   />
+
+  return typeof document === 'undefined' || document.body === null ? dialog : createPortal(dialog, document.body)
 }
 
 interface ModelEditorDialogContentProps {
