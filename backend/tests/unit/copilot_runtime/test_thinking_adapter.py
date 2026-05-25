@@ -333,11 +333,9 @@ def test_adapt_thinking_selection_uses_override_budget_builder() -> None:
     assert result.provider_builder_key == "gemini_budget_v1"
     assert result.mapping_reason_code == "gemini_budget_tokens"
     assert result.model_settings == {
-        "extra_body": {
-            "thinking": {
-                "type": "budget_tokens",
-                "budget_tokens": 8192,
-            }
+        "google_thinking_config": {
+            "include_thoughts": True,
+            "thinking_budget": 8192,
         }
     }
     assert result.capability.details == {"owner": "unit-test"}
@@ -386,11 +384,40 @@ def test_adapt_thinking_selection_maps_unified_4_level_for_gemini_route() -> Non
     assert result.provider_builder_key == "gemini_unified_4_level_v1"
     assert result.mapping_reason_code == "gemini_unified_4_level_medium"
     assert result.model_settings == {
-        "extra_body": {
-            "thinking": {
-                "type": "budget_tokens",
-                "budget_tokens": 32768,
-            }
+        "google_thinking_config": {
+            "include_thoughts": True,
+            "thinking_level": "medium",
+        }
+    }
+
+
+
+def test_adapt_thinking_selection_maps_unified_4_level_for_gemini_25_route() -> None:
+    result = adapt_thinking_selection(
+        selection=RuntimeThinkingSelection(
+            series="unified-4-level-v1",
+            value=RuntimeThinkingValue(valueType="code", code="medium", labelZh="中"),
+        ),
+        model_route=_route(
+            provider="gemini",
+            endpoint_type="gemini-native",
+            model_id="gemini-2.5-flash",
+        ),
+        thinking_capability_override={
+            "supported": True,
+            "series": "unified-4-level-v1",
+        },
+    )
+
+    assert result.applied is True
+    assert result.reason == "override_series_builder_applied"
+    assert result.error_code is None
+    assert result.provider_builder_key == "gemini_unified_4_level_v1"
+    assert result.mapping_reason_code == "gemini_unified_4_level_medium"
+    assert result.model_settings == {
+        "google_thinking_config": {
+            "include_thoughts": True,
+            "thinking_budget": 32768,
         }
     }
 
