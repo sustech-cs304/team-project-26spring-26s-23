@@ -57,6 +57,8 @@ class AssignmentDTO(BlackboardDTO):
     assignment_id: str | None
     course_id: str | None
     title: str
+    start_time: datetime | None = None
+    end_time: datetime | None = None
     due_date: str | None = None
     due_date_parsed: datetime | None = None
     status: str | None = None

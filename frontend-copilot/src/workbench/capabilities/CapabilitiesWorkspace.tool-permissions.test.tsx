@@ -531,11 +531,11 @@ function createDynamicMcpGroupCatalogLoadResult(): ToolCatalogLoadResult {
         },
       },
       {
-        toolId: 'blackboard.course_catalog.search',
+        toolId: 'blackboard.snapshot.sync',
         kind: 'contract',
         availability: 'available',
-        displayName: '课程目录搜索',
-        description: '搜索 Blackboard 课程目录。',
+        displayName: '数据全量同步',
+        description: '从 Blackboard 拉取所有已选课程数据并同步到本地数据库。',
         group: {
           id: 'blackboard',
           label: DESC_CN_009,

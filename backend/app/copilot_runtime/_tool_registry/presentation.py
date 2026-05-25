@@ -3,6 +3,18 @@
 from __future__ import annotations
 
 from .constants import (
+    SHELL_SESSION_CLOSE_TOOL_DESCRIPTION,
+    SHELL_SESSION_CLOSE_TOOL_DISPLAY_NAME,
+    SHELL_SESSION_CLOSE_TOOL_ID,
+    SHELL_SESSION_EXEC_TOOL_DESCRIPTION,
+    SHELL_SESSION_EXEC_TOOL_DISPLAY_NAME,
+    SHELL_SESSION_EXEC_TOOL_ID,
+    SHELL_SESSION_START_TOOL_DESCRIPTION,
+    SHELL_SESSION_START_TOOL_DISPLAY_NAME,
+    SHELL_SESSION_START_TOOL_ID,
+    SHELL_RUN_TOOL_DESCRIPTION,
+    SHELL_RUN_TOOL_DISPLAY_NAME,
+    SHELL_RUN_TOOL_ID,
     BROWSER_CLOSE_TAB_TOOL_DESCRIPTION,
     BROWSER_CLOSE_TAB_TOOL_DISPLAY_NAME,
     BROWSER_CLOSE_TAB_TOOL_ID,
@@ -91,6 +103,13 @@ TIS_TOOL_GROUP = ToolPresentationGroup(
     order=20,
     source_kind="sustech-tis",
 )
+CALENDAR_TOOL_GROUP = ToolPresentationGroup(
+    group_id="calendar",
+    label_zh="日历工具",
+    label_en="Calendar Tools",
+    order=12,
+    source_kind="calendar",
+)
 SKILL_TOOL_GROUP = ToolPresentationGroup(
     group_id="runtime-skill",
     label_zh="Skill 工具",
@@ -108,6 +127,10 @@ TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     FILE_TOOL_NOTEBOOK_EDIT_ID: BUILTIN_TOOL_GROUP,
     FILE_TOOL_SWITCH_ROOT_ID: BUILTIN_TOOL_GROUP,
     WEATHER_CURRENT_TOOL_ID: BUILTIN_TOOL_GROUP,
+    SHELL_RUN_TOOL_ID: BUILTIN_TOOL_GROUP,
+    SHELL_SESSION_START_TOOL_ID: BUILTIN_TOOL_GROUP,
+    SHELL_SESSION_EXEC_TOOL_ID: BUILTIN_TOOL_GROUP,
+    SHELL_SESSION_CLOSE_TOOL_ID: BUILTIN_TOOL_GROUP,
     REQUEST_USER_FORM_TOOL_ID: BUILTIN_TOOL_GROUP,
     BROWSER_OPEN_TOOL_ID: BROWSER_TOOL_GROUP,
     BROWSER_SCREENSHOT_TOOL_ID: BROWSER_TOOL_GROUP,
@@ -119,11 +142,9 @@ TOOL_PRESENTATION_GROUPS_BY_ID: dict[str, ToolPresentationGroup] = {
     BROWSER_SNAPSHOT_TOOL_ID: BROWSER_TOOL_GROUP,
     SKILL_ACTIVATE_TOOL_ID: SKILL_TOOL_GROUP,
     SKILL_READ_RESOURCE_TOOL_ID: SKILL_TOOL_GROUP,
+    "calendar.sql.query": CALENDAR_TOOL_GROUP,
     "blackboard.sql.query": BLACKBOARD_TOOL_GROUP,
-    "blackboard.course_catalog.search": BLACKBOARD_TOOL_GROUP,
-    "blackboard.calendar.refresh": BLACKBOARD_TOOL_GROUP,
     "blackboard.snapshot.sync": BLACKBOARD_TOOL_GROUP,
-    "blackboard.course_resources.sync": BLACKBOARD_TOOL_GROUP,
     "tis.sql.query": TIS_TOOL_GROUP,
     "tis.personal_grades.fetch": TIS_TOOL_GROUP,
     "tis.credit_gpa.fetch": TIS_TOOL_GROUP,
@@ -178,6 +199,30 @@ TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "display_name_en": WEATHER_CURRENT_TOOL_DISPLAY_NAME,
         "description_zh": "返回指定地点的占位当前天气结果。",
         "description_en": WEATHER_CURRENT_TOOL_DESCRIPTION,
+    },
+    SHELL_RUN_TOOL_ID: {
+        "display_name_zh": "Shell 命令执行",
+        "display_name_en": SHELL_RUN_TOOL_DISPLAY_NAME,
+        "description_zh": "在后端使用 shell 执行一条命令（支持管道、重定向等 shell 特性）。",
+        "description_en": SHELL_RUN_TOOL_DESCRIPTION,
+    },
+    SHELL_SESSION_START_TOOL_ID: {
+        "display_name_zh": "Shell 会话启动",
+        "display_name_en": SHELL_SESSION_START_TOOL_DISPLAY_NAME,
+        "description_zh": "在后端启动一个可持续的 shell 会话（会保留 cd、环境变量等状态）。",
+        "description_en": SHELL_SESSION_START_TOOL_DESCRIPTION,
+    },
+    SHELL_SESSION_EXEC_TOOL_ID: {
+        "display_name_zh": "Shell 会话输入",
+        "display_name_en": SHELL_SESSION_EXEC_TOOL_DISPLAY_NAME,
+        "description_zh": "向已启动的 shell 会话发送输入并返回输出。",
+        "description_en": SHELL_SESSION_EXEC_TOOL_DESCRIPTION,
+    },
+    SHELL_SESSION_CLOSE_TOOL_ID: {
+        "display_name_zh": "Shell 会话关闭",
+        "display_name_en": SHELL_SESSION_CLOSE_TOOL_DISPLAY_NAME,
+        "description_zh": "关闭一个 shell 会话并释放后端资源。",
+        "description_en": SHELL_SESSION_CLOSE_TOOL_DESCRIPTION,
     },
     REQUEST_USER_FORM_TOOL_ID: {
         "display_name_zh": "请求用户表单",
@@ -245,35 +290,29 @@ TOOL_PRESENTATION_COPY_BY_ID: dict[str, dict[str, str]] = {
         "description_zh": "读取已启用 Skill 资源索引中的 UTF-8 文本资源，不要求先激活。",
         "description_en": SKILL_READ_RESOURCE_TOOL_DESCRIPTION,
     },
+    "calendar.sql.query": {
+        "display_name_zh": "日历 SQL 查询",
+        "display_name_en": "Calendar SQL Query",
+        "description_zh": (
+            "对统一日历数据库执行 SQL 查询和修改。可查看/修改/删除所有来源的事件，"
+            "但仅允许添加 source='custom' 的事件。"
+        ),
+        "description_en": (
+            "Execute SQL queries and mutations against the unified calendar database. "
+            "View/modify/delete all events; only INSERT source='custom' events."
+        ),
+    },
     "blackboard.sql.query": {
         "display_name_zh": "Blackboard 数据查询",
         "display_name_en": "Blackboard SQL Query",
         "description_zh": "查询 Blackboard 本地数据。",
         "description_en": "Query Blackboard local data.",
     },
-    "blackboard.course_catalog.search": {
-        "display_name_zh": "课程目录搜索",
-        "display_name_en": "Course Catalog Search",
-        "description_zh": "搜索 Blackboard 课程目录。",
-        "description_en": "Search Blackboard course catalog.",
-    },
-    "blackboard.calendar.refresh": {
-        "display_name_zh": "日历刷新",
-        "display_name_en": "Calendar Refresh",
-        "description_zh": "刷新 Blackboard 课程日历。",
-        "description_en": "Refresh Blackboard course calendar.",
-    },
     "blackboard.snapshot.sync": {
         "display_name_zh": "快照同步",
         "display_name_en": "Snapshot Sync",
         "description_zh": "同步 Blackboard 基础快照。",
         "description_en": "Sync Blackboard base snapshots.",
-    },
-    "blackboard.course_resources.sync": {
-        "display_name_zh": "课程资源同步",
-        "display_name_en": "Course Resources Sync",
-        "description_zh": "同步指定课程资源。",
-        "description_en": "Sync resources for a selected Blackboard course.",
     },
     "tis.sql.query": {
         "display_name_zh": "TIS 数据查询",

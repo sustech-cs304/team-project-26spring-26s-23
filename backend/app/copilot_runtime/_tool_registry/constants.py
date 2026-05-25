@@ -33,6 +33,37 @@ WEATHER_CURRENT_TOOL_PROMPT = (
     "Use this tool to retrieve a simple current weather summary for a location."
 )
 
+SHELL_RUN_TOOL_ID = "tool.shell-run"
+SHELL_RUN_TOOL_DISPLAY_NAME = "Shell Run"
+SHELL_RUN_TOOL_DESCRIPTION = (
+    "Run a shell command on the backend host (supports pipes, redirects, and other shell features)."
+)
+SHELL_RUN_TOOL_PROMPT = (
+    "Use this tool when you need real shell features such as pipes (|), redirects (>), or &&. "
+    "Pass the full command as a string; pick an explicit shell only when needed."
+)
+
+SHELL_SESSION_START_TOOL_ID = "tool.shell-session.start"
+SHELL_SESSION_START_TOOL_DISPLAY_NAME = "Shell Session Start"
+SHELL_SESSION_START_TOOL_DESCRIPTION = "Start a persistent shell session on the backend host."
+SHELL_SESSION_START_TOOL_PROMPT = (
+    "Use this tool to start a persistent shell session when you need state such as cd, environment variables, or multiple sequential commands."
+)
+
+SHELL_SESSION_EXEC_TOOL_ID = "tool.shell-session.exec"
+SHELL_SESSION_EXEC_TOOL_DISPLAY_NAME = "Shell Session Exec"
+SHELL_SESSION_EXEC_TOOL_DESCRIPTION = "Send input to a persistent shell session and return output."
+SHELL_SESSION_EXEC_TOOL_PROMPT = (
+    "Use this tool to send the next command or input to an existing shell session started earlier."
+)
+
+SHELL_SESSION_CLOSE_TOOL_ID = "tool.shell-session.close"
+SHELL_SESSION_CLOSE_TOOL_DISPLAY_NAME = "Shell Session Close"
+SHELL_SESSION_CLOSE_TOOL_DESCRIPTION = "Close a persistent shell session on the backend host."
+SHELL_SESSION_CLOSE_TOOL_PROMPT = (
+    "Use this tool to close a shell session when you are finished."
+)
+
 REQUEST_USER_FORM_TOOL_ID = "tool.request-user-form"
 REQUEST_USER_FORM_TOOL_DISPLAY_NAME = "Request User Form"
 REQUEST_USER_FORM_TOOL_DESCRIPTION = (
@@ -199,6 +230,26 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": "返回指定地点的占位当前天气结果。",
             "prompt": "使用此工具获取某个地点的简要当前天气摘要。",
         },
+        SHELL_RUN_TOOL_ID: {
+            "displayName": "Shell 命令执行",
+            "description": "在后端使用 shell 执行一条命令（支持管道、重定向等 shell 特性）。",
+            "prompt": "当你需要 |、>、&& 等真实 shell 特性时使用此工具。请提供完整 command 字符串；除非必要，不要显式指定 shell。涉及删除、覆盖、安装、网络访问等高风险操作必须先征求用户明确批准。",
+        },
+        SHELL_SESSION_START_TOOL_ID: {
+            "displayName": "Shell 会话启动",
+            "description": "在后端启动一个可持续的 shell 会话（会保留 cd、环境变量等状态）。",
+            "prompt": "当你需要像真实终端一样保持状态（如 cd 后目录保持、设置环境变量后持续生效）时，先用此工具启动会话并获得 sessionId。",
+        },
+        SHELL_SESSION_EXEC_TOOL_ID: {
+            "displayName": "Shell 会话输入",
+            "description": "向已启动的 shell 会话发送输入并返回输出。",
+            "prompt": "使用此工具向 shell 会话发送下一条命令或输入。请传入 sessionId 和 input 文本。",
+        },
+        SHELL_SESSION_CLOSE_TOOL_ID: {
+            "displayName": "Shell 会话关闭",
+            "description": "关闭一个 shell 会话并释放后端资源。",
+            "prompt": "当不再需要 shell 会话时，使用此工具关闭它以释放资源。",
+        },
         REQUEST_USER_FORM_TOOL_ID: {
             "displayName": "请求用户表单",
             "description": "在聊天中请求用户填写受控内联表单，以收集继续任务所需的结构化信息；当结构化字段、选项、偏好、约束、确认或参数比自由文本追问更清晰时，应优先考虑使用，即使只有一个字段也可以。",
@@ -296,6 +347,26 @@ BUILTIN_TOOL_LOCALES: dict[str, dict[str, dict[str, str]]] = {
             "description": WEATHER_CURRENT_TOOL_DESCRIPTION,
             "prompt": WEATHER_CURRENT_TOOL_PROMPT,
         },
+        SHELL_RUN_TOOL_ID: {
+            "displayName": SHELL_RUN_TOOL_DISPLAY_NAME,
+            "description": SHELL_RUN_TOOL_DESCRIPTION,
+            "prompt": SHELL_RUN_TOOL_PROMPT,
+        },
+        SHELL_SESSION_START_TOOL_ID: {
+            "displayName": SHELL_SESSION_START_TOOL_DISPLAY_NAME,
+            "description": SHELL_SESSION_START_TOOL_DESCRIPTION,
+            "prompt": SHELL_SESSION_START_TOOL_PROMPT,
+        },
+        SHELL_SESSION_EXEC_TOOL_ID: {
+            "displayName": SHELL_SESSION_EXEC_TOOL_DISPLAY_NAME,
+            "description": SHELL_SESSION_EXEC_TOOL_DESCRIPTION,
+            "prompt": SHELL_SESSION_EXEC_TOOL_PROMPT,
+        },
+        SHELL_SESSION_CLOSE_TOOL_ID: {
+            "displayName": SHELL_SESSION_CLOSE_TOOL_DISPLAY_NAME,
+            "description": SHELL_SESSION_CLOSE_TOOL_DESCRIPTION,
+            "prompt": SHELL_SESSION_CLOSE_TOOL_PROMPT,
+        },
         REQUEST_USER_FORM_TOOL_ID: {
             "displayName": REQUEST_USER_FORM_TOOL_DISPLAY_NAME,
             "description": REQUEST_USER_FORM_TOOL_DESCRIPTION,
@@ -376,22 +447,9 @@ WEATHER_SAMPLE_RESULTS: tuple[dict[str, Any], ...] = (
     },
 )
 
-REDACTED_TOOL_ARGUMENT_VALUE = "***"
 MAX_TOOL_ARGUMENT_VALUE_LENGTH = 120
 MAX_TOOL_ARGUMENT_SUMMARY_LENGTH = 512
 MAX_TOOL_RESULT_SUMMARY_LENGTH = 320
-SENSITIVE_TOOL_ARGUMENT_KEYWORDS = frozenset(
-    {
-        "apikey",
-        "authorization",
-        "cookie",
-        "credential",
-        "password",
-        "secret",
-        "session",
-        "token",
-    }
-)
 
 SKILL_ACTIVATE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -422,6 +480,107 @@ SKILL_READ_RESOURCE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["skill_id", "path"],
+}
+
+SHELL_RUN_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "shell": {
+            "type": "string",
+            "enum": ["auto", "pwsh", "cmd", "bash", "sh"],
+            "default": "auto",
+            "description": "Shell selector. Use auto unless you need a specific shell.",
+        },
+        "command": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Full shell command string (pipes, redirects, && supported depending on shell).",
+        },
+        "cwd": {
+            "type": "string",
+            "description": "Optional working directory for the command on the backend host (relative path).",
+        },
+        "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 300,
+            "description": "Maximum seconds to wait with no stdout/stderr output before terminating the shell command.",
+        },
+        "maxOutputChars": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20000,
+            "description": "Maximum stdout/stderr characters to retain before truncation.",
+        },
+    },
+    "required": ["command"],
+}
+
+SHELL_SESSION_START_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "shell": {
+            "type": "string",
+            "enum": ["auto", "pwsh", "cmd", "bash", "sh"],
+            "default": "auto",
+            "description": "Shell selector. Use auto unless you need a specific shell.",
+        },
+        "cwd": {
+            "type": "string",
+            "description": "Optional initial working directory for the session on the backend host. Relative and absolute paths are allowed.",
+        },
+        "recycleTimeoutSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Required explicit session lifetime in seconds before the runtime may recycle the shell session.",
+        },
+    },
+    "required": ["recycleTimeoutSeconds"],
+}
+
+SHELL_SESSION_EXEC_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Shell session id returned from shell-session.start.",
+        },
+        "input": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Input text to send to the shell session (a command line).",
+        },
+        "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 300,
+            "description": "Maximum seconds to wait for this session input to finish before interrupting and closing the shell session.",
+        },
+        "maxOutputChars": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20000,
+            "description": "Maximum stdout/stderr characters to retain before truncation.",
+        },
+    },
+    "required": ["sessionId", "input"],
+}
+
+SHELL_SESSION_CLOSE_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Shell session id to close.",
+        }
+    },
+    "required": ["sessionId"],
 }
 
 REQUEST_USER_FORM_PARAMETERS_JSON_SCHEMA: dict[str, Any] = {

@@ -112,6 +112,9 @@ def build_default_runtime_dependencies(
             tool_registry=tool_registry,
             workspace_root=executor_workspace_root,
             default_root=executor_workspace_root,
+            user_data_dir=runtime_config.user_data_dir
+            if runtime_config is not None
+            else None,
             approval_coordinator=shared_approval_coordinator,
         )
     else:

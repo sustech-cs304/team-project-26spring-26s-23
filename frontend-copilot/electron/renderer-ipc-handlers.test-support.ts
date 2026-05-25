@@ -103,10 +103,13 @@ export function createRendererIpcHandlers(): RendererIpcHandlers {
   }
 }
 
-function createTimelineDatabaseFixtures(): Pick<RendererIpcHandlers, 'loadTimelineEvents' | 'addTimelineEvent'> {
+function createTimelineDatabaseFixtures(): Pick<RendererIpcHandlers,
+  'loadTimelineEvents' | 'addTimelineEvent' | 'updateTimelineEvent' | 'deleteTimelineEvent'> {
   return {
     loadTimelineEvents: vi.fn(async () => ({ items: [] })),
     addTimelineEvent: vi.fn(async (_request) => ({ id: 1 })),
+    updateTimelineEvent: vi.fn(async (_request) => ({ updated: true, item: null })),
+    deleteTimelineEvent: vi.fn(async (_request) => ({ deleted: true })),
   }
 }
 

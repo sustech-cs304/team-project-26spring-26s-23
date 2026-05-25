@@ -1085,6 +1085,44 @@ class _BrowserExecutePayload(_BridgePayloadModel):
         return payload
 
 
+class _BrowserCookiesPayload(_BridgePayloadModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {"tabId", "url"}
+
+    tab_id: str | None = Field(
+        default=None,
+        validation_alias="tabId",
+        serialization_alias="tabId",
+        min_length=1,
+    )
+    url: str | None = Field(default=None, min_length=1)
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="payload",
+        )
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _validate_url(cls, value: Any) -> str | None:
+        return _normalize_optional_text_field_value(
+            value,
+            field_name="url",
+            field_context="payload",
+        )
+
+    def to_bridge_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if self.tab_id is not None:
+            payload["tabId"] = self.tab_id
+        if self.url is not None:
+            payload["url"] = self.url
+        return payload
+
+
 class _BrowserResetPayload(_BridgePayloadModel):
     _bridge_allowed_fields: ClassVar[set[str] | None] = set()
 
@@ -1384,6 +1422,78 @@ class _BrowserExecuteResult(_BridgeResultModel):
         if self.tab_id is not None:
             payload["tabId"] = self.tab_id
         return payload
+
+
+class _BrowserCookiesResult(_BridgeResultModel):
+    _bridge_allowed_fields: ClassVar[set[str] | None] = {
+        "tabId",
+        "currentUrl",
+        "cookies",
+    }
+
+    tab_id: str = Field(validation_alias="tabId", serialization_alias="tabId", min_length=1)
+    current_url: str = Field(validation_alias="currentUrl", serialization_alias="currentUrl")
+    cookies: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("tab_id", mode="before")
+    @classmethod
+    def _validate_tab_id(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="tabId",
+            field_context="result",
+        )
+
+    @field_validator("current_url", mode="before")
+    @classmethod
+    def _validate_current_url(cls, value: Any) -> str:
+        return _require_text_field_value(
+            value,
+            field_name="currentUrl",
+            field_context="result",
+        )
+
+    @field_validator("cookies", mode="before")
+    @classmethod
+    def _validate_cookies(cls, value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            raise ValueError("cookies must be a list")
+        validated: list[dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, Mapping):
+                raise ValueError("each cookie must be an object")
+            name = _require_text_field_value(
+                item.get("name"),
+                field_name="name",
+                field_context="cookie",
+            )
+            cookie_value = item.get("value")
+            if not isinstance(cookie_value, str):
+                raise ValueError("cookie field 'value' must be a string")
+            cookie: dict[str, Any] = {"name": name, "value": cookie_value}
+            for field_name in ("domain", "path", "sameSite"):
+                field_value = item.get(field_name)
+                if isinstance(field_value, str):
+                    cookie[field_name] = field_value
+            for field_name in ("secure", "httpOnly"):
+                field_value = item.get(field_name)
+                if isinstance(field_value, bool):
+                    cookie[field_name] = field_value
+            expiration_date = item.get("expirationDate")
+            if expiration_date is None or (
+                isinstance(expiration_date, (int, float))
+                and not isinstance(expiration_date, bool)
+            ):
+                cookie["expirationDate"] = expiration_date
+            validated.append(cookie)
+        return validated
+
+    def to_bridge_result(self) -> dict[str, Any]:
+        return {
+            "tabId": self.tab_id,
+            "currentUrl": self.current_url,
+            "cookies": [dict(item) for item in self.cookies],
+        }
 
 
 class _BrowserResetResult(_BridgeResultModel):
@@ -1837,6 +1947,7 @@ _PAYLOAD_MODELS: dict[
     ("browser", "close_tab"): _BrowserCloseTabPayload,
     ("browser", "switch_tab"): _BrowserSwitchTabPayload,
     ("browser", "execute"): _BrowserExecutePayload,
+    ("browser", "cookies"): _BrowserCookiesPayload,
     ("browser", "reset"): _BrowserResetPayload,
     ("browser", "snapshot"): _BrowserSnapshotPayload,
 }
@@ -1864,6 +1975,7 @@ _RESULT_MODELS: dict[
     ("browser", "close_tab"): _BrowserPageResult,
     ("browser", "switch_tab"): _BrowserPageResult,
     ("browser", "execute"): _BrowserExecuteResult,
+    ("browser", "cookies"): _BrowserCookiesResult,
     ("browser", "reset"): _BrowserResetResult,
     ("browser", "snapshot"): _BrowserSnapshotResult,
 }

@@ -491,82 +491,151 @@ describe('CopilotChatPanel composer interactions', () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
     const sessionShell = createSessionShell()
-
-    const rendered = renderWithRoot(
-      <CopilotChatPanel
-        state={createReadyState()}
-        retrying={false}
-        retry={() => {}}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={sessionShell}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
-        sendMessage={sendMessage}
-        loadWorkspaceState={loadWorkspaceState}
-      />,
-    )
-
-    await act(async () => {
-      await Promise.resolve()
+    const scrollIntoView = vi.fn()
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
     })
 
-    const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
-    await setFormControlValue(messageInput, '你好')
-    await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
-    await waitForText(rendered.container, '这是助手回显')
+    try {
+      const rendered = renderWithRoot(
+        <CopilotChatPanel
+          state={createReadyState()}
+          retrying={false}
+          retry={() => {}}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={sessionShell}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+          sendMessage={sendMessage}
+          loadWorkspaceState={loadWorkspaceState}
+        />,
+      )
 
-    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('你好')
-    expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('这是助手回显')
+      await act(async () => {
+        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
 
-    rendered.rerender(
-      <CopilotChatPanel
-        state={createReadyState()}
-        retrying={false}
-        retry={() => {}}
-        selectedAgent={createSelectedAgent()}
-        sessionShell={sessionShell}
-        directoryState={createDirectoryState()}
-        sessionStatus="idle"
-        sessionError={null}
-        sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
-          hasLoadedDetail: true,
-          detailStatus: 'ready',
-          runSummaries: [
-            {
-              runId: 'run-1',
-              threadId: 'session-1',
-              status: 'completed',
-              createdAt: LABEL_2026_14T08_2,
-              updatedAt: LABEL_2026_14T08,
-              startedAt: LABEL_2026_14T08_3,
-              terminalAt: LABEL_2026_14T08,
-              resolvedModelId: LABEL_OPENAI_GPT,
-              requestedMessageText: '你好',
-              assistantText: '这是助手回显',
-            },
-          ],
-          timelineItems: [],
-          replayStatus: 'idle',
-          replay: null,
-        })}
-        sendMessage={sendMessage}
-        loadWorkspaceState={loadWorkspaceState}
-      />,
-    )
+      const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+      await setFormControlValue(messageInput, '你好')
+      await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
+      await waitForText(rendered.container, '这是助手回显')
 
-    await act(async () => {
-      await Promise.resolve()
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('你好')
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('这是助手回显')
+
+      scrollIntoView.mockClear()
+
+      rendered.rerender(
+        <CopilotChatPanel
+          state={createReadyState()}
+          retrying={false}
+          retry={() => {}}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={sessionShell}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={createLiveReadyButEmptyPersistedHistoryState({
+            hasLoadedDetail: true,
+            detailStatus: 'ready',
+            runSummaries: [
+              {
+                runId: 'run-1',
+                threadId: 'session-1',
+                status: 'completed',
+                createdAt: LABEL_2026_14T08_2,
+                updatedAt: LABEL_2026_14T08,
+                startedAt: LABEL_2026_14T08_3,
+                terminalAt: LABEL_2026_14T08,
+                resolvedModelId: LABEL_OPENAI_GPT,
+                requestedMessageText: '你好',
+                assistantText: '这是助手回显',
+              },
+            ],
+            timelineItems: [],
+            replayStatus: 'idle',
+            replay: null,
+          })}
+          sendMessage={sendMessage}
+          loadWorkspaceState={loadWorkspaceState}
+        />,
+      )
+
+      await act(async () => {
+        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      const scrollRegion = rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL)
+      expect(scrollRegion.textContent).toContain('你好')
+      expect(scrollRegion.textContent).toContain('这是助手回显')
+      expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
+      expect(rendered.queryByTestId('chat-empty-state')).toBeNull()
+      expect(scrollIntoView).toHaveBeenCalled()
+
+      rendered.unmount()
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: originalScrollIntoView,
+      })
+    }
+  })
+
+  it('auto-scrolls to the latest position when a new message is sent', async () => {
+    const sendMessage = createResolvedSendMessageSpy()
+    const loadWorkspaceState = createPersistedWorkspaceStateLoader()
+    const scrollIntoView = vi.fn()
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
     })
 
-    const scrollRegion = rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL)
-    expect(scrollRegion.textContent).toContain('你好')
-    expect(scrollRegion.textContent).toContain('这是助手回显')
-    expect(rendered.queryByTestId('chat-history-loading-skeleton')).toBeNull()
-    expect(rendered.queryByTestId('chat-empty-state')).toBeNull()
+    try {
+      const rendered = renderWithRoot(
+        <CopilotChatPanel
+          state={createReadyState()}
+          retrying={false}
+          retry={() => {}}
+          selectedAgent={createSelectedAgent()}
+          sessionShell={createSessionShell()}
+          directoryState={createDirectoryState()}
+          sessionStatus="idle"
+          sessionError={null}
+          sessionHistory={createLiveReadyButEmptyPersistedHistoryState()}
+          sendMessage={sendMessage}
+          loadWorkspaceState={loadWorkspaceState}
+        />,
+      )
 
-    rendered.unmount()
+      await act(async () => {
+        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      scrollIntoView.mockClear()
+      const messageInput = rendered.container.querySelector(LABEL_TEXTAREA_NAME_MESSAGETEXT) as HTMLTextAreaElement
+      await setFormControlValue(messageInput, '滚动到最新')
+      await submitForm(rendered.getByTestId(SELECTOR_CHAT_COMPOSER_DOCK) as HTMLFormElement)
+      await waitForText(rendered.container, '这是助手回显')
+
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('滚动到最新')
+      expect(rendered.getByTestId(SELECTOR_CHAT_MESSAGE_SCROLL).textContent).toContain('这是助手回显')
+      expect(scrollIntoView).toHaveBeenCalled()
+
+      rendered.unmount()
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: originalScrollIntoView,
+      })
+    }
   })
 
   it('keeps a late-settling run bound to its original session without polluting the current session view', async () => {

@@ -115,6 +115,10 @@ class StubBrowserController:
         _ = (script, tab_id)
         return {"result": "ok"}
 
+    async def get_cookies(self, *, tab_id: str | None = None, url: str | None = None) -> list[dict[str, Any]]:
+        _ = (tab_id, url)
+        return [{"name": "JSESSIONID", "value": "session-value"}]
+
     async def reset(self) -> dict[str, Any]:
         return {"closedCount": 0}
 
@@ -277,6 +281,11 @@ def test_browser_controller_protocol_methods() -> None:
             browser.execute_script(script="document.title", tab_id="tab-1")
         )
         assert exec_result["result"] == "ok"
+
+        cookies = loop.run_until_complete(
+            browser.get_cookies(tab_id="tab-1", url="https://bb.sustech.edu.cn/")
+        )
+        assert cookies == [{"name": "JSESSIONID", "value": "session-value"}]
 
         reset_result = loop.run_until_complete(browser.reset())
         assert reset_result["closedCount"] == 0

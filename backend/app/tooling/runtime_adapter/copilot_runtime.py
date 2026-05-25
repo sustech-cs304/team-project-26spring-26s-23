@@ -254,18 +254,20 @@ def build_default_contract_runtime_bindings(
     *,
     host_capabilities_factory: ToolHostCapabilitiesFactory | None = None,
 ) -> tuple[RuntimeExecutableToolBinding, ...]:
-    """Build runtime bindings for the currently approved Blackboard, TIS, and browser facade tools."""
+    """Build runtime bindings for the currently approved Blackboard, TIS, browser, and calendar facade tools."""
 
     from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
     from app.integrations.sustech.teaching_information_system import (
         get_tis_tool_contracts,
     )
     from app.tooling.browser_tools import get_browser_tool_contracts
+    from app.tooling.calendar_tools import get_calendar_tool_contracts
 
     contracts = (
         *get_blackboard_tool_contracts(),
         *get_tis_tool_contracts(),
         *get_browser_tool_contracts(),
+        *get_calendar_tool_contracts(),
     )
     return tuple(
         build_contract_runtime_binding(

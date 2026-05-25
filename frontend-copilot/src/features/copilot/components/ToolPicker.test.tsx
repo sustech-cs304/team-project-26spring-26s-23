@@ -15,10 +15,9 @@ const LABEL_SUSTECH_BLACKBOARD = 'SUSTech Blackboard'
 const LABEL_TOOL_READ = 'tool.fs.read'
 const SELECTOR_ARIA_EXPANDED = 'aria-expanded'
 const SELECTOR_ARIA_PRESSED = 'aria-pressed'
-const SELECTOR_CHAT_TOOL_OPTION = 'chat-tool-option-blackboard.course_catalog.search'
+const SELECTOR_CHAT_TOOL_OPTION = 'chat-tool-option-blackboard.snapshot.sync'
 const SELECTOR_CHAT_TOOL_OPTION_2 = 'chat-tool-option-tool.fs.read'
 const SELECTOR_CHAT_TOOL_OPTION_3 = 'chat-tool-option-tis.personal_grades.fetch'
-const SELECTOR_CHAT_TOOL_OPTION_4 = 'chat-tool-option-blackboard.calendar.refresh'
 const SELECTOR_CHAT_TOOL_PICKER = 'chat-tool-picker-state'
 const SELECTOR_CHAT_TOOL_PICKER_2 = 'chat-tool-picker-trigger'
 const SELECTOR_CHAT_TOOL_PICKER_3 = 'chat-tool-picker-panel'
@@ -52,7 +51,7 @@ describe('ToolPicker', () => {
     expect(groups).not.toBeNull()
     expect(readGroupSummaries(panel)).toEqual([
       { title: 'Candue 内建', count: '1', expanded: 'true' },
-      { title: LABEL_SUSTECH_BLACKBOARD, count: '2', expanded: 'true' },
+      { title: LABEL_SUSTECH_BLACKBOARD, count: '1', expanded: 'true' },
       { title: 'SUSTech TIS', count: '1', expanded: 'true' },
     ])
 
@@ -62,13 +61,13 @@ describe('ToolPicker', () => {
 
     expect(fileOption.textContent).toContain('读取文件')
     expect(fileOption.textContent).toContain('读取本地文本与文档内容')
-    expect(catalogOption.textContent).toContain('课程目录搜索')
-    expect(catalogOption.textContent).toContain('搜索 Blackboard 课程目录')
+    expect(catalogOption.textContent).toContain('数据全量同步')
+    expect(catalogOption.textContent).toContain('从 Blackboard 拉取所有已选课程数据并同步到本地数据库')
     expect(gradesOption.textContent).toContain('成绩获取')
     expect(gradesOption.textContent).toContain('获取个人成绩记录')
 
     expect(panel.textContent).not.toContain(LABEL_TOOL_READ)
-    expect(panel.textContent).not.toContain('blackboard.course_catalog.search')
+    expect(panel.textContent).not.toContain('blackboard.snapshot.sync')
     expect(panel.textContent).not.toContain('tis.personal_grades.fetch')
     expect(panel.textContent).not.toContain('Search Blackboard course catalog with a long English description')
     expect(panel.textContent).not.toContain('Fetch personal grades from TIS with a long English description')
@@ -88,7 +87,7 @@ describe('ToolPicker', () => {
 
     expect(fileName?.textContent).toBe('读取文件')
     expect(fileDescription?.textContent).toBe('读取本地文本与文档内容')
-    expect(catalogDescription?.textContent).toBe('搜索 Blackboard 课程目录')
+    expect(catalogDescription?.textContent).toBe('从 Blackboard 拉取所有已选课程数据并同步到本地数据库')
     expect(selectedCheck?.textContent).toBe('✓')
     expect(unselectedCheck?.textContent).toBe('+')
 
@@ -111,14 +110,12 @@ describe('ToolPicker', () => {
     expect(getGroupToggleByTitle(panel, LABEL_SUSTECH_BLACKBOARD).getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('false')
     expect(getGroupSectionByTitle(panel, LABEL_SUSTECH_BLACKBOARD).querySelector('.copilot-tool-picker__group-list')).toBeNull()
     expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION)).toBeNull()
-    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_4)).toBeNull()
 
     await clickElement(getGroupToggleByTitle(panel, LABEL_SUSTECH_BLACKBOARD))
 
     expect(getGroupToggleByTitle(panel, LABEL_SUSTECH_BLACKBOARD).getAttribute(SELECTOR_ARIA_EXPANDED)).toBe('true')
     expect(getGroupSectionByTitle(panel, LABEL_SUSTECH_BLACKBOARD).querySelector('.copilot-tool-picker__group-list')).not.toBeNull()
     expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION)).not.toBeNull()
-    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_4)).not.toBeNull()
 
     rendered.unmount()
   })
@@ -132,11 +129,10 @@ describe('ToolPicker', () => {
     const panel = rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_3)
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
 
-    await setFormControlValue(searchInput, '目录')
+    await setFormControlValue(searchInput, '同步')
 
     expect(readGroupSummaries(panel)).toEqual([{ title: LABEL_SUSTECH_BLACKBOARD, count: '1', expanded: 'true' }])
     expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION)).not.toBeNull()
-    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_4)).toBeNull()
     expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_2)).toBeNull()
     expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_3)).toBeNull()
 
@@ -168,20 +164,18 @@ describe('ToolPicker', () => {
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
 
     const searchInput = rendered.getByTestId('chat-tool-picker-search') as HTMLInputElement
-    await setFormControlValue(searchInput, '目录')
+    await setFormControlValue(searchInput, '同步')
 
     expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION)).not.toBeNull()
-    expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_4)).toBeNull()
     expect(rendered.queryByTestId(SELECTOR_CHAT_TOOL_OPTION_2)).toBeNull()
 
     await setFormControlValue(searchInput, '')
     await clickElement(rendered.getByTestId('chat-tool-picker-select-all'))
     expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(
-      'tool.fs.read|blackboard.course_catalog.search|blackboard.calendar.refresh|tis.personal_grades.fetch',
+      'tool.fs.read|blackboard.snapshot.sync|tis.personal_grades.fetch',
     )
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_2) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
-    expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_4) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
 
     await clickElement(rendered.getByTestId('chat-tool-picker-invert'))
@@ -193,14 +187,14 @@ describe('ToolPicker', () => {
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
 
     await clickElement(rendered.getByTestId('chat-tool-picker-select-recommended'))
-    expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe('tool.fs.read|blackboard.course_catalog.search')
+    expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe('tool.fs.read|blackboard.snapshot.sync')
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_2) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('false')
 
     await clickElement(rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3))
     expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(
-      'tool.fs.read|blackboard.course_catalog.search|tis.personal_grades.fetch',
+      'tool.fs.read|blackboard.snapshot.sync|tis.personal_grades.fetch',
     )
     expect((rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement).getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
     expect(trigger.textContent).toContain('启用 3 项工具')
@@ -213,12 +207,12 @@ describe('ToolPicker', () => {
   it('keeps denied tools focusable, blocks fresh selection, and still allows deselection', async () => {
     const rendered = renderWithRoot(
       <ToolPickerHarness
-        initialSelectedToolIds={[LABEL_TOOL_READ, 'blackboard.calendar.refresh']}
+        initialSelectedToolIds={[LABEL_TOOL_READ, 'tis.personal_grades.fetch']}
         toolPermissionPolicy={{
           version: 1,
           defaultMode: 'ask',
           toolPermissions: {
-            'blackboard.calendar.refresh': { mode: 'deny' },
+            'tis.personal_grades.fetch': { mode: 'deny' },
           },
         }}
       />,
@@ -226,9 +220,9 @@ describe('ToolPicker', () => {
 
     await clickElement(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER_2))
 
-    const deniedOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_4) as HTMLButtonElement
+    const deniedOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement
     const normalOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION) as HTMLButtonElement
-    const blockedOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_4) as HTMLButtonElement
+    const blockedOption = rendered.getByTestId(SELECTOR_CHAT_TOOL_OPTION_3) as HTMLButtonElement
 
     expect(deniedOption.disabled).toBe(false)
     expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
@@ -242,14 +236,14 @@ describe('ToolPicker', () => {
 
     await clickElement(normalOption)
     expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(
-      'tool.fs.read|blackboard.course_catalog.search',
+      'tool.fs.read|blackboard.snapshot.sync',
     )
 
     expect(blockedOption.getAttribute('aria-disabled')).toBe('true')
 
     await clickElement(blockedOption)
     expect(rendered.getByTestId(SELECTOR_CHAT_TOOL_PICKER).textContent).toBe(
-      'tool.fs.read|blackboard.course_catalog.search',
+      'tool.fs.read|blackboard.snapshot.sync',
     )
 
     rendered.unmount()
@@ -304,7 +298,7 @@ interface ToolPickerHarnessProps {
 
 function ToolPickerHarness({
   initialSelectedToolIds = [LABEL_TOOL_READ],
-  recommendedToolIds = [LABEL_TOOL_READ, 'blackboard.course_catalog.search'],
+  recommendedToolIds = [LABEL_TOOL_READ, 'blackboard.snapshot.sync'],
   toolPermissionPolicy = null,
   tools = createTools(),
 }: ToolPickerHarnessProps) {
@@ -334,18 +328,11 @@ function createTools(): RuntimeToolDirectoryEntry[] {
       description: '读取本地文本与文档内容',
     },
     {
-      toolId: 'blackboard.course_catalog.search',
+      toolId: 'blackboard.snapshot.sync',
       kind: 'external',
       availability: 'available',
-      displayName: '课程目录搜索',
-      description: '搜索 Blackboard 课程目录',
-    },
-    {
-      toolId: 'blackboard.calendar.refresh',
-      kind: 'external',
-      availability: 'disabled-by-global-setting',
-      displayName: '日历刷新',
-      description: '刷新 Blackboard 课程日历',
+      displayName: '数据全量同步',
+      description: '从 Blackboard 拉取所有已选课程数据并同步到本地数据库',
     },
     {
       toolId: 'tis.personal_grades.fetch',

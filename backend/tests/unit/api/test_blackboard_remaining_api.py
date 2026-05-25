@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -198,6 +199,31 @@ def test_assignment_api_preserves_list_content_description_when_detail_page_is_e
     _assert_equal(len(items[0].attachments), 1, "list content attachments should be preserved when detail page is empty")
 
 
+def test_assignment_api_extracts_start_and_end_time_labels() -> None:
+    course_id = "_123_1"
+    detail_url = (
+        "https://bb.sustech.edu.cn/webapps/assignment/uploadAssignment"
+        f"?course_id={course_id}&content_id=_777_1"
+    )
+    detail_html = """
+    <html><body>
+      <h1>Timed Assignment</h1>
+      <div class="vtbegenerated">Read the timed instructions.</div>
+      <dl>
+        <dt>Available from:</dt><dd>2026-05-01 08:00</dd>
+        <dt>Due:</dt><dd>2026-05-03 23:59</dd>
+      </dl>
+    </body></html>
+    """
+
+    client = _FakeBlackboardClient(get_map={detail_url: detail_html})
+    api = BlackboardAssignmentAPI(_build_context(client))
+
+    details = api.get_assignment_details(detail_url)
+    _assert_equal(details.start_time, datetime(2026, 5, 1, 8, 0), "assignment start time")
+    _assert_equal(details.end_time, datetime(2026, 5, 3, 23, 59), "assignment end time")
+
+
 def test_assignment_api_ignores_download_noise_links_in_attachment_scope() -> None:
     course_id = "_123_1"
     detail_url = f"https://bb.sustech.edu.cn/webapps/assignment/uploadAssignment?course_id={course_id}&content_id=_555_1"
@@ -281,6 +307,37 @@ def test_assignment_api_still_parses_list_content_fallback_after_mygrades_rows()
     _assert_true(
         bool(fallback_item.description_html),
         "list content fallback assignment should retain embedded html when parsed after mygrades",
+    )
+
+
+def test_assignment_api_ignores_announcement_like_content_items_in_assignment_fallback() -> None:
+    course_id = "_8012_1"
+    list_url = f"https://bb.sustech.edu.cn/webapps/blackboard/content/listContent.jsp?course_id={course_id}"
+    list_html = """
+    <ul id="content_listContainer">
+      <li id="contentListItem:_43284_1" class="clearfix liItem read">
+        <div class="item clearfix" id="_43284_1">
+          <h3><span>Milestone 1 released</span></h3>
+        </div>
+        <div class="details">
+          <div class="vtbegenerated">
+            <p>Posted on: Monday, March 9, 2026 1:53:17 PM CST</p>
+            <p>Please check Project -> Proposal for details.</p>
+            <p>Due: May 22, 2026 2:44:54 PM</p>
+          </div>
+        </div>
+      </li>
+    </ul>
+    """
+
+    client = _FakeBlackboardClient(get_map={list_url: list_html})
+    api = BlackboardAssignmentAPI(_build_context(client))
+
+    items = api.get_course_assignments(course_id)
+    _assert_equal(
+        items,
+        [],
+        "announcement/release notices should not be parsed as assignment fallback rows",
     )
 
 

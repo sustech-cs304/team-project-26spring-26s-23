@@ -541,6 +541,30 @@ class DesktopCapabilityBridgeClient:
         )
         return dict(result)
 
+    async def get_browser_cookies(
+        self,
+        *,
+        context: ToolInvocationContext,
+        tab_id: str | None = None,
+        url: str | None = None,
+    ) -> list[dict[str, Any]]:
+        payload: dict[str, Any] = {}
+        if tab_id is not None:
+            payload["tabId"] = tab_id
+        if url is not None:
+            payload["url"] = url
+        result = await self._call_async(
+            capability="browser",
+            operation="cookies",
+            context=context,
+            payload=payload,
+            timeout=max(self._timeout, _BROWSER_OPERATION_TIMEOUT),
+        )
+        cookies_raw = result.get("cookies")
+        if not isinstance(cookies_raw, list):
+            return []
+        return [dict(item) for item in cookies_raw if isinstance(item, Mapping)]
+
     async def reset_browser(
         self,
         *,

@@ -194,15 +194,15 @@ export function useBlackboardSync(input: UseBlackboardSyncInput): UseBlackboardS
   useEffect(() => {
     if (syncState.status === 'completed' && previousSyncStatusRef.current !== 'completed') {
       setDataRefreshToken((value) => value + 1)
+      window.dispatchEvent(new Event('candue:calendar-refresh'))
     }
     previousSyncStatusRef.current = syncState.status
   }, [syncState.status])
 
   useEffect(() => {
-    if (syncState.status === 'running') {
-      const i = setInterval(() => { void fetchStatus() }, 2000)
-      return () => clearInterval(i)
-    }
+    const intervalMs = syncState.status === 'running' ? 2000 : 5000
+    const i = setInterval(() => { void fetchStatus() }, intervalMs)
+    return () => clearInterval(i)
   }, [syncState.status, fetchStatus])
 
   return {

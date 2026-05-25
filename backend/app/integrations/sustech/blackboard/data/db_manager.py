@@ -114,7 +114,11 @@ class DatabaseManager:
         inspector = inspect(self.engine)
         table_names = set(inspector.get_table_names())
         compatibility_columns: dict[str, tuple[tuple[str, str], ...]] = {
-            "assignments": (("description_html", "TEXT"),),
+            "assignments": (
+                ("description_html", "TEXT"),
+                ("start_time", "DATETIME"),
+                ("end_time", "DATETIME"),
+            ),
             "announcements": (
                 ("content_html", "TEXT"),
                 ("relation_type", "VARCHAR(64)"),

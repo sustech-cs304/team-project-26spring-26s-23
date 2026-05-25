@@ -52,6 +52,7 @@ from app.desktop_runtime.server import BACKEND_DIR, create_app
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 from app.tooling.browser_tools import get_browser_tool_contracts
+from app.tooling.calendar_tools import get_calendar_tool_contracts
 from app.tooling.file_tools.runtime_bindings import (
     FILE_TOOL_READ_FUNCTION_NAME,
     FILE_TOOL_READ_ID,
@@ -273,6 +274,7 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(
             *get_blackboard_tool_contracts(),
             *get_tis_tool_contracts(),
             *get_browser_tool_contracts(),
+            *get_calendar_tool_contracts(),
         )
     ]
     expected_builtin_tool_ids = [
@@ -284,6 +286,10 @@ def test_diagnostics_exposes_registry_backed_agent_and_tool_summaries(
         "tool.fs.notebook_edit",
         "tool.fs.switch_root",
         "tool.weather-current",
+        "tool.shell-run",
+        "tool.shell-session.start",
+        "tool.shell-session.exec",
+        "tool.shell-session.close",
         REQUEST_USER_FORM_TOOL_ID,
         SKILL_ACTIVATE_TOOL_ID,
         SKILL_READ_RESOURCE_TOOL_ID,

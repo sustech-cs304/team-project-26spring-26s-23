@@ -44,6 +44,7 @@ DesktopCapabilityOperation = Literal[
     "close_tab",
     "switch_tab",
     "execute",
+    "cookies",
     "reset",
     "snapshot",
 ]
@@ -102,6 +103,7 @@ DESKTOP_CAPABILITY_OPERATIONS: tuple[DesktopCapabilityOperation, ...] = (
     "close_tab",
     "switch_tab",
     "execute",
+    "cookies",
     "reset",
     "snapshot",
 )
@@ -122,7 +124,7 @@ DESKTOP_CAPABILITY_OPERATIONS_BY_CAPABILITY: dict[
     "state": ("get_value", "put_value", "delete_value"),
     "event": ("emit_event",),
     "mcp": ("call_tool",),
-    "browser": ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "reset", "snapshot"),
+    "browser": ("open", "screenshot", "list_tabs", "close_tab", "switch_tab", "execute", "cookies", "reset", "snapshot"),
 }
 
 DESKTOP_CAPABILITY_BRIDGE_ERROR_CODES: tuple[DesktopCapabilityBridgeErrorCode, ...] = (
@@ -417,6 +419,14 @@ DESKTOP_CAPABILITY_BRIDGE_REQUEST_PAYLOAD_SCHEMAS: dict[
             "tabId": {"type": "string", "minLength": 1},
         },
     },
+    ("browser", "cookies"): {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "tabId": {"type": "string", "minLength": 1},
+            "url": {"type": "string", "minLength": 1},
+        },
+    },
     ("browser", "reset"): {
         "type": "object",
         "additionalProperties": False,
@@ -562,6 +572,33 @@ DESKTOP_CAPABILITY_BRIDGE_RESULT_SCHEMAS: dict[
         "properties": {
             "result": {},
             "tabId": {"type": "string", "minLength": 1},
+        },
+    },
+    ("browser", "cookies"): {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["tabId", "currentUrl", "cookies"],
+        "properties": {
+            "tabId": {"type": "string", "minLength": 1},
+            "currentUrl": {"type": "string"},
+            "cookies": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["name", "value"],
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                        "value": {"type": "string"},
+                        "domain": {"type": "string"},
+                        "path": {"type": "string"},
+                        "secure": {"type": "boolean"},
+                        "httpOnly": {"type": "boolean"},
+                        "expirationDate": {"type": ["number", "null"]},
+                        "sameSite": {"type": "string"},
+                    },
+                },
+            },
         },
     },
     ("browser", "reset"): {

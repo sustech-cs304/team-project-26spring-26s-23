@@ -117,6 +117,8 @@ class Assignment(TimestampSoftDeleteMixin, Base):
 
     due_date: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     due_date_parsed: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    start_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     posted_date: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
 
     status: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)

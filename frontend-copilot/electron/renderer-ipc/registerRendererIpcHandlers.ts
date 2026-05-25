@@ -176,14 +176,20 @@ import {
   type WatchDirectoriesRequest,
 } from '../file-manager/ipc'
 import {
-  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
   TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+  TIMELINE_DATABASE_DELETE_EVENT_CHANNEL,
+  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+  TIMELINE_DATABASE_UPDATE_EVENT_CHANNEL,
 } from './timeline-database.ipc'
 import type {
   AddTimelineEventRequest,
   AddTimelineEventResult,
+  DeleteTimelineEventRequest,
+  DeleteTimelineEventResult,
   LoadTimelineEventsRequest,
   LoadTimelineEventsResult,
+  UpdateTimelineEventRequest,
+  UpdateTimelineEventResult,
 } from '../timeline-database/ipc'
 import type { RendererIpcHandlers } from './RendererIpcHandlers'
 
@@ -256,6 +262,8 @@ const RENDERER_IPC_CHANNELS = [
   FILE_MANAGER_COPY_TEXT_TO_CLIPBOARD_CHANNEL,
   TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
   TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+  TIMELINE_DATABASE_UPDATE_EVENT_CHANNEL,
+  TIMELINE_DATABASE_DELETE_EVENT_CHANNEL,
 ] as const
 
 export function registerRendererIpcHandlers(
@@ -739,6 +747,20 @@ function registerTimelineDatabaseHandlers(ipcMain: IpcMainLike, handlers: Render
     TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
     async (_event, request: AddTimelineEventRequest): Promise<AddTimelineEventResult> => {
       return await handlers.addTimelineEvent(request)
+    },
+  )
+
+  ipcMain.handle(
+    TIMELINE_DATABASE_UPDATE_EVENT_CHANNEL,
+    async (_event, request: UpdateTimelineEventRequest): Promise<UpdateTimelineEventResult> => {
+      return await handlers.updateTimelineEvent(request)
+    },
+  )
+
+  ipcMain.handle(
+    TIMELINE_DATABASE_DELETE_EVENT_CHANNEL,
+    async (_event, request: DeleteTimelineEventRequest): Promise<DeleteTimelineEventResult> => {
+      return await handlers.deleteTimelineEvent(request)
     },
   )
 }

@@ -6,8 +6,9 @@ Named data_sync to avoid confusion with provider/use_cases/snapshot_sync.py.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from app.integrations.sustech.facade_contract_models import parse_tool_arguments
@@ -112,6 +113,7 @@ async def _persist_snapshot_sync_status(
 class _BlackboardSnapshotSyncArguments(tools._BlackboardToolArguments):
     resetSchema: bool = False
     verifySecondSync: bool = True
+    currentTermOnly: bool = False
     parallelWorkers: int = 1
 
     @tools.field_validator("resetSchema", mode="before")
@@ -123,6 +125,11 @@ class _BlackboardSnapshotSyncArguments(tools._BlackboardToolArguments):
     @classmethod
     def _normalize_verify_second_sync(cls, value: Any) -> bool:
         return tools._normalize_bool_value(value, "verifySecondSync", default=True)
+
+    @tools.field_validator("currentTermOnly", mode="before")
+    @classmethod
+    def _normalize_current_term_only(cls, value: Any) -> bool:
+        return tools._normalize_bool_value(value, "currentTermOnly", default=False)
 
     @tools.field_validator("parallelWorkers", mode="before")
     @classmethod
@@ -172,7 +179,7 @@ class _BlackboardSnapshotSyncPersistedOutput(tools.SustechToolBoundaryModel):
 _SNAPSHOT_SYNC_METADATA = ToolMetadata(
     tool_id="blackboard.snapshot.sync",
     display_name="Blackboard Snapshot Sync",
-    description="Fetch a Blackboard base snapshot and sync it into the existing SQLite store.",
+    description="Trigger the Blackboard panel sync flow and wait for the shared sync result.",
     input_schema=tools._schema(
         properties={
             "username": {
@@ -202,6 +209,10 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
             "verifySecondSync": {
                 "type": "boolean",
                 "description": "When true, run a second sync pass to verify that no unexpected new or deleted records appear. Defaults to true.",
+            },
+            "currentTermOnly": {
+                "type": "boolean",
+                "description": "When true, apply the same current-term-only filtering supported by the Blackboard panel sync flow.",
             },
             "parallelWorkers": {
                 "type": "integer",
@@ -255,7 +266,7 @@ _SNAPSHOT_SYNC_METADATA = ToolMetadata(
         HostCapabilityRequirement(
             capability="database_resolver",
             required=False,
-            purpose="Resolve a host database-relative SQLite path when dbRelativePath is used.",
+            purpose="Resolve the same host database path used by the Blackboard panel sync flow.",
         ),
         HostCapabilityRequirement(
             capability="state_store",
@@ -330,6 +341,36 @@ def _snapshot_sync_persisted_output(
     ).to_persisted_contract_dict()
 
 
+PanelSyncStatusPersistor = Callable[[Mapping[str, Any]], None]
+
+
+def _run_panel_snapshot_sync(
+    username: str,
+    password: str,
+    db_path: Path,
+    *,
+    current_term_only: bool,
+    parallel_workers: int,
+    reset_schema: bool,
+    verify_second_sync: bool,
+    persist_status: PanelSyncStatusPersistor | None,
+) -> tuple[BlackboardSnapshotSyncReport, tuple[str, ...]]:
+    from app.desktop_runtime.routes.blackboard_ui import (
+        run_blackboard_panel_sync_for_agent,
+    )
+
+    return run_blackboard_panel_sync_for_agent(
+        username,
+        password,
+        db_path,
+        current_term_only=current_term_only,
+        parallel_workers=parallel_workers,
+        reset_schema=reset_schema,
+        verify_second_sync=verify_second_sync,
+        persist_status=persist_status,
+    )
+
+
 class BlackboardSnapshotSyncTool(tools._BlackboardFacadeToolBase):
     _metadata = _SNAPSHOT_SYNC_METADATA
 
@@ -344,31 +385,24 @@ class BlackboardSnapshotSyncTool(tools._BlackboardFacadeToolBase):
         loop = asyncio.get_running_loop()
         pending_status_tasks: set[asyncio.Task[None]] = set()
 
-        def _schedule_status_persist(
-            status: str,
-            *,
-            last_sync_at: str | None = None,
-            last_sync_error: str | None = None,
-        ) -> None:
-            payload = _build_snapshot_sync_status_payload(
-                status=status,
-                progress_messages=list(progress_messages),
-                last_sync_at=last_sync_at,
-                last_sync_error=last_sync_error,
-            )
+        def _schedule_status_persist(payload: Mapping[str, Any]) -> None:
             task = loop.create_task(
                 _persist_snapshot_sync_status(host=host, value=payload)
             )
             pending_status_tasks.add(task)
             task.add_done_callback(pending_status_tasks.discard)
 
-        await _persist_snapshot_sync_status(
-            host=host,
-            value=_build_snapshot_sync_status_payload(
-                status="running",
-                progress_messages=["开始同步..."],
-            ),
-        )
+        def _persist_panel_status_sync(status: Mapping[str, Any]) -> None:
+            progress_logs = status.get("progressLogs")
+            if isinstance(progress_logs, list):
+                progress_messages[:] = [
+                    str(message).strip()
+                    for message in progress_logs
+                    if str(message).strip()
+                ]
+            else:
+                progress_messages.clear()
+            loop.call_soon_threadsafe(_schedule_status_persist, status)
 
         try:
             parsed_arguments = parse_tool_arguments(
@@ -384,23 +418,18 @@ class BlackboardSnapshotSyncTool(tools._BlackboardFacadeToolBase):
             )
             db_path = tools._resolve_db_path(normalized_arguments, host)
 
-            def _progress_callback(message: str) -> None:
-                def _record_progress() -> None:
-                    progress_messages.append(message)
-                    _schedule_status_persist("running")
-
-                loop.call_soon_threadsafe(_record_progress)
-
-            report = await asyncio.to_thread(
-                tools.run_blackboard_snapshot_sync,
+            report, panel_progress_messages = await asyncio.to_thread(
+                _run_panel_snapshot_sync,
                 credentials.username,
                 credentials.password,
-                db_path=db_path,
+                db_path,
+                current_term_only=parsed_arguments.currentTermOnly,
+                parallel_workers=parsed_arguments.parallelWorkers,
                 reset_schema=parsed_arguments.resetSchema,
                 verify_second_sync=parsed_arguments.verifySecondSync,
-                parallel_workers=parsed_arguments.parallelWorkers,
-                progress=_progress_callback,
+                persist_status=_persist_panel_status_sync,
             )
+            progress_messages = list(panel_progress_messages)
             if pending_status_tasks:
                 await asyncio.gather(
                     *tuple(pending_status_tasks),

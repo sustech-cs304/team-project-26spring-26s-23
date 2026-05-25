@@ -4,9 +4,8 @@ import { getHubWorkspaceContent, type WorkbenchLanguage } from '../locale'
 import type { HubWorkspaceView } from '../types'
 import { CalendarGanttView } from './components/CalendarGanttView'
 import { KanbanTracker } from './components/KanbanTracker'
-import type { CalendarEventPatch, UnifiedCalendarEvent } from './calendar-types'
-import { mergeCalendarEventPatch } from './calendar-gantt-model'
-
+import type { AddTimelineEventInput, CalendarEventPatch, UnifiedCalendarEvent } from './calendar-types'
+import type { KanbanNewEventInput } from './components/KanbanTracker'
 interface HubWorkspaceProps {
   view: HubWorkspaceView
   language?: WorkbenchLanguage
@@ -73,8 +72,55 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
     }
   }, [bootstrap, refreshToken])
 
-  const handleCalendarEventChange = useCallback((eventId: string | number, patch: CalendarEventPatch) => {
-    setEvents((currentEvents) => mergeCalendarEventPatch(currentEvents, eventId, patch))
+  const handleCalendarEventChange = useCallback(async (eventId: string | number, patch: CalendarEventPatch) => {
+    const timelineDb = window.timelineDatabase
+    if (timelineDb === undefined || typeof timelineDb.updateEvent !== 'function') {
+      throw new Error('无法修改事件：日历数据库桥接不可用。')
+    }
+
+    const response = await timelineDb.updateEvent({ id: eventId, patch })
+    if (!response.updated) {
+      throw new Error('无法修改事件：事件不存在或未更新。')
+    }
+
+    setEvents((currentEvents) => sortCalendarEventsByStartTime(
+      currentEvents.map((event) => {
+        if (String(event.id) !== String(eventId)) {
+          return event
+        }
+
+        return response.item ?? { ...event, ...patch }
+      }),
+    ))
+  }, [])
+
+  const handleCalendarEventDelete = useCallback(async (eventId: string | number) => {
+    const timelineDb = window.timelineDatabase
+    if (timelineDb === undefined || typeof timelineDb.deleteEvent !== 'function') {
+      throw new Error('无法删除事件：日历数据库桥接不可用。')
+    }
+
+    const response = await timelineDb.deleteEvent({ id: eventId })
+    if (!response.deleted) {
+      throw new Error('无法删除事件：事件不存在或未删除。')
+    }
+
+    setEvents((currentEvents) => currentEvents.filter((event) => String(event.id) !== String(eventId)))
+  }, [])
+
+  const handleKanbanEventCreate = useCallback(async (input: KanbanNewEventInput) => {
+    const timelineDb = window.timelineDatabase
+    if (timelineDb === undefined || typeof timelineDb.addEvent !== 'function') {
+      throw new Error('无法新建事件：日历数据库桥接不可用。')
+    }
+
+    const eventInput = buildCustomTimelineEventInput(input)
+    const response = await timelineDb.addEvent({ event: eventInput })
+
+    setEvents((currentEvents) => sortCalendarEventsByStartTime([
+      ...currentEvents,
+      buildUnifiedCalendarEvent(response.id, eventInput),
+    ]))
   }, [])
 
   return (
@@ -88,15 +134,58 @@ export function HubWorkspace({ view, language = 'zh-CN', bootstrap }: HubWorkspa
         </header>
 
         <section className="workspace-main__content calendar-workspace-content" style={{ display: 'flex', flexDirection: 'column' }}>
-          <CalendarGanttView events={events} onEventChange={handleCalendarEventChange} />
+          <CalendarGanttView events={events} onEventChange={handleCalendarEventChange} onEventDelete={handleCalendarEventDelete} onRefresh={() => setRefreshToken((value) => value + 1)} />
 
-          <KanbanTracker events={events} />
+          <KanbanTracker events={events} onCreateEvent={handleKanbanEventCreate} onEventChange={handleCalendarEventChange} onEventDelete={handleCalendarEventDelete} />
 
           <CalendarDebugPanel events={events} error={error} isLoading={isLoading} />
         </section>
       </main>
     </section>
   )
+}
+
+function buildCustomTimelineEventInput(input: KanbanNewEventInput): AddTimelineEventInput {
+  return {
+    source: 'custom',
+    source_id: null,
+    title: input.title,
+    description: null,
+    start_time: buildMinutePrecisionIsoTime(input.startDateTime),
+    end_time: buildMinutePrecisionIsoTime(input.endDateTime),
+    is_all_day: false,
+    location: null,
+    status: input.status,
+    metadata_payload: {
+      created_from: 'kanban_tracker',
+    },
+    progress: input.status === 'in_progress' ? 50 : 0,
+  }
+}
+
+function buildUnifiedCalendarEvent(id: string | number, input: AddTimelineEventInput): UnifiedCalendarEvent {
+  return {
+    id,
+    source: input.source,
+    source_id: input.source_id ?? null,
+    title: input.title,
+    description: input.description ?? null,
+    start_time: input.start_time,
+    end_time: input.end_time ?? null,
+    is_all_day: input.is_all_day,
+    location: input.location ?? null,
+    status: input.status ?? 'not_started',
+    metadata_payload: input.metadata_payload ?? null,
+    progress: input.progress ?? 0,
+  }
+}
+
+function buildMinutePrecisionIsoTime(dateTimeInput: string): string {
+  return new Date(dateTimeInput).toISOString()
+}
+
+function sortCalendarEventsByStartTime(events: UnifiedCalendarEvent[]): UnifiedCalendarEvent[] {
+  return [...events].sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time))
 }
 
 function CalendarDebugPanel({ events, error, isLoading }: {

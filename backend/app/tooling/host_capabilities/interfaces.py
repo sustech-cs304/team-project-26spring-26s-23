@@ -262,6 +262,14 @@ class BrowserController(Protocol):
     ) -> dict[str, Any]:
         raise NotImplementedError
 
+    async def get_cookies(
+        self,
+        *,
+        tab_id: str | None = None,
+        url: str | None = None,
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
     async def reset(self) -> dict[str, Any]:
         raise NotImplementedError
 

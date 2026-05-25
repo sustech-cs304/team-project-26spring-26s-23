@@ -22,6 +22,7 @@ export function CopilotChatPanelShell(props: CopilotChatPanelShellProps) {
         directoryState={props.directoryState}
         sessionStatus={props.sessionStatus}
         sessionError={props.sessionError}
+        messageSurfaceVisible={props.messageSurfaceVisible}
         historyRestoreError={props.historyRestoreError ?? null}
         sessionHistory={props.sessionHistory ?? null}
         onRetrySessionHistory={props.retrySessionHistory}

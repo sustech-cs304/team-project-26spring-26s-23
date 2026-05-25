@@ -618,6 +618,113 @@ def test_blackboard_ui_trigger_returns_running_status_while_background_sync_repo
         assert completed["lastSyncAt"] == "2026-04-30T10:00:00Z"
 
 
+
+def test_blackboard_ui_sync_trigger_opens_manual_login_browser_and_retries_with_cookies(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    class _ManualLoginBridgeStub:
+        def __init__(self) -> None:
+            self.open_requests: list[dict[str, object]] = []
+            self.cookie_requests: list[dict[str, object]] = []
+
+        async def open_browser_page(self, **kwargs):
+            self.open_requests.append(dict(kwargs))
+            return SimpleNamespace(tab_id="manual-tab")
+
+        async def get_browser_cookies(self, **kwargs):
+            self.cookie_requests.append(dict(kwargs))
+            return [
+                {
+                    "name": "JSESSIONID",
+                    "value": "session-value",
+                    "domain": ".bb.sustech.edu.cn",
+                    "path": "/",
+                    "httpOnly": True,
+                }
+            ]
+
+        async def get_state_value(self, **_kwargs):
+            return None
+
+        async def put_state_value(self, **_kwargs):
+            return None
+
+    sync_calls: list[dict[str, object]] = []
+
+    def fake_snapshot_sync(*_args, **kwargs):
+        sync_calls.append(dict(kwargs))
+        if len(sync_calls) == 1:
+            raise RuntimeError("human_verification_required")
+        assert kwargs["session_cookies"] == [
+            {
+                "name": "JSESSIONID",
+                "value": "session-value",
+                "domain": ".bb.sustech.edu.cn",
+                "path": "/",
+                "httpOnly": True,
+            }
+        ]
+        return SimpleNamespace(
+            snapshot=SimpleNamespace(
+                logs=[SimpleNamespace(timestamp="2026-05-03T10:00:00Z")]
+            )
+        )
+
+    monkeypatch.setattr(blackboard_ui, "run_blackboard_snapshot_sync", fake_snapshot_sync)
+    monkeypatch.setattr(blackboard_ui, "_cookies_authenticate_blackboard", lambda _cookies: True)
+    monkeypatch.setattr(blackboard_ui.time, "sleep", lambda _seconds: None)
+
+    bridge = _ManualLoginBridgeStub()
+    _reset_sync_status()
+    app = FastAPI()
+    app.state.runtime_config = _RuntimeConfig(tmp_path / "database")
+    app.state.host_capability_bridge_client = bridge
+    app.include_router(build_blackboard_ui_router())
+
+    with TestClient(app) as client:
+        payload = client.post(
+            "/api/blackboard/sync/trigger",
+            json={"username": "student", "password": "secret", "parallelWorkers": 1},
+        ).json()
+        assert payload["status"] == "running"
+
+        deadline = time.monotonic() + 2
+        completed = payload
+        while time.monotonic() < deadline:
+            completed = client.get("/api/blackboard/sync/status").json()
+            if completed["status"] == "completed":
+                break
+            time.sleep(0.01)
+
+    assert completed["status"] == "completed"
+    assert completed["lastSyncAt"] == "2026-05-03T10:00:00Z"
+    assert len(sync_calls) == 2
+    assert "session_cookies" not in sync_calls[0]
+    assert sync_calls[1]["session_cookies"] == [
+        {
+            "name": "JSESSIONID",
+            "value": "session-value",
+            "domain": ".bb.sustech.edu.cn",
+            "path": "/",
+            "httpOnly": True,
+        }
+    ]
+    assert bridge.open_requests[0]["url"] == blackboard_ui._BLACKBOARD_MANUAL_LOGIN_URL
+    assert bridge.open_requests[0]["show_window"] is True
+    assert bridge.open_requests[0]["new_tab"] is True
+    assert [request["tab_id"] for request in bridge.cookie_requests] == [
+        "manual-tab",
+        "manual-tab",
+    ]
+    assert [request["url"] for request in bridge.cookie_requests] == list(
+        blackboard_ui._BLACKBOARD_COOKIE_URLS
+    )
+    assert any("人机验证" in log for log in completed["progressLogs"])
+    assert any("浏览器会话 Cookie" in log for log in completed["progressLogs"])
+
+
+
 def test_blackboard_ui_cancel_route_requests_cancellation_and_marks_sync_failed(
     tmp_path: Path,
     monkeypatch,

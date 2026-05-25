@@ -11,6 +11,8 @@ import type {
 import {
   TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
   TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+  TIMELINE_DATABASE_DELETE_EVENT_CHANNEL,
+  TIMELINE_DATABASE_UPDATE_EVENT_CHANNEL,
   type TimelineDatabaseApi,
 } from '../renderer-ipc/timeline-database.ipc'
 import { getCalendarEvents, addCalendarEvent } from './service'
@@ -49,8 +51,18 @@ describe('timeline-database IPC', () => {
       expect(TIMELINE_DATABASE_ADD_EVENT_CHANNEL).toBe('timeline-database:add-event')
     })
 
+    it('defines the update and delete event channels', () => {
+      expect(TIMELINE_DATABASE_UPDATE_EVENT_CHANNEL).toBe('timeline-database:update-event')
+      expect(TIMELINE_DATABASE_DELETE_EVENT_CHANNEL).toBe('timeline-database:delete-event')
+    })
+
     it('has distinct channel names', () => {
-      expect(TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL).not.toBe(TIMELINE_DATABASE_ADD_EVENT_CHANNEL)
+      expect(new Set([
+        TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+        TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+        TIMELINE_DATABASE_UPDATE_EVENT_CHANNEL,
+        TIMELINE_DATABASE_DELETE_EVENT_CHANNEL,
+      ])).toHaveLength(4)
     })
   })
 
@@ -162,14 +174,18 @@ describe('timeline-database IPC', () => {
   })
 
   describe('TimelineDatabaseApi interface', () => {
-    it('defines loadEvents method', () => {
+    it('defines timeline event query and mutation methods', () => {
       const api = {
         loadEvents: vi.fn(),
         addEvent: vi.fn(),
+        updateEvent: vi.fn(),
+        deleteEvent: vi.fn(),
       } satisfies TimelineDatabaseApi
 
       expect(typeof api.loadEvents).toBe('function')
       expect(typeof api.addEvent).toBe('function')
+      expect(typeof api.updateEvent).toBe('function')
+      expect(typeof api.deleteEvent).toBe('function')
     })
   })
 

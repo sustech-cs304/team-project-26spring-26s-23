@@ -77,12 +77,12 @@ describe('error detail overlay copy helpers', () => {
       stage: 'streaming',
       requestedMethod: 'run/stream',
       details: {
-        toolId: 'blackboard.course_catalog.search',
+        toolId: 'blackboard.snapshot.sync',
         exceptionType: 'RuntimeError',
         exceptionMessage: 'blackboard search exploded',
         traceback,
       },
-      resolvedToolIds: ['blackboard.course_catalog.search'],
+      resolvedToolIds: ['blackboard.snapshot.sync'],
     }))
 
     const rawDetailsGroup = viewModel.groups.find((group) => group.key === 'raw-details')

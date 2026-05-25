@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import time
 from collections.abc import Awaitable
 from pathlib import Path
 from typing import TypeVar, cast
@@ -14,6 +15,18 @@ from app.copilot_runtime import (
     build_default_tool_registry,
 )
 from app.copilot_runtime.tool_registry import (
+    SHELL_RUN_TOOL_DESCRIPTION,
+    SHELL_RUN_TOOL_DISPLAY_NAME,
+    SHELL_RUN_TOOL_ID,
+    SHELL_SESSION_CLOSE_TOOL_DESCRIPTION,
+    SHELL_SESSION_CLOSE_TOOL_DISPLAY_NAME,
+    SHELL_SESSION_CLOSE_TOOL_ID,
+    SHELL_SESSION_EXEC_TOOL_DESCRIPTION,
+    SHELL_SESSION_EXEC_TOOL_DISPLAY_NAME,
+    SHELL_SESSION_EXEC_TOOL_ID,
+    SHELL_SESSION_START_TOOL_DESCRIPTION,
+    SHELL_SESSION_START_TOOL_DISPLAY_NAME,
+    SHELL_SESSION_START_TOOL_ID,
     DEFAULT_WEATHER_LOCATION,
     FILE_TOOL_READ_DESCRIPTION,
     FILE_TOOL_READ_DISPLAY_NAME,
@@ -54,6 +67,7 @@ from app.tooling.file_tools import (
 from app.integrations.sustech.blackboard import get_blackboard_tool_contracts
 from app.integrations.sustech.teaching_information_system import get_tis_tool_contracts
 from app.tooling.browser_tools import get_browser_tool_contracts
+from app.tooling.calendar_tools import get_calendar_tool_contracts
 
 CONTRACT_TOOL_IDS = tuple(
     contract.metadata.tool_id
@@ -61,6 +75,7 @@ CONTRACT_TOOL_IDS = tuple(
         *get_blackboard_tool_contracts(),
         *get_tis_tool_contracts(),
         *get_browser_tool_contracts(),
+        *get_calendar_tool_contracts(),
     )
 )
 
@@ -106,6 +121,10 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
         "tool.fs.notebook_edit",
         FILE_TOOL_SWITCH_ROOT_ID,
         WEATHER_CURRENT_TOOL_ID,
+        SHELL_RUN_TOOL_ID,
+        SHELL_SESSION_START_TOOL_ID,
+        SHELL_SESSION_EXEC_TOOL_ID,
+        SHELL_SESSION_CLOSE_TOOL_ID,
         REQUEST_USER_FORM_TOOL_ID,
         SKILL_ACTIVATE_TOOL_ID,
         SKILL_READ_RESOURCE_TOOL_ID,
@@ -241,6 +260,86 @@ def test_default_tool_registry_builds_view_catalog_and_diagnostics_summary() -> 
             "sourceKind": "builtin",
         },
     }
+    assert catalog_by_id[SHELL_RUN_TOOL_ID] == {
+        "toolId": SHELL_RUN_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Shell 命令执行",
+        "description": "在后端使用 shell 执行一条命令（支持管道、重定向等 shell 特性）。",
+        "prompt": "当你需要 |、>、&& 等真实 shell 特性时使用此工具。请提供完整 command 字符串；除非必要，不要显式指定 shell。涉及删除、覆盖、安装、网络访问等高风险操作必须先征求用户明确批准。",
+        "displayNameZh": "Shell 命令执行",
+        "displayNameEn": SHELL_RUN_TOOL_DISPLAY_NAME,
+        "descriptionZh": "在后端使用 shell 执行一条命令（支持管道、重定向等 shell 特性）。",
+        "descriptionEn": SHELL_RUN_TOOL_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
+    assert catalog_by_id[SHELL_SESSION_START_TOOL_ID] == {
+        "toolId": SHELL_SESSION_START_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Shell 会话启动",
+        "description": "在后端启动一个可持续的 shell 会话（会保留 cd、环境变量等状态）。",
+        "prompt": "当你需要像真实终端一样保持状态（如 cd 后目录保持、设置环境变量后持续生效）时，先用此工具启动会话并获得 sessionId。",
+        "displayNameZh": "Shell 会话启动",
+        "displayNameEn": SHELL_SESSION_START_TOOL_DISPLAY_NAME,
+        "descriptionZh": "在后端启动一个可持续的 shell 会话（会保留 cd、环境变量等状态）。",
+        "descriptionEn": SHELL_SESSION_START_TOOL_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
+    assert catalog_by_id[SHELL_SESSION_EXEC_TOOL_ID] == {
+        "toolId": SHELL_SESSION_EXEC_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Shell 会话输入",
+        "description": "向已启动的 shell 会话发送输入并返回输出。",
+        "prompt": "使用此工具向 shell 会话发送下一条命令或输入。请传入 sessionId 和 input 文本。",
+        "displayNameZh": "Shell 会话输入",
+        "displayNameEn": SHELL_SESSION_EXEC_TOOL_DISPLAY_NAME,
+        "descriptionZh": "向已启动的 shell 会话发送输入并返回输出。",
+        "descriptionEn": SHELL_SESSION_EXEC_TOOL_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
+    assert catalog_by_id[SHELL_SESSION_CLOSE_TOOL_ID] == {
+        "toolId": SHELL_SESSION_CLOSE_TOOL_ID,
+        "kind": "builtin",
+        "availability": "available",
+        "displayName": "Shell 会话关闭",
+        "description": "关闭一个 shell 会话并释放后端资源。",
+        "prompt": "当不再需要 shell 会话时，使用此工具关闭它以释放资源。",
+        "displayNameZh": "Shell 会话关闭",
+        "displayNameEn": SHELL_SESSION_CLOSE_TOOL_DISPLAY_NAME,
+        "descriptionZh": "关闭一个 shell 会话并释放后端资源。",
+        "descriptionEn": SHELL_SESSION_CLOSE_TOOL_DESCRIPTION,
+        "group": {
+            "id": "builtin-core",
+            "label": "内置基础工具",
+            "labelZh": "内置基础工具",
+            "labelEn": "Built-in Core Tools",
+            "order": 0,
+            "sourceKind": "builtin",
+        },
+    }
     assert catalog_by_id[REQUEST_USER_FORM_TOOL_ID] == {
         "toolId": REQUEST_USER_FORM_TOOL_ID,
         "kind": "builtin",
@@ -357,65 +456,14 @@ def test_default_tool_registry_localizes_builtin_tools_and_keeps_contract_metada
 def test_default_tool_registry_exposes_contract_tool_runtime_binding_metadata() -> None:
     registry = build_default_tool_registry()
 
-    resolved_tool = registry.resolve_tool("blackboard.course_catalog.search")
+    resolved_tool = registry.resolve_tool("blackboard.snapshot.sync")
 
     assert resolved_tool.descriptor.kind == "contract"
-    assert resolved_tool.function_name == "blackboard_course_catalog_search"
-    assert resolved_tool.parameters_json_schema == {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "keyword": {
-                "type": "string",
-                "minLength": 1,
-                "description": "Search keyword sent to the Blackboard course catalog.",
-            },
-            "field": {
-                "type": "string",
-                "description": "Catalog field to search against. Defaults to `CourseName`.",
-            },
-            "operator": {
-                "type": "string",
-                "description": "Catalog comparison operator. Defaults to `Contains`.",
-            },
-            "fetchMode": {
-                "type": "string",
-                "enum": ["quick", "full"],
-                "default": "full",
-                "description": (
-                    "quick searches only the initial result pages without following show-all; "
-                    "full also follows show-all pagination for more complete results."
-                ),
-            },
-            "maxPages": {
-                "type": "integer",
-                "minimum": 1,
-                "default": 30,
-                "description": "Maximum number of result pages to continue fetching before stopping.",
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Optional cap on the number of catalog results returned after fetching.",
-            },
-            "username": {
-                "type": "string",
-                "description": "Blackboard/CAS username. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
-            },
-            "password": {
-                "type": "string",
-                "description": "Blackboard/CAS password. Usually omit it to use the host's default secret; provide it only when secret lookup is unavailable or credentials are requested explicitly.",
-            },
-            "usernameSecretName": {
-                "type": "string",
-                "description": "Host secret name that stores the Blackboard/CAS username. Usually omit it to use the default secret `sustech.username`.",
-            },
-            "passwordSecretName": {
-                "type": "string",
-                "description": "Host secret name that stores the Blackboard/CAS password. Usually omit it to use the default secret `sustech.casPassword`.",
-            },
-        },
-        "required": ["keyword"],
-    }
+    assert resolved_tool.function_name == "blackboard_snapshot_sync"
+    assert resolved_tool.parameters_json_schema is not None
+    assert resolved_tool.parameters_json_schema["type"] == "object"
+    assert resolved_tool.parameters_json_schema["additionalProperties"] is False
+    assert "properties" in resolved_tool.parameters_json_schema
 
 
 def test_request_user_form_tool_metadata_encourages_user_friendly_structured_collection() -> None:
@@ -599,6 +647,107 @@ def test_weather_tool_execution_uses_default_location_and_random_sample() -> Non
     assert result["summary"] != ""
 
 
+def test_shell_run_tool_executes_echo_ok() -> None:
+    registry = build_default_tool_registry()
+    resolved_tool = registry.resolve_tool(SHELL_RUN_TOOL_ID)
+    result = _run_awaitable(
+        resolved_tool.execute(
+            {
+                "shell": "auto",
+                "command": "echo ok",
+                "timeoutSeconds": 10,
+                "maxOutputChars": 2000,
+            }
+        )
+    )
+
+    assert resolved_tool.descriptor.kind == "builtin"
+    assert resolved_tool.function_name == "shell_run"
+    assert resolved_tool.parameters_json_schema is not None
+    assert result["timedOut"] is False
+    assert result["exitCode"] == 0
+    assert "ok" in result["stdout"].lower()
+
+
+def test_shell_session_tools_execute_echo_ok_and_persist_state(tmp_path: Path) -> None:
+    registry = build_default_tool_registry()
+    start_tool = registry.resolve_tool(SHELL_SESSION_START_TOOL_ID)
+    exec_tool = registry.resolve_tool(SHELL_SESSION_EXEC_TOOL_ID)
+    close_tool = registry.resolve_tool(SHELL_SESSION_CLOSE_TOOL_ID)
+
+    async def run_scenario() -> None:
+        started = await start_tool.execute(
+            {"shell": "auto", "cwd": str(tmp_path), "recycleTimeoutSeconds": 30}
+        )
+        session_id = cast(str, started["sessionId"])
+        assert started["recycleTimeoutSeconds"] == 30
+        assert isinstance(started["recycleAt"], str)
+        assert Path(cast(str, started["cwd"])).resolve(
+            strict=False
+        ) == tmp_path.resolve(strict=False)
+        try:
+            first = await exec_tool.execute(
+                {"sessionId": session_id, "input": "echo ok"}
+            )
+            assert first["closed"] is False
+            assert first["exitCode"] is None
+            assert first["timedOut"] is False
+            assert first["timeoutSeconds"] == 300
+            assert first["recycleTimeoutSeconds"] == 30
+            assert isinstance(first["recycleAt"], str)
+            assert "ok" in cast(str, first["stdout"]).lower()
+
+            second = await exec_tool.execute(
+                {"sessionId": session_id, "input": "echo ok2"}
+            )
+            assert second["closed"] is False
+            assert second["exitCode"] is None
+            assert "ok2" in cast(str, second["stdout"]).lower()
+        finally:
+            await close_tool.execute({"sessionId": session_id})
+
+    asyncio.run(run_scenario())
+
+
+def test_shell_session_exec_timeout_interrupts_and_releases_session() -> None:
+    registry = build_default_tool_registry()
+    start_tool = registry.resolve_tool(SHELL_SESSION_START_TOOL_ID)
+    exec_tool = registry.resolve_tool(SHELL_SESSION_EXEC_TOOL_ID)
+    close_tool = registry.resolve_tool(SHELL_SESSION_CLOSE_TOOL_ID)
+
+    async def run_scenario() -> None:
+        started = await start_tool.execute({"shell": "auto", "recycleTimeoutSeconds": 30})
+        session_id = cast(str, started["sessionId"])
+        shell = cast(str, started["shell"])
+        if shell == "pwsh":
+            long_running_command = "Read-Host"
+        elif shell == "cmd":
+            long_running_command = "set /p value="
+        else:
+            long_running_command = "cat"
+        try:
+            started_at = time.monotonic()
+            result = await exec_tool.execute(
+                {
+                    "sessionId": session_id,
+                    "input": long_running_command,
+                    "timeoutSeconds": 1,
+                    "maxOutputChars": 2000,
+                }
+            )
+            assert time.monotonic() - started_at < 10
+            assert result["timedOut"] is True
+            assert result["timeoutSeconds"] == 1
+            assert result["closed"] is True
+            assert result["maxOutputChars"] == 2000
+            with pytest.raises(LookupError, match="shell session not found"):
+                await exec_tool.execute({"sessionId": session_id, "input": "echo after"})
+        finally:
+            await close_tool.execute({"sessionId": session_id})
+
+    asyncio.run(run_scenario())
+
+
 def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
     registry = ToolRegistry()
     registry.register(
@@ -633,7 +782,7 @@ def test_tool_registry_rejects_duplicate_names_and_multiple_defaults() -> None:
         )
 
 
-def test_summarize_tool_arguments_redacts_sensitive_keys_and_truncates_values() -> None:
+def test_summarize_tool_arguments_outputs_values_and_truncates_long_strings() -> None:
     summary = summarize_tool_arguments(
         {
             "path": "docs/spec.md",
@@ -643,10 +792,11 @@ def test_summarize_tool_arguments_redacts_sensitive_keys_and_truncates_values() 
     )
 
     assert summary is not None
-    assert "top-secret-token" not in summary
-    assert "abc123" not in summary
-    assert "***" in summary
+    assert "top-secret-token" in summary
+    assert "abc123" in summary
+    assert "***" not in summary
     assert '"path": "docs/spec.md"' in summary
+    assert "…" in summary
 
 
 def test_summarize_tool_result_returns_json_string() -> None:

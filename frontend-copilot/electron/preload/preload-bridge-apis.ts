@@ -114,8 +114,10 @@ import {
   type FileManagerApi,
 } from '../file-manager/ipc'
 import {
-  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
   TIMELINE_DATABASE_ADD_EVENT_CHANNEL,
+  TIMELINE_DATABASE_DELETE_EVENT_CHANNEL,
+  TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL,
+  TIMELINE_DATABASE_UPDATE_EVENT_CHANNEL,
   type TimelineDatabaseApi,
 } from '../renderer-ipc/timeline-database.ipc'
 
@@ -314,6 +316,8 @@ function buildTimelineDatabaseApi(ipcRenderer: IpcRendererLike): TimelineDatabas
         : ipcRenderer.invoke(TIMELINE_DATABASE_LOAD_EVENTS_CHANNEL, request)
     },
     addEvent(request) { return ipcRenderer.invoke(TIMELINE_DATABASE_ADD_EVENT_CHANNEL, request) },
+    updateEvent(request) { return ipcRenderer.invoke(TIMELINE_DATABASE_UPDATE_EVENT_CHANNEL, request) },
+    deleteEvent(request) { return ipcRenderer.invoke(TIMELINE_DATABASE_DELETE_EVENT_CHANNEL, request) },
   }
 }
 

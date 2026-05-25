@@ -861,10 +861,7 @@ from .data_sync import BlackboardSnapshotSyncTool  # noqa: E402
 from .sql_query import BlackboardSQLQueryTool  # noqa: E402
 
 BLACKBOARD_FACADE_TOOLS: tuple[ToolContract, ...] = (
-    BlackboardCourseCatalogSearchTool(),
-    BlackboardCalendarRefreshTool(),
     BlackboardSnapshotSyncTool(),
-    BlackboardCourseResourcesSyncTool(),
     BlackboardSQLQueryTool(),
 )
 

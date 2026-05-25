@@ -33,10 +33,32 @@ export type AddTimelineEventInput = Omit<UnifiedCalendarEvent, 'id' | 'status' |
   progress?: UnifiedCalendarEvent['progress']
 }
 
+export type UpdateTimelineEventPatch = Partial<Pick<UnifiedCalendarEvent,
+  'title' | 'description' | 'start_time' | 'end_time' | 'is_all_day' | 'location' | 'status' | 'metadata_payload' | 'progress'
+>>
+
 export interface AddTimelineEventRequest {
   event: AddTimelineEventInput
 }
 
 export interface AddTimelineEventResult {
   id: number
+}
+
+export interface UpdateTimelineEventRequest {
+  id: string | number
+  patch: UpdateTimelineEventPatch
+}
+
+export interface UpdateTimelineEventResult {
+  updated: boolean
+  item: UnifiedCalendarEvent | null
+}
+
+export interface DeleteTimelineEventRequest {
+  id: string | number
+}
+
+export interface DeleteTimelineEventResult {
+  deleted: boolean
 }

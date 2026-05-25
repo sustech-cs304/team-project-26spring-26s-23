@@ -226,6 +226,7 @@ function AssistantChatPanelSlot({
         selectSessionHistoryRun={isActive ? selectSessionHistoryRun : undefined}
         onSessionRunSettled={isActive ? onSessionRunSettled : noopSettled}
         renderLoadingSkeleton={isVisible}
+        messageSurfaceVisible={isVisible}
         runtimeControllerBySessionId={runtimeControllerBySessionId}
         setRuntimeControllerBySessionId={setRuntimeControllerBySessionId}
       />

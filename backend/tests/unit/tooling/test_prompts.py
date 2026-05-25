@@ -175,9 +175,9 @@ class TestPromptRegistry:
 # ============================================================================
 
 class TestBundledPrompts:
-    def test_total_bundled_count_is_16(self) -> None:
+    def test_total_bundled_count_is_13(self) -> None:
         all_prompts = (*FILE_TOOL_PROMPTS, *BLACKBOARD_PROMPTS, *TIS_PROMPTS)
-        assert len(all_prompts) == 16
+        assert len(all_prompts) == 13
 
     def test_all_file_tools_present(self) -> None:
         tool_ids = {p.tool_id for p in FILE_TOOL_PROMPTS}
@@ -189,7 +189,7 @@ class TestBundledPrompts:
 
     def test_all_blackboard_tools_present(self) -> None:
         tool_ids = {p.tool_id for p in BLACKBOARD_PROMPTS}
-        assert len(tool_ids) == 5
+        assert len(tool_ids) == 2
         assert "blackboard.snapshot.sync" in tool_ids
         assert "blackboard.sql.query" in tool_ids
 
