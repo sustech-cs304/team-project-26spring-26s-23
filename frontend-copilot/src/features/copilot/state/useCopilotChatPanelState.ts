@@ -479,7 +479,9 @@ export function useCopilotChatPanelState({
     [runState],
   )
   const composerLockedReason = useMemo(() => null, [])
-  const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming' ? 'sending' : 'idle'
+  const sendStatus = runState.phase === 'starting' || runState.phase === 'streaming'
+    ? 'sending'
+    : 'idle'
   const canCancelSend = activeAbortController !== null && sendStatus === 'sending'
   const historyDrift = useMemo(
     () => sessionHistory?.selectedRunId === null

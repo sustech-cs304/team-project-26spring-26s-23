@@ -93,3 +93,30 @@ jobs:
             backend/tests/unit/copilot_runtime \
             backend/tests/unit/desktop_runtime \
             backend/tests/integration/test_copilot_runtime_http.py
+
+  command-tools-cross-platform:
+    name: Command tools cross-platform pytest
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: backend/.python-version
+
+      - name: Install backend dependencies
+        run: uv sync --project backend --extra dev --extra test --frozen
+
+      - name: Run shell tools unit pytest
+        run: uv run --project backend python -m pytest -c backend/pyproject.toml -m "not live and not e2e" backend/tests/unit/copilot_runtime/test_tool_registry.py -k "shell_run_tool_executes_echo_ok or shell_session_tools_execute_echo_ok_and_persist_state"

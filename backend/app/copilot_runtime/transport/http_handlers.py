@@ -25,12 +25,16 @@ from ..contracts import (
     RUN_CANCEL_METHOD,
     RUN_START_METHOD,
     RUN_STREAM_METHOD,
+    SHELL_SESSION_CLOSE_METHOD,
+    SHELL_SESSION_EXEC_METHOD,
+    SHELL_SESSION_START_METHOD,
     THINKING_CAPABILITY_GET_METHOD,
     THREAD_CREATE_METHOD,
     THREAD_GET_METHOD,
     TOOL_APPROVAL_RESOLVE_METHOD,
     RuntimeScaffold,
 )
+from ..errors import build_invalid_request_error
 from ..debug_log_store import DebugLogCategory, DebugLogLevel, RuntimeDebugLogWriter
 from ..model_routes import RuntimeModelRouteResolutionError
 from ..protocol import RuntimeProtocolError
@@ -49,6 +53,11 @@ from ..shared.errors import (
     session_not_found_response,
     tool_approval_not_found_response,
     thread_not_found_response,
+)
+from .._tool_registry.executors import (
+    execute_shell_session_close_tool,
+    execute_shell_session_exec_tool,
+    execute_shell_session_start_tool,
 )
 from .request_mappers import (
     ensure_runtime_request_id,
@@ -143,6 +152,27 @@ def build_router(
             return _handle_tool_approval_resolve_request(
                 dependencies=dependencies,
                 payload=payload,
+            )
+
+        if requested_method == SHELL_SESSION_START_METHOD:
+            return await _handle_shell_session_start_request(
+                dependencies=dependencies,
+                payload=payload,
+                http_request=request,
+            )
+
+        if requested_method == SHELL_SESSION_EXEC_METHOD:
+            return await _handle_shell_session_exec_request(
+                dependencies=dependencies,
+                payload=payload,
+                http_request=request,
+            )
+
+        if requested_method == SHELL_SESSION_CLOSE_METHOD:
+            return await _handle_shell_session_close_request(
+                dependencies=dependencies,
+                payload=payload,
+                http_request=request,
             )
 
         return method_not_implemented_response(
@@ -668,11 +698,130 @@ async def _handle_thinking_capability_get_request(
     return JSONResponse(content=response.to_dict())
 
 
+async def _handle_shell_session_start_request(
+    *,
+    dependencies: RuntimeTransportDependencies,
+    payload: dict[str, Any] | None,
+    http_request: Request,
+) -> JSONResponse:
+    set_runtime_request_context(
+        http_request,
+        runtime_method=SHELL_SESSION_START_METHOD,
+        phase="shell_session_start",
+    )
+    body = payload.get("body") if isinstance(payload, dict) else None
+    arguments = body if isinstance(body, dict) else None
+    try:
+        result = await execute_shell_session_start_tool(arguments)
+    except ValueError as exc:
+        return protocol_error_response(
+            RuntimeProtocolError(
+                status_code=400,
+                error=build_invalid_request_error(
+                    message=str(exc),
+                    scaffold=dependencies.scaffold,
+                    requested_method=SHELL_SESSION_START_METHOD,
+                ),
+            )
+        )
+    except RuntimeError as exc:
+        return runtime_operation_conflict_response(
+            code="shell_session_conflict",
+            message=str(exc),
+            scaffold=dependencies.scaffold,
+            requested_method=SHELL_SESSION_START_METHOD,
+            details={},
+        )
+    return JSONResponse(content={"ok": True, **result})
+
+
+async def _handle_shell_session_exec_request(
+    *,
+    dependencies: RuntimeTransportDependencies,
+    payload: dict[str, Any] | None,
+    http_request: Request,
+) -> JSONResponse:
+    set_runtime_request_context(
+        http_request,
+        runtime_method=SHELL_SESSION_EXEC_METHOD,
+        phase="shell_session_exec",
+    )
+    body = payload.get("body") if isinstance(payload, dict) else None
+    arguments = body if isinstance(body, dict) else None
+    try:
+        result = await execute_shell_session_exec_tool(arguments)
+    except (ValueError, LookupError) as exc:
+        return protocol_error_response(
+            RuntimeProtocolError(
+                status_code=400,
+                error=build_invalid_request_error(
+                    message=str(exc),
+                    scaffold=dependencies.scaffold,
+                    requested_method=SHELL_SESSION_EXEC_METHOD,
+                    details=(
+                        {"sessionId": body.get("sessionId")}
+                        if isinstance(body, dict) and isinstance(body.get("sessionId"), str)
+                        else None
+                    ),
+                ),
+            )
+        )
+    except RuntimeError as exc:
+        return runtime_operation_conflict_response(
+            code="shell_session_conflict",
+            message=str(exc),
+            scaffold=dependencies.scaffold,
+            requested_method=SHELL_SESSION_EXEC_METHOD,
+            details={},
+        )
+    return JSONResponse(content={"ok": True, **result})
+
+
+async def _handle_shell_session_close_request(
+    *,
+    dependencies: RuntimeTransportDependencies,
+    payload: dict[str, Any] | None,
+    http_request: Request,
+) -> JSONResponse:
+    set_runtime_request_context(
+        http_request,
+        runtime_method=SHELL_SESSION_CLOSE_METHOD,
+        phase="shell_session_close",
+    )
+    body = payload.get("body") if isinstance(payload, dict) else None
+    arguments = body if isinstance(body, dict) else None
+    try:
+        result = await execute_shell_session_close_tool(arguments)
+    except ValueError as exc:
+        return protocol_error_response(
+            RuntimeProtocolError(
+                status_code=400,
+                error=build_invalid_request_error(
+                    message=str(exc),
+                    scaffold=dependencies.scaffold,
+                    requested_method=SHELL_SESSION_CLOSE_METHOD,
+                ),
+            )
+        )
+    except RuntimeError as exc:
+        return runtime_operation_conflict_response(
+            code="shell_session_conflict",
+            message=str(exc),
+            scaffold=dependencies.scaffold,
+            requested_method=SHELL_SESSION_CLOSE_METHOD,
+            details={},
+        )
+    return JSONResponse(content={"ok": True, **result})
+
+
 __all__ = [
     "_handle_capabilities_get_request",
     "_handle_run_cancel_request",
     "_handle_run_start_request",
     "_handle_run_stream_request",
+    "_handle_shell_session_close_request",
+    "_handle_shell_session_exec_request",
+    "_handle_shell_session_start_request",
     "_handle_thinking_capability_get_request",
     "_handle_thread_create_request",
     "_handle_thread_get_request",
