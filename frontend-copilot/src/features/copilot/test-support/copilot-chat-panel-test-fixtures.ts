@@ -196,7 +196,7 @@ export function createSessionShell(overrides: SessionShellOverrides = {}): Assis
         },
       ],
       recommendedToolsForAgent: [LABEL_TOOL_READ],
-      defaultEnabledTools: [LABEL_TOOL_READ, 'tool.remote-search'],
+      defaultEnabledTools: [LABEL_TOOL_READ],
       toolSelectionMode: 'recommendation-only',
       ...overrides.capabilities,
     },

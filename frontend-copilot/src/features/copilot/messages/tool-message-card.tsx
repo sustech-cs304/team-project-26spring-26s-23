@@ -34,6 +34,7 @@ export function ToolMessageCard({
   const [expanded, setExpanded] = useState(false)
   const [renderPanel, setRenderPanel] = useState(false)
   const [inputExpanded, setInputExpanded] = useState(false)
+  const [rawOutputExpanded, setRawOutputExpanded] = useState(false)
   const [approvalPendingDecision, setApprovalPendingDecision] = useState<'approved' | 'rejected' | null>(null)
   const [approvalError, setApprovalError] = useState<string | null>(null)
   const [countdownNow, setCountdownNow] = useState(() => Date.now())
@@ -41,6 +42,7 @@ export function ToolMessageCard({
   const contentSections = buildToolContentSections(turn)
   const inputSummary = hasNonEmptyValue(turn.inputSummary) ? turn.inputSummary : null
   const panelId = `chat-message-tool-panel-${turn.id}`
+  const rawOutputPanelId = `chat-message-tool-raw-output-panel-${turn.id}`
   const panelRef = useRef<HTMLDivElement>(null)
 
   useGSAP(() => {
@@ -170,18 +172,31 @@ export function ToolMessageCard({
       })}
       {renderPanel && (
         <div ref={panelRef} className="copilot-chat__tool-panel" id={panelId} data-testid={`chat-message-tool-panel-${index}`}>
-          {specialization?.panel ?? contentSections.map((section, sectionIndex) => (
-            <ToolContentSection
-              key={`${turn.id}:${section.label}:${sectionIndex}`}
-              label={section.label}
-              value={section.value}
-              kind={section.kind}
-              testIdPrefix={sectionIndex === 0
-                ? `chat-message-tool-output-${index}`
-                : `chat-message-tool-extra-${index}-${sectionIndex}`}
-            />
-          ))}
-          {specialization === null && inputSummary !== null && (
+          {specialization === null
+            ? contentSections.map((section, sectionIndex) => (
+                <ToolContentSection
+                  key={`${turn.id}:${section.label}:${sectionIndex}`}
+                  label={section.label}
+                  value={section.value}
+                  kind={section.kind}
+                  testIdPrefix={sectionIndex === 0
+                    ? `chat-message-tool-output-${index}`
+                    : `chat-message-tool-extra-${index}-${sectionIndex}`}
+                />
+              ))
+            : (
+                <>
+                  {specialization.panel}
+                  <ToolRawOutputSection
+                    index={index}
+                    sections={contentSections}
+                    rawOutputExpanded={rawOutputExpanded}
+                    rawOutputPanelId={rawOutputPanelId}
+                    onToggleRawOutput={() => setRawOutputExpanded((current) => !current)}
+                  />
+                </>
+              )}
+          {inputSummary !== null && (
             <ToolInputSection
               index={index}
               inputSummary={inputSummary}
@@ -281,6 +296,62 @@ function ToolInputSection({
             kind="input"
             testIdPrefix={`chat-message-tool-input-${index}`}
           />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ToolRawOutputSection({
+  index,
+  sections,
+  rawOutputExpanded,
+  rawOutputPanelId,
+  onToggleRawOutput,
+}: {
+  index: number
+  sections: Array<{
+    label: string | null
+    value: string
+    kind: 'result' | 'error'
+  }>
+  rawOutputExpanded: boolean
+  rawOutputPanelId: string
+  onToggleRawOutput: () => void
+}) {
+  return (
+    <div className="copilot-chat__tool-nested">
+      <button
+        type="button"
+        className="copilot-chat__tool-nested-toggle"
+        aria-controls={rawOutputPanelId}
+        aria-expanded={rawOutputExpanded}
+        data-expanded={rawOutputExpanded}
+        data-testid={`chat-message-tool-raw-toggle-${index}`}
+        onClick={onToggleRawOutput}
+      >
+        <span className="copilot-chat__tool-toggle-main copilot-chat__tool-toggle-main--nested">
+          <span className="copilot-chat__tool-toggle-icon" aria-hidden="true">{rawOutputExpanded ? '▾' : '▸'}</span>
+          <span className="copilot-chat__tool-section-label">原始输出</span>
+        </span>
+      </button>
+      {rawOutputExpanded && (
+        <div
+          className="copilot-chat__tool-nested-panel"
+          id={rawOutputPanelId}
+          data-testid={`chat-message-tool-raw-panel-${index}`}
+        >
+          {sections.map((section, sectionIndex) => (
+            <ToolContentSection
+              key={`${rawOutputPanelId}:${section.label}:${sectionIndex}`}
+              label={section.label}
+              value={section.value}
+              kind={section.kind}
+              testIdPrefix={sectionIndex === 0
+                ? `chat-message-tool-output-${index}`
+                : `chat-message-tool-extra-${index}-${sectionIndex}`}
+            />
+          ))}
         </div>
       )}
     </div>

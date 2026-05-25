@@ -26,7 +26,7 @@ function getSelectedAgent() {
 }
 
 describe('assistant-workspace-session-controller', () => {
-  it('loads capabilities immediately after session creation and seeds every tool as enabled by default', async () => {
+  it('loads capabilities immediately after session creation and seeds only selectable tools as enabled by default', async () => {
     const selectedAgent = getSelectedAgent()
     const createSession = async () => createSessionResponse()
     const getCapabilities = async () => createCapabilitiesResponse()
@@ -39,7 +39,7 @@ describe('assistant-workspace-session-controller', () => {
     })
 
     expect(shell.capabilities.capabilitiesVersion).toBe('cap-v12')
-    expect(shell.capabilities.defaultEnabledTools).toEqual(['tool.fs.read', 'tool.remote-search'])
+    expect(shell.capabilities.defaultEnabledTools).toEqual(['tool.fs.read'])
     expect(shell.capabilities.recommendedToolsForAgent).toEqual(['tool.fs.read'])
   })
 

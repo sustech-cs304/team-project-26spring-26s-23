@@ -83,7 +83,7 @@ describe('copilot chat helpers', () => {
         capabilitiesVersion: 'cap-v12',
         allAvailableTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
         recommendedTools: [LABEL_TOOL_READ],
-        defaultEnabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
+        defaultEnabledTools: [LABEL_TOOL_READ],
         defaultEnabledSource: {
           boundAgent: 'general',
           toolSelectionMode: 'recommendation-only',
@@ -112,7 +112,7 @@ describe('copilot chat helpers', () => {
         selectedModelRoute: null,
         thinkingSelection: null,
         thinkingSelectionByModelKey: {},
-        enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
+        enabledTools: [LABEL_TOOL_READ],
         requestOptionsText: '{}',
       })
     })
@@ -192,7 +192,7 @@ describe('copilot chat helpers', () => {
         level: 'auto',
         budgetTokens: null,
       },
-      enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
+      enabledTools: [LABEL_TOOL_READ],
       toolPermissionPolicy: {
         schemaVersion: 1,
         defaultMode: 'ask',
@@ -276,6 +276,23 @@ describe('copilot chat helpers', () => {
       toolModes: {},
     })
   })
+
+    it('drops unavailable tools from enabledTools before sending even without a permission policy', () => {
+      const input = buildRuntimeMessageSendInput({
+        runtimeUrl: LABEL_HTTP_127,
+        sessionShell: createSessionShell(),
+        draft: {
+          ...createEmptyComposerDraft(),
+          messageText: 'availability cleanup',
+          selectedModelId: 'provider-openai:openai/gpt-4.1',
+          selectedModelRoute: createRuntimeModelRoute(),
+          enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
+        },
+        requestOptions: {},
+      })
+
+      expect(input.enabledTools).toEqual([LABEL_TOOL_READ])
+    })
 
   it('keeps budget selections structured without reviving compat intent aliases', () => {
     const budgetSelection = createRuntimeThinkingSelection({

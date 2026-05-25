@@ -3,6 +3,7 @@ import {
   type RuntimeCapabilitiesGetResponse,
   type RuntimeThreadCreateResponse,
 } from '../../features/copilot/chat-contract'
+import { sanitizeEnabledToolIds } from '../../features/copilot/tool-picker'
 import type { CopilotBootstrapController, CopilotConnectableState } from '../../features/copilot/types'
 import { enhanceRuntimeAgents } from '../config'
 import type { AgentType, AssistantSessionCapabilities, AssistantSessionShell } from '../types'
@@ -48,24 +49,18 @@ export function createAssistantSessionCapabilities(
     capabilitiesVersion: response.capabilitiesVersion,
     allAvailableTools: response.tools.map((tool) => ({ ...tool })),
     recommendedToolsForAgent: [...response.recommendedTools],
-    defaultEnabledTools: createAllAvailableToolIds(response.tools),
+    defaultEnabledTools: createDefaultEnabledToolIds(response.tools),
     toolSelectionMode: response.toolSelectionMode,
   }
 }
 
-function createAllAvailableToolIds(
+function createDefaultEnabledToolIds(
   tools: RuntimeCapabilitiesGetResponse['tools'],
 ): string[] {
-  const seenToolIds = new Set<string>()
-
-  return tools.flatMap((tool) => {
-    const toolId = tool.toolId.trim()
-    if (toolId === '' || seenToolIds.has(toolId)) {
-      return []
-    }
-
-    seenToolIds.add(toolId)
-    return [toolId]
+  return sanitizeEnabledToolIds({
+    selectedToolIds: tools.map((tool) => tool.toolId),
+    tools,
+    policy: null,
   })
 }
 

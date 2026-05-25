@@ -65,7 +65,7 @@ afterEach(() => {
 describe('CopilotChatPanel composer interactions', () => {
   /* eslint-disable-next-line max-lines-per-function -- three integration tests for tool picker interactions, each requiring independent render setup */
   describe('tool picker interactions', () => {
-  it('supports searching and shortcut-updating message-level enabledTools through the tool picker', async () => {
+  it('supports searching and shortcut-updating message-level enabledTools through the tool picker without selecting unavailable tools', async () => {
     const sendMessage = createResolvedSendMessageSpy()
     const loadWorkspaceState = createPersistedWorkspaceStateLoader()
 
@@ -109,7 +109,7 @@ describe('CopilotChatPanel composer interactions', () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1)
     expect(sendMessage.mock.calls[0][0]).toMatchObject({
-      enabledTools: [LABEL_TOOL_READ, LABEL_TOOL_REMOTE_SEARCH],
+      enabledTools: [LABEL_TOOL_READ],
       message: {
         content: '请使用当前工具集执行摘要',
       },
@@ -164,7 +164,7 @@ describe('CopilotChatPanel composer interactions', () => {
     expect(deniedOption.disabled).toBe(false)
     expect(deniedOption.className).toContain('copilot-tool-picker__option--disabled')
     expect(deniedOption.getAttribute('aria-disabled')).toBe('true')
-    expect(deniedOption.title).toContain('总是关闭')
+    expect(deniedOption.title).toContain('当前不可用')
     expect(allowedOption.disabled).toBe(false)
     expect(allowedOption.getAttribute(SELECTOR_ARIA_PRESSED)).toBe('true')
 
