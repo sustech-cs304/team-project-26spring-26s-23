@@ -165,7 +165,7 @@ Windows PowerShell 示例：
 
 ```powershell
 New-Item -ItemType Directory -Force ./.candue/sustech-sources | Out-Null
-Invoke-WebRequest -Uri "https://example.sustech.edu.cn/file.pdf" -OutFile "./.candue/sustech-sources/file.pdf" -MaximumRedirection 10
+Invoke-WebRequest -Uri "https://example.sustech.edu.cn/file.pdf" -OutFile "./file.pdf" -MaximumRedirection 10
 ```
 
 Bash Python 示例：
