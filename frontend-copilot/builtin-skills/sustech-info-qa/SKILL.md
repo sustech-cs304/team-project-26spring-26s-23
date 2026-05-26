@@ -61,6 +61,81 @@ description: 只要用户的任何问题、检索、办事咨询、学习/校园
 - 信息中心/网络信息服务入口：https://its.sustech.edu.cn/
 - 人力资源部：https://hr.sustech.edu.cn/
 
+### 南科手册（学生维护的非官方综合手册）
+
+南科手册是面向 SUSTecher 的校园信息手册与生活指南，适合快速了解校园建筑、生活服务、交通、黄页、社团、学习经验等。它不是学校正式制度发布源；涉及政策、校历、学籍、收费、截止日期、办事资格等结论时，应把南科手册作为线索和入口，再回到主管部门官网、教务/学工/研究生院/图书馆/信息中心等官方来源核验。
+
+访问探索确认时间：2026-05-26。站点入口与主栏目索引：
+
+- 南科手册首页：https://sustech.online/
+  - 常用入口区包括学校官网、图书馆、邮箱服务、网上服务大厅、Sakai、Blackboard、联创打印、校园卡二维码、巴士时刻表、校园街景、NCES、近日讲座、应急处理等快捷链接。
+  - 新生入口包括冷知识/Quickstart、新生手册与入学指南等线索；飞跃手册入口指向申请、交流、校招经验汇总。
+- 快讯网：https://daily.sustech.online/
+  - 南科手册关联的校园快讯/资讯入口；自动读取失败时可直接给出入口链接。
+- 南科手册微信小程序：https://sustech.online/miniapp/
+  - 移动端与小程序使用说明。
+- 帮助我们完善/关于：https://sustech.online/about/
+  - 内容反馈、维护招募与站点协作入口。
+- 站点帮助：https://sustech.online/site-help/
+  - PWA 添加到桌面等站点使用说明。
+- 建筑与设施：https://sustech.online/facility/
+  - 校园地图、主要建筑、宿舍区、教学楼、科研楼、体育场馆、步行公园、航拍全景与街景等校园空间信息。
+- 黄页：https://sustech.online/contact/
+  - 常用电话与邮件、学生事务中心、教学/后勤/医疗/心理/安保联系方式、邮政快递地址、报销抬头、常用 QQ 群等。
+- 校历：https://sustech.online/calendar/
+  - 当前学年校历与历史校历存档；页面也链接学校官方校历，应优先核对官方校历。
+- 服务与技巧：https://sustech.online/service/
+  - 学号、校园卡、网络、Ehall、CRA/牛娃小镇、飞跃手册、退税、Sakai、联创打印、Blackboard、邮箱、企业微信、快递、医疗、软件授权、图书馆服务、文档模板等。
+  - 校园网络与信息中心：https://sustech.online/service/network/
+  - 校园卡：https://sustech.online/service/campus-card/
+  - 邮件与快递收发：https://sustech.online/service/mail-and-express/
+  - 电子邮件服务：https://sustech.online/service/email/
+  - 联创打印系统：https://sustech.online/service/unifound/
+  - 就医指南：https://sustech.online/service/medical-treatment/
+  - 火车票学生优惠使用指南：https://sustech.online/service/student-train-ticket/
+  - 年度个税汇算/退税：https://sustech.online/service/tax/
+  - Blackboard 日程添加到系统日历：https://sustech.online/service/blackboard/retrive-ics-url/
+  - eduroam：https://sustech.online/service/network/eduroam/
+  - 申请回校 VPN：https://sustech.online/service/network/apply-for-vpn/
+  - 校内远程桌面：https://sustech.online/service/network/remote-desktop/
+  - 选择路由器：https://sustech.online/service/network/choose-a-router/
+  - 校内 IPv6 设置：https://sustech.online/service/network/ipv6/
+- 生活在南科：https://sustech.online/life/
+  - 讲座日历、住宿、社团、校内介绍、餐饮、超市、理发店、运动设施、出入校门与校园卡等生活经验。
+  - 住在南科/宿舍：https://sustech.online/life/dormitory/
+  - 宿舍平面图：https://sustech.online/life/dormitory/dorm-floor-plan.html
+  - 新生报到：https://sustech.online/life/freshman-register/
+  - 运动设施：https://sustech.online/life/sports-facility/
+- 学在南科：https://sustech.online/study/
+  - 讲座信息、SID、课程资料、学习建议与攻略、GPA 换算、学生手册、培养方案、教材与图书借还、院系开放信息等。
+  - 近日讲座：https://sustech.online/study/talks/
+  - 学习制度与信息：https://sustech.online/study/by-shude-college/info-on-study.html
+  - 新生攻略之学习篇：https://sustech.online/study/by-zhicheng-college/%E6%96%B0%E7%94%9F%E6%94%BB%E7%95%A5%E4%B9%8B%E5%AD%A6%E4%B9%A0%E7%AF%87.html
+  - 向境外院校发送成绩单：https://sustech.online/study/send-transcripts-to-other-universites/
+  - 计算机系创新实践项目汇总：https://sustech.online/study/cse/innovative-project
+  - 袁长庚老师为新生推荐的书单：https://sustech.online/study/book-list-by-prof-yuan/2018/
+- 饭堂服务：https://sustech.online/canteen/
+  - 食堂服务反馈入口与 SUSTeen-campus 小程序/项目入口。
+- 社团活动：https://sustech.online/organizations/
+  - 注册社团、团学组织、体育竞技、志愿公益、文化艺术、学术科技、创新创业社团，以及选择社团建议。
+  - 注册社团列表（2019-2020）：https://sustech.online/organizations/registered-organization-2020
+- 媒体与网站：https://sustech.online/media/
+  - 学校官方媒体、院系/部门/书院公众号、信息类公众号、学生组织与社团媒体、自媒体与网站。
+- 交通：https://sustech.online/transport/
+  - 校园巴士、来往学校公交/地铁、自驾/出租、市内交通、从铁路/机场抵达、来往香港/广州等周边城市交通。
+  - 校园巴士时刻表与车辆位置：https://sustech.online/transport/bustimer
+- 周边：https://sustech.online/surroundings/
+  - 大型商城、城中村、周边餐饮、校外住宿等学校周边生活信息。
+- 应急处理：https://sustech.online/emergency
+  - 首页常用入口强调的应急入口，涵盖 AED、药箱、就医、失窃等线索；具体应急电话与官方流程仍应核对黄页和学校官方部门。
+- 新生/入门相关：
+  - 蓢村拾遗：南科大冷知识 2021：https://sustech.online/if-you-are-a-freshman/preview/
+  - Quickstart of SUSTech 2021：https://sustech.online/if-you-are-a-freshman/2021.html
+- 飞跃手册（申请与校招经验）：https://sustech-application.com/?utm_source=online
+  - 南科手册首页链接的外部合作站点，覆盖英语学习、海外交流、选校经验、申请注意事项和个人申请总结；时效性强，需按年份和专业谨慎参考。
+- NCES Next / 牛娃课程评价社区：https://ncesnext.com/
+  - 南科手册首页与服务页均指向该课程评价社区；自动访问可能受防护影响，课程评价不能替代教学大纲、培养方案和教务通知。
+
 ## 推荐工作流
 
 ### 1. 明确问题类型
