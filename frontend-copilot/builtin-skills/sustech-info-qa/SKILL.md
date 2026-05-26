@@ -175,7 +175,7 @@ python - <<'PY'
 from pathlib import Path
 from urllib.request import Request, urlopen
 url = "https://example.sustech.edu.cn/file.pdf"
-out = Path(".candue/sustech-sources/file.pdf")
+out = Path("file.pdf")
 out.parent.mkdir(parents=True, exist_ok=True)
 req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
 out.write_bytes(urlopen(req, timeout=30).read())
