@@ -156,10 +156,7 @@ description: 只要用户的任何问题、检索、办事咨询、学习/校园
 
 如果命令行工具可用，使用 `shell_run` 或 `shell_session_start` / `shell_session_exec` 下载相关官方文件到本地临时目录，再用文件读取工具阅读。
 
-推荐保存目录：
-
-- 项目工作区内的 `.candue/sustech-sources/`
-- 或运行时允许写入的临时目录
+推荐保存目录：运行时允许写入的临时目录
 
 Windows PowerShell 示例：
 
