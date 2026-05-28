@@ -1,23 +1,18 @@
 ---
 title: 聊天运行时
-description: 面向开发者说明 thread/run 主链、兼容壳位置、流式事件与工具步骤怎样贯穿当前聊天实现。
+description: 说明 thread/run 主链、兼容壳位置、流式事件与工具步骤怎样贯穿聊天实现。
 sidebar_position: 3
 ---
 
 # 聊天运行时
 
-- 这页给谁看：准备修改聊天主链、运行时协议、流式事件处理或消息渲染的开发者。
-- 这页解决什么问题：把当前 `thread/run` 主链、持久化历史查询链路、事件流和关键代码落点收成一页。
-- 当前覆盖到哪：覆盖当前聊天主链、历史恢复 / 回放路径及其前后端对应关系；完整方法与事件表继续收口到共享事实页。
-- 当前状态：`thread/run` 主链、SQLite 历史持久化与基础 replay 已可用；兼容壳仍可使用但只属于部分接通层。
-
-先说结论：当前聊天主线已经明确是 **`agents/list → thread/create → thread/get → run/start → run/stream → run/cancel`**，而历史恢复侧链则围绕 **`/history/threads → /history/threads/{threadId} → /history/runs/{runId}/replay`** 展开。`session/create`、`capabilities/get`、`message/send` 还在，但现在应该把它们理解成兼容投影，而不是继续围绕它们设计新主语义。
+聊天主线已经明确是 **`agents/list → thread/create → thread/get → run/start → run/stream → run/cancel`**，历史恢复侧链围绕 **`/history/threads → /history/threads/{threadId} → /history/runs/{runId}/replay`** 展开。`session/create`、`capabilities/get`、`message/send` 还在，但它们是兼容投影，不是新主语义。
 
 ## 先记住主链顺序
 
-| 步骤 | 谁发起 | 作用 | 当前状态 |
+| 步骤 | 谁发起 | 作用 | 状态 |
 | --- | --- | --- | --- |
-| `agents/list` | 前端 | 读取当前可用智能体目录。 | 已可用 |
+| `agents/list` | 前端 | 读取可用智能体目录。 | 已可用 |
 | `thread/create` | 前端 | 创建 thread，并在创建时绑定智能体。 | 已可用 |
 | `thread/get` | 前端 | 读取这条 thread 的能力面。 | 已可用 |
 | `run/start` | 前端 | 发起一轮 run，显式带上消息、模型路由、Thinking 与工具策略。 | 已可用 |
@@ -26,19 +21,19 @@ sidebar_position: 3
 
 ## 兼容壳现在处在什么位置
 
-当前仍保留三条兼容方法：
+仍保留三条兼容方法：
 
 - `session/create`
 - `capabilities/get`
 - `message/send`
 
-更准确的理解是：
+它们的对应关系：
 
 - `session/create` 对应 `thread/create`。
 - `capabilities/get` 对应 `thread/get` 的能力投影。
 - `message/send` 对应 `run/start + run/stream` 的兼容封装。
 
-所以当前新增功能、修文档或查主链问题时，应该先回到 `thread/run`，再看兼容层有没有同步映射。
+新增功能、修文档或查主链问题时，先回到 `thread/run`，再看兼容层有没有同步映射。
 
 ## 一轮 run 到底发生了什么
 
@@ -46,21 +41,21 @@ sidebar_position: 3
 
 前端会在发送前准备这些输入：
 
-- 当前 `threadId`
+- `threadId`
 - 用户消息
 - 模型路由
 - Thinking 选择
 - 启用工具列表
 - 请求选项
 
-Provider、route、Thinking 的完整事实请分别看：
+Provider、route、Thinking 的完整事实请看：
 
 - [Provider 与模型路由说明](../reference/providers-and-routing.md)
 - [Thinking 能力说明](../reference/thinking.md)
 
 ### 2. 运行时按需解析 route
 
-真正执行前，Python runtime 会通过宿主边界解析本次 route。这里要特别注意：
+执行前，Python runtime 会通过宿主边界解析本次 route：
 
 - route 解析发生在执行阶段。
 - secret 仍留在宿主侧。
@@ -68,7 +63,7 @@ Provider、route、Thinking 的完整事实请分别看：
 
 ### 3. `run/stream` 开始返回事件
 
-前端当前不会等待整包响应，而是按事件流推进界面。最常见的事件包括：
+前端不会等待整包响应，而是按事件流推进界面。最常见的事件包括：
 
 - `run_started`
 - `run_metadata`
@@ -79,45 +74,45 @@ Provider、route、Thinking 的完整事实请分别看：
 - `run_failed`
 - `run_cancelled`
 
-事件完整表和终态规则继续收口在[运行时接口 / 事件参考](../reference/runtime-events.md)。
+事件完整表和终态规则收口在[运行时接口 / 事件参考](../reference/runtime-events.md)。
 
 ### 4. 前端按 run 生命周期更新界面
 
-当前前端主线会：
+前端主线会：
 
 1. 收到 `run_started` 后建立 assistant 占位项。
 2. 收到 `text_delta` 后增量拼接文本。
 3. 收到 `tool_event` 后更新工具步骤。
 4. 收到终态事件后收口本轮 run。
 
-这就是为什么当前聊天问题常常要同时看前端合同和后端事件编码，而不能只盯一个请求函数。
+这就是为什么聊天问题常常要同时看前端合同和后端事件编码，而不能只盯一个请求函数。
 
-## 持久化历史现在怎么落地
+## 持久化历史怎么落地
 
-当前聊天历史已经不是“只活在 Python 进程内存里”的状态，而是分成两层：
+聊天历史不是"只活在 Python 进程内存里"，而是分成两层：
 
 - durable truth：SQLite 中的 `threads`、`runs` 与 `run_events`
 - rebuildable cache：`thread_projection` 与 `run_projection`
 
-对开发者最重要的判断是：
+对开发者最重要的判断：
 
-- thread / run / event 真相不会在 drift 解释阶段被回写成“当前配置”
+- thread / run / event 真相不会在 drift 解释阶段被回写成"配置"
 - projection 只是列表、时间线和 replay 便利层，必要时可以从 truth 重建
 - renderer 启动时先恢复轻量 thread shell，再按需读取 thread detail 和 run replay
-- drift 提示会把“历史快照事实”和“当前可用性判断”分开展示；若依赖缺失，继续对话必须显式 rebind
+- drift 提示会把"历史快照事实"和"可用性判断"分开展示；若依赖缺失，继续对话必须显式 rebind
 - delete / backup / restore 不直接让 renderer 触碰 SQLite 文件，而是通过 desktop runtime 的历史端点受控执行
 
-## 工具步骤现在怎么走
+## 工具步骤怎么走
 
-当前工具相关语义也已经进入主链：
+工具相关语义已经进入主链：
 
 - 工具目录来自能力面。
 - 本轮启用哪些工具，由请求显式带上。
-- 工具真正执行时，会在同一条 run 事件流里发出 `tool_event`。
+- 工具执行时，会在同一条 run 事件流里发出 `tool_event`。
 
 从开发者角度，最重要的是把这三层分清，而不是把工具调用再塞回旧整包响应模型里。
 
-## 当前最值得先看的代码入口
+## 最值得先看的代码入口
 
 | 主题 | 推荐入口 |
 | --- | --- |
@@ -133,7 +128,7 @@ Provider、route、Thinking 的完整事实请分别看：
 | desktop history 路由 | `backend/app/desktop_runtime/routes/history.py` |
 | 兼容投影 | `backend/app/copilot_runtime/legacy_event_projection.py` |
 
-## 当前排查聊天问题时的顺序
+## 排查聊天问题的顺序
 
 ### 先判断是不是主链问题
 
@@ -145,7 +140,7 @@ Provider、route、Thinking 的完整事实请分别看：
 
 ### 最后再看共享事实页
 
-如果症状像“模型不匹配”“Thinking 选项异常”“事件理解不一致”，分别回到共享事实页统一口径。
+如果症状像"模型不匹配""Thinking 选项异常""事件理解不一致"，分别回到共享事实页统一口径。
 
 ## 建议接着读什么
 
