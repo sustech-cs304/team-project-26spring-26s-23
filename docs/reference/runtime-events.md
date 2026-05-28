@@ -25,12 +25,46 @@ sidebar_position: 4
 
 | 路径 | 主要用途 | 当前状态 |
 | --- | --- | --- |
-| `GET /health` | 最小健康检查，更适合回答“进程还活着吗”。 | 已可用 |
+| `GET /health` | 最小健康检查，更适合回答"进程还活着吗"。 | 已可用 |
 | `GET /ready` | 读取启动是否收口，以及当前是否 ready。 | 已可用 |
 | `GET /version` | 读取版本、Python 版本、模式和 base URL。 | 已可用 |
 | `GET /build-info` | 当前与 `GET /version` 返回同形信息。 | 已可用 |
 | `GET /diagnostics` | 读取更完整的运行目录、状态目录、日志目录和配置摘要。 | 已可用 |
 | `GET /diagnostics/runtime-info` | 当前与 `GET /diagnostics` 返回同形信息。 | 已可用 |
+| `GET /diagnostics/debug-logs/recent` | 查询最近调试日志。 | 已可用 |
+| `GET /diagnostics/debug-logs/chain` | 获取关联链调试日志。 | 已可用 |
+| `GET /diagnostics/debug-logs/events/{event_id}` | 按 ID 获取单个调试事件。 | 已可用 |
+| `GET /diagnostics/debug-logs/maintenance-status` | 检查调试日志保留维护状态。 | 已可用 |
+| `GET /calendar/events` | 从 timeline.db 获取日历事件。 | 已可用 |
+| `GET /api/blackboard/sync/status` | 获取 Blackboard 同步状态。 | 已可用 |
+| `POST /api/blackboard/sync/trigger` | 触发全量 Blackboard 快照同步。 | 已可用 |
+| `POST /api/blackboard/sync/cancel` | 取消正在进行的 Blackboard 同步。 | 已可用 |
+| `POST /api/blackboard/sync/rebuild-announcement-links` | 重建公告-作业链接。 | 已可用 |
+| `POST /api/blackboard/resources/downloads/select-start` | 启动选择性资源下载。 | 已可用 |
+| `POST /api/blackboard/resources/downloads/cancel` | 取消资源下载。 | 已可用 |
+| `GET /api/blackboard/resources/downloads/status` | 下载队列状态。 | 已可用 |
+| `GET /api/blackboard/data/summary` | 同步数据摘要。 | 已可用 |
+| `GET /api/blackboard/data/courses` | 课程列表。 | 已可用 |
+| `GET /api/blackboard/data/courses/{course_id}/announcements` | 课程公告。 | 已可用 |
+| `GET /api/blackboard/data/courses/{course_id}/assignments` | 课程作业。 | 已可用 |
+| `GET /api/blackboard/data/courses/{course_id}/announcement-assignment-links` | 公告-作业映射。 | 已可用 |
+| `GET /api/blackboard/data/courses/{course_id}/grades` | 课程成绩。 | 已可用 |
+| `GET /api/blackboard/data/courses/{course_id}/resources` | 课程资源。 | 已可用 |
+| `POST /api/wakeup/import/ics` | 导入 ICS 日历文本。 | 已可用 |
+| `POST /api/wakeup/parse/ics` | 解析 ICS 日历而不导入。 | 已可用 |
+
+### 持久化历史端点
+
+| 路径 | 主要用途 | 当前状态 |
+| --- | --- | --- |
+| `GET /history/threads` | 列出历史线程。 | 已可用 |
+| `GET /history/threads/{thread_id}` | 获取线程详情。 | 已可用 |
+| `GET /history/runs/{run_id}/replay` | 回放运行。 | 已可用 |
+| `POST /history/threads/{thread_id}/rename` | 重命名线程。 | 已可用 |
+| `POST /history/threads/{thread_id}/duplicate` | 复制线程。 | 已可用 |
+| `DELETE /history/threads/{thread_id}` | 永久删除线程。 | 已可用 |
+| `POST /history/database/backup` | SQLite 文件级备份。 | 已可用 |
+| `POST /history/database/restore` | 从备份文件恢复。 | 已可用 |
 
 需要注意的一点是：如果 runtime 配了 local token，诊断端点需要带 `X-Local-Token`。这个保护范围只覆盖 diagnostics，不是聊天主链的认证方式。
 
@@ -63,6 +97,11 @@ sidebar_position: 4
 | `run/cancel` | 取消一轮 run。 | 已可用 |
 | `capabilities/get` | 兼容读取能力面的投影方法。 | 部分接通 |
 | `thinking/capability/get` | 查询当前模型路由的 thinking capability。 | 已可用 |
+| `tools/catalog/get` | 读取当前工具目录。 | 已可用 |
+| `tool-approval/resolve` | 解决挂起的工具审批请求。 | 已可用 |
+| `shell-session/start` | 启动一个 shell 会话。 | 已可用 |
+| `shell-session/exec` | 在已有 shell 会话中执行命令。 | 已可用 |
+| `shell-session/close` | 关闭一个 shell 会话。 | 已可用 |
 
 ## 兼容壳现在怎么理解
 
@@ -94,7 +133,7 @@ sidebar_position: 4
 | `run_started` | 说明这轮 run 已经开始，前端通常会据此建立 assistant 占位项。 | 已可用 |
 | `run_metadata` | 回传模型路由、thinking 快照等非正文元数据。 | 已可用 |
 | `text_delta` | 增量返回 assistant 正文文本。 | 已可用 |
-| `reasoning_delta` | 增量返回可见 reasoning 文本。 | 部分接通 |
+| `reasoning_delta` | 增量返回可见 reasoning 文本。 | 已可用 |
 | `tool_event` | 返回工具调用生命周期，例如 started、completed、failed。 | 已可用 |
 | `run_diagnostic` | 返回调试或诊断信息。 | 已可用 |
 | `run_completed` | 说明这轮 run 成功结束，并给出最终成功终态。 | 已可用 |
@@ -136,4 +175,6 @@ sidebar_position: 4
 - [Provider 与模型路由说明](./providers-and-routing.md)
 - [Thinking 能力说明](./thinking.md)
 - [能力边界 / 状态总表](./capabilities.md)
+- [MCP 集成说明](./mcp-integration.md)
+- [日历与事件系统说明](./calendar-event-system.md)
 - [聊天运行时契约](../system/chat-runtime-contract.md)
