@@ -1,66 +1,66 @@
 ---
 title: 后端暴露契约与前端接入点（旧资料）
-description: 旧的 backend 分册连接面说明。保留后端视角的补充细节，当前正式主链请先看新的开发者路径与共享事实层。
+description: 旧 backend 分册连接面说明。保留后端视角的补充细节。
 sidebar_position: 4
 sidebar_label: 旧资料：连接面
 ---
 
 # 后端暴露契约与前端接入点（旧资料）
 
-这页属于旧的 `backend` 分册。它只适合补“后端视角下的连接面细节”，不再作为当前主阅读入口。第一次进入当前站点时，请先看 [给开发者](../developers/getting-started.md)、[聊天运行时](../developers/chat-runtime.md)、[运行时接口 / 事件参考](../reference/runtime-events.md) 和 [Provider 与模型路由说明](../reference/providers-and-routing.md)。
+旧 `backend` 分册，补充"后端视角下的连接面细节"。第一次进入站点请先看 [给开发者](../developers/getting-started.md)、[聊天运行时](../developers/chat-runtime.md)、[运行时接口 / 事件参考](../reference/runtime-events.md) 和 [Provider 与模型路由说明](../reference/providers-and-routing.md)。
 
-## 先分清两层接入点
+## 两层接入点
 
-从 backend 视角看，前端今天接到后端并不是一条单层链路，而是两层接入点叠在一起。
+从 backend 视角看，前端接到后端不是单层链路，而是两层接入点叠在一起。
 
-### 第一层是 Electron 主进程提供的宿主接入点
+### 第一层：Electron 主进程提供的宿主接入点
 
-前端 renderer 并不会直接管理 Python 子进程、`userData` 路径或 provider secrets。当前这些事情都由 Electron 主进程承担：
+前端 renderer 不直接管理 Python 子进程、`userData` 路径或 provider secrets。这些事由 Electron 主进程承担：
 
-- 它准备 hosted runtime 路径。
-- 它持有统一配置中心和 settings workspace。
-- 它持有 provider profiles 与 provider secrets 真源。
-- 它创建宿主私有 provider route bridge。
-- 它启动、停止和重试 Python runtime。
-- 它把 hosted runtime 快照整理后暴露给 renderer。
+- 准备 hosted runtime 路径。
+- 持有统一配置中心和 settings workspace。
+- 持有 provider profiles 与 provider secrets 真源。
+- 创建宿主私有 provider route bridge。
+- 启动、停止和重试 Python runtime。
+- 把 hosted runtime 快照整理后暴露给 renderer。
 
-因此，前端真正先接触到的，是宿主层提供的 runtime 快照、公开配置接口和 settings workspace 接口，而不是 Python 进程内部对象。
+前端先接触到的，是宿主层提供的 runtime 快照、公开配置接口和 settings workspace 接口，不是 Python 进程内部对象。
 
-### 第二层是 Python runtime 暴露的 loopback HTTP 契约
+### 第二层：Python runtime 暴露的 loopback HTTP 契约
 
-一旦主进程把 Python runtime 拉起，后端真正对前端可见的 HTTP 连接面就是同一个 loopback 服务：
+主进程拉起 Python runtime 后，后端对前端可见的 HTTP 连接面是同一个 loopback 服务：
 
 - 一组控制面端点。
 - 一个统一的聊天根端点 `POST /`。
-- 一组持久化历史与运维端点，用于读取历史线程、回放 run，以及执行 delete / backup / restore。
+- 一组持久化历史与运维端点，用于读取历史线程、回放 run，以及 delete / backup / restore。
 
-当前前端的后端联调重点，主要落在这第二层。
+前后端联调重点落在这第二层。
 
 ## Electron 主进程在 backend 视角下的角色
 
-### 它是配置 owner
+### 配置 owner
 
-统一配置中心和 settings workspace 现在都由主进程持有。Python runtime 不会直接读取 `config-center/*.json`、`settings-workspace-state.json` 或 `settings-workspace-secrets.json`。
+统一配置中心和 settings workspace 由主进程持有。Python runtime 不会直接读取 `config-center/*.json`、`settings-workspace-state.json` 或 `settings-workspace-secrets.json`。
 
-### 它是 runtime launcher
+### runtime launcher
 
-主进程负责准备路径、构造启动参数、拉起 Python 子进程，并在失败时保留宿主管理下的状态和失败摘要。
+主进程准备路径、构造启动参数、拉起 Python 子进程，失败时保留宿主管理下的状态和失败摘要。
 
-### 它是路由解析真源的入口
+### 路由解析真源的入口
 
-主进程当前还承担一层更关键的职责：它持有 provider profile 元数据与 secrets 真源，并通过宿主私有 provider route bridge 在运行期按请求解析：
+主进程持有 provider profile 元数据与 secrets 真源，通过宿主私有 provider route bridge 在运行期按请求解析：
 
-- 当前 `providerProfileId` 对应的 provider profile 是否存在。
+- `providerProfileId` 对应的 provider profile 是否存在。
 - 请求中的路由快照是否仍与本地配置一致。
-- 当前 provider profile 是否具备可用 API key。
+- provider profile 是否具备可用 API key。
 
-这件事解释了当前后端为什么已经不再需要 startup `model` 参数，却仍然能在每次 `run/start` 执行前解析真实 provider 连接信息；兼容入口 [`message/send`](../system/chat-runtime-contract.md) 只是映射到同一条 `thread/run` 语义。
+这解释了后端为什么已不需要 startup `model` 参数，却仍能在每次 `run/start` 执行前解析真实 provider 连接信息；兼容入口 [`message/send`](../system/chat-runtime-contract.md) 映射到同一条 `thread/run` 语义。
 
-## 当前 Python 后端真正暴露了什么
+## Python 后端暴露的内容
 
-## 控制面端点
+### 控制面端点
 
-当前 loopback HTTP 服务已经稳定暴露下面这些控制面端点：
+loopback HTTP 服务已稳定暴露：
 
 - `GET /health`
 - `GET /ready`
@@ -69,32 +69,34 @@ sidebar_label: 旧资料：连接面
 - `GET /diagnostics`
 - `GET /diagnostics/runtime-info`
 
-这组端点主要回答三类问题：
+这组端点回答三类问题：
 
-- 本地 runtime 是否已经启动。
-- 当前是否 ready，以及最近一次失败发生了什么。
-- 当前运行目录、配置摘要和聊天能力摘要是什么。
+- 本地 runtime 是否已启动。
+- 是否 ready，以及最近一次失败发生了什么。
+- 运行目录、配置摘要和聊天能力摘要。
 
-## 当前聊天持久化运维契约
+### 聊天持久化运维契约
 
-除了 `thread/run` 主链外，desktop runtime 现在还额外暴露一组面向持久化历史的运维端点：
+除 `thread/run` 主链外，desktop runtime 还额外暴露一组面向持久化历史的运维端点：
 
 - `GET /history/threads`
 - `GET /history/threads/{threadId}`
 - `GET /history/runs/{runId}/replay`
+- `POST /history/threads/{threadId}/rename`
+- `POST /history/threads/{threadId}/duplicate`
 - `DELETE /history/threads/{threadId}`
 - `POST /history/database/backup`
 - `POST /history/database/restore`
 
-这里的职责边界是：
+职责边界：
 
-- renderer 不直接接触 SQLite 文件本身，而是通过 Electron main / preload IPC 间接调用这些端点；
-- `delete` 直接永久删除线程 truth、run、event 与 projection；
-- `backup` / `restore` 仍然是桌面本地单机运维能力，不涉及云同步或多副本协调。
+- renderer 不直接接触 SQLite 文件，通过 Electron main / preload IPC 间接调用这些端点。
+- `delete` 直接永久删除线程 truth、run、event 与 projection。
+- `backup` / `restore` 是桌面本地单机运维能力，不涉及云同步或多副本协调。
 
-## 当前聊天主契约
+### 聊天主契约
 
-当前真正聊天主链已经收口为 `thread/run` 六方法：
+聊天主链已收口为 `thread/run` 六方法：
 
 1. `agents/list`
 2. `thread/create`
@@ -103,49 +105,43 @@ sidebar_label: 旧资料：连接面
 5. `run/stream`
 6. `run/cancel`
 
-`session/create`、`capabilities/get` 和 [`message/send`](../system/chat-runtime-contract.md) 仍然保留，但现在是兼容壳。
+`session/create`、`capabilities/get` 和 [`message/send`](../system/chat-runtime-contract.md) 保留为兼容壳。
 
-这条主链共同描述了一条更清楚的后端连接主线：
+这条主链描述的后端连接主线：
 
-- 后端目录先告诉前端当前有哪些智能体。
-- 前端创建 thread 时，把当前 thread 绑定到某个智能体。
-- 前端再读取这个 thread 的能力面。
+- 后端目录告诉前端有哪些智能体。
+- 前端创建 thread 时绑定到某个智能体。
+- 前端读取 thread 的能力面。
 - 每次发起 run 时，前端显式带上本次模型路由、Thinking、工具列表与请求选项。
 
-## 当前前端怎样走这条主路径
+### 前端走这条主路径的步骤
 
-从 backend 视角看，前端当前主路径更适合概括成下面六步：
+1. 确认 hosted runtime 已可用，拿到可访问的 runtime URL。
+2. 调用 `agents/list` 读取后端智能体目录。
+3. 调用 `thread/create` 创建 thread，绑定智能体。
+4. 调用 `thread/get` 读取 thread 视图和能力面。
+5. 调用 `run/start` 发起本轮 run，显式带上模型路由、Thinking 和工具选择。
+6. 调用 `run/stream` 消费事件流；需要中断时调用 `run/cancel`。
 
-1. 它先确认 hosted runtime 已经可用，并拿到可访问的 runtime URL。
-2. 它调用 `agents/list` 读取后端智能体目录。
-3. 它调用 `thread/create` 创建 thread，并绑定当前智能体。
-4. 它调用 `thread/get` 读取当前 thread 视图和能力面。
-5. 它调用 `run/start` 发起本轮 run，并显式带上模型路由、Thinking 和工具选择。
-6. 它调用 `run/stream` 消费事件流；需要中断时再调用 `run/cancel`。
+关键变化：
 
-这里最关键的变化有两点：
+- 后端把"智能体绑定"和"每次请求的模型路由"拆成两层语义。
+- 正式主链是 `thread/run`；兼容入口 [`message/send`](../system/chat-runtime-contract.md) 映射到同一条事件流语义。
 
-- 当前后端已经把“智能体绑定”和“每次请求的模型路由”拆成了两层语义。
-- 当前正式主链已经是 `thread/run`；兼容入口 [`message/send`](../system/chat-runtime-contract.md) 只是映射到同一条事件流语义。
-
-## 当前 `message/send` 在后端视角下是什么
-
-当前 [`message/send`](../system/chat-runtime-contract.md) 的后端主线，可以概括成下面几步：
+### `message/send` 在后端视角下的路线
 
 1. 协议解析层读取 `sessionId`、消息体和 `policy.modelRoute`。
 2. run 编排层先发出 `run_started`。
 3. Python runtime 通过宿主私桥按 `providerProfileId` 解析 provider profile 与 API key。
 4. 宿主使用路由快照校验 `provider`、`endpointType`、`baseUrl` 与 `modelId`。
-5. 执行器在模型调用工具时发出真实 `tool_event`，并在同一条事件流里回传 `started`、`completed` 或 `failed`。
+5. 执行器在模型调用工具时发出真实 `tool_event`，回传 `started`、`completed` 或 `failed`。
 6. 执行器打开真实上游模型流，后端持续发出 `text_delta`。
-7. 正常完成时，后端归档最终 assistant 文本，并发出 `run_completed`。
-8. 失败或取消时，后端发出 `run_failed` 或 `run_cancelled`，不会归档 assistant 成功消息。
+7. 正常完成时，后端归档最终 assistant 文本，发出 `run_completed`。
+8. 失败或取消时，后端发出 `run_failed` 或 `run_cancelled`，不归档 assistant 成功消息。
 
-这说明当前后端对前端真正暴露的，已经是一条 run 语义明确的流式聊天链路。
+后端对前端真正暴露的是一条 run 语义明确的流式聊天链路。
 
-## 当前前端真正需要对齐的对象
-
-因此，今天前后端真正需要对齐的对象已经是：
+### 前后端需要对齐的对象
 
 - 智能体目录。
 - 会话绑定。
@@ -156,49 +152,77 @@ sidebar_label: 旧资料：连接面
 
 ## 已退役的旧外层方法
 
-下面这些旧方法已经退出当前 runtime surface：
-
 - `info`
 - `agent/connect`
 - `agent/run`
 
-它们不再出现在 supported methods 中，也不再承担兼容或诊断职责。旧调用当前只会收到 `method_not_implemented`；当前正式前端主路径已经完全围绕 `agents/list -> thread/create -> thread/get -> run/start -> run/stream -> run/cancel` 组织。
+它们不再出现在 supported methods 中，旧调用收到 `method_not_implemented`。正式前端主路径围绕 `agents/list -> thread/create -> thread/get -> run/start -> run/stream -> run/cancel` 组织。
 
-## 前端今天还没有直接连到哪些后端能力
+## Python 后端额外暴露的领域 HTTP API
 
-### Blackboard 与 TIS 还不是正式前端业务 API
+### Blackboard HTTP API（已可用）
 
-Blackboard 和 TIS 当前已经有真实能力，但这些能力主要以 CLI、工具层、provider 用例和结构化结果对象的形式存在。
+以 `/api/blackboard` 为前缀：
 
-这意味着：
+| 端点 | 用途 |
+| --- | --- |
+| `GET /api/blackboard/sync/status` | 同步状态查询 |
+| `POST /api/blackboard/sync/trigger` | 触发全量快照同步 |
+| `POST /api/blackboard/sync/cancel` | 取消进行中的同步 |
+| `POST /api/blackboard/sync/rebuild-announcement-links` | 重建公告-作业链接 |
+| `POST /api/blackboard/resources/downloads/select-start` | 启动选择性资源下载 |
+| `POST /api/blackboard/resources/downloads/cancel` | 取消资源下载 |
+| `GET /api/blackboard/resources/downloads/status` | 下载队列状态 |
+| `GET /api/blackboard/data/summary` | 同步数据摘要 |
+| `GET /api/blackboard/data/courses` | 课程列表 |
+| `GET /api/blackboard/data/courses/{course_id}/announcements` | 课程公告 |
+| `GET /api/blackboard/data/courses/{course_id}/assignments` | 课程作业 |
+| `GET /api/blackboard/data/courses/{course_id}/grades` | 课程成绩 |
+| `GET /api/blackboard/data/courses/{course_id}/resources` | 课程资源 |
 
-- 后端确实已经有可用的领域能力。
-- 前端今天还不能把它们当成稳定的业务 HTTP API 去依赖。
-- backend 分册里不适合把这两组模块写成已经完整对外开放的服务层。
+### WakeUP HTTP API（已可用）
 
-### settings workspace 也不是 Python runtime 的直接接口层
+| 端点 | 用途 |
+| --- | --- |
+| `POST /api/wakeup/import/ics` | 导入 ICS 日历文本 |
+| `POST /api/wakeup/parse/ics` | 解析 ICS 日历而不导入 |
 
-设置页今天能保存很多字段，但它们不会被 Python runtime 直接读取。当前真实链路仍然是：
+### 日历事件 API（已可用）
+
+| 端点 | 用途 |
+| --- | --- |
+| `GET /calendar/events` | 从 timeline.db 获取日历事件 |
+
+### 调试日志 API（已可用）
+
+| 端点 | 用途 |
+| --- | --- |
+| `GET /diagnostics/debug-logs/recent` | 查询最近调试日志 |
+| `GET /diagnostics/debug-logs/chain` | 获取关联链 |
+| `GET /diagnostics/debug-logs/events/{event_id}` | 按 ID 获取事件 |
+| `GET /diagnostics/debug-logs/maintenance-status` | 检查保留维护状态 |
+
+### settings workspace 不是 Python runtime 的直接接口层
+
+设置页能保存很多字段，但不会被 Python runtime 直接读取。真实链路：
 
 - 主进程持久化 settings workspace 状态与 secrets。
 - 主进程创建宿主私桥。
 - Python runtime 在执行前通过私桥解析本轮 provider 路由与认证信息。
 
-## 当前连接面更适合怎样理解
+## 连接面概括
 
-如果只用一句话概括当前后端对前端的连接面，可以这样理解：
+- 宿主层持有配置、托管 runtime、守住 provider 与 secrets 真源。
+- Python 后端提供本地控制面、`thread/run` 聊天主链和领域 HTTP API（Blackboard、WakeUP、日历、调试日志）；`session/create`、`capabilities/get` 和 `message/send` 作为兼容壳保留。
+- Blackboard、WakeUP、日历和调试日志已有正式 HTTP API。
 
-- 宿主层负责持有配置、托管 runtime 和守住 provider 与 secrets 真源。
-- Python 后端负责提供本地控制面和 `thread/run` 聊天主链；`session/create`、`capabilities/get` 和 `message/send` 继续作为兼容壳保留。
-- Blackboard 与 TIS 仍然主要停留在领域能力层和未来服务化输入层。
+## 判断要点
 
-## 这页想帮助你先建立什么判断
-
-- 当前前端已经有真实后端连接面，不再是只参考 CLI 输出的状态。
-- 当前真正稳定的连接面，是控制面端点和 `thread/run` 流式聊天主路径。
-- Electron 主进程是这条链路里的配置 owner、runtime launcher 与宿主私桥 owner。
-- provider secrets 不会进入消息请求体，也不会出现在流式事件里。
-- Blackboard 与 TIS 还没有整体进入正式前端业务 API 层。
+- 前端有真实后端连接面，不再是只参考 CLI 输出的状态。
+- 真正稳定的连接面是控制面端点、`thread/run` 流式聊天主路径和领域 HTTP API。
+- Electron 主进程是配置 owner、runtime launcher 与宿主私桥 owner。
+- provider secrets 不进入消息请求体，不出现在流式事件里。
+- Blackboard、WakeUP、日历和调试日志已有正式前端 HTTP API。
 
 ## 相关文档
 

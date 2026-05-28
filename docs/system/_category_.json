@@ -5,7 +5,7 @@
   "link": {
     "type": "generated-index",
     "title": "旧系统资料",
-    "description": "旧的 system 分册。这里只保留跨前后端的历史实现说明与补充细节。当前主阅读路径请先看“给开发者”和“共享事实层”。",
+    "description": "旧 system 分册，保留跨前后端的历史实现说明。",
     "slug": "/system"
   }
 }
